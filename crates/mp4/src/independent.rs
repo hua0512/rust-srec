@@ -197,10 +197,327 @@ mod tests {
             assert!(!check.is_independent(&fragment.slice(..end)));
         }
     }
+
+    #[test]
+    fn standalone_cmaf_fragment_checks_walk_past_leading_boxes_and_reject_non_idr_parts() {
+        let prefix = [
+            make_box(b"styp", b"msdh\0\0\0\0msdhmsix"),
+            make_box(b"sidx", &[0; 24]),
+            make_box(b"prft", &[0; 16]),
+            make_box(b"emsg", &[0; 12]),
+        ]
+        .concat();
+        let with_prefix = |fragment: &Bytes| {
+            let mut buf = prefix.clone();
+            buf.extend_from_slice(fragment);
+            Bytes::from(buf)
+        };
+
+        let idr = with_prefix(&fragment_for_track(1, first_flags_run(0x0200_0000)));
+        assert!(has_movie_fragment(&idr));
+        assert!(fragment_has_sync_sample(&idr));
+
+        // Non-IDR LL-HLS partial segments start with `moof` (so they are
+        // fragment starts) but carry no sync sample.
+        let non_idr_explicit = with_prefix(&fragment_for_track(1, first_flags_run(0x0101_0000)));
+        assert!(has_movie_fragment(&non_idr_explicit));
+        assert!(!fragment_has_sync_sample(&non_idr_explicit));
+
+        let non_idr_inherited = with_prefix(&media(None));
+        assert!(has_movie_fragment(&non_idr_inherited));
+        assert!(!fragment_has_sync_sample(&non_idr_inherited));
+
+        // In a muxed partial fragment, sync audio samples must not mask an
+        // inter-only video track.
+        let audio_sync = {
+            let mut tfhd = vec![0x00, 0x02, 0x00, 0x20];
+            tfhd.extend_from_slice(&2u32.to_be_bytes());
+            tfhd.extend_from_slice(&0x0200_0000u32.to_be_bytes());
+            let mut trun = 0u32.to_be_bytes().to_vec();
+            trun.extend_from_slice(&2u32.to_be_bytes());
+            let mut traf = make_box(b"tfhd", &tfhd);
+            traf.extend(make_box(b"trun", &trun));
+            traf
+        };
+        let video_inter_traf = {
+            let mut tfhd = vec![0x00, 0x02, 0x00, 0x20];
+            tfhd.extend_from_slice(&1u32.to_be_bytes());
+            tfhd.extend_from_slice(&0x0101_0000u32.to_be_bytes());
+            let mut trun = 0u32.to_be_bytes().to_vec();
+            trun.extend_from_slice(&2u32.to_be_bytes());
+            let mut traf = make_box(b"tfhd", &tfhd);
+            traf.extend(make_box(b"trun", &trun));
+            traf
+        };
+        let mut muxed_non_idr = prefix;
+        muxed_non_idr.extend(make_box(b"moof", &[video_inter_traf, audio_sync].concat()));
+        muxed_non_idr.extend(make_box(b"mdat", &[1, 2, 3, 4]));
+        let muxed_non_idr = Bytes::from(muxed_non_idr);
+        assert!(has_movie_fragment(&muxed_non_idr));
+        assert!(!fragment_has_sync_sample(&muxed_non_idr));
+
+        let mdat_only = Bytes::from(make_box(b"mdat", &[1, 2, 3, 4]));
+        assert!(!has_movie_fragment(&mdat_only));
+        assert!(!fragment_has_sync_sample(&mdat_only));
+    }
 }
 
 /// `sample_is_non_sync_sample` in ISO/IEC 14496-12 sample flags.
 const NON_SYNC: u32 = 0x0001_0000;
+
+/// Returns whether `data` contains a well-formed top-level `moof` box,
+/// walking past leading segment boxes such as `styp`, `sidx`, `prft`, or
+/// `emsg` (ISO/IEC 14496-12 §4.2, §8.8.4).
+pub fn has_movie_fragment(data: &Bytes) -> bool {
+    let mut offset = 0;
+    while offset < data.len() {
+        let Some(item) = box_at(data, offset, data.len()) else {
+            return false;
+        };
+        if item.fourcc == *b"moof" {
+            return true;
+        }
+        offset = item.end;
+    }
+    false
+}
+
+/// Returns whether an fMP4 media segment or LL-HLS partial segment contains a
+/// sync sample, inspecting `moof`/`traf`/`tfhd`/`trun` sample flags without
+/// requiring the initialization segment (ISO/IEC 14496-12 §8.8.3.1, §8.8.7,
+/// §8.8.8).
+///
+/// Leading boxes (`styp`, `sidx`, `prft`, `emsg`, etc.) are skipped via
+/// top-level box walking. For muxed multi-track fragments, any track carrying
+/// explicitly non-sync/dependent samples must also carry at least one sync
+/// sample in the segment, preventing sync audio tracks from masking non-IDR
+/// video partial fragments.
+///
+/// Note: when a muxer omits both `tfhd` default sample flags (`0x000020`) and
+/// `trun` sample flags (`0x000004` / `0x000400`) and relies exclusively on
+/// `moov/mvex/trex` defaults, standalone `moof` inspection returns `false`;
+/// use [`IndependentFragmentCheck`] when the initialization segment is known.
+pub fn fragment_has_sync_sample(data: &Bytes) -> bool {
+    check_fragment_sync_samples(data).unwrap_or(false)
+}
+
+#[derive(Default)]
+struct TrackSyncSummary {
+    has_samples: bool,
+    has_sync: bool,
+}
+
+fn check_fragment_sync_samples(data: &Bytes) -> Option<bool> {
+    let mut tracks: HashMap<u32, TrackSyncSummary> = HashMap::new();
+    let mut offset = 0;
+    while offset < data.len() {
+        let item = box_at(data, offset, data.len())?;
+        offset = item.end;
+        if item.fourcc != *b"moof" {
+            continue;
+        }
+
+        let mut next = item.end;
+        let mdat = loop {
+            let following = box_at(data, next, data.len())?;
+            match &following.fourcc {
+                b"mdat" => break following,
+                b"moof" => return Some(false),
+                _ => next = following.end,
+            }
+        };
+        if mdat.body_start == mdat.end {
+            return Some(false);
+        }
+
+        let mut traf_offset = item.body_start;
+        while traf_offset < item.end {
+            let traf = box_at(data, traf_offset, item.end)?;
+            traf_offset = traf.end;
+            if traf.fourcc != *b"traf" {
+                continue;
+            }
+            inspect_traf_sync_samples(data, &traf, &mut tracks)?;
+        }
+    }
+
+    let any_sync = tracks.values().any(|t| t.has_sync);
+    let all_sampled_sync = tracks
+        .values()
+        .filter(|t| t.has_samples)
+        .all(|t| t.has_sync);
+    Some(any_sync && all_sampled_sync)
+}
+
+fn inspect_traf_sync_samples(
+    data: &Bytes,
+    traf: &BoxView,
+    tracks: &mut HashMap<u32, TrackSyncSummary>,
+) -> Option<()> {
+    let tfhd = find_first_box(data, traf.body_start, traf.end, *b"tfhd")?;
+    let tfhd_body = &data[tfhd.body_start..tfhd.end];
+    let version_and_flags = word(tfhd_body, 0)?;
+    if (version_and_flags >> 24) != 0 {
+        return None;
+    }
+    let tfhd_flags = version_and_flags & 0x00ff_ffff;
+    let track_id = word(tfhd_body, 4)?;
+    if tfhd_flags & 0x010000 != 0 {
+        return Some(());
+    }
+
+    let mut field = 8;
+    if tfhd_flags & 0x000001 != 0 {
+        word(tfhd_body, field)?;
+        word(tfhd_body, field + 4)?;
+        field += 8;
+    }
+    for flag in [0x000002, 0x000008, 0x000010] {
+        if tfhd_flags & flag != 0 {
+            word(tfhd_body, field)?;
+            field += 4;
+        }
+    }
+    let default_flags = if tfhd_flags & 0x000020 != 0 {
+        Some(word(tfhd_body, field)?)
+    } else {
+        None
+    };
+
+    let summary = tracks.entry(track_id).or_default();
+    let mut child_offset = traf.body_start;
+    while child_offset < traf.end {
+        let child = box_at(data, child_offset, traf.end)?;
+        child_offset = child.end;
+        if child.fourcc != *b"trun" {
+            continue;
+        }
+        inspect_trun_sync_samples(&data[child.body_start..child.end], default_flags, summary)?;
+    }
+    Some(())
+}
+
+fn inspect_trun_sync_samples(
+    body: &[u8],
+    default_flags: Option<u32>,
+    summary: &mut TrackSyncSummary,
+) -> Option<()> {
+    let version_and_flags = word(body, 0)?;
+    if (version_and_flags >> 24) > 1 {
+        return None;
+    }
+    let flags = version_and_flags & 0x00ff_ffff;
+    let sample_count = word(body, 4)?;
+    if sample_count == 0 {
+        return Some(());
+    }
+    summary.has_samples = true;
+
+    let mut field = 8;
+    if flags & 0x000001 != 0 {
+        word(body, field)?;
+        field += 4;
+    }
+    let first_sample_flags = if flags & 0x000004 != 0 {
+        if flags & 0x000400 != 0 {
+            return None;
+        }
+        let first = word(body, field)?;
+        field += 4;
+        Some(first)
+    } else {
+        None
+    };
+
+    let rows = field;
+    let has_per_sample_flags = flags & 0x000400 != 0;
+    let row_stride = [0x000100, 0x000200, 0x000400, 0x000800]
+        .into_iter()
+        .filter(|flag| flags & flag != 0)
+        .count()
+        * 4;
+    let flags_in_row = [0x000100, 0x000200]
+        .into_iter()
+        .filter(|flag| flags & flag != 0)
+        .count()
+        * 4;
+
+    if row_stride > 0 {
+        let total_rows_bytes = usize::try_from(sample_count)
+            .ok()?
+            .checked_mul(row_stride)?;
+        if rows.checked_add(total_rows_bytes)? > body.len() {
+            return None;
+        }
+    }
+
+    let sample_flags_at = |index: usize| -> Option<Option<u32>> {
+        if index == 0
+            && let Some(first) = first_sample_flags
+        {
+            return Some(Some(first));
+        }
+        if has_per_sample_flags {
+            let offset = rows
+                .checked_add(index.checked_mul(row_stride)?)?
+                .checked_add(flags_in_row)?;
+            return Some(Some(word(body, offset)?));
+        }
+        Some(default_flags)
+    };
+
+    // Determine whether this run signals non-sync samples anywhere, allowing a
+    // sync sample with `sample_depends_on == 0` (unknown) to be distinguished
+    // from a muxer that leaves all sample flags at zero.
+    let count = usize::try_from(sample_count).ok()?;
+    let run_signals_non_sync = if has_per_sample_flags {
+        let mut found = false;
+        for index in 0..count {
+            if let Some(sample_flags) = sample_flags_at(index)?
+                && sample_flags & NON_SYNC != 0
+            {
+                found = true;
+                break;
+            }
+        }
+        found
+    } else {
+        (count > 1 && default_flags.is_some_and(|f| f & NON_SYNC != 0))
+            || first_sample_flags.is_some_and(|f| f & NON_SYNC != 0)
+            || (count == 1
+                && first_sample_flags.is_none()
+                && default_flags.is_some_and(|f| f & NON_SYNC != 0))
+    };
+
+    if has_per_sample_flags {
+        for index in 0..count {
+            if let Some(sample_flags) = sample_flags_at(index)? {
+                record_sample_flags(sample_flags, run_signals_non_sync, summary);
+            }
+        }
+    } else {
+        if let Some(sample_flags) = sample_flags_at(0)? {
+            record_sample_flags(sample_flags, run_signals_non_sync, summary);
+        }
+        if count > 1
+            && let Some(rest_flags) = default_flags
+        {
+            record_sample_flags(rest_flags, run_signals_non_sync, summary);
+        }
+    }
+
+    Some(())
+}
+
+fn record_sample_flags(flags: u32, run_signals_non_sync: bool, summary: &mut TrackSyncSummary) {
+    let depends_on = (flags >> 24) & 3;
+    if flags & NON_SYNC != 0 || depends_on == 1 {
+        return;
+    }
+    if depends_on == 2 || (depends_on == 0 && run_signals_non_sync) {
+        summary.has_sync = true;
+    }
+}
 
 #[derive(Debug, Clone)]
 struct Track {
@@ -333,7 +650,11 @@ impl IndependentFragmentCheck {
     fn starts_independently(&self, data: &Bytes, traf: &BoxView, id: u32) -> Option<bool> {
         let tfhd = find_first_box(data, traf.body_start, traf.end, *b"tfhd")?;
         let body = &data[tfhd.body_start..tfhd.end];
-        let flags = word(body, 0)? & 0x00ff_ffff;
+        let tfhd_version_and_flags = word(body, 0)?;
+        if (tfhd_version_and_flags >> 24) != 0 {
+            return None;
+        }
+        let flags = tfhd_version_and_flags & 0x00ff_ffff;
         // Explicit absolute data offsets do not remain valid in a new file.
         if flags & 1 != 0 || flags & 0x010000 != 0 {
             return Some(false);
@@ -353,7 +674,11 @@ impl IndependentFragmentCheck {
         };
         let trun = find_first_box(data, traf.body_start, traf.end, *b"trun")?;
         let body = &data[trun.body_start..trun.end];
-        let flags = word(body, 0)? & 0x00ff_ffff;
+        let trun_version_and_flags = word(body, 0)?;
+        if (trun_version_and_flags >> 24) > 1 {
+            return None;
+        }
+        let flags = trun_version_and_flags & 0x00ff_ffff;
         let sample_count = word(body, 4)?;
         if sample_count == 0 {
             return Some(false);
@@ -384,6 +709,19 @@ impl IndependentFragmentCheck {
         };
         // Per-sample rows start after the optional first-sample flags.
         let rows = field;
+        let row_stride = [0x000100, 0x000200, 0x000400, 0x000800]
+            .into_iter()
+            .filter(|flag| flags & flag != 0)
+            .count()
+            * 4;
+        if row_stride > 0 {
+            let total_rows_bytes = usize::try_from(sample_count)
+                .ok()?
+                .checked_mul(row_stride)?;
+            if rows.checked_add(total_rows_bytes)? > body.len() {
+                return None;
+            }
+        }
         // Whether the flags of a sample after the first mark it non-sync:
         // proof that this muxer signals sync samples rather than leaving
         // every sample's flags at zero.
@@ -394,11 +732,6 @@ impl IndependentFragmentCheck {
             if flags & 0x000400 == 0 {
                 return Some(default_flags.is_some_and(|flags| flags & NON_SYNC != 0));
             }
-            let row = [0x000100, 0x000200, 0x000400, 0x000800]
-                .into_iter()
-                .filter(|flag| flags & flag != 0)
-                .count()
-                * 4;
             let before_flags = [0x000100, 0x000200]
                 .into_iter()
                 .filter(|flag| flags & flag != 0)
@@ -406,7 +739,7 @@ impl IndependentFragmentCheck {
                 * 4;
             for sample in 1..sample_count as usize {
                 let offset = rows
-                    .checked_add(sample.checked_mul(row)?)?
+                    .checked_add(sample.checked_mul(row_stride)?)?
                     .checked_add(before_flags)?;
                 if word(body, offset)? & NON_SYNC != 0 {
                     return Some(true);

@@ -62,7 +62,13 @@ pub fn inject_stats_into_script_data(
 
     // Find the first onMetaData script tag (not all FLVs place it immediately after the header).
     let mut reader = BufReader::new(fs::File::open(file_path)?);
-    reader.seek(io::SeekFrom::Start(13))?; // 9-byte header + 4-byte PreviousTagSize0
+    let header = flv::parser::FlvParser::parse_header(&mut reader)?;
+    let first_tag_offset = u64::from(header.data_offset)
+        .checked_add(crate::utils::FLV_PREVIOUS_TAG_SIZE as u64)
+        .ok_or(ScriptModifierError::ScriptData(
+            "FLV header data_offset overflow",
+        ))?;
+    reader.seek(io::SeekFrom::Start(first_tag_offset))?;
 
     let (start_pos, script_data, original_payload_data) = loop {
         let tag_start_pos = reader.stream_position()?;
@@ -94,7 +100,7 @@ pub fn inject_stats_into_script_data(
         let data = flv::script::ScriptData::demux(&mut cursor)?;
         trace!("Script data: {:?}", data);
 
-        if data.name != crate::AMF0_ON_METADATA {
+        if !crate::amf::is_on_metadata_script(&data) {
             continue;
         }
 
@@ -105,13 +111,12 @@ pub fn inject_stats_into_script_data(
         break (tag_start_pos, data, original_payload_data);
     };
 
-    let amf_data = script_data.data;
-    if amf_data.is_empty() {
+    let Some(metadata_value) = crate::amf::on_metadata_value(&script_data) else {
         return Err(ScriptModifierError::ScriptData("Script data is empty"));
-    }
+    };
 
     // Generate new script data buffer
-    if let Some(props) = amf_data[0].as_object_properties() {
+    if let Some(props) = metadata_value.as_object_properties() {
         // current script data model
         let script_data_model = AmfScriptData::from_amf_object_ref(props)?;
 
@@ -356,5 +361,116 @@ mod tests {
         .unwrap();
 
         assert_eq!(std::fs::read(path).unwrap(), before);
+    }
+
+    #[test]
+    fn inject_stats_handles_extended_header_cue_points_and_set_data_frame() {
+        use std::borrow::Cow;
+        use std::io::BufWriter;
+
+        use flv::{FlvTag, FlvWriter};
+
+        let tempdir = tempfile::tempdir().unwrap();
+        let path = tempdir.path().join("extended-setdataframe.flv");
+
+        let mut cue_payload = Vec::new();
+        amf0::Amf0Encoder::encode_string(&mut cue_payload, "onCuePoint").unwrap();
+        amf0::Amf0Encoder::encode(
+            &mut cue_payload,
+            &Amf0Value::Object(Cow::Owned(vec![(
+                Cow::Borrowed("name"),
+                Amf0Value::String(Cow::Borrowed("chapter-1")),
+            )])),
+        )
+        .unwrap();
+
+        let (canonical_meta, _) = OnMetaDataBuilder::new()
+            .with_placeholder_keyframes(20)
+            .with_custom_property("encoder", Amf0Value::String(Cow::Borrowed("obs")))
+            .build_bytes(0, false)
+            .unwrap();
+        let mut meta_cursor = Cursor::new(bytes::Bytes::from(canonical_meta));
+        let parsed_canonical = ScriptData::demux(&mut meta_cursor).unwrap();
+        let mut set_data_frame_payload = Vec::new();
+        amf0::Amf0Encoder::encode_string(&mut set_data_frame_payload, "@setDataFrame").unwrap();
+        amf0::Amf0Encoder::encode_string(&mut set_data_frame_payload, "onMetaData").unwrap();
+        amf0::Amf0Encoder::encode(&mut set_data_frame_payload, &parsed_canonical.data[0]).unwrap();
+
+        {
+            let mut file = BufWriter::new(File::create(&path).unwrap());
+            // Extended 25-byte FLV header (9-byte standard + 16-byte extension) + 4-byte PreviousTagSize0.
+            let mut header_bytes = vec![b'F', b'L', b'V', 1, 0x05, 0, 0, 0, 25];
+            header_bytes.extend_from_slice(&[0xAA; 16]);
+            header_bytes.extend_from_slice(&0u32.to_be_bytes());
+            file.write_all(&header_bytes).unwrap();
+
+            let mut writer = FlvWriter::new(file).unwrap();
+            writer
+                .write_tag_f(&FlvTag::new(
+                    0,
+                    0,
+                    FlvTagType::ScriptData,
+                    false,
+                    bytes::Bytes::from(cue_payload.clone()),
+                ))
+                .unwrap();
+            writer
+                .write_tag_f(&FlvTag::new(
+                    0,
+                    0,
+                    FlvTagType::ScriptData,
+                    false,
+                    bytes::Bytes::from(set_data_frame_payload),
+                ))
+                .unwrap();
+            writer.close().unwrap();
+        }
+
+        let before_len = std::fs::metadata(&path).unwrap().len();
+        inject_stats_into_script_data(
+            &path,
+            &FlvStats {
+                file_size: before_len,
+                duration: 15.5,
+                has_video: true,
+                ..Default::default()
+            },
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), before_len);
+
+        let mut reader = BufReader::new(File::open(&path).unwrap());
+        let header = FlvParser::parse_header(&mut reader).unwrap();
+        assert_eq!(header.data_offset, 25);
+        reader.seek(io::SeekFrom::Start(29)).unwrap();
+
+        let (cue_tag, _) = FlvParser::parse_tag(&mut reader).unwrap().unwrap();
+        let mut prev = [0u8; 4];
+        reader.read_exact(&mut prev).unwrap();
+        assert_eq!(cue_tag.data().as_ref(), cue_payload.as_slice());
+
+        let (meta_tag, _) = FlvParser::parse_tag(&mut reader).unwrap().unwrap();
+        let mut cursor = Cursor::new(meta_tag.data().clone());
+        let script = ScriptData::demux(&mut cursor).unwrap();
+        let props = crate::amf::on_metadata_value(&script)
+            .unwrap()
+            .as_object_properties()
+            .unwrap();
+        assert_eq!(
+            props
+                .iter()
+                .find(|(k, _)| k.as_ref() == "duration")
+                .map(|(_, v)| v),
+            Some(&Amf0Value::Number(15.5))
+        );
+        assert_eq!(
+            props
+                .iter()
+                .find(|(k, _)| k.as_ref() == "encoder")
+                .map(|(_, v)| v),
+            Some(&Amf0Value::String(Cow::Borrowed("obs")))
+        );
     }
 }

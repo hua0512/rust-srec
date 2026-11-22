@@ -129,7 +129,7 @@ impl HlsData {
 
     /// Check if this segment contains a keyframe
     /// For TS: checks for Adaptation Field random access indicator across all packets
-    /// For MP4: checks for moof box at the beginning for media segments
+    /// For MP4: inspects `moof`/`traf`/`trun` sample flags for a sync sample
     #[inline]
     pub fn has_keyframe(&self) -> bool {
         match self {
@@ -139,17 +139,14 @@ impl HlsData {
                 })
                 .is_ok_and(|analysis| analysis.has_random_access),
             HlsData::M4sData(M4sData::Segment(seg)) => {
-                let bytes = seg.data.as_ref();
-                if bytes.len() >= 8 {
-                    return &bytes[4..8] == b"moof";
-                }
-                false
+                mp4::independent::fragment_has_sync_sample(&seg.data)
             }
             _ => false,
         }
     }
 
-    /// Check if this segment is a discontinuity
+    /// Check if this segment has a discontinuity tag
+    #[inline]
     pub fn is_discontinuity(&self) -> bool {
         match self {
             HlsData::TsData(ts) => ts.segment.discontinuity,
@@ -161,18 +158,14 @@ impl HlsData {
 
     /// Check if this segment indicates the start of a new segment
     /// For TS: typically a keyframe with PAT/PMT tables following
-    /// For MP4: an init segment or a media segment starting with moof box
+    /// For MP4: an init segment or a media segment containing a top-level `moof` box
     #[inline]
     pub fn is_segment_start(&self) -> bool {
         match self {
             HlsData::TsData(_) => self.has_keyframe(),
             HlsData::M4sData(M4sData::InitSegment(_)) => true,
             HlsData::M4sData(M4sData::Segment(seg)) => {
-                let bytes = seg.data.as_ref();
-                if bytes.len() >= 8 {
-                    return &bytes[4..8] == b"moof";
-                }
-                false
+                mp4::independent::has_movie_fragment(&seg.data)
             }
             HlsData::EndMarker(_) => false,
         }
@@ -356,5 +349,54 @@ mod tests {
         ts_204.extend_from_slice(&[0xAA; 16]);
         let ts_204_data = HlsData::ts(make_media_segment(), Bytes::from(ts_204));
         assert!(!ts_204_data.has_keyframe());
+    }
+
+    fn mp4_box(fourcc: &[u8; 4], payload: &[u8]) -> Vec<u8> {
+        let size = (8 + payload.len()) as u32;
+        let mut out = Vec::with_capacity(size as usize);
+        out.extend_from_slice(&size.to_be_bytes());
+        out.extend_from_slice(fourcc);
+        out.extend_from_slice(payload);
+        out
+    }
+
+    fn mp4_full_box(fourcc: &[u8; 4], version: u8, flags: u32, payload: &[u8]) -> Vec<u8> {
+        let mut body = Vec::with_capacity(4 + payload.len());
+        body.extend_from_slice(&((u32::from(version) << 24) | (flags & 0x00ff_ffff)).to_be_bytes());
+        body.extend_from_slice(payload);
+        mp4_box(fourcc, &body)
+    }
+
+    #[test]
+    fn cmaf_segments_walk_past_leading_boxes_and_distinguish_sync_from_non_idr_parts() {
+        let cmaf_fragment = |sample_flags: u32| {
+            let mut prefix = mp4_box(b"styp", b"msdh\0\0\0\0msdhmsix");
+            prefix.extend(mp4_full_box(b"sidx", 0, 0, &[0u8; 20]));
+            prefix.extend(mp4_full_box(b"prft", 0, 0, &[0u8; 16]));
+            prefix.extend(mp4_full_box(b"emsg", 1, 0, &[0u8; 16]));
+
+            let mut traf_body = mp4_full_box(b"tfhd", 0, 0x020000, &1u32.to_be_bytes());
+            let mut trun_body = 1u32.to_be_bytes().to_vec();
+            trun_body.extend_from_slice(&sample_flags.to_be_bytes());
+            traf_body.extend(mp4_full_box(b"trun", 0, 0x000004, &trun_body));
+
+            prefix.extend(mp4_box(b"moof", &mp4_box(b"traf", &traf_body)));
+            prefix.extend(mp4_box(b"mdat", &[0x11, 0x22, 0x33, 0x44]));
+            HlsData::mp4_segment(make_media_segment(), Bytes::from(prefix))
+        };
+
+        let idr_segment = cmaf_fragment(0x0200_0000);
+        assert!(idr_segment.is_segment_start());
+        assert!(idr_segment.has_keyframe());
+
+        let non_idr_part = cmaf_fragment(0x0101_0000);
+        assert!(non_idr_part.is_segment_start());
+        assert!(!non_idr_part.has_keyframe());
+
+        let mut mdat_only = mp4_box(b"styp", b"msdh\0\0\0\0msdhmsix");
+        mdat_only.extend(mp4_box(b"mdat", &[0xAA, 0xBB]));
+        let mdat_chunk = HlsData::mp4_segment(make_media_segment(), Bytes::from(mdat_only));
+        assert!(!mdat_chunk.is_segment_start());
+        assert!(!mdat_chunk.has_keyframe());
     }
 }

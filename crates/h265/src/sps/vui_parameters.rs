@@ -218,13 +218,21 @@ impl VuiParameters {
             let def_disp_win_right_offset = bit_reader.read_exp_golomb()?;
             let def_disp_win_top_offset = bit_reader.read_exp_golomb()?;
             let def_disp_win_bottom_offset = bit_reader.read_exp_golomb()?;
-            let left_offset = conformance_window.conf_win_left_offset + def_disp_win_left_offset;
-            let right_offset = conformance_window.conf_win_right_offset + def_disp_win_right_offset;
-            let top_offset = conformance_window.conf_win_top_offset + def_disp_win_top_offset;
-            let bottom_offset =
-                conformance_window.conf_win_bottom_offset + def_disp_win_bottom_offset;
+            let left_offset = conformance_window
+                .conf_win_left_offset
+                .saturating_add(def_disp_win_left_offset);
+            let right_offset = conformance_window
+                .conf_win_right_offset
+                .saturating_add(def_disp_win_right_offset);
+            let top_offset = conformance_window
+                .conf_win_top_offset
+                .saturating_add(def_disp_win_top_offset);
+            let bottom_offset = conformance_window
+                .conf_win_bottom_offset
+                .saturating_add(def_disp_win_bottom_offset);
 
-            if sub_width_c as u64 * (left_offset + right_offset) >= pic_width_in_luma_samples.get()
+            if u64::from(sub_width_c).saturating_mul(left_offset.saturating_add(right_offset))
+                >= pic_width_in_luma_samples.get()
             {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -232,7 +240,7 @@ impl VuiParameters {
                 ));
             }
 
-            if sub_height_c as u64 * (top_offset + bottom_offset)
+            if u64::from(sub_height_c).saturating_mul(top_offset.saturating_add(bottom_offset))
                 >= pic_height_in_luma_samples.get()
             {
                 return Err(io::Error::new(
@@ -432,28 +440,36 @@ impl DefaultDisplayWindow {
     ///
     /// ISO/IEC 23008-2 - E.3.1
     pub fn left_offset(&self, conformance_window: &ConformanceWindow) -> u64 {
-        conformance_window.conf_win_left_offset + self.def_disp_win_left_offset
+        conformance_window
+            .conf_win_left_offset
+            .saturating_add(self.def_disp_win_left_offset)
     }
 
     /// `rightOffset = conf_win_right_offset + def_disp_win_right_offset` (E-69)
     ///
     /// ISO/IEC 23008-2 - E.3.1
     pub fn right_offset(&self, conformance_window: &ConformanceWindow) -> u64 {
-        conformance_window.conf_win_right_offset + self.def_disp_win_right_offset
+        conformance_window
+            .conf_win_right_offset
+            .saturating_add(self.def_disp_win_right_offset)
     }
 
     /// `topOffset = conf_win_top_offset + def_disp_win_top_offset` (E-70)
     ///
     /// ISO/IEC 23008-2 - E.3.1
     pub fn top_offset(&self, conformance_window: &ConformanceWindow) -> u64 {
-        conformance_window.conf_win_top_offset + self.def_disp_win_top_offset
+        conformance_window
+            .conf_win_top_offset
+            .saturating_add(self.def_disp_win_top_offset)
     }
 
     /// `bottomOffset = conf_win_bottom_offset + def_disp_win_bottom_offset` (E-71)
     ///
     /// ISO/IEC 23008-2 - E.3.1
     pub fn bottom_offset(&self, conformance_window: &ConformanceWindow) -> u64 {
-        conformance_window.conf_win_bottom_offset + self.def_disp_win_bottom_offset
+        conformance_window
+            .conf_win_bottom_offset
+            .saturating_add(self.def_disp_win_bottom_offset)
     }
 }
 

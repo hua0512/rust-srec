@@ -275,72 +275,104 @@ pub struct PmtStream {
     pub es_info: Vec<u8>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ParsedPmtHeader {
+    pub table_id: u8,
+    pub program_number: u16,
+    pub version_number: u8,
+    pub current_next_indicator: bool,
+    pub section_number: u8,
+    pub last_section_number: u8,
+    pub pcr_pid: u16,
+    pub program_info_offset: usize,
+    pub program_info_length: usize,
+    pub streams_offset: usize,
+    pub streams_end: usize,
+}
+
+pub(crate) fn parse_pmt_header(data: &[u8]) -> Result<ParsedPmtHeader> {
+    if data.len() < 12 {
+        return Err(TsError::InsufficientData {
+            expected: 12,
+            actual: data.len(),
+        });
+    }
+
+    let table_id = data[0];
+    if table_id != 0x02 {
+        return Err(TsError::InvalidTableId {
+            expected: 0x02,
+            actual: table_id,
+        });
+    }
+
+    let section_syntax_indicator = (data[1] & 0x80) != 0;
+    if !section_syntax_indicator {
+        return Err(TsError::ParseError(
+            "PMT must have section syntax indicator set".to_string(),
+        ));
+    }
+
+    let section_length = ((data[1] as u16 & 0x0F) << 8) | data[2] as u16;
+    // Minimum PMT section_length is 13: 9-byte fixed header after section_length + 4-byte CRC32.
+    if section_length < 13 {
+        return Err(TsError::InvalidSectionLength(section_length));
+    }
+
+    let section_end = 3 + section_length as usize;
+    if data.len() < section_end {
+        return Err(TsError::InsufficientData {
+            expected: section_end,
+            actual: data.len(),
+        });
+    }
+
+    let program_number = ((data[3] as u16) << 8) | data[4] as u16;
+    let version_number = (data[5] >> 1) & 0x1F;
+    let current_next_indicator = (data[5] & 0x01) != 0;
+    let section_number = data[6];
+    let last_section_number = data[7];
+    let pcr_pid = ((data[8] as u16 & 0x1F) << 8) | data[9] as u16;
+    let program_info_length = (((data[10] as u16) & 0x0F) << 8) as usize | data[11] as usize;
+
+    if (section_length as usize) < 9 + program_info_length + 4 {
+        return Err(TsError::InvalidSectionLength(section_length));
+    }
+
+    let program_info_offset = 12;
+    let streams_offset = program_info_offset + program_info_length;
+    let streams_end = section_end - 4;
+
+    Ok(ParsedPmtHeader {
+        table_id,
+        program_number,
+        version_number,
+        current_next_indicator,
+        section_number,
+        last_section_number,
+        pcr_pid,
+        program_info_offset,
+        program_info_length,
+        streams_offset,
+        streams_end,
+    })
+}
+
 impl Pmt {
     /// Parse PMT from PSI section data
     pub fn parse(data: &[u8]) -> Result<Self> {
-        if data.len() < 12 {
-            return Err(TsError::InsufficientData {
-                expected: 12,
-                actual: data.len(),
-            });
-        }
+        let header = parse_pmt_header(data)?;
 
-        let table_id = data[0];
-        if table_id != 0x02 {
-            return Err(TsError::InvalidTableId {
-                expected: 0x02,
-                actual: table_id,
-            });
-        }
-
-        // Parse section header
-        let section_syntax_indicator = (data[1] & 0x80) != 0;
-        if !section_syntax_indicator {
-            return Err(TsError::ParseError(
-                "PMT must have section syntax indicator set".to_string(),
-            ));
-        }
-
-        let section_length = ((data[1] as u16 & 0x0F) << 8) | data[2] as u16;
-        if section_length < 9 {
-            return Err(TsError::InvalidSectionLength(section_length));
-        }
-
-        if data.len() < (3 + section_length as usize) {
-            return Err(TsError::InsufficientData {
-                expected: 3 + section_length as usize,
-                actual: data.len(),
-            });
-        }
-
-        let program_number = ((data[3] as u16) << 8) | data[4] as u16;
-        let version_number = (data[5] >> 1) & 0x1F;
-        let current_next_indicator = (data[5] & 0x01) != 0;
-        let section_number = data[6];
-        let last_section_number = data[7];
-        let pcr_pid = ((data[8] as u16 & 0x1F) << 8) | data[9] as u16;
-
-        let program_info_length = ((data[10] as u16 & 0x0F) << 8) | data[11] as u16;
-        let mut offset = 12;
-
-        // Parse program info descriptors
-        let program_info = if program_info_length > 0 {
-            if offset + program_info_length as usize > data.len() {
-                return Err(TsError::InsufficientData {
-                    expected: offset + program_info_length as usize,
-                    actual: data.len(),
-                });
-            }
-            let info = data[offset..offset + program_info_length as usize].to_vec();
-            offset += program_info_length as usize;
-            info
+        let program_info = if header.program_info_length > 0 {
+            data[header.program_info_offset..header.streams_offset].to_vec()
         } else {
             Vec::new()
         };
 
         // Parse elementary streams
         let mut streams = Vec::new();
-        let streams_end = 3 + section_length as usize - 4; // Exclude CRC32
+        let mut offset = header.streams_offset;
+        let streams_end = header.streams_end;
 
         while offset + 5 <= streams_end {
             let stream_type = StreamType::from(data[offset]);
@@ -371,13 +403,13 @@ impl Pmt {
         }
 
         Ok(Pmt {
-            table_id,
-            program_number,
-            version_number,
-            current_next_indicator,
-            section_number,
-            last_section_number,
-            pcr_pid,
+            table_id: header.table_id,
+            program_number: header.program_number,
+            version_number: header.version_number,
+            current_next_indicator: header.current_next_indicator,
+            section_number: header.section_number,
+            last_section_number: header.last_section_number,
+            pcr_pid: header.pcr_pid,
             program_info,
             streams,
         })
@@ -492,5 +524,38 @@ mod tests {
         assert_eq!(pmt.streams[0].stream_type, StreamType::H264);
         assert_eq!(pmt.streams[0].elementary_pid, 0x100);
         assert!(pmt.streams[0].stream_type.is_video());
+    }
+
+    #[test]
+    fn test_pmt_rejects_short_section_and_program_info_overlapping_crc() {
+        use bytes::Bytes;
+
+        // section_length = 9 (< 13 minimum for 9-byte PMT header + 4-byte CRC32).
+        let short_section = [
+            0x02, 0x80, 0x09, 0x00, 0x01, 0x01, 0x00, 0x00, 0xE1, 0x00, 0x00, 0x00,
+        ];
+        assert!(matches!(
+            Pmt::parse(&short_section),
+            Err(TsError::InvalidSectionLength(9))
+        ));
+        assert!(matches!(
+            crate::PmtRef::parse(Bytes::copy_from_slice(&short_section)),
+            Err(TsError::InvalidSectionLength(9))
+        ));
+
+        // section_length = 13 (0 bytes left for descriptors/streams), but program_info_length = 2
+        // overlaps the trailing CRC32.
+        let overlapping_prog_info = [
+            0x02, 0x80, 0x0D, 0x00, 0x01, 0x01, 0x00, 0x00, 0xE1, 0x00, 0x00, 0x02, 0xAA, 0xBB,
+            0xCC, 0xDD,
+        ];
+        assert!(matches!(
+            Pmt::parse(&overlapping_prog_info),
+            Err(TsError::InvalidSectionLength(13))
+        ));
+        assert!(matches!(
+            crate::PmtRef::parse(Bytes::copy_from_slice(&overlapping_prog_info)),
+            Err(TsError::InvalidSectionLength(13))
+        ));
     }
 }

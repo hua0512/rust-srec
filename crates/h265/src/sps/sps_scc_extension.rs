@@ -44,6 +44,7 @@ impl SpsSccExtension {
         let palette_mode_enabled_flag = bit_reader.read_bit()?;
         if palette_mode_enabled_flag {
             let palette_max_size = bit_reader.read_exp_golomb()?;
+            range_check!(palette_max_size, 0, 64)?;
             let delta_palette_max_predictor_size = bit_reader.read_exp_golomb()?;
 
             if palette_max_size == 0 && delta_palette_max_predictor_size != 0 {
@@ -52,9 +53,10 @@ impl SpsSccExtension {
                     "delta_palette_max_predictor_size must be 0 when palette_max_size is 0",
                 ));
             }
+            range_check!(delta_palette_max_predictor_size, 0, 128 - palette_max_size)?;
 
             let sps_palette_predictor_initializers_present_flag = bit_reader.read_bit()?;
-            if palette_max_size == 0 && !sps_palette_predictor_initializers_present_flag {
+            if palette_max_size == 0 && sps_palette_predictor_initializers_present_flag {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "sps_palette_predictor_initializers_present_flag must be 0 when palette_max_size is 0",
@@ -64,21 +66,27 @@ impl SpsSccExtension {
             let mut sps_palette_predictor_initializers = None;
             if sps_palette_predictor_initializers_present_flag {
                 let sps_num_palette_predictor_initializers_minus1 = bit_reader.read_exp_golomb()?;
+                let palette_max_predictor_size =
+                    palette_max_size + delta_palette_max_predictor_size;
+                range_check!(
+                    sps_num_palette_predictor_initializers_minus1,
+                    0,
+                    palette_max_predictor_size - 1
+                )?;
 
-                if sps_num_palette_predictor_initializers_minus1 >= palette_max_size {
-                    return Err(io::Error::new(
+                let num_initializers = usize::try_from(
+                    sps_num_palette_predictor_initializers_minus1 + 1,
+                )
+                .map_err(|_| {
+                    io::Error::new(
                         io::ErrorKind::InvalidData,
-                        "sps_num_palette_predictor_initializers_minus1 + 1 must be less than or equal to palette_max_size",
-                    ));
-                }
+                        "sps_num_palette_predictor_initializers_minus1 overflows usize",
+                    )
+                })?;
 
                 let num_comps = if chroma_format_idc == 0 { 1 } else { 3 };
 
-                let mut initializers =
-                    vec![
-                        vec![0; sps_num_palette_predictor_initializers_minus1 as usize + 1];
-                        num_comps
-                    ];
+                let mut initializers = vec![vec![0; num_initializers]; num_comps];
                 for (comp, initializer) in initializers.iter_mut().enumerate().take(num_comps) {
                     for sps_palette_predictor_initializer in initializer.iter_mut() {
                         let bit_depth = if comp == 0 { bit_depth_y } else { bit_depth_c };
@@ -138,7 +146,8 @@ impl SpsSccExtensionPaletteMode {
     ///
     /// ISO/IEC 23008-2 - 7.4.3.2.3
     pub fn palette_max_predictor_size(&self) -> u64 {
-        self.palette_max_size + self.delta_palette_max_predictor_size
+        self.palette_max_size
+            .saturating_add(self.delta_palette_max_predictor_size)
     }
 }
 
@@ -206,5 +215,43 @@ mod tests {
 
         assert_eq!(scc_extension.motion_vector_resolution_control_idc, 0);
         assert!(!scc_extension.intra_boundary_filtering_disabled_flag);
+    }
+
+    #[test]
+    fn rejects_oversized_palette_parameters_and_validates_zero_palette() {
+        use std::io;
+
+        // Oversized palette_max_size (> 64) must fail before allocating initializers.
+        let mut data = Vec::new();
+        let mut writer = BitWriter::new(&mut data);
+        writer.write_bit(false).unwrap(); // sps_curr_pic_ref_enabled_flag
+        writer.write_bit(true).unwrap(); // palette_mode_enabled_flag
+        writer.write_exp_golomb(1_000_000_000).unwrap(); // palette_max_size
+        writer.write_exp_golomb(0).unwrap();
+        writer.finish().unwrap();
+        let err =
+            super::SpsSccExtension::parse(&mut bytes_util::BitReader::new(&data[..]), 1, 8, 8)
+                .unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+
+        // palette_max_size = 0 with delta = 0 and initializers_present = false is valid per HEVC 7.4.3.2.3.
+        let mut valid_zero = Vec::new();
+        let mut writer = BitWriter::new(&mut valid_zero);
+        writer.write_bit(false).unwrap(); // sps_curr_pic_ref_enabled_flag
+        writer.write_bit(true).unwrap(); // palette_mode_enabled_flag
+        writer.write_exp_golomb(0).unwrap(); // palette_max_size
+        writer.write_exp_golomb(0).unwrap(); // delta_palette_max_predictor_size
+        writer.write_bit(false).unwrap(); // sps_palette_predictor_initializers_present_flag
+        writer.write_bits(0, 2).unwrap(); // motion_vector_resolution_control_idc
+        writer.write_bit(false).unwrap(); // intra_boundary_filtering_disabled_flag
+        writer.finish().unwrap();
+        let parsed = super::SpsSccExtension::parse(
+            &mut bytes_util::BitReader::new(&valid_zero[..]),
+            1,
+            8,
+            8,
+        )
+        .unwrap();
+        assert_eq!(parsed.palette_mode.unwrap().palette_max_size, 0);
     }
 }

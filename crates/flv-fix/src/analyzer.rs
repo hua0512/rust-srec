@@ -195,15 +195,13 @@ impl FlvStats {
         };
 
         // Determine the latest timestamp based on which media types are present
+        let last_video_timestamp = self.video_stats.as_ref().map(|vs| vs.last_video_timestamp);
         let last_timestamp = match (self.has_video, self.has_audio) {
-            (true, true) => self
-                .video_stats
-                .as_ref()
-                .unwrap()
-                .last_video_timestamp
-                .max(self.last_audio_timestamp), // Both: use latest
-            (true, false) => self.video_stats.as_ref().unwrap().last_video_timestamp, // Video only
-            (false, true) => self.last_audio_timestamp,                               // Audio only
+            (true, true) => last_video_timestamp.map_or(self.last_audio_timestamp, |video| {
+                video.max(self.last_audio_timestamp)
+            }), // Both: use latest
+            (true, false) => last_video_timestamp.unwrap_or(self.last_timestamp), // Video only
+            (false, true) => self.last_audio_timestamp,                           // Audio only
             (false, false) => self.last_timestamp, // Fallback to general timestamp
         };
 
@@ -549,7 +547,7 @@ impl FlvAnalyzer {
             let position = self.stats.file_size;
 
             // Respect the minimum interval between keyframes
-            let add_keyframe = video_stats.last_keyframe_timestamp == 0
+            let add_keyframe = video_stats.keyframes.is_empty()
                 || (timestamp.saturating_sub(video_stats.last_keyframe_timestamp)
                     >= MIN_INTERVAL_BETWEEN_KEYFRAMES_MS);
             trace!(
@@ -744,5 +742,53 @@ mod tests {
                 .and_then(|stats| stats.video_codec),
             Some(VideoCodec::Enhanced(VideoFourCC::Av01))
         );
+    }
+
+    #[test]
+    fn keyframes_within_min_interval_after_zero_timestamp_keyframe_are_throttled() {
+        let mut analyzer = FlvAnalyzer::default();
+        analyzer
+            .analyze_header(&FlvHeader::new(false, true))
+            .unwrap();
+
+        for ts in [0, 500, 1_000, 1_899, 1_900, 2_500, 3_800] {
+            let flv::FlvData::Tag(tag) = crate::test_utils::create_video_tag(ts, true) else {
+                unreachable!();
+            };
+            analyzer.analyze_tag(&tag).unwrap();
+        }
+
+        let stats = analyzer.build_stats().unwrap();
+        let times: Vec<f64> = stats
+            .video_stats
+            .as_ref()
+            .unwrap()
+            .keyframes
+            .iter()
+            .map(|kf| kf.timestamp_s)
+            .collect();
+        assert_eq!(times, vec![0.0, 1.9, 3.8]);
+    }
+
+    #[test]
+    fn calculate_duration_handles_missing_video_stats_without_panicking() {
+        let video_only = FlvStats {
+            has_video: true,
+            has_audio: false,
+            video_stats: None,
+            last_timestamp: 2_500,
+            ..Default::default()
+        };
+        assert_eq!(video_only.calculate_duration(), 2.5);
+
+        let muxed = FlvStats {
+            has_video: true,
+            has_audio: true,
+            video_stats: None,
+            first_audio_timestamp: Some(200),
+            last_audio_timestamp: 3_200,
+            ..Default::default()
+        };
+        assert_eq!(muxed.calculate_duration(), 3.0);
     }
 }

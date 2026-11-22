@@ -73,6 +73,8 @@ impl<W: Write + Seek> FlvWriter<W> {
     pub fn write_header(&mut self, header: &FlvHeader) -> io::Result<()> {
         let bytes = encode::encode_header_bytes(header)?;
         self.writer.write_all(&bytes)?;
+        self.has_audio = header.has_audio;
+        self.has_video = header.has_video;
         Ok(())
     }
 
@@ -103,6 +105,15 @@ impl<W: Write + Seek> FlvWriter<W> {
         data: &[u8],
         timestamp_ms: u32,
     ) -> io::Result<()> {
+        if data.len() > 0xFF_FFFF {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "FLV tag data size {} exceeds 24-bit maximum (16777215)",
+                    data.len()
+                ),
+            ));
+        }
         let data_size = data.len() as u32;
 
         // Write tag header
@@ -247,5 +258,33 @@ impl<W: Write + Seek> Write for FlvWriter<W> {
 
     fn flush(&mut self) -> io::Result<()> {
         self.flush()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use super::*;
+
+    #[test]
+    fn write_header_updates_stream_flags_and_write_tag_rejects_oversized_payload() {
+        let mut writer = FlvWriter::new(Cursor::new(Vec::new())).unwrap();
+        writer.write_header(&FlvHeader::new(true, true)).unwrap();
+        assert!(writer.has_audio);
+        assert!(writer.has_video);
+
+        writer
+            .write_video(Bytes::from_static(&[0x17, 0x00]), 0)
+            .unwrap();
+        writer
+            .write_audio(Bytes::from_static(&[0xAF, 0x00]), 0)
+            .unwrap();
+
+        let oversized = vec![0u8; 0x100_0000];
+        let err = writer
+            .write_tag(FlvTagType::Video, &oversized, 10)
+            .unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
     }
 }

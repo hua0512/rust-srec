@@ -98,6 +98,17 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
         Ok(BufWriter::with_capacity(1024 * 1024, file))
     }
 
+    fn should_open_file(&mut self, item: &HlsData) -> bool {
+        match item {
+            HlsData::EndMarker(_) => false,
+            HlsData::M4sData(M4sData::InitSegment(init)) => {
+                self.output_state.set_pending_init(init.clone());
+                false
+            }
+            HlsData::TsData(_) | HlsData::M4sData(M4sData::Segment(_)) => true,
+        }
+    }
+
     fn write_item(
         &mut self,
         writer: &mut Self::Writer,
@@ -586,6 +597,21 @@ mod tests {
         assert_eq!(stats.files_created, 0);
         assert_eq!(stats.bytes_written, 0);
         assert_eq!(stats.duration_secs, 0.0);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn init_without_media_does_not_open_an_output_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut writer = HlsWriter::new(HlsWriterConfig {
+            output_dir: dir.path().into(),
+            base_name: "test-%i".into(),
+            extension: "mp4".into(),
+            max_file_size: None,
+        });
+        let stats = write_items(&mut writer, vec![init(INIT), HlsData::end_marker()]);
+        assert_eq!(stats.files_created, 0);
+        assert_eq!(stats.bytes_written, 0);
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
     }
 

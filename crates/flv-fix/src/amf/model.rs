@@ -1,10 +1,44 @@
+use std::collections::HashMap;
+
 use amf0::{Amf0Value, Amf0WriteError};
 use flv::{
     audio::{AudioCodec, AudioFourCC},
+    script::ScriptData,
     video::{VideoCodec, VideoFourCC},
 };
-use std::collections::HashMap;
 use time::OffsetDateTime;
+
+use crate::constants::{AMF0_ON_METADATA, AMF0_SET_DATA_FRAME};
+
+/// Returns `true` when `script` represents `onMetaData`, either directly
+/// (`name == "onMetaData"`) or wrapped in `@setDataFrame`
+/// (`name == "@setDataFrame"` with `"onMetaData"` as the first value).
+pub fn is_on_metadata_script(script: &ScriptData) -> bool {
+    script.name == AMF0_ON_METADATA
+        || (script.name == AMF0_SET_DATA_FRAME
+            && script.data.first().and_then(Amf0Value::as_str) == Some(AMF0_ON_METADATA))
+}
+
+/// Returns `true` when `script` is a well-formed non-metadata script event
+/// (such as `onCuePoint` or `onTextData`) carrying at least one AMF0 value.
+pub fn is_non_metadata_script(script: &ScriptData) -> bool {
+    !is_on_metadata_script(script) && !script.data.is_empty()
+}
+
+/// Extracts the metadata value from an `onMetaData` or `@setDataFrame`
+/// script tag, returning `None` for non-metadata script tags (such as
+/// `onCuePoint` or `onTextData`) or empty payloads.
+pub fn on_metadata_value(script: &ScriptData) -> Option<&Amf0Value<'static>> {
+    if script.name == AMF0_ON_METADATA {
+        script.data.first()
+    } else if script.name == AMF0_SET_DATA_FRAME
+        && script.data.first().and_then(Amf0Value::as_str) == Some(AMF0_ON_METADATA)
+    {
+        script.data.get(1)
+    } else {
+        None
+    }
+}
 
 /// Represents the strongly-typed `onMetaData` object.
 #[derive(Debug, Clone, Default)]
@@ -240,6 +274,48 @@ mod tests {
     fn rejects_invalid_numeric_audio_codecs_without_lossy_casts() {
         for value in [-1.0, 10.5, u32::MAX as f64 + 1.0, f64::NAN, f64::INFINITY] {
             assert_eq!(parse_audio_codec(&Amf0Value::Number(value)), None);
+        }
+    }
+
+    #[test]
+    fn recognizes_direct_and_set_data_frame_metadata_while_ignoring_cue_points() {
+        use std::borrow::Cow;
+
+        let obj = Amf0Value::Object(Cow::Owned(vec![(
+            Cow::Borrowed("duration"),
+            Amf0Value::Number(12.5),
+        )]));
+
+        let direct = ScriptData {
+            name: "onMetaData".to_string(),
+            data: vec![obj.clone()],
+        };
+        assert!(is_on_metadata_script(&direct));
+        assert_eq!(on_metadata_value(&direct), Some(&obj));
+
+        let set_data_frame = ScriptData {
+            name: "@setDataFrame".to_string(),
+            data: vec![Amf0Value::String(Cow::Borrowed("onMetaData")), obj.clone()],
+        };
+        assert!(is_on_metadata_script(&set_data_frame));
+        assert_eq!(on_metadata_value(&set_data_frame), Some(&obj));
+
+        for non_meta in [
+            ScriptData {
+                name: "onCuePoint".to_string(),
+                data: vec![obj.clone()],
+            },
+            ScriptData {
+                name: "onTextData".to_string(),
+                data: vec![obj.clone()],
+            },
+            ScriptData {
+                name: "@setDataFrame".to_string(),
+                data: vec![Amf0Value::String(Cow::Borrowed("onCuePoint")), obj],
+            },
+        ] {
+            assert!(!is_on_metadata_script(&non_meta));
+            assert_eq!(on_metadata_value(&non_meta), None);
         }
     }
 }

@@ -35,7 +35,6 @@ pub mod crc32;
 mod manual_split;
 pub mod pipeline;
 pub mod processor;
-pub mod progress;
 mod run_completion;
 pub mod split_reason;
 mod utils;
@@ -52,7 +51,6 @@ pub use manual_split::{
 };
 pub use pipeline::{Pipeline, ProgressSink, ProgressThrottle};
 pub use processor::Processor;
-pub use progress::{Progress, ProgressEvent};
 pub use run_completion::{RunCompletionError, settle_run};
 pub use utils::{
     expand_filename_template, expand_path_template, expand_path_template_at, sanitize_filename,

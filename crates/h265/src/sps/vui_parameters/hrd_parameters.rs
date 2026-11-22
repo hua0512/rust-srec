@@ -331,8 +331,12 @@ impl SubLayerHrdParameters {
             let mut cpb_size_du_value_minus1 = None;
             let mut bit_rate_du_value_minus1 = None;
             if sub_pic_hrd_params_present_flag {
-                cpb_size_du_value_minus1 = Some(bit_reader.read_exp_golomb()?);
-                bit_rate_du_value_minus1 = Some(bit_reader.read_exp_golomb()?);
+                let cpb_size_du = bit_reader.read_exp_golomb()?;
+                range_check!(cpb_size_du, 0, 2u64.pow(32) - 2)?;
+                let bit_rate_du = bit_reader.read_exp_golomb()?;
+                range_check!(bit_rate_du, 0, 2u64.pow(32) - 2)?;
+                cpb_size_du_value_minus1 = Some(cpb_size_du);
+                bit_rate_du_value_minus1 = Some(bit_rate_du);
             }
 
             let cbr_flag = bit_reader.read_bit()?;
@@ -369,17 +373,18 @@ impl SubLayerHrdParameters {
         max_br: u64,
     ) -> u64 {
         let value = if !sub_pic_hrd_flag {
-            self.bit_rate_value_minus1 as u64
+            u64::from(self.bit_rate_value_minus1)
+        } else if let Some(du_value) = self.bit_rate_du_value_minus1 {
+            du_value
+        } else if self.nal_hrd {
+            return br_nal_factor.saturating_mul(max_br);
         } else {
-            self.bit_rate_du_value_minus1.unwrap_or_else(|| {
-                if self.nal_hrd {
-                    br_nal_factor * max_br
-                } else {
-                    br_vcl_factor * max_br
-                }
-            })
+            return br_vcl_factor.saturating_mul(max_br);
         };
-        (value + 1) * 2u64.pow(6 + bit_rate_scale as u32)
+        let scale = 1u64
+            .checked_shl(6 + u32::from(bit_rate_scale))
+            .unwrap_or(u64::MAX);
+        value.saturating_add(1).saturating_mul(scale)
     }
 
     /// When `SubPicHrdFlag` is equal to `false`, the CPB size in bits is given by:
@@ -401,17 +406,18 @@ impl SubLayerHrdParameters {
         max_cpb: u64,
     ) -> u64 {
         let value = if !sub_pic_hrd_flag {
-            self.bit_rate_value_minus1 as u64
+            u64::from(self.cpb_size_value_minus1)
+        } else if let Some(du_value) = self.cpb_size_du_value_minus1 {
+            du_value
+        } else if self.nal_hrd {
+            return cpb_nal_factor.saturating_mul(max_cpb);
         } else {
-            self.bit_rate_du_value_minus1.unwrap_or_else(|| {
-                if self.nal_hrd {
-                    cpb_nal_factor * max_cpb
-                } else {
-                    cpb_vcl_factor * max_cpb
-                }
-            })
+            return cpb_vcl_factor.saturating_mul(max_cpb);
         };
-        (value + 1) * 2u64.pow(4 + cpb_size_scale as u32)
+        let scale = 1u64
+            .checked_shl(4 + u32::from(cpb_size_scale))
+            .unwrap_or(u64::MAX);
+        value.saturating_add(1).saturating_mul(scale)
     }
 }
 
@@ -519,37 +525,37 @@ mod tests {
         assert!(!hrd_parameters.sub_layers[0].sub_layer_parameters[1].cbr_flag);
 
         assert_eq!(
-            hrd_parameters.sub_layers[0].sub_layer_parameters[0].bit_rate(false, 0, 0, 0, 0),
+            hrd_parameters.sub_layers[0].sub_layer_parameters[0].bit_rate(false, 0, 1000, 1100, 10),
             64
         );
         assert_eq!(
-            hrd_parameters.sub_layers[0].sub_layer_parameters[0].bit_rate(true, 0, 0, 0, 0),
+            hrd_parameters.sub_layers[0].sub_layer_parameters[0].bit_rate(true, 0, 1000, 1100, 10),
+            11_000
+        );
+        assert_eq!(
+            hrd_parameters.sub_layers[0].sub_layer_parameters[1].bit_rate(false, 0, 1000, 1100, 10),
             64
         );
         assert_eq!(
-            hrd_parameters.sub_layers[0].sub_layer_parameters[1].bit_rate(false, 0, 0, 0, 0),
-            64
-        );
-        assert_eq!(
-            hrd_parameters.sub_layers[0].sub_layer_parameters[1].bit_rate(true, 0, 0, 0, 0),
-            64
+            hrd_parameters.sub_layers[0].sub_layer_parameters[1].bit_rate(true, 0, 1000, 1100, 10),
+            10_000
         );
 
         assert_eq!(
-            hrd_parameters.sub_layers[0].sub_layer_parameters[0].cpb_size(false, 0, 0, 0, 0),
+            hrd_parameters.sub_layers[0].sub_layer_parameters[0].cpb_size(false, 0, 1000, 1100, 20),
             16
         );
         assert_eq!(
-            hrd_parameters.sub_layers[0].sub_layer_parameters[0].cpb_size(true, 0, 0, 0, 0),
+            hrd_parameters.sub_layers[0].sub_layer_parameters[0].cpb_size(true, 0, 1000, 1100, 20),
+            22_000
+        );
+        assert_eq!(
+            hrd_parameters.sub_layers[0].sub_layer_parameters[1].cpb_size(false, 0, 1000, 1100, 20),
             16
         );
         assert_eq!(
-            hrd_parameters.sub_layers[0].sub_layer_parameters[1].cpb_size(false, 0, 0, 0, 0),
-            16
-        );
-        assert_eq!(
-            hrd_parameters.sub_layers[0].sub_layer_parameters[1].cpb_size(true, 0, 0, 0, 0),
-            16
+            hrd_parameters.sub_layers[0].sub_layer_parameters[1].cpb_size(true, 0, 1000, 1100, 20),
+            20_000
         );
     }
 
@@ -658,37 +664,75 @@ mod tests {
         assert!(!hrd_parameters.sub_layers[0].sub_layer_parameters[1].cbr_flag);
 
         assert_eq!(
-            hrd_parameters.sub_layers[0].sub_layer_parameters[0].bit_rate(false, 0, 0, 0, 0),
+            hrd_parameters.sub_layers[0].sub_layer_parameters[0].bit_rate(false, 0, 1000, 1100, 10),
             64
         );
         assert_eq!(
-            hrd_parameters.sub_layers[0].sub_layer_parameters[0].bit_rate(true, 0, 0, 0, 0),
+            hrd_parameters.sub_layers[0].sub_layer_parameters[0].bit_rate(true, 0, 1000, 1100, 10),
             64
         );
         assert_eq!(
-            hrd_parameters.sub_layers[0].sub_layer_parameters[1].bit_rate(false, 0, 0, 0, 0),
+            hrd_parameters.sub_layers[0].sub_layer_parameters[1].bit_rate(false, 0, 1000, 1100, 10),
             64
         );
         assert_eq!(
-            hrd_parameters.sub_layers[0].sub_layer_parameters[1].bit_rate(true, 0, 0, 0, 0),
+            hrd_parameters.sub_layers[0].sub_layer_parameters[1].bit_rate(true, 0, 1000, 1100, 10),
             64
         );
 
         assert_eq!(
-            hrd_parameters.sub_layers[0].sub_layer_parameters[0].cpb_size(false, 0, 0, 0, 0),
+            hrd_parameters.sub_layers[0].sub_layer_parameters[0].cpb_size(false, 0, 1000, 1100, 20),
             16
         );
         assert_eq!(
-            hrd_parameters.sub_layers[0].sub_layer_parameters[0].cpb_size(true, 0, 0, 0, 0),
+            hrd_parameters.sub_layers[0].sub_layer_parameters[0].cpb_size(true, 0, 1000, 1100, 20),
             16
         );
         assert_eq!(
-            hrd_parameters.sub_layers[0].sub_layer_parameters[1].cpb_size(false, 0, 0, 0, 0),
+            hrd_parameters.sub_layers[0].sub_layer_parameters[1].cpb_size(false, 0, 1000, 1100, 20),
             16
         );
         assert_eq!(
-            hrd_parameters.sub_layers[0].sub_layer_parameters[1].cpb_size(true, 0, 0, 0, 0),
+            hrd_parameters.sub_layers[0].sub_layer_parameters[1].cpb_size(true, 0, 1000, 1100, 20),
             16
         );
+    }
+
+    #[test]
+    fn cpb_size_uses_cpb_size_fields_instead_of_bit_rate_fields() {
+        let mut data = Vec::new();
+        let mut bit_writer = BitWriter::new(&mut data);
+
+        bit_writer.write_bit(true).unwrap(); // nal_hrd_parameters_present_flag
+        bit_writer.write_bit(false).unwrap(); // vcl_hrd_parameters_present_flag
+        bit_writer.write_bit(true).unwrap(); // sub_pic_hrd_params_present_flag
+        bit_writer.write_u8(0).unwrap(); // tick_divisor_minus2
+        bit_writer.write_bits(0, 5).unwrap();
+        bit_writer.write_bit(false).unwrap();
+        bit_writer.write_bits(0, 5).unwrap();
+        bit_writer.write_bits(0, 4).unwrap(); // bit_rate_scale
+        bit_writer.write_bits(0, 4).unwrap(); // cpb_size_scale
+        bit_writer.write_bits(0, 4).unwrap(); // cpb_size_du_scale
+        bit_writer.write_bits(0, 5).unwrap();
+        bit_writer.write_bits(0, 5).unwrap();
+        bit_writer.write_bits(0, 5).unwrap();
+
+        bit_writer.write_bit(true).unwrap(); // fixed_pic_rate_general_flag
+        bit_writer.write_exp_golomb(0).unwrap(); // elemental_duration_in_tc_minus1
+        bit_writer.write_exp_golomb(0).unwrap(); // cpb_cnt_minus1
+
+        bit_writer.write_exp_golomb(99).unwrap(); // bit_rate_value_minus1
+        bit_writer.write_exp_golomb(4).unwrap(); // cpb_size_value_minus1 -> (4 + 1) * 16 = 80
+        bit_writer.write_exp_golomb(2).unwrap(); // cpb_size_du_value_minus1 -> (2 + 1) * 16 = 48
+        bit_writer.write_exp_golomb(49).unwrap(); // bit_rate_du_value_minus1
+        bit_writer.write_bit(false).unwrap(); // cbr_flag
+        bit_writer.finish().unwrap();
+
+        let hrd = HrdParameters::parse(&mut BitReader::new(&data[..]), true, 0).unwrap();
+        let params = &hrd.sub_layers[0].sub_layer_parameters[0];
+        assert_eq!(params.bit_rate(false, 0, 0, 0, 0), 6400);
+        assert_eq!(params.bit_rate(true, 0, 0, 0, 0), 3200);
+        assert_eq!(params.cpb_size(false, 0, 0, 0, 0), 80);
+        assert_eq!(params.cpb_size(true, 0, 0, 0, 0), 48);
     }
 }

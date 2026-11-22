@@ -50,7 +50,6 @@ use flv::script::ScriptData;
 use flv::tag::{FlvTag, FlvTagType};
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::cmp::max;
-use std::f64;
 use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};
 
@@ -188,32 +187,40 @@ impl TimingState {
         self.has_video = false;
     }
 
+    fn is_valid_frame_rate(fps: f64) -> bool {
+        fps.is_finite() && (1.0..=1000.0).contains(&fps)
+    }
+
+    fn is_valid_audio_rate(rate_hz: f64) -> bool {
+        rate_hz.is_finite() && (4000.0..=384_000.0).contains(&rate_hz)
+    }
+
     /// Calculate the video frame interval in milliseconds based on frame rate
     fn calculate_video_frame_interval(fps: f64) -> u32 {
-        if fps <= 0.0 {
+        if !Self::is_valid_frame_rate(fps) {
             return 33; // Default ~30fps
         }
-        // Round to nearest millisecond
+        // Round up to millisecond granularity
         f64::ceil(1000.0 / fps) as u32
     }
 
-    /// Calculate the audio sample interval in milliseconds based on sample rate
+    /// Calculate the AAC audio frame interval in milliseconds (`1024` samples/frame)
     fn calculate_audio_sample_interval(rate: f64) -> u32 {
-        if rate <= 0.0 {
-            return 23; // Default for 44.1kHz
+        if !Self::is_valid_audio_rate(rate) {
+            return 23; // Default for 44.1kHz AAC
         }
-        f64::ceil(1000.0 / (rate / 1000.0)) as u32
+        (1_024_000.0 / rate).round().max(1.0) as u32
     }
 
     fn update_frame_rate(&mut self, fps: f64) {
-        if fps > 0.0 {
+        if Self::is_valid_frame_rate(fps) {
             self.frame_rate = fps;
             self.video_frame_interval = Self::calculate_video_frame_interval(fps);
         }
     }
 
     fn update_audio_rate(&mut self, rate_hz: f64) {
-        if rate_hz > 0.0 {
+        if Self::is_valid_audio_rate(rate_hz) {
             self.audio_rate = rate_hz;
             self.audio_sample_interval = Self::calculate_audio_sample_interval(rate_hz);
         }
@@ -284,16 +291,8 @@ impl TimingState {
 
     /// Check if there's a discontinuity in timestamps
     fn is_timestamp_discontinuous(&self, tag: &FlvTag, config: &TimingRepairConfig) -> bool {
-        let Some(last_ts) = self.last_timestamp_ms else {
-            return false;
-        };
         let current = tag.timestamp_ms;
-
         let expected = Self::apply_delta(current, self.delta);
-
-        // Calculate the difference between expected and last timestamp
-        // Convert to i64 before subtraction to avoid overflow
-        let diff: i64 = (expected as i64) - (last_ts as i64);
 
         // Determine threshold based on media type, considering rounding errors
         let base_threshold = match tag.tag_type() {
@@ -308,21 +307,38 @@ impl TimingState {
             }
         };
 
-        // Add tolerance to account for rounding errors
-        let threshold = base_threshold + TOLERANCE;
+        // Add tolerance to account for rounding errors without risking u32 overflow
+        let threshold = base_threshold.saturating_add(TOLERANCE);
 
-        // For strict mode, check if difference is significantly different from expected interval
         match config.strategy {
             RepairStrategy::Strict => {
-                // In strict mode, we check if the timestamp differs from what we'd expect
-                if tag.is_video_tag() && self.last_video_timestamp_ms.is_some() {
-                    diff < 0 || diff > threshold.into()
+                if tag.is_video_tag() {
+                    let Some(last_video_ts) = self.last_video_timestamp_ms else {
+                        return false;
+                    };
+                    let video_diff = i64::from(expected) - i64::from(last_video_ts);
+                    video_diff < 0 || video_diff > i64::from(threshold)
+                } else if tag.is_audio_tag() {
+                    let Some(last_audio_ts) = self.last_audio_timestamp_ms else {
+                        return false;
+                    };
+                    let audio_diff = i64::from(expected) - i64::from(last_audio_ts);
+                    audio_diff < 0 || audio_diff > i64::from(threshold) * 2
                 } else {
-                    // For non-video tags or when no video history exists
-                    diff > threshold as i64 * 2 // More lenient for non-video
+                    let Some(last_ts) = self.last_timestamp_ms else {
+                        return false;
+                    };
+                    let diff = i64::from(expected) - i64::from(last_ts);
+                    diff > i64::from(threshold) * 2
                 }
             }
-            RepairStrategy::Relaxed => diff > config.max_discontinuity as i64,
+            RepairStrategy::Relaxed => {
+                let Some(last_ts) = self.last_timestamp_ms else {
+                    return false;
+                };
+                let diff = i64::from(expected) - i64::from(last_ts);
+                diff > i64::from(config.max_discontinuity)
+            }
         }
     }
 
@@ -428,10 +444,9 @@ impl TimingRepairOperator {
 
         let mut cursor = std::io::Cursor::new(tag.data().clone());
         if let Ok(amf_data) = ScriptData::demux(&mut cursor)
-            && amf_data.name == crate::AMF0_ON_METADATA
-            && !amf_data.data.is_empty()
+            && let Some(metadata) = crate::amf::on_metadata_value(&amf_data)
         {
-            if let Some(props) = amf_data.data[0].as_object_properties() {
+            if let Some(props) = metadata.as_object_properties() {
                 self.state.update_timing_params_from_metadata_props(props);
 
                 debug!(
@@ -440,7 +455,7 @@ impl TimingRepairOperator {
                     self.state.video_frame_interval,
                     self.state.audio_sample_interval
                 );
-            } else if let Some(items) = amf_data.data[0].as_array() {
+            } else if let Some(items) = metadata.as_array() {
                 debug!(
                     "{} TimingRepair: Received metadata as StrictArray with {} items",
                     self.context.name,
@@ -494,7 +509,7 @@ impl TimingRepairOperator {
                 error!(
                     "{} TimingRepair: Metadata format not supported: {:?}",
                     self.context.name,
-                    amf_data.data[0].marker()
+                    metadata.marker()
                 );
             }
         }
@@ -980,5 +995,122 @@ mod tests {
             max_diff < 500,
             "Audio and video should maintain reasonable sync"
         );
+    }
+
+    #[test]
+    fn validates_metadata_rates_and_computes_aac_frame_intervals() {
+        use std::borrow::Cow;
+
+        assert_eq!(TimingState::calculate_audio_sample_interval(48_000.0), 21);
+        assert_eq!(TimingState::calculate_audio_sample_interval(44_100.0), 23);
+        assert_eq!(TimingState::calculate_audio_sample_interval(16_000.0), 64);
+
+        for invalid_fps in [0.0, -30.0, 0.0001, 5_000.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(TimingState::calculate_video_frame_interval(invalid_fps), 33);
+        }
+        for invalid_hz in [0.0, -48_000.0, 500.0, 1_000_000.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(TimingState::calculate_audio_sample_interval(invalid_hz), 23);
+        }
+
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = TimingRepairOperator::new(
+            Arc::clone(&context),
+            TimingRepairConfig {
+                strategy: RepairStrategy::Strict,
+                ..Default::default()
+            },
+        );
+
+        let mut set_df = Vec::new();
+        amf0::Amf0Encoder::encode_string(&mut set_df, "@setDataFrame").unwrap();
+        amf0::Amf0Encoder::encode_string(&mut set_df, "onMetaData").unwrap();
+        amf0::Amf0Encoder::encode(
+            &mut set_df,
+            &Amf0Value::EcmaArray(Cow::Owned(vec![
+                (Cow::Borrowed("framerate"), Amf0Value::Number(60.0)),
+                (
+                    Cow::Borrowed("audiosamplerate"),
+                    Amf0Value::Number(48_000.0),
+                ),
+            ])),
+        )
+        .unwrap();
+        operator
+            .process(
+                &context,
+                FlvData::Tag(FlvTag::new(
+                    0,
+                    0,
+                    FlvTagType::ScriptData,
+                    false,
+                    bytes::Bytes::from(set_df),
+                )),
+                &mut |_| Ok(()),
+            )
+            .unwrap();
+        assert_eq!(operator.state.video_frame_interval, 17);
+        assert_eq!(operator.state.audio_sample_interval, 21);
+
+        // Bogus metadata rates must be ignored rather than corrupting or overflowing intervals.
+        let mut bogus = Vec::new();
+        amf0::Amf0Encoder::encode_string(&mut bogus, "onMetaData").unwrap();
+        amf0::Amf0Encoder::encode(
+            &mut bogus,
+            &Amf0Value::Object(Cow::Owned(vec![
+                (Cow::Borrowed("framerate"), Amf0Value::Number(0.000001)),
+                (
+                    Cow::Borrowed("audiosamplerate"),
+                    Amf0Value::Number(f64::NAN),
+                ),
+            ])),
+        )
+        .unwrap();
+        operator
+            .process(
+                &context,
+                FlvData::Tag(FlvTag::new(
+                    0,
+                    0,
+                    FlvTagType::ScriptData,
+                    false,
+                    bytes::Bytes::from(bogus),
+                )),
+                &mut |_| Ok(()),
+            )
+            .unwrap();
+        assert_eq!(operator.state.video_frame_interval, 17);
+        assert_eq!(operator.state.audio_sample_interval, 21);
+    }
+
+    #[test]
+    fn strict_mode_compares_each_track_against_its_own_previous_timestamp() {
+        // Audio slightly ahead of video in mux order (Audio @ 46ms before Video @ 33ms)
+        // is normal muxer interleaving, not a video rebound or discontinuity.
+        let input_tags = vec![
+            create_test_header(),
+            create_video_tag(0, true),
+            create_audio_tag(0),
+            create_audio_tag(23),
+            create_audio_tag(46),
+            create_video_tag(33, false),
+            create_video_tag(66, false),
+        ];
+
+        let results = process_tags_through_operator(
+            TimingRepairConfig {
+                strategy: RepairStrategy::Strict,
+                ..Default::default()
+            },
+            input_tags,
+        );
+
+        let timestamps: Vec<u32> = results
+            .iter()
+            .filter_map(|item| match item {
+                FlvData::Tag(tag) => Some(tag.timestamp_ms),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(timestamps, vec![0, 0, 23, 46, 33, 66]);
     }
 }

@@ -249,8 +249,8 @@ impl ScriptKeyframesFillerOperator {
                     tag.timestamp_ms
                 );
 
-                // Verify we have "onMetaData" with non-empty data array
-                if amf_data.name != crate::AMF0_ON_METADATA {
+                // Verify we have "onMetaData" / "@setDataFrame" metadata
+                if !crate::amf::is_on_metadata_script(&amf_data) {
                     warn!(
                         "{} Script tag name is not 'onMetaData', found: '{}'. Creating fallback.",
                         self.context.name, amf_data.name
@@ -258,21 +258,21 @@ impl ScriptKeyframesFillerOperator {
                     return self.add_keyframes_to_amf(self.create_fallback_tag(&tag));
                 }
 
-                if amf_data.data.is_empty() {
+                let Some(payload) = crate::amf::on_metadata_value(&amf_data) else {
                     warn!(
                         "{} onMetaData script tag has empty data array. Creating fallback.",
                         self.context.name
                     );
                     return self.add_keyframes_to_amf(self.create_fallback_tag(&tag));
-                }
+                };
 
-                // Check if first data item is an Object or EcmaArray
-                if let Some(props) = amf_data.data[0].as_object_properties() {
+                // Check if metadata item is an Object or EcmaArray
+                if let Some(props) = payload.as_object_properties() {
                     self.process_onmeta_object(props, &tag)
                 } else {
                     warn!(
                         "{} Unsupported AMF data type for keyframe injection: {:?}. Expected Object but found different type.",
-                        self.context.name, amf_data.data[0]
+                        self.context.name, payload
                     );
                     self.add_keyframes_to_amf(self.create_fallback_tag(&tag))
                 }
@@ -318,7 +318,24 @@ impl Processor<FlvData> for ScriptKeyframesFillerOperator {
             }
             FlvData::Tag(tag) if tag.tag_type() == FlvTagType::ScriptData => {
                 if !self.metadata_decided {
-                    debug!("{} Found first script tag. Modifying.", self.context.name);
+                    if tag.is_filtered() {
+                        return output(FlvData::Tag(tag));
+                    }
+                    let mut cursor = std::io::Cursor::new(tag.data().clone());
+                    if let Ok(script) = ScriptData::demux(&mut cursor)
+                        && crate::amf::is_non_metadata_script(&script)
+                    {
+                        debug!(
+                            "{} Preserving non-metadata script tag '{}' before onMetaData",
+                            self.context.name, script.name
+                        );
+                        return output(FlvData::Tag(tag));
+                    }
+
+                    debug!(
+                        "{} Found metadata script tag. Modifying.",
+                        self.context.name
+                    );
                     self.metadata_decided = true;
 
                     let inject_script = self.add_keyframes_to_amf(tag)?;
@@ -351,9 +368,10 @@ impl Processor<FlvData> for ScriptKeyframesFillerOperator {
             }
             FlvData::Tag(_) => output(input),
             // A split marker or end of stream closes the segment.
-            _ => {
+            other => {
                 self.release_held_sequence_tags(output)?;
-                output(input)
+                self.metadata_decided = false;
+                output(other)
             }
         }
     }
@@ -628,5 +646,79 @@ mod tests {
         } else {
             panic!("Expected script tag as second output item");
         }
+    }
+
+    #[test]
+    fn preserves_cue_points_and_injects_keyframes_into_set_data_frame_metadata() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator =
+            ScriptKeyframesFillerOperator::new(Arc::clone(&context), ScriptFillerConfig::default());
+
+        let mut cue_buf = Vec::new();
+        amf0::Amf0Encoder::encode_string(&mut cue_buf, "onCuePoint").unwrap();
+        amf0::Amf0Encoder::encode(
+            &mut cue_buf,
+            &Amf0Value::Object(Cow::Owned(vec![(
+                Cow::Borrowed("name"),
+                Amf0Value::String(Cow::Borrowed("marker-1")),
+            )])),
+        )
+        .unwrap();
+        let cue_tag = FlvTag::new(0, 0, FlvTagType::ScriptData, false, Bytes::from(cue_buf));
+
+        let mut set_df_buf = Vec::new();
+        amf0::Amf0Encoder::encode_string(&mut set_df_buf, "@setDataFrame").unwrap();
+        amf0::Amf0Encoder::encode_string(&mut set_df_buf, "onMetaData").unwrap();
+        amf0::Amf0Encoder::encode(
+            &mut set_df_buf,
+            &Amf0Value::EcmaArray(Cow::Owned(vec![
+                (Cow::Borrowed("width"), Amf0Value::Number(1920.0)),
+                (
+                    Cow::Borrowed("encoder"),
+                    Amf0Value::String(Cow::Borrowed("obs")),
+                ),
+            ])),
+        )
+        .unwrap();
+        let set_df_tag = FlvTag::new(0, 0, FlvTagType::ScriptData, false, Bytes::from(set_df_buf));
+
+        let mut out = Vec::new();
+        for item in [
+            FlvData::Header(FlvHeader::new(true, true)),
+            FlvData::Tag(cue_tag.clone()),
+            FlvData::Tag(set_df_tag),
+            test_utils::create_video_tag(10, true),
+        ] {
+            operator
+                .process(&context, item, &mut |item| {
+                    out.push(item);
+                    Ok(())
+                })
+                .unwrap();
+        }
+
+        assert_eq!(out.len(), 4);
+        assert_eq!(out[1], FlvData::Tag(cue_tag));
+        let FlvData::Tag(ref rewritten_meta) = out[2] else {
+            panic!("expected rewritten metadata tag");
+        };
+        assert!(extract_keyframes(rewritten_meta).is_some());
+        let mut cursor = std::io::Cursor::new(rewritten_meta.data().clone());
+        let script = ScriptData::demux(&mut cursor).unwrap();
+        let props = script.data[0].as_object_properties().unwrap();
+        assert_eq!(
+            props
+                .iter()
+                .find(|(k, _)| k.as_ref() == "width")
+                .map(|(_, v)| v),
+            Some(&Amf0Value::Number(1920.0))
+        );
+        assert_eq!(
+            props
+                .iter()
+                .find(|(k, _)| k.as_ref() == "encoder")
+                .map(|(_, v)| v),
+            Some(&Amf0Value::String(Cow::Borrowed("obs")))
+        );
     }
 }

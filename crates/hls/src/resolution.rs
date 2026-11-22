@@ -32,6 +32,7 @@ struct VideoProbe {
     stream_type: StreamType,
     current_pes: BytesMut,
     expected_pes_len: Option<usize>,
+    pes_scan_offset: usize,
     in_pes: bool,
 }
 
@@ -57,6 +58,7 @@ impl StreamingResolutionDetector {
             stream_type,
             current_pes: BytesMut::with_capacity(4096),
             expected_pes_len: None,
+            pes_scan_offset: 0,
             in_pes: false,
         });
     }
@@ -99,13 +101,7 @@ impl VideoProbe {
             self.in_pes = true;
             self.expected_pes_len = Self::expected_pes_len(payload);
             self.current_pes.clear();
-            if let Some(expected) = self.expected_pes_len {
-                self.current_pes.reserve(
-                    expected
-                        .min(StreamingResolutionDetector::MAX_PES_PROBE_BYTES)
-                        .saturating_sub(self.current_pes.capacity()),
-                );
-            }
+            self.pes_scan_offset = 0;
             self.append_payload(payload);
             if previous_resolution.is_some() {
                 return previous_resolution;
@@ -114,14 +110,44 @@ impl VideoProbe {
             self.append_payload(payload);
         }
 
-        if self
-            .expected_pes_len
-            .is_some_and(|expected| self.current_pes.len() >= expected)
-        {
-            return self.finish();
+        if self.in_pes {
+            // SPS NAL units always precede VCL slice data within an access unit
+            // (ITU-T H.264 §7.4.1.2.3, H.265 §7.4.2.4.4). Once a VCL start code
+            // or the probe byte cap is reached, inspect the prefix collected so
+            // far and stop buffering the rest of this PES packet.
+            if self.reached_vcl_slice()
+                || self.current_pes.len() >= StreamingResolutionDetector::MAX_PES_PROBE_BYTES
+                || self
+                    .expected_pes_len
+                    .is_some_and(|expected| self.current_pes.len() >= expected)
+            {
+                return self.finish();
+            }
         }
 
         None
+    }
+
+    fn reached_vcl_slice(&mut self) -> bool {
+        let Ok(header) = PesHeader::parse(&self.current_pes) else {
+            return false;
+        };
+        if header.payload_offset >= self.current_pes.len() {
+            return false;
+        }
+
+        let scan_from = self.pes_scan_offset.max(header.payload_offset);
+        if ResolutionDetector::contains_vcl_nalu(&self.current_pes[scan_from..], self.stream_type) {
+            return true;
+        }
+        // Retain up to 5 trailing bytes so a 4-byte start code plus 2-byte HEVC
+        // NAL unit header split across TS packets is examined on the next push.
+        self.pes_scan_offset = self
+            .current_pes
+            .len()
+            .saturating_sub(5)
+            .max(header.payload_offset);
+        false
     }
 
     fn append_payload(&mut self, payload: &[u8]) {
@@ -146,6 +172,7 @@ impl VideoProbe {
             .flatten();
         self.current_pes.clear();
         self.expected_pes_len = None;
+        self.pes_scan_offset = 0;
         self.in_pes = false;
         resolution
     }
@@ -268,8 +295,8 @@ impl ResolutionDetector {
                 let sps_data = &data[nal_start..nal_end];
                 if let Ok(sps) = h265::SpsNALUnit::parse(std::io::Cursor::new(sps_data)) {
                     return Some(Resolution::new(
-                        sps.rbsp.pic_width_in_luma_samples.get() as u32,
-                        sps.rbsp.pic_height_in_luma_samples.get() as u32,
+                        sps.rbsp.cropped_width() as u32,
+                        sps.rbsp.cropped_height() as u32,
                     ));
                 }
             }
@@ -322,6 +349,61 @@ impl ResolutionDetector {
         } else {
             None
         }
+    }
+
+    /// Check whether an Annex B elementary-stream slice contains any VCL slice
+    /// NAL unit (`1..=5` for H.264, `0..=31` for H.265).
+    fn contains_vcl_nalu(data: &[u8], stream_type: StreamType) -> bool {
+        let mut pos = 0;
+
+        while pos + 3 < data.len() {
+            let Some(rel) = memchr(0x00, &data[pos..]) else {
+                break;
+            };
+            let zero_pos = pos + rel;
+
+            let (nal_start, start_code_len) =
+                if zero_pos + 3 < data.len() && data[zero_pos + 1] == 0x00 {
+                    if data[zero_pos + 2] == 0x01 {
+                        (zero_pos + 3, 3)
+                    } else if zero_pos + 4 < data.len()
+                        && data[zero_pos + 2] == 0x00
+                        && data[zero_pos + 3] == 0x01
+                    {
+                        (zero_pos + 4, 4)
+                    } else {
+                        pos = zero_pos + 1;
+                        continue;
+                    }
+                } else {
+                    pos = zero_pos + 1;
+                    continue;
+                };
+
+            match stream_type {
+                StreamType::H264 => {
+                    let nal_header = data[nal_start];
+                    if nal_header & 0x80 == 0 && (1..=5).contains(&(nal_header & 0x1F)) {
+                        return true;
+                    }
+                }
+                StreamType::H265 => {
+                    if nal_start + 1 < data.len() {
+                        let nal_header = data[nal_start];
+                        let nuh_tid_plus1 = data[nal_start + 1] & 0x07;
+                        let nal_type = (nal_header & 0x7E) >> 1;
+                        if nal_header & 0x80 == 0 && nuh_tid_plus1 != 0 && nal_type <= 31 {
+                            return true;
+                        }
+                    }
+                }
+                _ => return false,
+            }
+
+            pos = zero_pos + start_code_len;
+        }
+
+        false
     }
 }
 
@@ -450,6 +532,7 @@ mod tests {
             stream_type: StreamType::H264,
             current_pes: BytesMut::new(),
             expected_pes_len: None,
+            pes_scan_offset: 0,
             in_pes: true,
         };
         probe.append_payload(&first_payload);
@@ -460,5 +543,93 @@ mod tests {
             StreamingResolutionDetector::MAX_PES_PROBE_BYTES
         );
         assert_eq!(probe.finish(), Some(expected));
+    }
+
+    #[test]
+    fn hevc_sps_reports_conformance_cropped_1080p_dimensions() {
+        // Real OBS 1080p HEVC SPS: coded 1920x1088 luma samples with bottom conformance crop of 8.
+        let sps_1080p = b"\x42\x01\x01\x01\x40\x00\x00\x03\x00\x90\x00\x00\x03\x00\x00\x03\x00\x78\xa0\x03\xc0\x80\x11\x07\xcb\x96\xb4\xa4\x25\x92\xe3\x01\x6a\x02\x02\x02\x08\x00\x00\x03\x00\x08\x00\x00\x03\x00\xf3\x00\x2e\xf2\x88\x00\x02\x62\x5a\x00\x00\x13\x12\xd0\x20";
+        let mut annex_b = vec![0, 0, 0, 1];
+        annex_b.extend_from_slice(sps_1080p);
+        assert_eq!(
+            ResolutionDetector::scan_payload_for_sps(&annex_b, StreamType::H265),
+            Some(Resolution::new(1920, 1080))
+        );
+    }
+
+    #[test]
+    fn video_probe_stops_buffering_pes_once_vcl_slice_is_reached() {
+        fn ts_packet(pid: u16, pusi: bool, counter: u8, payload: &[u8]) -> bytes::Bytes {
+            assert!(payload.len() <= 184);
+            let mut pkt = vec![0xffu8; 188];
+            let pusi_bit = if pusi { 0x40 } else { 0x00 };
+            let adaptation_len = 184 - payload.len();
+            pkt[0] = 0x47;
+            pkt[1] = pusi_bit | ((pid >> 8) as u8 & 0x1f);
+            pkt[2] = pid as u8;
+            if adaptation_len == 0 {
+                pkt[3] = 0x10 | (counter & 0x0f);
+                pkt[4..].copy_from_slice(payload);
+            } else {
+                pkt[3] = 0x30 | (counter & 0x0f);
+                pkt[4] = (adaptation_len - 1) as u8;
+                if adaptation_len > 1 {
+                    pkt[5] = 0x00;
+                }
+                pkt[4 + adaptation_len..].copy_from_slice(payload);
+            }
+            bytes::Bytes::from(pkt)
+        }
+
+        let mut probe = VideoProbe {
+            pid: 0x0100,
+            stream_type: StreamType::H264,
+            current_pes: BytesMut::with_capacity(4096),
+            expected_pes_len: None,
+            pes_scan_offset: 0,
+            in_pes: false,
+        };
+
+        // Non-IDR PES: PES header + AUD (type 9) + non-IDR slice (type 1 = 0x41).
+        let mut p_frame_start = vec![0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x00, 0x00];
+        p_frame_start.extend_from_slice(&[0x00, 0x00, 0x00, 0x01, 0x09, 0xF0]);
+        p_frame_start.extend_from_slice(&[0x00, 0x00, 0x00, 0x01, 0x41, 0x9A, 0x24]);
+        let pkt1_bytes = ts_packet(0x0100, true, 0, &p_frame_start);
+        let pkt1 = TsPacketRef::parse(pkt1_bytes).unwrap();
+        assert_eq!(probe.push_packet(&pkt1), None);
+        assert!(!probe.in_pes);
+        assert!(probe.current_pes.is_empty());
+
+        // Subsequent slice continuation packets are not copied into current_pes.
+        let pkt2_bytes = ts_packet(0x0100, false, 1, &[0xAB; 184]);
+        let pkt2 = TsPacketRef::parse(pkt2_bytes).unwrap();
+        assert_eq!(probe.push_packet(&pkt2), None);
+        assert!(probe.current_pes.is_empty());
+
+        // Fragmented SPS before an IDR slice (type 5 = 0x65) is still reassembled and parsed.
+        let sps = [
+            0x67, 0x42, 0xc0, 0x1e, 0xda, 0x02, 0x80, 0xb6, 0xc0, 0x44, 0x00, 0x00, 0x03, 0x00,
+            0x04, 0x00, 0x00, 0x03, 0x00, 0xc8, 0x3c, 0x58, 0xba, 0x80,
+        ];
+        let mut idr_part1 = vec![0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x00, 0x00];
+        idr_part1.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
+        idr_part1.extend_from_slice(&sps[..10]);
+
+        let mut idr_part2 = sps[10..].to_vec();
+        idr_part2.extend_from_slice(&[0x00, 0x00, 0x00, 0x01, 0x68, 0xCE, 0x3C, 0x80]);
+        idr_part2.extend_from_slice(&[0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x84]);
+
+        let idr_pkt1_bytes = ts_packet(0x0100, true, 2, &idr_part1);
+        let idr_pkt1 = TsPacketRef::parse(idr_pkt1_bytes).unwrap();
+        assert_eq!(probe.push_packet(&idr_pkt1), None);
+        assert!(probe.in_pes);
+
+        let idr_pkt2_bytes = ts_packet(0x0100, false, 3, &idr_part2);
+        let idr_pkt2 = TsPacketRef::parse(idr_pkt2_bytes).unwrap();
+        assert_eq!(
+            probe.push_packet(&idr_pkt2),
+            Some(Resolution::new(640, 352))
+        );
+        assert!(!probe.in_pes);
     }
 }

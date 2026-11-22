@@ -58,6 +58,12 @@ pub trait BitReaderExpGolombExt {
     /// Reads a signed Exp-Golomb encoded number
     fn read_signed_exp_golomb(&mut self) -> io::Result<i64> {
         let exp_glob = self.read_exp_golomb()?;
+        if exp_glob == u64::MAX {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "signed Exp-Golomb codeword overflows i64",
+            ));
+        }
 
         if exp_glob % 2 == 0 {
             Ok(-((exp_glob / 2) as i64))
@@ -69,18 +75,30 @@ pub trait BitReaderExpGolombExt {
 
 impl<R: io::Read> BitReaderExpGolombExt for BitReader<R> {
     fn read_exp_golomb(&mut self) -> io::Result<u64> {
-        let mut leading_zeros = 0;
+        let mut leading_zeros: u32 = 0;
         while !self.read_bit()? {
             leading_zeros += 1;
+            if leading_zeros > 63 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Exp-Golomb leading zeros exceed 64-bit limit",
+                ));
+            }
         }
 
-        let mut result = 1;
-        for _ in 0..leading_zeros {
-            result <<= 1;
-            result |= self.read_bit()? as u64;
+        if leading_zeros == 0 {
+            return Ok(0);
         }
 
-        Ok(result - 1)
+        let suffix = self.read_bits(leading_zeros as u8)?;
+        ((1u64 << leading_zeros) - 1)
+            .checked_add(suffix)
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Exp-Golomb codeword overflows u64",
+                )
+            })
     }
 }
 
@@ -95,30 +113,38 @@ pub trait BitWriterExpGolombExt {
 
     /// Writes a signed Exp-Golomb encoded number
     fn write_signed_exp_golomb(&mut self, number: i64) -> io::Result<()> {
-        let number = if number <= 0 {
-            -number as u64 * 2
+        let mapped = if number <= 0 {
+            number.unsigned_abs().checked_mul(2)
         } else {
-            number as u64 * 2 - 1
-        };
+            (number as u64).checked_mul(2).map(|v| v - 1)
+        }
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "signed Exp-Golomb value exceeds 64-bit codeword range",
+            )
+        })?;
 
-        self.write_exp_golomb(number)
+        self.write_exp_golomb(mapped)
     }
 }
 
 impl<W: io::Write> BitWriterExpGolombExt for BitWriter<W> {
     fn write_exp_golomb(&mut self, input: u64) -> io::Result<()> {
-        let mut number = input + 1;
-        let mut leading_zeros = 0;
-        while number > 1 {
-            number >>= 1;
-            leading_zeros += 1;
-        }
+        let value = input.checked_add(1).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Exp-Golomb value u64::MAX exceeds 64-bit codeword range",
+            )
+        })?;
+
+        let leading_zeros = (u64::BITS - 1 - value.leading_zeros()) as u8;
 
         for _ in 0..leading_zeros {
             self.write_bit(false)?;
         }
 
-        self.write_bits(input + 1, leading_zeros + 1)?;
+        self.write_bits(value, leading_zeros + 1)?;
 
         Ok(())
     }
@@ -128,26 +154,25 @@ impl<W: io::Write> BitWriterExpGolombExt for BitWriter<W> {
 ///
 /// See: <https://en.wikipedia.org/wiki/Exponential-Golomb_coding>
 pub fn size_of_signed_exp_golomb(number: i64) -> u64 {
-    let number = if number <= 0 {
-        -number as u64 * 2
+    let mapped = if number <= 0 {
+        u128::from(number.unsigned_abs()) * 2
     } else {
-        number as u64 * 2 - 1
+        u128::from(number.unsigned_abs()) * 2 - 1
     };
 
-    size_of_exp_golomb(number)
+    size_of_exp_golomb_u128(mapped)
 }
 
 /// Returns the number of bits that an Exp-Golomb encoded number would take up.
 ///
 /// See: <https://en.wikipedia.org/wiki/Exponential-Golomb_coding>
 pub fn size_of_exp_golomb(number: u64) -> u64 {
-    let mut number = number + 1;
-    let mut leading_zeros = 0;
-    while number > 1 {
-        number >>= 1;
-        leading_zeros += 1;
-    }
+    size_of_exp_golomb_u128(u128::from(number))
+}
 
+fn size_of_exp_golomb_u128(number: u128) -> u64 {
+    let value = number + 1;
+    let leading_zeros = u64::from((u128::BITS - 1) - value.leading_zeros());
     leading_zeros * 2 + 1
 }
 
@@ -386,5 +411,57 @@ mod tests {
         assert_eq!(5, size_of_signed_exp_golomb(-2)); // 0b00101
         assert_eq!(5, size_of_signed_exp_golomb(3)); // 0b00110
         assert_eq!(5, size_of_signed_exp_golomb(-3)); // 0b00111
+        assert_eq!(129, size_of_exp_golomb(u64::MAX));
+        assert_eq!(129, size_of_signed_exp_golomb(i64::MIN));
+    }
+
+    #[test]
+    fn rejects_overlong_codewords_and_extreme_writes_without_overflow() {
+        use std::io;
+
+        // 64 leading zeros followed by a 1 bit exceeds 64-bit unsigned Exp-Golomb range.
+        let mut bytes = vec![0u8; 8];
+        bytes.push(0x80);
+        let mut reader = BitReader::new(io::Cursor::new(&bytes));
+        assert_eq!(
+            reader.read_exp_golomb().unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+
+        let mut reader = BitReader::new(io::Cursor::new(&bytes));
+        assert_eq!(
+            reader.read_signed_exp_golomb().unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+
+        struct MaxUnsignedReader;
+        impl BitReaderExpGolombExt for MaxUnsignedReader {
+            fn read_exp_golomb(&mut self) -> io::Result<u64> {
+                Ok(u64::MAX)
+            }
+        }
+        assert_eq!(
+            MaxUnsignedReader
+                .read_signed_exp_golomb()
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidData
+        );
+
+        let mut writer = BitWriter::<Vec<u8>>::default();
+        assert_eq!(
+            writer.write_exp_golomb(u64::MAX).unwrap_err().kind(),
+            io::ErrorKind::InvalidInput
+        );
+        assert_eq!(
+            writer.write_signed_exp_golomb(i64::MIN).unwrap_err().kind(),
+            io::ErrorKind::InvalidInput
+        );
+
+        // i64::MIN + 1 (-i64::MAX) maps to u64::MAX - 1, the largest valid 64-bit codeword.
+        writer.write_signed_exp_golomb(i64::MIN + 1).unwrap();
+        let encoded = writer.finish().unwrap();
+        let mut reader = BitReader::new(io::Cursor::new(encoded));
+        assert_eq!(reader.read_signed_exp_golomb().unwrap(), i64::MIN + 1);
     }
 }

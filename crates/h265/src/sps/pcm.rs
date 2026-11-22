@@ -48,7 +48,14 @@ impl Pcm {
         }
 
         let log2_min_pcm_luma_coding_block_size_minus3 = bit_reader.read_exp_golomb()?;
-        let log2_min_ipcm_cb_size_y = log2_min_pcm_luma_coding_block_size_minus3 + 3;
+        let log2_min_ipcm_cb_size_y = log2_min_pcm_luma_coding_block_size_minus3
+            .checked_add(3)
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "log2_min_pcm_luma_coding_block_size_minus3 overflows u64",
+                )
+            })?;
         range_check!(
             log2_min_ipcm_cb_size_y,
             min_cb_log2_size_y.min(5),
@@ -56,8 +63,14 @@ impl Pcm {
         )?;
 
         let log2_diff_max_min_pcm_luma_coding_block_size = bit_reader.read_exp_golomb()?;
-        let log2_max_ipcm_cb_size_y =
-            log2_diff_max_min_pcm_luma_coding_block_size + log2_min_ipcm_cb_size_y;
+        let log2_max_ipcm_cb_size_y = log2_diff_max_min_pcm_luma_coding_block_size
+            .checked_add(log2_min_ipcm_cb_size_y)
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "log2_diff_max_min_pcm_luma_coding_block_size overflows u64",
+                )
+            })?;
         if log2_max_ipcm_cb_size_y > ctb_log2_size_y.min(5) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -82,7 +95,7 @@ impl Pcm {
     ///
     /// ISO/IEC 23008-2 - 7.4.3.2.1
     pub fn pcm_bit_depth_y(&self) -> u8 {
-        self.pcm_sample_bit_depth_luma_minus1 + 1
+        self.pcm_sample_bit_depth_luma_minus1.saturating_add(1)
     }
 
     /// Specifies the number of bits used to represent each of PCM sample values of the chroma components.
@@ -94,7 +107,7 @@ impl Pcm {
     ///
     /// ISO/IEC 23008-2 - 7.4.3.2.1
     pub fn pcm_bit_depth_c(&self) -> u8 {
-        self.pcm_sample_bit_depth_chroma_minus1 + 1
+        self.pcm_sample_bit_depth_chroma_minus1.saturating_add(1)
     }
 
     /// The value is range
@@ -104,7 +117,8 @@ impl Pcm {
     ///
     /// ISO/IEC 23008-2 - 7.4.3.2.1
     pub fn log2_min_ipcm_cb_size_y(&self) -> u64 {
-        self.log2_min_pcm_luma_coding_block_size_minus3 + 3
+        self.log2_min_pcm_luma_coding_block_size_minus3
+            .saturating_add(3)
     }
 
     /// The value is less than or equal to [`Min(CtbLog2SizeY, 5)`](crate::SpsRbsp::ctb_log2_size_y).
@@ -113,6 +127,7 @@ impl Pcm {
     ///
     /// ISO/IEC 23008-2 - 7.4.3.2.1
     pub fn log2_max_ipcm_cb_size_y(&self) -> u64 {
-        self.log2_diff_max_min_pcm_luma_coding_block_size + self.log2_min_ipcm_cb_size_y()
+        self.log2_diff_max_min_pcm_luma_coding_block_size
+            .saturating_add(self.log2_min_ipcm_cb_size_y())
     }
 }

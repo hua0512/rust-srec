@@ -1,6 +1,6 @@
 use std::io;
 
-use bytes_util::{BitReader, BitWriter};
+use bytes_util::{BitReader, BitWriter, range_check};
 use expgolomb::{
     BitReaderExpGolombExt, BitWriterExpGolombExt, size_of_exp_golomb, size_of_signed_exp_golomb,
 };
@@ -101,15 +101,21 @@ impl SpsExtended {
     /// Parses an extended SPS from a bitstream.
     /// Returns an `SpsExtended` struct.
     pub fn parse<T: io::Read>(reader: &mut BitReader<T>) -> io::Result<Self> {
-        let chroma_format_idc = reader.read_exp_golomb()? as u8;
+        let chroma_format_idc_raw = reader.read_exp_golomb()?;
+        range_check!(chroma_format_idc_raw, 0, 3)?;
+        let chroma_format_idc = chroma_format_idc_raw as u8;
         // Defaults to false: ISO/IEC-14496-10-2022 - 7.4.2.1.1
         let mut separate_color_plane_flag = false;
         if chroma_format_idc == 3 {
             separate_color_plane_flag = reader.read_bit()?;
         }
 
-        let bit_depth_luma_minus8 = reader.read_exp_golomb()? as u8;
-        let bit_depth_chroma_minus8 = reader.read_exp_golomb()? as u8;
+        let bit_depth_luma_minus8_raw = reader.read_exp_golomb()?;
+        range_check!(bit_depth_luma_minus8_raw, 0, 6)?;
+        let bit_depth_luma_minus8 = bit_depth_luma_minus8_raw as u8;
+        let bit_depth_chroma_minus8_raw = reader.read_exp_golomb()?;
+        range_check!(bit_depth_chroma_minus8_raw, 0, 6)?;
+        let bit_depth_chroma_minus8 = bit_depth_chroma_minus8_raw as u8;
         let qpprime_y_zero_transform_bypass_flag = reader.read_bit()?;
         let seq_scaling_matrix_present_flag = reader.read_bit()?;
         let mut scaling_matrix: Vec<Vec<i64>> = vec![];
@@ -126,6 +132,7 @@ impl SpsExtended {
                     let mut next_scale = 8;
                     for _ in 0..size {
                         let delta_scale = reader.read_signed_exp_golomb()?;
+                        range_check!(delta_scale, -128, 127)?;
                         scaling_matrix[i].push(delta_scale);
                         next_scale = (next_scale + delta_scale + 256) % 256;
                         if next_scale == 0 {
@@ -333,5 +340,25 @@ mod tests {
         // now we can check the size:
         assert_eq!(rebuilt_sps_ext.bitsize(), sps_ext.bitsize());
         assert_eq!(rebuilt_sps_ext.bytesize(), sps_ext.bytesize());
+    }
+
+    #[test]
+    fn rejects_out_of_range_delta_scale() {
+        for bad_delta in [-129i64, 128] {
+            let mut data = Vec::new();
+            let mut writer = BitWriter::new(&mut data);
+            writer.write_exp_golomb(1).unwrap(); // chroma_format_idc
+            writer.write_exp_golomb(0).unwrap(); // bit_depth_luma_minus8
+            writer.write_exp_golomb(0).unwrap(); // bit_depth_chroma_minus8
+            writer.write_bit(false).unwrap(); // qpprime_y_zero_transform_bypass_flag
+            writer.write_bit(true).unwrap(); // seq_scaling_matrix_present_flag
+            writer.write_bit(true).unwrap(); // first scaling list present
+            writer.write_signed_exp_golomb(bad_delta).unwrap();
+            writer.finish().unwrap();
+
+            let mut reader = BitReader::new_from_slice(&data);
+            let err = SpsExtended::parse(&mut reader).unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        }
     }
 }
