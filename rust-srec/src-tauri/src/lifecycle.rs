@@ -232,6 +232,12 @@ impl DesktopBackendState {
         self.container.lock().ok().and_then(|c| c.clone())
     }
 
+    /// A receiver of the boot task's progress, for work that must wait until
+    /// the boot task has returned.
+    pub(crate) fn boot_phase(&self) -> tokio::sync::watch::Receiver<BootPhase> {
+        self.boot_phase.clone()
+    }
+
     pub(crate) fn window_state(&self) -> Option<WindowState> {
         self.window_state.lock().ok().and_then(|s| s.clone())
     }

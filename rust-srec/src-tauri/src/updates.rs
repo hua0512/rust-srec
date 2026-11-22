@@ -1,10 +1,10 @@
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
 
 use crate::DesktopBackendState;
 use crate::desktop_settings::{BackendMode, DesktopSettings};
+use crate::lifecycle::BootPhase;
 
 pub const EVENT_DESKTOP_UPDATE_AVAILABLE: &str = "rust-srec://desktop-update-available";
 
@@ -12,6 +12,12 @@ const GITHUB_RELEASES_API_URL: &str =
     "https://api.github.com/repos/hua0512/rust-srec/releases?per_page=50";
 const RELEASE_TAG_PREFIX: &str = "rust-srec-v";
 const UPDATE_CHECK_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long a check made in local mode waits for the built-in backend to
+/// finish starting, since only the started backend can say which proxy to
+/// use. Starting includes database migrations, which can be slow on a large
+/// database after an upgrade; a boot still running after this is reported as
+/// such, and the user can check again.
+const UPDATE_CHECK_BOOT_WAIT: Duration = Duration::from_secs(60);
 const MAX_NOTES_EXCERPT_CHARS: usize = 400;
 /// Upper bound on the release-list body. Fifty releases with their asset lists
 /// come to about 1.5 MB, so this leaves room to grow while refusing an
@@ -132,32 +138,56 @@ pub fn select_latest_release(
     })
 }
 
-/// The client the update check connects with: the local backend's global
-/// route (the **Default proxy** setting), else the system proxy. Remote mode
-/// has no local backend, and in local mode a check made before the backend
-/// has started, or after it failed to start, takes the system proxy rather
-/// than waiting for it. A global route naming a saved proxy that no longer
-/// exists fails the check rather than connecting directly.
-async fn update_check_client(app: &tauri::AppHandle) -> Result<reqwest::Client, String> {
-    let backend = app.try_state::<DesktopBackendState>().and_then(|state| {
+/// The client the update check connects with, chosen by
+/// [`rust_srec::backend::release_check_client`] from the backend whose
+/// settings apply:
+///
+/// - Remote mode has no built-in backend and no proxy settings to read.
+/// - In local mode the check first waits, for at most
+///   [`UPDATE_CHECK_BOOT_WAIT`], until the boot task has returned (or its
+///   sender is gone), so a check made during startup does not go out before
+///   the settings can be read. A boot still running after the wait fails the
+///   check without making a request. The boot task stores the backend before
+///   it looks at the outcome of its start, so most failed starts still have
+///   one; only a start that failed before its services existed has none.
+async fn update_check_client(state: &DesktopBackendState) -> Result<reqwest::Client, String> {
+    let backend = if state.active_backend_mode == BackendMode::Remote {
+        None
+    } else {
+        let mut boot_phase = state.boot_phase();
+        match tokio::time::timeout(
+            UPDATE_CHECK_BOOT_WAIT,
+            boot_phase.wait_for(|phase| *phase == BootPhase::Settled),
+        )
+        .await
+        {
+            // A dropped sender means the boot task has ended, which is what
+            // the wait is for.
+            Ok(Ok(_)) | Ok(Err(_)) => {}
+            Err(_) => return Err("The built-in backend is still starting".to_string()),
+        }
         let backend = state.backend();
-        if backend.is_none() && state.active_backend_mode == BackendMode::Local {
-            log::info!("Local backend is not running; checking for updates over the system proxy");
+        if backend.is_none() {
+            log::info!(
+                "Built-in backend did not start; checking for updates over the system proxy"
+            );
         }
         backend
-    });
-    let client = match backend {
-        Some(backend) => backend.service_client().await,
-        None => rust_srec::backend::system_service_client(),
     };
-    client.map_err(|error| format!("Failed to initialize HTTP client: {error}"))
+
+    rust_srec::backend::release_check_client(backend.as_deref())
+        .await
+        .map_err(|error| match backend {
+            Some(_) => format!("Proxy route unavailable: {error}"),
+            None => format!("Failed to initialize HTTP client: {error}"),
+        })
 }
 
-pub async fn fetch_update_info(app: &tauri::AppHandle) -> Result<DesktopUpdateInfo, String> {
+pub async fn fetch_update_info(state: &DesktopBackendState) -> Result<DesktopUpdateInfo, String> {
     rust_srec::backend::install_rustls_provider();
 
     let current_version = env!("CARGO_PKG_VERSION");
-    let client = update_check_client(app).await?;
+    let client = update_check_client(state).await?;
 
     let mut response = client
         .get(GITHUB_RELEASES_API_URL)
@@ -202,8 +232,10 @@ pub async fn fetch_update_info(app: &tauri::AppHandle) -> Result<DesktopUpdateIn
 }
 
 #[tauri::command]
-pub async fn check_for_updates(app: tauri::AppHandle) -> Result<DesktopUpdateInfo, String> {
-    fetch_update_info(&app).await
+pub async fn check_for_updates(
+    state: tauri::State<'_, DesktopBackendState>,
+) -> Result<DesktopUpdateInfo, String> {
+    fetch_update_info(&state).await
 }
 
 #[tauri::command]
