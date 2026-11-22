@@ -225,22 +225,26 @@ pub async fn process_pipe_stream<D, S>(
     pipeline_config: &PipelineConfig,
     strategy: S,
     extension: &str,
+    token: CancellationToken,
 ) -> Result<PipeStreamStats, AppError>
 where
     D: Send + 'static,
     S: FormatStrategy<D>,
     S::Writer: Send,
 {
-    let token = CancellationToken::new();
     let (tx, rx) = tokio::sync::mpsc::channel(pipeline_config.channel_size);
     let writer_task = spawn_pipe_writer_task(rx.into(), strategy, extension, token.clone());
 
     let mut stream = stream;
-    while let Some(item_result) = stream.next().await {
-        // Check if cancellation was requested (e.g., broken pipe)
-        if token.is_cancelled() {
-            break;
-        }
+    loop {
+        let item_result = tokio::select! {
+            biased;
+            _ = token.cancelled() => break,
+            next = stream.next() => match next {
+                Some(item) => item,
+                None => break,
+            },
+        };
         if tx.send(item_result).await.is_err() {
             break;
         }
@@ -259,6 +263,7 @@ pub async fn process_pipe_stream_with_processing<P, S>(
     pipeline_type_config: P::Config,
     strategy: S,
     extension: &str,
+    token: CancellationToken,
 ) -> Result<PipeStreamStats, AppError>
 where
     P: PipelineProvider,
@@ -267,8 +272,6 @@ where
     S: FormatStrategy<P::Item>,
     S::Writer: Send,
 {
-    // Create a shared cancellation token for the entire pipe processing chain
-    let token = CancellationToken::new();
     let context = Arc::new(StreamerContext::new(token.clone()));
     let pipeline_provider = P::with_config(context, pipeline_config, pipeline_type_config);
     let pipeline = pipeline_provider.build_pipeline();
@@ -283,11 +286,15 @@ where
     let writer_task = spawn_pipe_writer_task(output_rx, strategy, extension, token.clone());
 
     let mut stream = stream;
-    while let Some(item_result) = stream.next().await {
-        // Check if cancellation was requested (e.g., broken pipe detected by writer)
-        if token.is_cancelled() {
-            break;
-        }
+    loop {
+        let item_result = tokio::select! {
+            biased;
+            _ = token.cancelled() => break,
+            next = stream.next() => match next {
+                Some(item) => item,
+                None => break,
+            },
+        };
         if input_tx.send(item_result).await.is_err() {
             break;
         }

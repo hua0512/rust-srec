@@ -59,17 +59,17 @@ pub fn leb128_size(mut value: u64) -> usize {
 /// Read a variable-length unsigned integer.
 /// AV1-Spec-2 - 4.10.3
 pub fn read_uvlc<T: io::Read>(reader: &mut BitReader<T>) -> io::Result<u64> {
-    let mut leading_zeros = 0;
+    let mut leading_zeros: u32 = 0;
     while !reader.read_bit()? {
-        leading_zeros += 1;
+        leading_zeros = leading_zeros.saturating_add(1);
     }
 
     if leading_zeros >= 32 {
-        return Ok((1 << 32) - 1);
+        return Ok(u64::from(u32::MAX));
     }
 
-    let value = reader.read_bits(leading_zeros)?;
-    Ok(value + (1 << leading_zeros) - 1)
+    let value = reader.read_bits(leading_zeros as u8)?;
+    Ok(value + (1u64 << leading_zeros) - 1)
 }
 
 #[cfg(test)]
@@ -160,5 +160,12 @@ mod tests {
         let mut cursor = std::io::Cursor::new([0x00, 0x00, 0x00, 0x00, 0x01]);
         let mut reader = BitReader::new(&mut cursor);
         assert_eq!(read_uvlc(&mut reader).unwrap(), (1 << 32) - 1);
+
+        // >= 256 leading zero bits must saturate to u32::MAX rather than wrapping u8 to 0.
+        let mut over_256_zeros = vec![0x00; 33];
+        over_256_zeros.push(0x80);
+        let mut cursor = std::io::Cursor::new(over_256_zeros);
+        let mut reader = BitReader::new(&mut cursor);
+        assert_eq!(read_uvlc(&mut reader).unwrap(), u64::from(u32::MAX));
     }
 }

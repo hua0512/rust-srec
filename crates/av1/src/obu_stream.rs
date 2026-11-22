@@ -52,7 +52,7 @@ impl Iterator for ObuIterator<'_> {
     type Item = Result<Obu>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let remaining = self.reader.get_ref().len() as u64 - self.reader.position();
+        let remaining = (self.reader.get_ref().len() as u64).saturating_sub(self.reader.position());
         if remaining == 0 {
             return None;
         }
@@ -81,7 +81,7 @@ impl Iterator for ContainerObuIterator<'_> {
     type Item = Result<Obu>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let remaining = self.reader.get_ref().len() as u64 - self.reader.position();
+        let remaining = (self.reader.get_ref().len() as u64).saturating_sub(self.reader.position());
         if remaining == 0 {
             return None;
         }
@@ -98,11 +98,19 @@ fn parse_obu(reader: &mut io::Cursor<Bytes>) -> Result<Obu> {
         Av1Error::InvalidObu("obu_has_size_field must be 1 in low-overhead bitstream".into())
     })?;
 
+    let remaining =
+        usize::try_from((reader.get_ref().len() as u64).saturating_sub(reader.position()))
+            .unwrap_or(usize::MAX);
+    let size_usize = usize::try_from(size).map_err(|_| Av1Error::UnexpectedEof {
+        expected: usize::MAX,
+        actual: remaining,
+    })?;
+
     let data = reader
-        .extract_bytes(size as usize)
+        .extract_bytes(size_usize)
         .map_err(|_| Av1Error::UnexpectedEof {
-            expected: size as usize,
-            actual: (reader.get_ref().len() as u64 - reader.position()) as usize,
+            expected: size_usize,
+            actual: remaining,
         })?;
 
     Ok(Obu { header, data })
@@ -115,15 +123,19 @@ fn parse_obu(reader: &mut io::Cursor<Bytes>) -> Result<Obu> {
 fn parse_container_obu(reader: &mut io::Cursor<Bytes>) -> Result<Obu> {
     let header = ObuHeader::parse(reader)?;
 
-    let size = header
-        .size
-        .unwrap_or_else(|| reader.get_ref().len() as u64 - reader.position());
+    let remaining_u64 = (reader.get_ref().len() as u64).saturating_sub(reader.position());
+    let remaining = usize::try_from(remaining_u64).unwrap_or(usize::MAX);
+    let size = header.size.unwrap_or(remaining_u64);
+    let size_usize = usize::try_from(size).map_err(|_| Av1Error::UnexpectedEof {
+        expected: usize::MAX,
+        actual: remaining,
+    })?;
 
     let data = reader
-        .extract_bytes(size as usize)
+        .extract_bytes(size_usize)
         .map_err(|_| Av1Error::UnexpectedEof {
-            expected: size as usize,
-            actual: (reader.get_ref().len() as u64 - reader.position()) as usize,
+            expected: size_usize,
+            actual: remaining,
         })?;
 
     Ok(Obu { header, data })

@@ -46,16 +46,16 @@ impl SarDimensions {
     /// Returns a `SarDimensions` struct.
     pub fn parse<T: io::Read>(reader: &mut BitReader<T>) -> io::Result<Self> {
         let mut sar_width = 0; // defaults to 0, E.2.1
-        let mut sar_height = 0; // deafults to 0, E.2.1
+        let mut sar_height = 0; // defaults to 0, E.2.1
 
-        let aspect_ratio_idc = reader.read_u8()?;
-        if aspect_ratio_idc == 255 {
+        let aspect_ratio_idc = AspectRatioIdc::from_u8(reader.read_u8()?);
+        if aspect_ratio_idc == AspectRatioIdc::ExtendedSar {
             sar_width = reader.read_bits(16)? as u16;
             sar_height = reader.read_bits(16)? as u16;
         }
 
         Ok(SarDimensions {
-            aspect_ratio_idc: AspectRatioIdc::try_from(aspect_ratio_idc).unwrap(),
+            aspect_ratio_idc,
             sar_width,
             sar_height,
         })
@@ -66,7 +66,7 @@ impl SarDimensions {
     pub fn build<T: io::Write>(&self, writer: &mut BitWriter<T>) -> io::Result<()> {
         writer.write_bits(self.aspect_ratio_idc as u64, 8)?;
 
-        if self.aspect_ratio_idc == AspectRatioIdc::try_from(255).unwrap() {
+        if self.aspect_ratio_idc == AspectRatioIdc::ExtendedSar {
             writer.write_bits(self.sar_width as u64, 16)?;
             writer.write_bits(self.sar_height as u64, 16)?;
         }
@@ -75,8 +75,7 @@ impl SarDimensions {
 
     /// Returns the total bits of the SarDimensions struct.
     pub fn bitsize(&self) -> u64 {
-        8 + // aspect_ratio_idc
-        ((self.aspect_ratio_idc == AspectRatioIdc::try_from(255).unwrap()) as u64) * 32
+        8 + u64::from(self.aspect_ratio_idc == AspectRatioIdc::ExtendedSar) * 32
     }
 
     /// Returns the total bytes of the SarDimensions struct.

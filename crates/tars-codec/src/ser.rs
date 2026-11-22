@@ -136,17 +136,17 @@ impl TarsSerializer {
         message: &crate::TarsMessage,
         buffer: &mut BytesMut,
     ) -> Result<(), TarsError> {
-        // Encode directly to the target buffer
-        let temp_buffer = std::mem::take(&mut self.buffer);
-        self.buffer = std::mem::replace(buffer, temp_buffer);
+        let initial_len = buffer.len();
+        let saved_internal = std::mem::replace(&mut self.buffer, std::mem::take(buffer));
 
-        self.encode_message_to_internal_buffer(message)?;
+        let result = self.encode_message_to_internal_buffer(message);
 
-        // Swap back, keeping the encoded data in the target buffer
-        let encoded_buffer = std::mem::replace(&mut self.buffer, std::mem::take(buffer));
-        *buffer = encoded_buffer;
-
-        Ok(())
+        let mut target = std::mem::replace(&mut self.buffer, saved_internal);
+        if result.is_err() {
+            target.truncate(initial_len);
+        }
+        *buffer = target;
+        result
     }
 
     /// Internal helper that encodes to whatever buffer is currently set as self.buffer
@@ -360,10 +360,7 @@ impl TarsSerializer {
                 // Convert bytes back to &str for serialization
                 match std::str::from_utf8(bytes) {
                     Ok(s) => self.write_string(tag, s),
-                    Err(e) => {
-                        println!("Invalid UTF-8 sequence: {bytes:?}");
-                        Err(TarsError::InvalidUtf8(e))
-                    }
+                    Err(e) => Err(TarsError::InvalidUtf8(e)),
                 }
             }
             TarsValue::Struct(v) => self.write_struct(tag, v),

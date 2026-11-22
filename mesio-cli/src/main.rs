@@ -36,7 +36,16 @@ use utils::{parse_duration_flag, parse_headers, parse_params, parse_size, parse_
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() {
-    let result = bootstrap();
+    let default_panic_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = input::restore_terminal();
+        default_panic_hook(info);
+    }));
+
+    let args = CliArgs::parse();
+    let stderr_media = matches!(PipeStream::of(args.output_format), Some(PipeStream::Stderr));
+
+    let result = bootstrap(args);
     // The input thread may still hold the terminal in raw mode.
     if let Err(error) = input::restore_terminal() {
         error!(%error, "Failed to restore the terminal mode");
@@ -47,11 +56,19 @@ fn main() {
         if matches!(e, AppError::BrokenPipe) {
             // Exit code 141 is the standard for SIGPIPE (128 + 13)
             // This indicates the pipe was closed by the consumer, which is normal
-            eprintln!("Pipe closed by consumer");
+            if stderr_media {
+                println!("Pipe closed by consumer");
+            } else {
+                eprintln!("Pipe closed by consumer");
+            }
             std::process::exit(141);
         }
 
-        eprintln!("Error: {e}");
+        if stderr_media {
+            println!("Error: {e}");
+        } else {
+            eprintln!("Error: {e}");
+        }
         // Log the full error for debugging
         error!(error = ?e, "Application failed");
         std::process::exit(1);
@@ -115,10 +132,7 @@ fn init_logging(args: &CliArgs) -> Option<WorkerGuard> {
 }
 
 #[tokio::main]
-async fn bootstrap() -> Result<(), AppError> {
-    // Parse command-line arguments
-    let args = CliArgs::parse();
-
+async fn bootstrap(args: CliArgs) -> Result<(), AppError> {
     // Create a cancellation token
     let token = CancellationToken::new();
     // Where `s`, a line of `s` on stdin and `SIGUSR1` request a cut.
@@ -234,19 +248,20 @@ async fn bootstrap() -> Result<(), AppError> {
             None
         };
 
-        info!(
-            proxy_url = %proxy_url,
-            proxy_type = ?proxy_type,
-            has_auth = auth.is_some(),
-            "Using explicit proxy configuration for downloads"
-        );
-
+        let has_auth = auth.is_some();
         // Create the proxy configuration
         let proxy = ProxyConfig {
             url: proxy_url.clone(),
             proxy_type,
             auth,
         };
+
+        info!(
+            proxy_url = %proxy.redacted_url(),
+            proxy_type = ?proxy_type,
+            has_auth,
+            "Using explicit proxy configuration for downloads"
+        );
 
         (Some(proxy), false) // Don't use system proxy when explicit proxy is configured
     } else if args.use_system_proxy {

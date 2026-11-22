@@ -95,8 +95,8 @@ impl HevcPacket {
                         h265::SpsNALUnit::parse(std::io::Cursor::new(sps.clone()))
                             .ok()
                             .map(|sps_nalu| Resolution {
-                                width: sps_nalu.rbsp.pic_width_in_luma_samples.get() as f32,
-                                height: sps_nalu.rbsp.pic_height_in_luma_samples.get() as f32,
+                                width: sps_nalu.rbsp.cropped_width() as f32,
+                                height: sps_nalu.rbsp.cropped_height() as f32,
                             })
                     })
             }
@@ -147,5 +147,49 @@ impl std::fmt::Display for HevcPacket {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_video_resolution_uses_cropped_sps_dimensions() {
+        // Real OBS 1080p HEVC SPS coded as 1920x1088 with conformance bottom crop = 4 (SubHeightC = 2 -> 1080).
+        let sps_nalu = Bytes::from_static(
+            b"\x42\x01\x01\x01\x40\x00\x00\x03\x00\x90\x00\x00\x03\x00\x00\x03\x00\x78\xa0\x03\xc0\x80\x11\x07\xcb\x96\xb4\xa4\x25\x92\xe3\x01\x6a\x02\x02\x02\x08\x00\x00\x03\x00\x08\x00\x00\x03\x00\xf3\x00\x2e\xf2\x88\x00\x02\x62\x5a\x00\x00\x13\x12\xd0\x20",
+        );
+        let packet = HevcPacket::SequenceStart(HEVCDecoderConfigurationRecord {
+            general_profile_space: 0,
+            general_tier_flag: false,
+            general_profile_idc: 1,
+            general_profile_compatibility_flags: h265::ProfileCompatibilityFlags::empty(),
+            general_constraint_indicator_flags: 0,
+            general_level_idc: 120,
+            min_spatial_segmentation_idc: 0,
+            parallelism_type: h265::ParallelismType::MixedOrUnknown,
+            chroma_format_idc: 1,
+            bit_depth_luma_minus8: 0,
+            bit_depth_chroma_minus8: 0,
+            avg_frame_rate: 0,
+            constant_frame_rate: h265::ConstantFrameRate::Unknown,
+            num_temporal_layers: h265::NumTemporalLayers::NotScalable,
+            temporal_id_nested: true,
+            length_size_minus_one: 3,
+            arrays: vec![h265::NaluArray {
+                array_completeness: true,
+                nal_unit_type: NALUnitType::SpsNut,
+                nalus: vec![sps_nalu],
+            }],
+        });
+
+        assert_eq!(
+            packet.get_video_resolution(),
+            Some(Resolution {
+                width: 1920.0,
+                height: 1080.0,
+            })
+        );
     }
 }

@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{self, BufReader, Read};
 use std::path::Path;
 
-use bytes::BytesMut;
+use bytes::Bytes;
 use tracing::{debug, error};
 
 use crate::header::FlvHeader;
@@ -166,15 +166,16 @@ impl FlvParser {
         }
 
         let header = framing::parse_tag_header_bytes(header_bytes)?;
+        let expected_len = header.data_size as usize;
 
-        // Keep the fixed header on the stack and allocate only the payload.
-        // Freezing it directly also avoids sharing a sliced header/data buffer.
-        let mut data = BytesMut::zeroed(header.data_size as usize);
-        if let Err(e) = reader.read_exact(&mut data) {
-            if e.kind() == io::ErrorKind::UnexpectedEof {
-                return Ok(None);
-            }
-            return Err(e);
+        // Cap initial capacity so a truncated tag with a large 24-bit DataSize
+        // does not allocate up to 16 MiB before confirming bytes exist on the reader.
+        let mut data = Vec::with_capacity(expected_len.min(64 * 1024));
+        reader
+            .take(u64::from(header.data_size))
+            .read_to_end(&mut data)?;
+        if data.len() < expected_len {
+            return Ok(None);
         }
 
         let tag_type = header.tag_type;
@@ -183,7 +184,7 @@ impl FlvParser {
             header.stream_id,
             header.tag_type,
             header.is_filtered,
-            data.freeze(),
+            Bytes::from(data),
         );
 
         Ok(Some((tag, tag_type)))

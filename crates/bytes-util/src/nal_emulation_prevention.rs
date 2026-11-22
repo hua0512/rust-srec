@@ -31,7 +31,7 @@ impl<I: std::io::Write> std::io::Write for EmulationPreventionIo<I> {
 
             self.inner.write_all(&[byte])?;
             if byte == 0x00 {
-                self.zero_count += 1;
+                self.zero_count = self.zero_count.saturating_add(1);
             } else {
                 self.zero_count = 0;
             }
@@ -62,7 +62,7 @@ impl<I: std::io::Read> std::io::Read for EmulationPreventionIo<I> {
                     continue;
                 }
                 0x00 => {
-                    self.zero_count += 1;
+                    self.zero_count = self.zero_count.saturating_add(1);
                 }
                 _ => {
                     self.zero_count = 0;
@@ -105,5 +105,36 @@ mod tests {
         reader.read_to_end(&mut output).unwrap();
 
         assert_eq!(output, vec![0x00, 0x00, 0x01, 0x00, 0x00, 0x02]);
+    }
+
+    #[test]
+    fn long_zero_runs_past_256_bytes_preserve_emulation_prevention() {
+        for zero_run in [256usize, 257, 512] {
+            // 1. Reader path: >= 256 consecutive literal 0x00 bytes followed by 0x03, 0x01
+            // must saturate zero_count rather than overflowing/wrapping to 0 and leaving 0x03 in output.
+            let mut unescaped_zeros = vec![0x00; zero_run];
+            unescaped_zeros.extend_from_slice(&[0x03, 0x01]);
+
+            let mut expected = vec![0x00; zero_run];
+            expected.push(0x01);
+
+            let mut decoded = Vec::new();
+            EmulationPreventionIo::new(unescaped_zeros.as_slice())
+                .read_to_end(&mut decoded)
+                .unwrap();
+            assert_eq!(decoded, expected, "reader zero_run={zero_run}");
+
+            // 2. Writer -> Reader round-trip on long zero runs.
+            let mut escaped = Vec::new();
+            let mut writer = EmulationPreventionIo::new(&mut escaped);
+            writer.write_all(&expected).unwrap();
+            writer.flush().unwrap();
+
+            let mut round_tripped = Vec::new();
+            EmulationPreventionIo::new(escaped.as_slice())
+                .read_to_end(&mut round_tripped)
+                .unwrap();
+            assert_eq!(round_tripped, expected, "round-trip zero_run={zero_run}");
+        }
     }
 }

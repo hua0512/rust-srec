@@ -43,6 +43,7 @@ pub const ERROR_NO_ACTIVE_WRITER: &str = "Attempted write_tag with no active wri
 
 // AMF0 script data names
 pub const AMF0_ON_METADATA: &str = "onMetaData";
+pub const AMF0_SET_DATA_FRAME: &str = "@setDataFrame";
 
 /// `metadatacreator` for every file this pipeline writes. It is unversioned
 /// because this crate cannot see the version of the application linking it.

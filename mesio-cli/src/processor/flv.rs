@@ -33,6 +33,7 @@ async fn process_raw_stream(
     output_dir: &Path,
     base_name: &str,
     pipeline_common_config: &PipelineConfig,
+    token: CancellationToken,
 ) -> Result<WriterStats, AppError> {
     let (tx, rx) = tokio::sync::mpsc::channel(pipeline_common_config.channel_size);
     let mut writer = FlvWriter::new(FlvWriterConfig {
@@ -48,7 +49,15 @@ async fn process_raw_stream(
     });
 
     let mut stream = stream;
-    while let Some(item_result) = stream.next().await {
+    loop {
+        let item_result = tokio::select! {
+            biased;
+            _ = token.cancelled() => break,
+            next = stream.next() => match next {
+                Some(item) => item,
+                None => break,
+            },
+        };
         if tx.send(item_result).await.is_err() {
             break;
         }
@@ -91,6 +100,7 @@ async fn pipe_flv(
     stream: Pin<Box<dyn Stream<Item = Result<FlvData, PipelineError>> + Send>>,
     config: &ProgramConfig,
     pipe_stream: PipeStream,
+    token: CancellationToken,
 ) -> Result<PipeStreamStats, AppError> {
     let start_time = Instant::now();
     let strategy = PipeFlvStrategy::new().with_stream(pipe_stream);
@@ -105,10 +115,11 @@ async fn pipe_flv(
             config.flv_pipeline_config.clone(),
             strategy,
             "flv",
+            token,
         )
         .await?
     } else {
-        process_pipe_stream(stream, &config.pipeline_config, strategy, "flv").await?
+        process_pipe_stream(stream, &config.pipeline_config, strategy, "flv", token).await?
     };
     info!(
         duration = ?start_time.elapsed(),
@@ -165,7 +176,13 @@ pub async fn process_file(
         .map(|r| r.map_err(|e| PipelineError::Strategy(Box::new(e))));
 
     let stats = if let Some(pipe_stream) = pipe_stream {
-        pipe_flv(Box::pin(decoder_stream), config, pipe_stream).await?;
+        pipe_flv(
+            Box::pin(decoder_stream),
+            config,
+            pipe_stream,
+            token.child_token(),
+        )
+        .await?;
         return Ok(());
     } else if config.enable_processing {
         // we need to expand base_name with %i for output file numbering
@@ -200,6 +217,7 @@ pub async fn process_file(
             output_dir,
             &base_name,
             &config.pipeline_config,
+            token.child_token(),
         )
         .instrument(write_span)
         .await?
@@ -242,14 +260,15 @@ pub async fn process_flv_stream(
     }
 
     let start_time = Instant::now();
+    let redacted_url = mesio_engine::redact::redact_url_for_log(url_str);
 
     // Create span for FLV stream download
     // Note: Progress bars are disabled in pipe mode via main.rs configuration
-    let download_span = span!(Level::INFO, "download_flv", url = %url_str);
+    let download_span = span!(Level::INFO, "download_flv", url = %redacted_url);
 
     // Only initialize download span visuals if not in pipe mode
     if !is_pipe_mode {
-        spans::init_download_span(&download_span, format!("Downloading {}", url_str));
+        spans::init_download_span(&download_span, format!("Downloading {redacted_url}"));
     }
 
     let base_name = expand_name_url(name_template, url_str)?;
@@ -271,7 +290,8 @@ pub async fn process_flv_stream(
     let stream = stream.map(|r| r.map_err(|e| PipelineError::Strategy(Box::new(e))));
 
     let stats = if let Some(pipe_stream) = pipe_stream {
-        let pipe_stats = pipe_flv(Box::pin(stream), config, pipe_stream).await?;
+        let pipe_stats =
+            pipe_flv(Box::pin(stream), config, pipe_stream, token.child_token()).await?;
         cleanup.finish().await;
         return Ok(pipe_stats.items_written as u64);
     } else {
@@ -320,7 +340,7 @@ pub async fn process_flv_stream(
 
     // Log completion (goes to stderr in pipe mode)
     info!(
-        url = %url_str,
+        url = %redacted_url,
         duration = ?elapsed,
         tags_written = stats.items_written,
         files_created = stats.files_created,
@@ -524,6 +544,7 @@ mod tests {
             direct.path(),
             "rec-%i",
             &pipeline_config(),
+            CancellationToken::new(),
         )
         .await
         .expect("direct recording");

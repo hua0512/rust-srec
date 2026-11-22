@@ -24,12 +24,17 @@ pub fn extract_filename_from_url(url_str: &str) -> Result<String, AppError> {
 
     let file_name = url
         .path_segments()
-        .and_then(|mut s| s.next_back())
+        .and_then(|mut s| s.rfind(|seg| !seg.is_empty()))
         .unwrap_or("stream");
 
     let url_name = match file_name.rfind('.') {
         Some(pos) => &file_name[..pos],
         None => file_name,
+    };
+    let url_name = if url_name.is_empty() {
+        "stream"
+    } else {
+        url_name
     };
 
     // we dont want large filenames
@@ -64,4 +69,25 @@ pub fn expand_name_url(name_template: &str, url_str: &str) -> Result<String, App
     let url_name = extract_filename_from_url(url_str)?;
     let base_name = name_template.replace("%u", &url_name);
     Ok(base_name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_filename_handles_trailing_slash_and_root_url() {
+        assert_eq!(
+            extract_filename_from_url("https://example.com/live/channel/").unwrap(),
+            "channel"
+        );
+        assert_eq!(
+            extract_filename_from_url("https://example.com/").unwrap(),
+            "stream"
+        );
+        assert_eq!(
+            extract_filename_from_url("https://example.com/live/index.m3u8?token=abc").unwrap(),
+            "index"
+        );
+    }
 }

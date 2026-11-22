@@ -1,6 +1,6 @@
 use std::io;
 
-use bytes_util::{BitReader, BitWriter};
+use bytes_util::{BitReader, BitWriter, range_check};
 use expgolomb::{
     BitReaderExpGolombExt, BitWriterExpGolombExt, size_of_exp_golomb, size_of_signed_exp_golomb,
 };
@@ -88,8 +88,10 @@ impl PicOrderCountType1 {
         let offset_for_non_ref_pic = reader.read_signed_exp_golomb()?;
         let offset_for_top_to_bottom_field = reader.read_signed_exp_golomb()?;
         let num_ref_frames_in_pic_order_cnt_cycle = reader.read_exp_golomb()?;
+        range_check!(num_ref_frames_in_pic_order_cnt_cycle, 0, 255)?;
 
-        let mut offset_for_ref_frame = vec![];
+        let mut offset_for_ref_frame =
+            Vec::with_capacity(num_ref_frames_in_pic_order_cnt_cycle as usize);
         for _ in 0..num_ref_frames_in_pic_order_cnt_cycle {
             offset_for_ref_frame.push(reader.read_signed_exp_golomb()?);
         }
@@ -190,5 +192,20 @@ mod tests {
             rebuilt_pic_order_count_type1.bytesize(),
             pic_order_count_type1.bytesize()
         );
+    }
+
+    #[test]
+    fn rejects_num_ref_frames_in_pic_order_cnt_cycle_above_255() {
+        let mut data = Vec::new();
+        let mut writer = BitWriter::new(&mut data);
+        writer.write_bit(false).unwrap();
+        writer.write_signed_exp_golomb(0).unwrap();
+        writer.write_signed_exp_golomb(0).unwrap();
+        writer.write_exp_golomb(256).unwrap();
+        writer.finish().unwrap();
+
+        let mut reader = BitReader::new_from_slice(&data);
+        let err = PicOrderCountType1::parse(&mut reader).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
     }
 }

@@ -119,16 +119,26 @@ pub async fn process_inputs(
 
     // Process each input
     for (index, input) in inputs.iter().enumerate() {
+        if token.is_cancelled() {
+            break;
+        }
         let input_index = index + 1;
 
         // trim urls for better usability
         let input = input.trim();
+        let is_http = input.starts_with("http://") || input.starts_with("https://");
+        let display_input = if is_http {
+            std::borrow::Cow::Owned(mesio_engine::redact::redact_url_for_log(input))
+        } else {
+            std::borrow::Cow::Borrowed(input)
+        };
 
         // Create a span for this specific input
-        let input_span = span!(Level::INFO, "process_input", index = input_index, input = %input);
+        let input_span =
+            span!(Level::INFO, "process_input", index = input_index, input = %display_input);
 
         // Process based on input type
-        if input.starts_with("http://") || input.starts_with("https://") {
+        if is_http {
             let request = DownloadRequest::from_url(input)?
                 .with_protocol(config.protocol.clone())
                 .with_cancel(token.clone());
@@ -179,24 +189,26 @@ pub async fn process_inputs(
                         //     hls::process_hls_file(&path, output_dir, config, &progress_manager).await?;
                         // },
                         _ => {
-                            error!("Unsupported file extension for: {input}");
+                            error!("Unsupported file extension for: {display_input}");
                             return Err(AppError::InvalidInput(format!(
-                                "Unsupported file extension: {input}"
+                                "Unsupported file extension: {display_input}"
                             )));
                         }
                     }
                 } else {
-                    error!("File without extension: {input}");
+                    error!("File without extension: {display_input}");
                     return Err(AppError::InvalidInput(format!(
-                        "File without extension: {input}"
+                        "File without extension: {display_input}"
                     )));
                 }
             } else {
                 error!(
                     "Input is neither a valid URL nor an existing file: {}",
-                    input
+                    display_input
                 );
-                return Err(AppError::InvalidInput(format!("Invalid input: {input}")));
+                return Err(AppError::InvalidInput(format!(
+                    "Invalid input: {display_input}"
+                )));
             }
         }
     }

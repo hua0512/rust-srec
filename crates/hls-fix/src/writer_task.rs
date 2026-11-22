@@ -98,6 +98,17 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
         Ok(BufWriter::with_capacity(1024 * 1024, file))
     }
 
+    fn should_open_file(&mut self, item: &HlsData) -> bool {
+        match item {
+            HlsData::EndMarker(_) => false,
+            HlsData::M4sData(M4sData::InitSegment(init)) => {
+                self.output_state.set_pending_init(init.clone());
+                false
+            }
+            HlsData::TsData(_) | HlsData::M4sData(M4sData::Segment(_)) => true,
+        }
+    }
+
     fn write_item(
         &mut self,
         writer: &mut Self::Writer,
@@ -576,12 +587,12 @@ mod tests {
         let mut writer = HlsWriter::new(HlsWriterConfig {
             output_dir: dir.path().into(),
             base_name: "test-%i".into(),
-            extension: "ts".into(),
+            extension: "mp4".into(),
             max_file_size: None,
         });
         let stats = write_items(
             &mut writer,
-            vec![HlsData::end_marker(), HlsData::end_marker()],
+            vec![HlsData::end_marker(), init(INIT), HlsData::end_marker()],
         );
         assert_eq!(stats.files_created, 0);
         assert_eq!(stats.bytes_written, 0);

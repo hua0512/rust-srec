@@ -44,7 +44,8 @@ impl Amf0Encoder {
         writer: &mut impl io::Write,
         key: &str,
     ) -> Result<(), Amf0WriteError> {
-        writer.write_u16::<BigEndian>(key.len() as u16)?;
+        let len = u16::try_from(key.len()).map_err(|_| Amf0WriteError::NormalStringTooLong)?;
+        writer.write_u16::<BigEndian>(len)?;
         writer.write_all(key.as_bytes())?;
         Ok(())
     }
@@ -289,6 +290,15 @@ mod tests {
         let mut writer = Vec::<u8>::new();
         let result = Amf0Encoder::encode_string(&mut writer, &long_string);
         assert!(matches!(result, Err(Amf0WriteError::NormalStringTooLong)));
+
+        let obj_result = Amf0Encoder::encode_object(
+            &mut writer,
+            &[(Cow::Borrowed(long_string.as_str()), Amf0Value::Null)],
+        );
+        assert!(matches!(
+            obj_result,
+            Err(Amf0WriteError::NormalStringTooLong)
+        ));
     }
 
     #[test]
