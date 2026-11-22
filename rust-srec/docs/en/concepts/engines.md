@@ -62,11 +62,11 @@ Both options are heuristics. To keep every packet the source sends, leave Loop P
 
 Memory use per recording while Loop Protection is on:
 
-- The history holds up to 8,192 packets or 16 MiB, whichever limit is reached first. A packet larger than the byte limit is written unchanged but clears the history.
+- The history keeps a short fingerprint of each packet, not the packet itself, so it uses less than 2 MiB. It covers the most recent 8,192 packets or 16 MiB of stream data, whichever limit is reached first. A packet larger than the byte limit is written unchanged but clears the history.
 - Offset Consistency Check holds up to another 1 MiB while it checks a possible replay.
 - Nothing is allocated while Loop Protection is off.
 
-The byte limit is `flv_fix.duplicate_tag_filter_config.window_capacity_bytes` (default `16777216`; `0` keeps no history). It is under **Advanced → Loop protection** on the FLV tab.
+The byte limit is `flv_fix.duplicate_tag_filter_config.window_capacity_bytes` (default `16777216`; `0` keeps no history). It limits how much of the stream the history covers, so lowering it does not save memory. It is under **Advanced → Loop protection** on the FLV tab.
 
 ## Raw Data Mode {#_3-raw-data-mode}
 

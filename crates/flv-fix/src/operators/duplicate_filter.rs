@@ -1,12 +1,10 @@
 //! Bounded duplicate suppression for recognized media packets.
 //!
-//! History retains a fixed-size SHA-256 digest and byte length per packet rather
-//! than raw payload buffers. A 32-bit CRC can collide within a live stream,
-//! whereas a 256-bit cryptographic digest identifies payloads without per-tag
-//! variable-sized heap allocations that fragment the allocator across medium and
-//! large size classes. The sliding window still tracks cumulative payload bytes
-//! against `window_capacity_bytes` so retention covers the configured stream
-//! byte horizon. Opaque, control, and multitrack tags pass through.
+//! History retains a SHA-256 digest and the byte length of each packet, so an
+//! entry has a fixed size whatever the packet size and a match needs no payload
+//! bytes. The window counts payload lengths against `window_capacity_bytes`,
+//! which bounds how much of the stream the history covers, not the memory it
+//! holds. Opaque, control, and multitrack tags pass through.
 //! With offset matching disabled, exact-match history survives timestamp jumps
 //! until eviction or a source barrier. A sequence header is a barrier only when
 //! its bytes differ from the previous one on that track, because some sources
@@ -106,9 +104,10 @@ pub struct DuplicateTagFilterConfig {
     /// Maximum number of media packets retained. Zero disables retention.
     pub window_capacity_tags: usize,
     /// Maximum cumulative payload bytes covered by the retention window
-    /// (16 MiB by default). History stores fixed-size packet digests while
-    /// accounting against original payload lengths; oversized packets pass
-    /// through. Replay lookahead additionally retains at most 1 MiB.
+    /// (16 MiB by default). This bounds the span of stream that is remembered,
+    /// not memory: each retained packet costs one fixed-size digest entry.
+    /// Oversized packets pass through. Replay lookahead additionally retains
+    /// at most 1 MiB of packets.
     pub window_capacity_bytes: usize,
     /// Minimum per-stream backwards jump that starts offset replay matching.
     /// Ignored when offset matching is disabled; exact-match history is retained.
@@ -449,7 +448,7 @@ impl Processor<FlvData> for DuplicateTagFilterOperator {
 #[cfg(test)]
 mod tests {
     use flv::{FlvHeader, FlvTagType};
-    use pipeline_common::{CancellationToken, crc32};
+    use pipeline_common::CancellationToken;
 
     use super::*;
     use crate::test_utils::fixtures::{
@@ -581,12 +580,11 @@ mod tests {
     }
 
     #[test]
-    fn crc_collisions_with_distinct_bytes_are_kept() {
-        // Opaque AAC bodies whose CRC32 values collide (asserted below).
-        // The filter compares container identity, so AAC is never decoded.
+    fn equal_length_packets_with_distinct_bytes_are_kept() {
+        // Opaque AAC bodies that agree on type, timestamp and length, so only
+        // the digest tells them apart. AAC is never decoded.
         let first: &[u8] = b"\xaf\x01\x4b\x15\x7c\x8a\xaa\x45\x53\x1c";
         let second: &[u8] = b"\xaf\x01\x91\x5f\x5a\x95\x90\x9a\x61\x66";
-        assert_eq!(crc32::crc32(first), crc32::crc32(second));
         let aac = |timestamp, data| tag(FlvTagType::Audio, timestamp, data);
 
         // Each packet is repeated, so a filter that drops nothing fails too.
@@ -603,7 +601,7 @@ mod tests {
             vec![aac(100, first), aac(100, second)]
         );
 
-        // A colliding packet cannot anchor a replay; the identical one can.
+        // A different packet cannot anchor a replay; the identical one can.
         let original = vec![aac(10_000, first), pcm(10_023, 1), pcm(10_046, 2)];
         for (anchor, replay_removed) in [(second, false), (first, true)] {
             let replay = vec![aac(0, anchor), pcm(23, 1), pcm(46, 2)];

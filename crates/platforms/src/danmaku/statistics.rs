@@ -787,7 +787,10 @@ impl StatisticsAggregator {
         talker_hh.shrink_to_capacity(config.talker_capacity);
         gifter_hh.shrink_to_capacity(config.talker_capacity);
         if config.top_words == 0 {
-            word_hh.counters.clear();
+            // Start from an empty tally, not just empty counters: a kept
+            // admission floor would inflate the first counts if word counting
+            // is turned back on later in the session.
+            word_hh = WordHeavyHitters::new(config.word_capacity);
         } else {
             word_hh.shrink_to_capacity(config.word_capacity);
         }

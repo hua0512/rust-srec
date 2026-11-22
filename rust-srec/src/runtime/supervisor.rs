@@ -411,13 +411,6 @@ async fn supervise_command_with_monitor(
     }
 
     let generation = RuntimeGeneration::generate();
-    if std::env::var_os("MIMALLOC_ALLOW_THP").is_none() {
-        // Mimalloc v3 enables transparent hugepages and a 2 MiB minimum purge
-        // slice by default on 64-bit Linux, which prevents returning freed
-        // 4 KiB pages inside partially-occupied arenas to the OS. Set this on
-        // the worker Command before spawn so mimalloc's C constructor sees it.
-        command.env("MIMALLOC_ALLOW_THP", "0");
-    }
     command
         .env(RUNTIME_ROLE_ENV, RUNTIME_WORKER_ROLE)
         .env(RUNTIME_GENERATION_ENV, generation.to_string())
