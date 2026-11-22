@@ -2,9 +2,10 @@
 //!
 //! Implements danmu collection for the Twitch streaming platform using IRC over WebSocket.
 
-use rustc_hash::FxHashMap;
 use std::borrow::Cow;
 use std::time::Duration;
+
+use rustc_hash::FxHashMap;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
 

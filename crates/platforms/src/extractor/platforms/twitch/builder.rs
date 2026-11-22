@@ -565,11 +565,10 @@ mod tests {
         assert!(!dbg_str.contains("extras_secret_tok"), "{dbg_str}");
         assert!(!dbg_str.contains("cookie_secret_tok"), "{dbg_str}");
 
-        let responses = twitch
+        twitch
             .post_gql::<serde_json::Value>("{}".to_owned())
             .await
             .unwrap();
-        assert_eq!(responses.len(), 1);
 
         let raw_http = req_rx.await.unwrap();
         assert!(

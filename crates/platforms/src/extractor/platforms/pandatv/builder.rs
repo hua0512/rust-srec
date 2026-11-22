@@ -2,8 +2,9 @@ use std::sync::LazyLock;
 
 use async_trait::async_trait;
 use regex::Regex;
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 use rustc_hash::FxHashMap;
+use serde::de::DeserializeOwned;
 use tracing::debug;
 use url::Url;
 
@@ -30,6 +31,21 @@ pub struct PandaTV {
 fn is_live_broadcast(is_live: bool, on_air_type: Option<&str>, live_type: Option<&str>) -> bool {
     // Recorded broadcasts can still have isLive set to true.
     is_live && on_air_type != Some("rec") && live_type != Some("rec")
+}
+
+/// Decodes a PandaTV API reply. The API reports expected failures (unknown
+/// user, ended broadcast, wrong password) as HTTP 400 with a `result: false`
+/// JSON body, so a 400 is decoded like a success and the caller's `result`
+/// check reports the platform's own message.
+async fn decode_api_response<T: DeserializeOwned>(
+    response: reqwest::Response,
+) -> Result<T, ExtractorError> {
+    let response = if response.status() == StatusCode::BAD_REQUEST {
+        response
+    } else {
+        ExtractorError::check_response(response)?
+    };
+    Ok(response.json::<T>().await?)
 }
 
 impl PandaTV {
@@ -66,14 +82,13 @@ impl PandaTV {
         params.insert("userId", room_id);
         params.insert("info", "media fanGrade");
 
-        let response = ExtractorError::check_response(
+        let response: PandaTvBjResponse = decode_api_response(
             self.extractor
                 .post(Self::BJ_API_URL)
                 .form(&params)
                 .send()
                 .await?,
-        )?
-        .json::<PandaTvBjResponse>()
+        )
         .await?;
 
         // debug!("Response: {:?}", response);
@@ -219,14 +234,13 @@ impl PandaTV {
         params.insert("action", "watch");
         params.insert("password", pwd.as_str());
 
-        let response = ExtractorError::check_response(
+        let response: PandaTvLiveResponse = decode_api_response(
             self.extractor
                 .post(Self::LIVE_API_URL)
                 .form(&params)
                 .send()
                 .await?,
-        )?
-        .json::<PandaTvLiveResponse>()
+        )
         .await?;
 
         if !response.result {

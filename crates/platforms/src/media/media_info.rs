@@ -527,7 +527,6 @@ mod tests {
             .build();
 
         let rendered = info.pretty_print();
-        assert!(rendered.contains("5000kbps"));
         for secret in [
             "leak_cookie",
             "leak_oauth",

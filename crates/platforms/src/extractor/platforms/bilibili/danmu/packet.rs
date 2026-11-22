@@ -70,6 +70,7 @@ pub(super) fn build_packet(body: &[u8], operation: u32) -> Vec<u8> {
 
 /// Decode packets from `data`, decompressing top-level Zlib/Brotli envelopes
 /// when `allow_compressed` is true and rejecting nested compressed frames.
+/// An envelope that fails to decompress is skipped.
 pub(super) fn decode_packets(data: &Bytes, allow_compressed: bool) -> Result<Vec<DecodedPacket>> {
     let mut packets = Vec::new();
     let mut offset = 0;
@@ -101,8 +102,9 @@ pub(super) fn decode_packets(data: &Bytes, allow_compressed: bool) -> Result<Vec
                         "Nested compressed Bilibili danmaku packet is forbidden",
                     ));
                 }
-                let decompressed = decompress_zlib(body)?;
-                packets.extend(decode_packets(&Bytes::from(decompressed), false)?);
+                if let Some(decompressed) = inflate_or_skip(decompress_zlib(body))? {
+                    packets.extend(decode_packets(&Bytes::from(decompressed), false)?);
+                }
             }
             ver::BROTLI => {
                 if !allow_compressed {
@@ -110,8 +112,9 @@ pub(super) fn decode_packets(data: &Bytes, allow_compressed: bool) -> Result<Vec
                         "Nested compressed Bilibili danmaku packet is forbidden",
                     ));
                 }
-                let decompressed = decompress_brotli(body)?;
-                packets.extend(decode_packets(&Bytes::from(decompressed), false)?);
+                if let Some(decompressed) = inflate_or_skip(decompress_brotli(body))? {
+                    packets.extend(decode_packets(&Bytes::from(decompressed), false)?);
+                }
             }
             ver::RAW_JSON | ver::POPULARITY => {
                 packets.push(DecodedPacket {
@@ -128,6 +131,20 @@ pub(super) fn decode_packets(data: &Bytes, allow_compressed: bool) -> Result<Vec
     }
 
     Ok(packets)
+}
+
+/// Separates a corrupt compressed body from one that breaks a limit. A body
+/// that fails to inflate yields `None`, so the frame's other packets are still
+/// delivered; one that exceeds the size limit stays an error.
+fn inflate_or_skip(decompressed: Result<Vec<u8>>) -> Result<Option<Vec<u8>>> {
+    match decompressed {
+        Ok(decompressed) => Ok(Some(decompressed)),
+        Err(DanmakuError::Io(error)) => {
+            debug!(%error, "Skipping Bilibili danmaku packet that failed to decompress");
+            Ok(None)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 fn decompress_zlib(data: &[u8]) -> Result<Vec<u8>> {

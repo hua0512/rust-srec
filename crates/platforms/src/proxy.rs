@@ -99,12 +99,22 @@ impl ProxyEndpoint {
     }
 
     /// The proxy for every request scheme of a `reqwest` client, with its
-    /// login. The error may quote the URL, so callers should not show it.
-    pub fn reqwest_proxy(&self) -> reqwest::Result<reqwest::Proxy> {
+    /// login.
+    pub fn reqwest_proxy(&self) -> Result<reqwest::Proxy, UnusableProxy> {
         // reqwest percent-decodes the login it finds in a proxy URL, for HTTP
         // and SOCKS alike, and `Proxy::basic_auth` stores its login in that
         // URL without escaping `%`. The login therefore goes in encoded.
-        reqwest::Proxy::all(self.url_with_login().trim())
+        let url = self.url_with_login();
+        let url = url.trim();
+        // reqwest accepts a proxy URL of any scheme, then sends requests
+        // without the proxy when it cannot speak that scheme. A URL without a
+        // host is left to reqwest, which reads `host:port` as an `http` proxy.
+        if url::Url::parse(url)
+            .is_ok_and(|url| url.has_host() && !PROXY_SCHEMES.contains(&url.scheme()))
+        {
+            return Err(UnsupportedProxyScheme.into());
+        }
+        reqwest::Proxy::all(url).map_err(|error| UnusableProxy::Url(error.without_url()))
     }
 
     /// The URL with the login percent-encoded into it, for clients and
@@ -133,15 +143,27 @@ pub fn unroutable_proxy() -> reqwest::Proxy {
     reqwest::Proxy::custom(|_| Some("http://unroutable.invalid:9".to_owned()))
 }
 
-/// The proxy URL schemes Go's `net/http` accepts from the environment.
-/// Go resolves host names on a `socks5` proxy, so `socks5h` is passed as
-/// `socks5`, which older Go releases also read.
-const ENVIRONMENT_PROXY_SCHEMES: [&str; 4] = ["http", "https", "socks5", "socks5h"];
+/// The proxy URL schemes a `reqwest` client is given, which are also the ones
+/// Go's `net/http` accepts from the environment. Go resolves host names on a
+/// `socks5` proxy, so `socks5h` is passed as `socks5`, which older Go
+/// releases also read.
+const PROXY_SCHEMES: [&str; 4] = ["http", "https", "socks5", "socks5h"];
 
-/// A proxy a program reading its proxy from the environment cannot use.
+/// A proxy of a scheme that the client or program given it cannot use.
 #[derive(Debug, thiserror::Error)]
 #[error("can only use http, https and SOCKS5 proxies; choose another proxy")]
 pub struct UnsupportedProxyScheme;
+
+/// Why an endpoint cannot be the proxy of a `reqwest` client. The message
+/// never quotes the proxy URL, so it can be shown and logged.
+#[derive(Debug, thiserror::Error)]
+pub enum UnusableProxy {
+    #[error(transparent)]
+    Scheme(#[from] UnsupportedProxyScheme),
+    /// The client's own rejection, held without the URL.
+    #[error(transparent)]
+    Url(reqwest::Error),
+}
 
 /// How requests reach a platform.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -198,7 +220,7 @@ impl ProxyTarget {
             Self::System => {}
             Self::Direct => remove_proxy_environment(command),
             Self::Explicit(endpoint) => {
-                if !self.supports_schemes(&ENVIRONMENT_PROXY_SCHEMES) {
+                if !self.supports_schemes(&PROXY_SCHEMES) {
                     return Err(UnsupportedProxyScheme);
                 }
                 let url = endpoint.url_with_login();
@@ -453,25 +475,26 @@ mod tests {
         tokio::time::timeout(std::time::Duration::from_secs(20), async {
             let target = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let address = target.local_addr().unwrap();
-            let client = crate::extractor::create_client_builder(Some(ProxyEndpoint::new(
-                "http://[invalid",
-                None,
-            )))
-            .build()
-            .unwrap();
-            assert!(
-                client
-                    .get(format!("http://{address}/"))
-                    .send()
-                    .await
-                    .is_err()
-            );
-            assert!(
-                tokio::time::timeout(std::time::Duration::from_millis(100), target.accept())
-                    .await
-                    .is_err(),
-                "the request reached the target directly"
-            );
+            for proxy in ["http://[invalid", "sock5://proxy.invalid:1080"] {
+                let client =
+                    crate::extractor::create_client_builder(Some(ProxyEndpoint::new(proxy, None)))
+                        .build()
+                        .unwrap();
+                assert!(
+                    client
+                        .get(format!("http://{address}/"))
+                        .send()
+                        .await
+                        .is_err(),
+                    "{proxy}"
+                );
+                assert!(
+                    tokio::time::timeout(std::time::Duration::from_millis(100), target.accept())
+                        .await
+                        .is_err(),
+                    "the request reached the target directly through {proxy}"
+                );
+            }
         })
         .await
         .unwrap();

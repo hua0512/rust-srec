@@ -42,21 +42,25 @@ fn run_version_probe(binary_path: &str) -> bool {
     loop {
         match child.try_wait() {
             Ok(Some(status)) => return status.success(),
-            Ok(None) => {
-                if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return false;
-                }
+            Ok(None) if Instant::now() < deadline => {
                 std::thread::sleep(Duration::from_millis(10));
             }
-            Err(_) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return false;
+            Ok(None) => {
+                debug!(binary_path, "Streamlink version probe timed out");
+                break;
+            }
+            Err(error) => {
+                debug!(binary_path, %error, "Failed to poll the streamlink version probe");
+                break;
             }
         }
     }
+
+    // Kill and reap the probe so it does not outlive the check as a zombie.
+    if let Err(error) = child.kill().and_then(|()| child.wait()) {
+        debug!(binary_path, %error, "Failed to stop the streamlink version probe");
+    }
+    false
 }
 
 /// Whether `binary_path` responds to `--version`, memoized for [`PROBE_TTL`].
@@ -324,9 +328,10 @@ impl StreamlinkExtractor {
         cmd.args(self.build_auth_args());
         self.apply_proxy(&mut cmd);
         cmd.args(&self.config.extra_args);
+        // Streamlink reads its first positional argument as the URL even
+        // when `--url` is given, so the quality goes in as an option too.
         cmd.arg(format!("--url={}", self.extractor.url))
-            .arg("--")
-            .arg(quality);
+            .arg(format!("--default-stream={quality}"));
         cmd.kill_on_drop(true)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());

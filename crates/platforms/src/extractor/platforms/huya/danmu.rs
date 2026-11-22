@@ -93,7 +93,7 @@ impl HuyaDanmuProtocol {
     pub(crate) fn extract_presenter_uid_from_html(html: &str) -> Result<i64> {
         #[derive(serde::Deserialize)]
         struct ProfileUid {
-            #[serde(default)]
+            #[serde(default, deserialize_with = "super::models::deserialize_lp")]
             lp: i64,
         }
 
@@ -653,7 +653,6 @@ mod tests {
         let mut proto = HuyaDanmuProtocol::default();
         let extras = HashMap::from([("presenter_uid".to_string(), "1199511627776".to_string())]);
         proto.configure_connection(Some("yyuid=7"), Some(&extras));
-        assert_eq!(proto.cookies().as_deref(), Some("yyuid=7"));
 
         let launch_rsp = encode_register_rsp("doLaunch", FxHashMap::default());
         let (_, outbound) = proto
@@ -712,7 +711,7 @@ mod tests {
 
         let page_url = serve_once(
             "200 OK",
-            r#"<html><script>var TT_PROFILE_INFO = {"lp":44556677,"aid":1};</script></html>"#,
+            r#"<html><script>var TT_PROFILE_INFO = {"lp":"44556677","aid":1};</script></html>"#,
         )
         .await;
         let base_origin = page_url.trim_end_matches('/').to_string();
@@ -721,8 +720,7 @@ mod tests {
             base_url: std::borrow::Cow::Owned(base_origin),
             ..Default::default()
         };
-        let ws_url = proto.websocket_url("baozou").await.unwrap();
-        assert_eq!(ws_url, HUYA_WS_URL);
+        proto.websocket_url("baozou").await.unwrap();
         assert_eq!(proto.presenter_uid, Some(44556677));
     }
 

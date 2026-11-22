@@ -10,11 +10,12 @@
 //! [stream server API]: https://twitcasting.tv/streamserver.php
 //! [event pub/sub API]: https://twitcasting.tv/eventpubsuburl.php
 
+use std::collections::HashMap;
+use std::time::Duration;
+
 use md5::{Digest, Md5};
 use reqwest::Client;
 use serde::Deserialize;
-use std::collections::HashMap;
-use std::time::Duration;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::{debug, warn};
 

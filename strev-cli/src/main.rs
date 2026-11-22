@@ -86,9 +86,14 @@ async fn run(args: Args) -> Result<()> {
         info!("Starting platforms-cli with config: {:?}", config);
     }
 
-    // Create command executor with proxy support
-    let executor =
-        if args.proxy.is_some() || args.proxy_username.is_some() || args.proxy_password.is_some() {
+    // Built by the commands that use it, so an unusable proxy fails those
+    // commands without blocking `config --reset` from repairing the setting.
+    let quiet = args.quiet;
+    let build_executor = move || -> Result<CommandExecutor> {
+        let executor = if args.proxy.is_some()
+            || args.proxy_username.is_some()
+            || args.proxy_password.is_some()
+        {
             CommandExecutor::new_with_proxy(
                 config,
                 args.proxy,
@@ -97,8 +102,9 @@ async fn run(args: Args) -> Result<()> {
             )
         } else {
             CommandExecutor::new(config)
-        }
-        .with_quiet(args.quiet);
+        }?;
+        Ok(executor.with_quiet(quiet))
+    };
 
     // Execute command
     match args.command {
@@ -112,7 +118,7 @@ async fn run(args: Args) -> Result<()> {
             format,
             auto_select,
         } => {
-            executor
+            build_executor()?
                 .extract_single(ExtractRequest {
                     url: &url,
                     cookies: cookies.as_deref(),
@@ -135,7 +141,7 @@ async fn run(args: Args) -> Result<()> {
             max_concurrent,
             continue_on_error: _,
         } => {
-            executor
+            build_executor()?
                 .batch_process(
                     &input,
                     output_dir.as_deref(),
@@ -148,7 +154,7 @@ async fn run(args: Args) -> Result<()> {
         }
 
         Commands::Platforms { detailed: _ } => {
-            executor
+            build_executor()?
                 .list_platforms(&crate::cli::OutputFormat::Pretty)
                 .await?;
         }
@@ -190,7 +196,7 @@ async fn run(args: Args) -> Result<()> {
                 io::stdin().read_to_string(&mut buffer)?;
                 buffer
             };
-            executor
+            build_executor()?
                 .resolve_stream(
                     &url,
                     cookies.as_deref(),

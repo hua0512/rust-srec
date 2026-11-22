@@ -49,7 +49,7 @@ pub struct ExtractRequest<'a> {
 }
 
 impl CommandExecutor {
-    pub fn new(config: AppConfig) -> Self {
+    pub fn new(config: AppConfig) -> Result<Self> {
         let proxy_config = if let Some(proxy_url) = &config.default_proxy {
             Some(ProxyConfig {
                 url: proxy_url.clone(),
@@ -60,12 +60,7 @@ impl CommandExecutor {
             None
         };
 
-        let extractor_factory = factory_with_proxy(proxy_config);
-        Self {
-            config,
-            extractor_factory,
-            quiet: false,
-        }
+        Self::with_proxy_config(config, proxy_config)
     }
 
     pub fn new_with_proxy(
@@ -73,19 +68,35 @@ impl CommandExecutor {
         proxy_url: Option<String>,
         proxy_username: Option<String>,
         proxy_password: Option<String>,
-    ) -> Self {
+    ) -> Result<Self> {
         let proxy_config = proxy_url.map(|url| ProxyConfig {
             url,
             username: proxy_username,
             password: proxy_password,
         });
 
-        let extractor_factory = factory_with_proxy(proxy_config);
-        Self {
-            config,
-            extractor_factory,
-            quiet: false,
+        Self::with_proxy_config(config, proxy_config)
+    }
+
+    /// Rejects a proxy the HTTP client cannot use. The extractor factory
+    /// would accept it and fail every request instead, reporting the cause
+    /// only through logging, which the default output mode does not show.
+    fn with_proxy_config(config: AppConfig, proxy_config: Option<ProxyConfig>) -> Result<Self> {
+        if let Some(proxy) = &proxy_config
+            && let Err(e) = proxy.reqwest_proxy()
+        {
+            return Err(CliError::invalid_input(format!(
+                "proxy '{}' cannot be used: {}",
+                platforms_parser::proxy::redacted_url(&proxy.url),
+                e
+            )));
         }
+
+        Ok(Self {
+            config,
+            extractor_factory: factory_with_proxy(proxy_config),
+            quiet: false,
+        })
     }
 
     pub fn with_quiet(mut self, quiet: bool) -> Self {
@@ -102,11 +113,14 @@ impl CommandExecutor {
             .map_err(|e| CliError::invalid_input(format!("Invalid --extras JSON: {e}")))
     }
 
-    pub(crate) fn retry_delay(attempt: u32, error: Option<&CliError>) -> Duration {
-        const MAX_BACKOFF_MS: u64 = 60_000;
+    /// The wait before the next attempt, or `None` when the provider asked
+    /// for a wait above the backoff cap: retrying sooner would only be rate
+    /// limited again, and sleeping that long would leave the command hanging.
+    pub(crate) fn retry_delay(attempt: u32, error: Option<&CliError>) -> Option<Duration> {
+        const MAX_BACKOFF: Duration = Duration::from_secs(60);
         let multiplier = 1u64.checked_shl(attempt).unwrap_or(u64::MAX);
         let exp_backoff =
-            Duration::from_millis(1000u64.saturating_mul(multiplier).min(MAX_BACKOFF_MS));
+            Duration::from_millis(1000u64.saturating_mul(multiplier)).min(MAX_BACKOFF);
 
         if let Some(CliError::Extractor(
             platforms_parser::extractor::error::ExtractorError::RateLimited {
@@ -115,10 +129,10 @@ impl CommandExecutor {
             },
         )) = error
         {
-            return (*wait).max(exp_backoff);
+            return (*wait <= MAX_BACKOFF).then(|| (*wait).max(exp_backoff));
         }
 
-        exp_backoff
+        Some(exp_backoff)
     }
 
     pub async fn resolve_stream(
@@ -434,7 +448,7 @@ impl CommandExecutor {
 
         for attempt in 0..=retries {
             let extras_clone = extras_json.clone();
-            match timeout(timeout_duration, async {
+            let error = match timeout(timeout_duration, async {
                 let extractor = self.extractor_factory.create_extractor(
                     url,
                     cookies.map(String::from),
@@ -447,21 +461,17 @@ impl CommandExecutor {
             .await
             {
                 Ok(Ok(result)) => return Ok(result),
-                Ok(Err(e)) => {
-                    let delay = Self::retry_delay(attempt, Some(&e));
-                    last_error = Some(e);
-                    if attempt < retries {
-                        sleep(delay).await;
-                    }
-                }
-                Err(_) => {
-                    let err = CliError::timeout(timeout_secs);
-                    let delay = Self::retry_delay(attempt, Some(&err));
-                    last_error = Some(err);
-                    if attempt < retries {
-                        sleep(delay).await;
-                    }
-                }
+                Ok(Err(e)) => e,
+                Err(_) => CliError::timeout(timeout_secs),
+            };
+
+            let delay = Self::retry_delay(attempt, Some(&error));
+            last_error = Some(error);
+            let Some(delay) = delay else {
+                break;
+            };
+            if attempt < retries {
+                sleep(delay).await;
             }
         }
 
@@ -828,35 +838,38 @@ mod tests {
     }
 
     #[test]
-    fn retry_delay_bounds_large_attempts_and_honors_rate_limit_retry_after() {
+    fn retry_delay_bounds_large_attempts_and_rate_limit_retry_after() {
         use platforms_parser::extractor::error::ExtractorError;
         use std::time::Duration;
 
         assert_eq!(
             CommandExecutor::retry_delay(0, None),
-            Duration::from_secs(1)
+            Some(Duration::from_secs(1))
         );
         assert_eq!(
             CommandExecutor::retry_delay(3, None),
-            Duration::from_secs(8)
+            Some(Duration::from_secs(8))
         );
         // Shifts >= 64 must saturate cleanly instead of panicking on `1 << attempt`.
         assert_eq!(
             CommandExecutor::retry_delay(64, None),
-            Duration::from_secs(60)
-        );
-        assert_eq!(
-            CommandExecutor::retry_delay(u32::MAX, None),
-            Duration::from_secs(60)
+            Some(Duration::from_secs(60))
         );
 
-        let rate_limited = CliError::Extractor(ExtractorError::RateLimited {
-            code: Some("429".to_string()),
-            retry_after: Some(Duration::from_secs(120)),
-        });
+        let rate_limited = |seconds| {
+            CliError::Extractor(ExtractorError::RateLimited {
+                code: Some("429".to_string()),
+                retry_after: Some(Duration::from_secs(seconds)),
+            })
+        };
         assert_eq!(
-            CommandExecutor::retry_delay(0, Some(&rate_limited)),
-            Duration::from_secs(120)
+            CommandExecutor::retry_delay(0, Some(&rate_limited(30))),
+            Some(Duration::from_secs(30))
+        );
+        // A wait above the cap ends the retries instead of sleeping for it.
+        assert_eq!(
+            CommandExecutor::retry_delay(0, Some(&rate_limited(7200))),
+            None
         );
     }
 }

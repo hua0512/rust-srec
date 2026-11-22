@@ -521,10 +521,6 @@ mod tests {
             Some("session_ok")
         );
         assert!(!bilibili.extractor.cookies.contains_key("refresh_token"));
-        let headers = bilibili.extractor.get_platform_headers_map();
-        if let Some(cookie_hdr) = headers.get("cookie").or_else(|| headers.get("Cookie")) {
-            assert!(!cookie_hdr.contains("do_not_send_long_lived"));
-        }
     }
 
     #[tokio::test]

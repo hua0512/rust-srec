@@ -102,7 +102,6 @@ impl DanmuProxy {
     /// The client for requests a protocol makes before connecting, so they
     /// leave through the same proxy as the WebSocket.
     pub(crate) fn http_client(&self) -> Result<reqwest::Client> {
-        // Errors may quote the URL, so they are not passed on.
         let proxy = self
             .endpoint
             .reqwest_proxy()

@@ -56,7 +56,7 @@ pub fn create_client_builder(proxy_config: Option<ProxyConfig>) -> reqwest::Clie
             Err(e) => {
                 warn!(
                     proxy = %crate::proxy::redacted_url(&config.url),
-                    error = %e.without_url(),
+                    error = %e,
                     "Failed to configure proxy; requests through it will fail"
                 );
                 // Without a proxy the client would follow the environment,
