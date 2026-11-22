@@ -642,7 +642,8 @@ fn parse_titles(titles_json: &Option<String>) -> (Vec<TitleChange>, String) {
     params(("id" = String, Path, description = "Session ID")),
     responses(
         (status = 200, description = "Session deleted"),
-        (status = 404, description = "Session not found", body = crate::api::error::ApiErrorResponse)
+        (status = 404, description = "Session not found", body = crate::api::error::ApiErrorResponse),
+        (status = 409, description = "Session is still active or has active pipeline work", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]
@@ -650,14 +651,8 @@ pub async fn delete_session(
     State(state): State<SessionRouteState>,
     ApiPath(id): ApiPath<String>,
 ) -> ApiResult<()> {
-    // Get session repository from state
-    let session_repository = &state.session_repository;
-
-    // Check if session exists
-    session_repository.get_session(&id).await?;
-
-    // Foreign-key cascades remove the session's media outputs and danmu statistics.
-    session_repository.delete_session(&id).await?;
+    // Validated and deleted atomically inside a BEGIN IMMEDIATE transaction.
+    state.session_repository.delete_session(&id).await?;
 
     Ok(())
 }
@@ -721,6 +716,7 @@ fn validate_session_delete_batch(ids: &[String]) -> ApiResult<()> {
     request_body = BatchDeleteRequest,
     responses(
         (status = 200, description = "Sessions deleted", body = BatchDeleteResponse),
+        (status = 409, description = "One or more sessions are still active or have active pipeline work", body = crate::api::error::ApiErrorResponse),
         (status = 422, description = "Batch exceeds 100 session IDs", body = crate::api::error::ApiErrorResponse),
         (status = 500, description = "Server error", body = crate::api::error::ApiErrorResponse)
     ),
@@ -756,7 +752,7 @@ mod tests {
             .await
             .unwrap();
         crate::database::run_migrations(&pool).await.unwrap();
-        sqlx::query("INSERT INTO live_sessions (id, start_time) VALUES ('kept', 0)")
+        sqlx::query("INSERT INTO live_sessions (id, start_time, end_time) VALUES ('kept', 0, 1)")
             .execute(&pool)
             .await
             .unwrap();

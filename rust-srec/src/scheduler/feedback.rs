@@ -434,6 +434,19 @@ impl SchedulerFeedback {
         self.target_scans.load(Ordering::Relaxed)
     }
 
+    /// Whether anything but the retirement marker is still held for `id`.
+    #[cfg(test)]
+    pub(crate) fn has_bookkeeping_for(&self, id: &str) -> bool {
+        let state = self.state.lock();
+        state.targets.contains_key(id)
+            || state.queues.contains_key(id)
+            || state.active_downloads.contains_key(id)
+            || state.latest_attempts.contains_key(id)
+            || state.retired_attempts.contains_key(id)
+            || state.epochs.contains_key(id)
+            || state.capacity.contains_key(id)
+    }
+
     /// Clear a retirement so feedback reaches the streamer's actor again.
     ///
     /// A download still running from before the retirement is being stopped on
@@ -454,6 +467,24 @@ impl SchedulerFeedback {
 
     pub(crate) fn unavailable(&self, id: &str) {
         self.stop_streamer(id, FeedbackDisposition::ActorUnavailable);
+    }
+
+    /// Retire a deleted streamer and drop its per-streamer bookkeeping.
+    ///
+    /// The retirement marker stays, so feedback that still arrives for the id
+    /// is answered as retired instead of opening a queue for a streamer that no
+    /// longer exists. Envelopes already reserved keep their semaphore alive
+    /// through their own handle.
+    pub(crate) fn purge_streamer(&self, id: &str) {
+        self.stop_streamer(id, FeedbackDisposition::Retired);
+        let mut state = self.state.lock();
+        state.epochs.remove(id);
+        state.capacity.remove(id);
+        // A download that is still running is recognised by these entries
+        // until its terminal envelope arrives.
+        if !state.active_downloads.contains_key(id) && !state.retired_attempts.contains_key(id) {
+            state.latest_attempts.remove(id);
+        }
     }
 
     fn retirement_disposition(&self, id: &str) -> FeedbackDisposition {

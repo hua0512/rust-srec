@@ -9,7 +9,6 @@
 //! `WebcastGiftMessage`, `WebcastControlMessage`, and similar messages.
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::io::Read;
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -23,7 +22,8 @@ use url::form_urlencoded;
 
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::websocket::{
-    DanmuProtocol, DanmuProtocolFactory, DanmuProtocolOutput, WebSocketDanmuProvider,
+    DanmuProtocol, DanmuProtocolFactory, DanmuProtocolOutput, MAX_DECOMPRESSED_FRAME_BYTES,
+    WebSocketDanmuProvider, read_bounded,
 };
 use crate::danmaku::{DanmuControlEvent, DanmuItem, DanmuMessage};
 use crate::extractor::default::{DEFAULT_UA, default_client};
@@ -199,12 +199,11 @@ impl TikTokDanmuProtocol {
     }
 
     fn decompress_gzip(data: &[u8]) -> Result<Vec<u8>> {
-        let mut decoder = GzDecoder::new(data);
-        let mut out = Vec::new();
-        decoder
-            .read_to_end(&mut out)
-            .map_err(|e| DanmakuError::protocol(format!("Failed to decompress gzip: {e}")))?;
-        Ok(out)
+        read_bounded(
+            GzDecoder::new(data),
+            MAX_DECOMPRESSED_FRAME_BYTES,
+            "TikTok gzip",
+        )
     }
 
     fn header_value<'a>(frame: &'a proto::PushFrame, key: &str) -> Option<&'a str> {
@@ -427,19 +426,28 @@ impl DanmuProtocol for TikTokDanmuProtocol {
     fn configure_connection(
         &mut self,
         cookies: Option<&str>,
-        _extras: Option<&HashMap<String, String>>,
+        extras: Option<&HashMap<String, String>>,
     ) {
         if let Some(c) = cookies.map(str::trim).filter(|c| !c.is_empty()) {
             self.cookies = Some(c.to_string());
         }
-        self.room_id = None;
+        self.room_id = extras
+            .and_then(|map| map.get("room_id"))
+            .map(String::as_str)
+            .map(str::trim)
+            .filter(|id| Self::numeric_room_id(id))
+            .map(str::to_owned);
         self.ttwid = None;
         self.seen.clear();
         self.seen_set.clear();
     }
 
     async fn websocket_url(&mut self, room_id: &str) -> Result<String> {
-        let room_id = if Self::numeric_room_id(room_id) {
+        let room_id = if let Some(preconfigured) =
+            self.room_id.clone().filter(|id| Self::numeric_room_id(id))
+        {
+            preconfigured
+        } else if Self::numeric_room_id(room_id) {
             room_id.to_string()
         } else {
             self.resolve_room_id(room_id).await?
@@ -800,6 +808,15 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.to_string().contains("disable_web_direct"));
+    }
+
+    #[tokio::test]
+    async fn preconfigured_numeric_room_id_skips_room_scrape() {
+        let mut protocol = TikTokDanmuProtocol::default();
+        let extras = HashMap::from([("room_id".to_string(), "7388888888".to_string())]);
+        protocol.configure_connection(Some("ttwid=user_ttwid_123"), Some(&extras));
+        let ws_url = protocol.websocket_url("@some_handle").await.unwrap();
+        assert!(ws_url.contains("room_id=7388888888"), "{ws_url}");
     }
 
     /// Live integration check: joins a currently live room and prints chat.

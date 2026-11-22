@@ -507,6 +507,10 @@ impl DownloadEngine for FfmpegEngine {
         self.version.get().is_some()
     }
 
+    async fn wait_available(&self) -> bool {
+        self.version.wait().await.is_some()
+    }
+
     fn version(&self) -> Option<String> {
         self.version.get().map(str::to_owned)
     }

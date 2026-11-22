@@ -379,6 +379,17 @@ async fn change_password_validates_with_400_and_revokes_every_session() {
     // Rejected attempts leave the session usable.
     assert_eq!(streamers_status(&app, &old.access).await, StatusCode::OK);
 
+    // Warm the API key cache with `must_change_password = true`; changing the
+    // password must evict the cached state immediately rather than serving the
+    // 403 for up to the 5-second cache TTL.
+    app.run_sql(&format!(
+        "UPDATE users SET must_change_password = 1 WHERE username = '{ADMIN_USERNAME}'"
+    ))
+    .await;
+    app.get("/api/streamers", &api_key)
+        .await
+        .assert_error(StatusCode::FORBIDDEN, "PASSWORD_CHANGE_REQUIRED");
+
     let new_password = "e2e-fresh-Password-2";
     app.post(
         "/api/auth/change-password",
@@ -387,6 +398,10 @@ async fn change_password_validates_with_400_and_revokes_every_session() {
     )
     .await
     .expect_status(StatusCode::OK);
+
+    // API keys are separate credentials, revoked only through DELETE, and see
+    // the cleared `must_change_password` flag on the very next request.
+    assert_eq!(streamers_status(&app, &api_key).await, StatusCode::OK);
 
     assert_eq!(
         streamers_status(&app, &old.access).await,
@@ -410,9 +425,6 @@ async fn change_password_validates_with_400_and_revokes_every_session() {
         1,
         "only the new login remains: {sessions:?}"
     );
-
-    // API keys are separate credentials, revoked only through DELETE.
-    assert_eq!(streamers_status(&app, &api_key).await, StatusCode::OK);
 
     app.shutdown().await;
 }

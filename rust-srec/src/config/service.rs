@@ -178,6 +178,27 @@ where
         self.broadcaster.publish(event);
     }
 
+    pub(crate) fn publish_config_write(
+        &self,
+        write: crate::database::repositories::config::ConfigWritePublication,
+    ) {
+        use crate::database::repositories::config::ConfigWritePublication;
+        match write {
+            ConfigWritePublication::Owner(owner) => self.publish_credential_owner(owner),
+            ConfigWritePublication::Global => {
+                self.global_cache.invalidate();
+                self.invalidate_all_filter_snapshots();
+                self.cache.invalidate_all();
+                self.broadcaster.publish(ConfigUpdateEvent::GlobalUpdated);
+            }
+            ConfigWritePublication::Engine { engine_id } => {
+                self.cache.invalidate_all();
+                self.broadcaster
+                    .publish(ConfigUpdateEvent::EngineUpdated { engine_id });
+            }
+        }
+    }
+
     pub(crate) fn publish_credential_material(&self, owner: crate::credentials::CredentialOwner) {
         self.broadcaster
             .publish(ConfigUpdateEvent::CredentialMaterialChanged { owner });
@@ -218,16 +239,29 @@ where
         self.config_repo
             .update_global_config_with_route(config, route)
             .await?;
-        self.global_cache.invalidate();
-        self.invalidate_all_filter_snapshots();
-
-        // Invalidate all cached configs since global affects everything
-        self.cache.invalidate_all();
-
-        // Broadcast update event
-        self.broadcaster.publish(ConfigUpdateEvent::GlobalUpdated);
+        if !self.config_repo.has_bound_publication() {
+            self.global_cache.invalidate();
+            self.invalidate_all_filter_snapshots();
+            self.cache.invalidate_all();
+            self.broadcaster.publish(ConfigUpdateEvent::GlobalUpdated);
+        }
 
         tracing::info!("Global config updated, cache invalidated");
+        Ok(())
+    }
+
+    /// Update only `global_config.log_filter_directive` without racing edits
+    /// to other global configuration fields.
+    pub async fn update_log_filter_directive(&self, directive: &str) -> Result<()> {
+        self.config_repo
+            .update_log_filter_directive(directive)
+            .await?;
+        if !self.config_repo.has_bound_publication() {
+            self.global_cache.invalidate();
+            self.invalidate_all_filter_snapshots();
+            self.cache.invalidate_all();
+            self.broadcaster.publish(ConfigUpdateEvent::GlobalUpdated);
+        }
         Ok(())
     }
 
@@ -252,10 +286,13 @@ where
     pub async fn create_platform_config(&self, config: &PlatformConfigDbModel) -> Result<()> {
         self.config_repo.create_platform_config(config).await?;
 
-        self.broadcaster
-            .publish(ConfigUpdateEvent::PlatformUpdated {
-                platform_id: config.id.clone(),
-            });
+        if !self.config_repo.has_bound_publication() {
+            self.cache.invalidate_all();
+            self.broadcaster
+                .publish(ConfigUpdateEvent::PlatformUpdated {
+                    platform_id: config.id.clone(),
+                });
+        }
 
         Ok(())
     }
@@ -289,13 +326,15 @@ where
             .update_platform_config_scoped(config, selection, route)
             .await?;
 
-        // Invalidate configs for streamers on this platform
-        self.invalidate_streamers_by_platform(&config.id).await?;
+        if !self.config_repo.has_bound_publication() {
+            // Invalidate configs for streamers on this platform
+            self.invalidate_streamers_by_platform(&config.id).await?;
 
-        self.broadcaster
-            .publish(ConfigUpdateEvent::PlatformUpdated {
-                platform_id: config.id.clone(),
-            });
+            self.broadcaster
+                .publish(ConfigUpdateEvent::PlatformUpdated {
+                    platform_id: config.id.clone(),
+                });
+        }
 
         tracing::info!("Platform config {} updated", config.id);
         Ok(())
@@ -396,10 +435,13 @@ where
             .config_repo
             .clone_template_config(source_id, new_name)
             .await?;
-        self.broadcaster
-            .publish(ConfigUpdateEvent::TemplateUpdated {
-                template_id: cloned.id.clone(),
-            });
+        if !self.config_repo.has_bound_publication() {
+            self.cache.invalidate_all();
+            self.broadcaster
+                .publish(ConfigUpdateEvent::TemplateUpdated {
+                    template_id: cloned.id.clone(),
+                });
+        }
         Ok(cloned)
     }
 
@@ -418,10 +460,13 @@ where
             .write_template_config(config, true, route)
             .await?;
 
-        self.broadcaster
-            .publish(ConfigUpdateEvent::TemplateUpdated {
-                template_id: config.id.clone(),
-            });
+        if !self.config_repo.has_bound_publication() {
+            self.cache.invalidate_all();
+            self.broadcaster
+                .publish(ConfigUpdateEvent::TemplateUpdated {
+                    template_id: config.id.clone(),
+                });
+        }
 
         Ok(())
     }
@@ -441,13 +486,15 @@ where
             .write_template_config(config, false, route)
             .await?;
 
-        // Invalidate configs for streamers using this template
-        self.invalidate_streamers_by_template(&config.id).await?;
+        if !self.config_repo.has_bound_publication() {
+            // Invalidate configs for streamers using this template
+            self.invalidate_streamers_by_template(&config.id).await?;
 
-        self.broadcaster
-            .publish(ConfigUpdateEvent::TemplateUpdated {
-                template_id: config.id.clone(),
-            });
+            self.broadcaster
+                .publish(ConfigUpdateEvent::TemplateUpdated {
+                    template_id: config.id.clone(),
+                });
+        }
 
         tracing::info!("Template config {} updated", config.id);
         Ok(())
@@ -455,15 +502,19 @@ where
 
     /// Delete a template configuration.
     pub async fn delete_template_config(&self, id: &str) -> Result<()> {
-        // Invalidate before delete
-        self.invalidate_streamers_by_template(id).await?;
+        if !self.config_repo.has_bound_publication() {
+            // Invalidate before delete
+            self.invalidate_streamers_by_template(id).await?;
+        }
 
         self.config_repo.delete_template_config(id).await?;
 
-        self.broadcaster
-            .publish(ConfigUpdateEvent::TemplateUpdated {
-                template_id: id.to_string(),
-            });
+        if !self.config_repo.has_bound_publication() {
+            self.broadcaster
+                .publish(ConfigUpdateEvent::TemplateUpdated {
+                    template_id: id.to_string(),
+                });
+        }
 
         Ok(())
     }
@@ -484,12 +535,14 @@ where
     pub async fn create_engine_config(&self, config: &EngineConfigurationDbModel) -> Result<()> {
         self.config_repo.create_engine_config(config).await?;
 
-        // We don't track which streamers use which engine configs; invalidate all for correctness.
-        self.cache.invalidate_all();
+        if !self.config_repo.has_bound_publication() {
+            // We don't track which streamers use which engine configs; invalidate all for correctness.
+            self.cache.invalidate_all();
 
-        self.broadcaster.publish(ConfigUpdateEvent::EngineUpdated {
-            engine_id: config.id.clone(),
-        });
+            self.broadcaster.publish(ConfigUpdateEvent::EngineUpdated {
+                engine_id: config.id.clone(),
+            });
+        }
 
         Ok(())
     }
@@ -498,13 +551,15 @@ where
     pub async fn update_engine_config(&self, config: &EngineConfigurationDbModel) -> Result<()> {
         self.config_repo.update_engine_config(config).await?;
 
-        // Engine updates may affect any streamer using this engine; since we don't track
-        // usage, invalidate all cached merged configs for correctness.
-        self.cache.invalidate_all();
+        if !self.config_repo.has_bound_publication() {
+            // Engine updates may affect any streamer using this engine; since we don't track
+            // usage, invalidate all cached merged configs for correctness.
+            self.cache.invalidate_all();
 
-        self.broadcaster.publish(ConfigUpdateEvent::EngineUpdated {
-            engine_id: config.id.clone(),
-        });
+            self.broadcaster.publish(ConfigUpdateEvent::EngineUpdated {
+                engine_id: config.id.clone(),
+            });
+        }
 
         tracing::info!("Engine config {} updated", config.id);
         Ok(())
@@ -514,12 +569,14 @@ where
     pub async fn delete_engine_config(&self, id: &str) -> Result<()> {
         self.config_repo.delete_engine_config(id).await?;
 
-        // Deleting an engine can affect any streamer that referenced it; invalidate all.
-        self.cache.invalidate_all();
+        if !self.config_repo.has_bound_publication() {
+            // Deleting an engine can affect any streamer that referenced it; invalidate all.
+            self.cache.invalidate_all();
 
-        self.broadcaster.publish(ConfigUpdateEvent::EngineUpdated {
-            engine_id: id.to_string(),
-        });
+            self.broadcaster.publish(ConfigUpdateEvent::EngineUpdated {
+                engine_id: id.to_string(),
+            });
+        }
 
         tracing::info!("Engine config {} deleted", id);
         Ok(())

@@ -44,7 +44,7 @@ where
 }
 
 // Custom deserializer to handle lp field which can be either a string or an integer
-fn deserialize_lp<'de, D>(deserializer: D) -> Result<i64, D::Error>
+pub(super) fn deserialize_lp<'de, D>(deserializer: D) -> Result<i64, D::Error>
 where
     D: serde::Deserializer<'de>,
 {

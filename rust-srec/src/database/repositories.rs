@@ -102,8 +102,23 @@ pub(crate) fn inject_key(
     Some(document)
 }
 
-/// Stay below SQLite's historical 999-parameter limit while bounding each lookup.
+/// SQLite's historical 999-parameter bind limit.
+pub(crate) const MAX_SQLITE_BIND_VARS: usize = 999;
+
+/// Stay below [`MAX_SQLITE_BIND_VARS`] while bounding each lookup.
 pub(crate) const LOOKUP_BATCH_SIZE: usize = 500;
+
+/// Whether `error` is SQLite's `SQLITE_CONSTRAINT_UNIQUE` (`2067`).
+///
+/// Primary-key collisions (`SQLITE_CONSTRAINT_PRIMARYKEY`, `1555`) are excluded
+/// so callers mapping unique-column conflicts (such as preset `name`) do not
+/// misreport an ID collision.
+pub(crate) fn is_sqlite_unique_violation(error: &sqlx::Error) -> bool {
+    matches!(
+        error,
+        sqlx::Error::Database(db_err) if db_err.code().as_deref() == Some("2067")
+    )
+}
 
 pub(crate) fn unique_lookup_ids(ids: &[String]) -> Vec<&str> {
     let mut seen = std::collections::HashSet::new();

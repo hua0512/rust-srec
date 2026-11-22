@@ -1,8 +1,10 @@
-use clap::{Parser, Subcommand, ValueEnum};
-use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::path::PathBuf;
 
-#[derive(Parser, Debug)]
+use clap::{Parser, Subcommand, ValueEnum};
+use serde::{Deserialize, Serialize};
+
+#[derive(Parser)]
 #[command(
     name = "strev",
     about = "Strev (Streev) - CLI tool for streaming media extraction and retrieval from various platforms",
@@ -46,7 +48,44 @@ pub struct Args {
     pub proxy_password: Option<String>,
 }
 
-#[derive(Subcommand, Debug)]
+impl Args {
+    pub fn output_format(&self) -> Option<OutputFormat> {
+        match &self.command {
+            Commands::Extract { output, .. } => Some(*output),
+            Commands::Batch { output_format, .. } => Some(*output_format),
+            Commands::Resolve { output, .. } => Some(*output),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Debug for Args {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let redacted_proxy = self
+            .proxy
+            .as_deref()
+            .map(platforms_parser::proxy::redacted_url);
+        f.debug_struct("Args")
+            .field("command", &self.command)
+            .field("verbose", &self.verbose)
+            .field("quiet", &self.quiet)
+            .field("config", &self.config)
+            .field("timeout", &self.timeout)
+            .field("retries", &self.retries)
+            .field("proxy", &redacted_proxy)
+            .field(
+                "proxy_username",
+                &self.proxy_username.as_ref().map(|_| "[redacted]"),
+            )
+            .field(
+                "proxy_password",
+                &self.proxy_password.as_ref().map(|_| "[redacted]"),
+            )
+            .finish()
+    }
+}
+
+#[derive(Subcommand)]
 pub enum Commands {
     /// Extract media information from a URL
     Extract {
@@ -154,6 +193,75 @@ pub enum Commands {
         #[arg(short = 'O', long)]
         output_file: Option<PathBuf>,
     },
+}
+
+impl fmt::Debug for Commands {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Commands::Extract {
+                url,
+                cookies,
+                extras,
+                output,
+                output_file,
+                quality,
+                format,
+                auto_select,
+            } => f
+                .debug_struct("Extract")
+                .field("url", &platforms_parser::media::redact_url_for_display(url))
+                .field("cookies", &cookies.as_ref().map(|_| "[redacted]"))
+                .field("extras", &extras.as_ref().map(|_| "[redacted]"))
+                .field("output", output)
+                .field("output_file", output_file)
+                .field("quality", quality)
+                .field("format", format)
+                .field("auto_select", auto_select)
+                .finish(),
+            Commands::Batch {
+                input,
+                output_dir,
+                output_format,
+                max_concurrent,
+                continue_on_error,
+            } => f
+                .debug_struct("Batch")
+                .field("input", input)
+                .field("output_dir", output_dir)
+                .field("output_format", output_format)
+                .field("max_concurrent", max_concurrent)
+                .field("continue_on_error", continue_on_error)
+                .finish(),
+            Commands::Platforms { detailed } => f
+                .debug_struct("Platforms")
+                .field("detailed", detailed)
+                .finish(),
+            Commands::Completions { shell } => {
+                f.debug_struct("Completions").field("shell", shell).finish()
+            }
+            Commands::Config { show, reset } => f
+                .debug_struct("Config")
+                .field("show", show)
+                .field("reset", reset)
+                .finish(),
+            Commands::Resolve {
+                url,
+                cookies,
+                extras,
+                payload,
+                output,
+                output_file,
+            } => f
+                .debug_struct("Resolve")
+                .field("url", &platforms_parser::media::redact_url_for_display(url))
+                .field("cookies", &cookies.as_ref().map(|_| "[redacted]"))
+                .field("extras", &extras.as_ref().map(|_| "[redacted]"))
+                .field("payload", &payload.as_ref().map(|_| "[redacted]"))
+                .field("output", output)
+                .field("output_file", output_file)
+                .finish(),
+        }
+    }
 }
 
 #[derive(ValueEnum, Copy, Clone, Debug, Default, Serialize, Deserialize)]

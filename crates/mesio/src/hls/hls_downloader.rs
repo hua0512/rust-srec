@@ -1,52 +1,21 @@
-use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
-use tracing::warn;
 
-use futures::{Stream, StreamExt};
+use futures::StreamExt;
 use hls::HlsData;
 use reqwest::Client;
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::debug;
+use tracing::{debug, warn};
 
+use crate::cancel_stream::CancelOnDropStream;
+use crate::segment_engine::assembler::AssemblerExit;
 use crate::{
-    BoxMediaStream, DownloadError, downloader::create_client_pool, hls::HlsDownloaderError,
+    BoxMediaStream, DownloadError, DownloadEvent, DownloadHandle, DownloadRequest, DownloadSession,
+    DownloadTerminal, EventSink, MediaEngine, ProtocolSelection, ProtocolType,
+    downloader::create_client_pool,
 };
-use crate::{
-    DownloadEvent, DownloadRequest, DownloadSession, EventSink, MediaEngine, ProtocolSelection,
-    ProtocolType,
-};
-use crate::{DownloadHandle, DownloadTerminal};
-use tokio_util::sync::CancellationToken;
 
 use super::engine::{self, EngineHandles, Terminal};
 use super::{HlsConfig, HlsStreamEvent};
-use crate::segment_engine::assembler::AssemblerExit;
-
-struct CancelOnDropStream {
-    inner: BoxMediaStream<HlsData, HlsDownloaderError>,
-    token: CancellationToken,
-}
-
-impl CancelOnDropStream {
-    fn new(inner: BoxMediaStream<HlsData, HlsDownloaderError>, token: CancellationToken) -> Self {
-        Self { inner, token }
-    }
-}
-
-impl Stream for CancelOnDropStream {
-    type Item = Result<HlsData, HlsDownloaderError>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.inner.as_mut().poll_next(cx)
-    }
-}
-
-impl Drop for CancelOnDropStream {
-    fn drop(&mut self) {
-        self.token.cancel();
-    }
-}
 
 pub struct HlsDownloader {
     clients: Arc<crate::downloader::ClientPool>,
@@ -63,6 +32,13 @@ impl HlsDownloader {
         let downloader_config = config.base.clone();
         let clients = Arc::new(create_client_pool(&downloader_config)?);
         Ok(Self { clients, config })
+    }
+
+    pub(crate) fn with_clients(
+        config: HlsConfig,
+        clients: Arc<crate::downloader::ClientPool>,
+    ) -> Self {
+        Self { clients, config }
     }
 
     pub fn config(&self) -> &HlsConfig {
@@ -199,6 +175,13 @@ impl HlsDownloader {
                         "Assembler task finished with error: {}",
                         crate::redact::redact_diagnostic(&e)
                     );
+                    if !e.is_cancelled() && !matches!(terminal, DownloadTerminal::PipelineError(_))
+                    {
+                        terminal = DownloadTerminal::PipelineError(Arc::from(format!(
+                            "assembler task failed: {}",
+                            crate::redact::redact_diagnostic(&e)
+                        )));
+                    }
                 }
             }
 

@@ -103,6 +103,9 @@ impl StreamSelectionConfig {
 /// Stream selector for choosing the best stream.
 pub struct StreamSelector {
     config: StreamSelectionConfig,
+    normalized_qualities: Vec<String>,
+    normalized_preferred_cdns: Vec<String>,
+    normalized_blacklisted_cdns: Vec<String>,
 }
 
 impl StreamSelector {
@@ -115,7 +118,27 @@ impl StreamSelector {
     /// Create a new stream selector with custom configuration.
     #[must_use]
     pub fn with_config(config: StreamSelectionConfig) -> Self {
-        Self { config }
+        let normalized_qualities = config
+            .preferred_qualities
+            .iter()
+            .map(|q| q.trim().to_lowercase())
+            .collect();
+        let normalized_preferred_cdns = config
+            .preferred_cdns
+            .iter()
+            .map(|c| c.to_lowercase())
+            .collect();
+        let normalized_blacklisted_cdns = config
+            .blacklisted_cdns
+            .iter()
+            .map(|c| c.to_lowercase())
+            .collect();
+        Self {
+            config,
+            normalized_qualities,
+            normalized_preferred_cdns,
+            normalized_blacklisted_cdns,
+        }
     }
 
     /// Select the best stream from the available streams.
@@ -166,7 +189,7 @@ impl StreamSelector {
 
         // Sort by preference and return the best one
         let mut sorted = candidates;
-        sorted.sort_by(|a, b| self.compare_streams(a, b));
+        sorted.sort_by_cached_key(|s| self.stream_sort_key(s));
 
         sorted
     }
@@ -200,9 +223,11 @@ impl StreamSelector {
         true
     }
 
-    /// Compare two streams for sorting (returns Ordering).
-    /// Lower is better (will be sorted first).
-    fn compare_streams(&self, a: &StreamInfo, b: &StreamInfo) -> std::cmp::Ordering {
+    /// Compute the composite sort key for a candidate stream (lower is better).
+    fn stream_sort_key(
+        &self,
+        stream: &StreamInfo,
+    ) -> (usize, usize, usize, usize, u32, std::cmp::Reverse<u64>) {
         // Priority Order:
         // 1. Quality Preference
         // 2. CDN Preference
@@ -210,14 +235,14 @@ impl StreamSelector {
         // 4. Media Format Preference
         // 5. Priority Field (lower value = higher priority)
         // 6. Bitrate (higher value = better)
-
-        self.quality_score(a)
-            .cmp(&self.quality_score(b))
-            .then_with(|| self.cdn_score(a).cmp(&self.cdn_score(b)))
-            .then_with(|| self.format_score(a).cmp(&self.format_score(b)))
-            .then_with(|| self.media_format_score(a).cmp(&self.media_format_score(b)))
-            .then_with(|| a.priority.cmp(&b.priority))
-            .then_with(|| b.bitrate.cmp(&a.bitrate))
+        (
+            self.quality_score(stream),
+            self.cdn_score(stream),
+            self.format_score(stream),
+            self.media_format_score(stream),
+            stream.priority,
+            std::cmp::Reverse(stream.bitrate),
+        )
     }
 
     /// Get the format preference score (lower is better).
@@ -251,24 +276,23 @@ impl StreamSelector {
     /// A blank quality on either side matches nothing, because every string
     /// contains the empty string.
     fn quality_score(&self, stream: &StreamInfo) -> usize {
-        if self.config.preferred_qualities.is_empty() {
+        if self.normalized_qualities.is_empty() {
             return 0;
         }
 
-        let stream_quality_lower = stream.quality.trim().to_lowercase();
-        if stream_quality_lower.is_empty() {
+        let trimmed = stream.quality.trim();
+        if trimmed.is_empty() {
             return usize::MAX;
         }
+        let stream_quality_lower = trimmed.to_lowercase();
 
-        self.config
-            .preferred_qualities
+        self.normalized_qualities
             .iter()
-            .position(|q| {
-                let pref_lower = q.trim().to_lowercase();
+            .position(|pref_lower| {
                 // Check both directions for flexibility
                 !pref_lower.is_empty()
-                    && (stream_quality_lower.contains(&pref_lower)
-                        || pref_lower.contains(&stream_quality_lower))
+                    && (stream_quality_lower.contains(pref_lower.as_str())
+                        || pref_lower.contains(stream_quality_lower.as_str()))
             })
             .unwrap_or(usize::MAX)
     }
@@ -288,17 +312,15 @@ impl StreamSelector {
 
     /// Get the CDN preference score (lower is better).
     fn cdn_score(&self, stream: &StreamInfo) -> usize {
-        if self.config.preferred_cdns.is_empty() {
+        if self.normalized_preferred_cdns.is_empty() {
             // A neutral score leaves ordering to the other stream preferences.
             return 0;
         }
 
-        let cdn_source = self.get_cdn_source(stream);
-        let cdn_lower = cdn_source.to_lowercase();
-        self.config
-            .preferred_cdns
+        let cdn_lower = self.get_cdn_source(stream).to_lowercase();
+        self.normalized_preferred_cdns
             .iter()
-            .position(|c| cdn_lower.contains(&c.to_lowercase()))
+            .position(|c| cdn_lower.contains(c.as_str()))
             .unwrap_or(usize::MAX)
     }
 
@@ -306,16 +328,14 @@ impl StreamSelector {
     /// Uses case-insensitive substring matching.
     /// Falls back to URL matching if CDN info is not available in extras.
     fn is_cdn_blacklisted(&self, stream: &StreamInfo) -> bool {
-        if self.config.blacklisted_cdns.is_empty() {
+        if self.normalized_blacklisted_cdns.is_empty() {
             return false;
         }
 
-        let cdn_source = self.get_cdn_source(stream);
-        let cdn_lower = cdn_source.to_lowercase();
-        self.config
-            .blacklisted_cdns
+        let cdn_lower = self.get_cdn_source(stream).to_lowercase();
+        self.normalized_blacklisted_cdns
             .iter()
-            .any(|blacklisted| cdn_lower.contains(&blacklisted.to_lowercase()))
+            .any(|blacklisted| cdn_lower.contains(blacklisted.as_str()))
     }
 }
 

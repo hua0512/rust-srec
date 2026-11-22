@@ -72,25 +72,36 @@ impl CacheKey {
         }
     }
 
-    /// Convert to a filename-safe string
+    /// Convert to a collision-resistant, filename-safe SHA-256 hex digest using
+    /// explicit type tagging and 64-bit little-endian length prefixes.
     pub fn to_filename(&self) -> String {
         use sha2::{Digest, Sha256};
 
-        // Create a unique identifier for this cache key
+        let type_tag: u8 = match self.resource_type {
+            CacheResourceType::Headers => 0,
+            CacheResourceType::Content => 1,
+            CacheResourceType::Response => 2,
+            CacheResourceType::Playlist => 3,
+            CacheResourceType::Segment => 4,
+            CacheResourceType::Key => 5,
+        };
+
         let mut hasher = Sha256::new();
-        hasher.update(format!("{:?}:{}", self.resource_type, self.url));
-        if let Some(id) = &self.identifier {
-            hasher.update(":");
-            hasher.update(id);
+        hasher.update([type_tag]);
+        hasher.update((self.url.len() as u64).to_le_bytes());
+        hasher.update(self.url.as_bytes());
+        match &self.identifier {
+            Some(id) => {
+                hasher.update([1u8]);
+                hasher.update((id.len() as u64).to_le_bytes());
+                hasher.update(id.as_bytes());
+            }
+            None => {
+                hasher.update([0u8]);
+            }
         }
 
-        let hash = hasher.finalize();
-        use std::fmt::Write;
-        let mut hex = String::with_capacity(hash.len() * 2);
-        for b in hash.iter() {
-            write!(hex, "{b:02x}").unwrap();
-        }
-        hex
+        hex::encode(hasher.finalize())
     }
 }
 
@@ -278,5 +289,27 @@ mod tests {
         metadata.expires_at = Some(now);
 
         assert!(metadata.is_expired());
+    }
+
+    #[test]
+    fn to_filename_does_not_collide_across_delimiter_boundaries() {
+        let k1 = CacheKey::new(CacheResourceType::Segment, "a:b", None);
+        let k2 = CacheKey::new(CacheResourceType::Segment, "a", Some("b".to_string()));
+        let k3 = CacheKey::new(CacheResourceType::Segment, "a", Some(String::new()));
+        let k4 = CacheKey::new(CacheResourceType::Segment, "a:", None);
+        let k5 = CacheKey::new(CacheResourceType::Playlist, "a:b", None);
+
+        let hashes = [
+            k1.to_filename(),
+            k2.to_filename(),
+            k3.to_filename(),
+            k4.to_filename(),
+            k5.to_filename(),
+        ];
+        for i in 0..hashes.len() {
+            for j in (i + 1)..hashes.len() {
+                assert_ne!(hashes[i], hashes[j], "collision between {i} and {j}");
+            }
+        }
     }
 }

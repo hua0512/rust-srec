@@ -38,9 +38,23 @@ fn validate_global_retention(config: &GlobalConfigDbModel) -> Result<()> {
     Ok(())
 }
 
+/// Post-commit event describing a committed configuration write.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ConfigWritePublication {
+    Owner(CredentialOwner),
+    Global,
+    Engine { engine_id: String },
+}
+
 /// Configuration repository trait.
 #[async_trait]
 pub trait ConfigRepository: Send + Sync {
+    /// Whether this repository publishes cache invalidation and update events
+    /// directly inside its committed-write lease.
+    fn has_bound_publication(&self) -> bool {
+        false
+    }
+
     // Global Config
     async fn get_global_config(&self) -> Result<GlobalConfigDbModel>;
     async fn update_global_config(&self, config: &GlobalConfigDbModel) -> Result<()> {
@@ -53,6 +67,13 @@ pub trait ConfigRepository: Send + Sync {
         config: &GlobalConfigDbModel,
         route: Option<&ProxyRoute>,
     ) -> Result<()>;
+    /// Update `global_config.log_filter_directive` atomically without
+    /// overwriting concurrent edits to other global fields.
+    async fn update_log_filter_directive(&self, directive: &str) -> Result<()> {
+        let mut config = self.get_global_config().await?;
+        config.log_filter_directive = directive.to_owned();
+        self.update_global_config(&config).await
+    }
     async fn create_global_config(&self, config: &GlobalConfigDbModel) -> Result<()>;
 
     // Proxy routes
@@ -165,22 +186,20 @@ pub trait ConfigRepository: Send + Sync {
 /// SQLx implementation of ConfigRepository.
 pub struct SqlxConfigRepository {
     pool: SqlitePool,
-    write_pool: SqlitePool,
     writer: Arc<crate::database::CommittedWriter>,
-    publication: OnceLock<Arc<dyn Fn(CredentialOwner) + Send + Sync>>,
+    config_publication: OnceLock<Arc<dyn Fn(ConfigWritePublication) + Send + Sync>>,
 }
 
 impl SqlxConfigRepository {
     pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
         let writer = Arc::new(crate::database::CommittedWriter::for_invalidation(
-            write_pool.clone(),
+            write_pool,
             Arc::new(crate::utils::task_supervisor::TaskSupervisor::for_committed_work()),
         ));
         Self {
             pool,
-            write_pool,
             writer,
-            publication: OnceLock::new(),
+            config_publication: OnceLock::new(),
         }
     }
 
@@ -192,8 +211,17 @@ impl SqlxConfigRepository {
         self
     }
 
-    pub(crate) fn bind_publication(&self, publication: Arc<dyn Fn(CredentialOwner) + Send + Sync>) {
-        self.publication.get_or_init(|| publication);
+    pub(crate) fn bind_config_publication(
+        &self,
+        publication: Arc<dyn Fn(ConfigWritePublication) + Send + Sync>,
+    ) {
+        self.config_publication.get_or_init(|| publication);
+    }
+
+    pub(super) fn publish_callback(
+        &self,
+    ) -> Option<Arc<dyn Fn(ConfigWritePublication) + Send + Sync>> {
+        self.config_publication.get().cloned()
     }
 
     async fn write_platform_owned(
@@ -209,7 +237,7 @@ impl SqlxConfigRepository {
         let owner = CredentialOwner::Platform {
             platform_id: model.id.clone(),
         };
-        let publication = self.publication.get().cloned();
+        let publication = self.publish_callback();
         self.writer
             .transaction(
                 "write platform configuration",
@@ -240,7 +268,7 @@ impl SqlxConfigRepository {
                 },
                 move |_| {
                     if let Some(publication) = publication {
-                        publication(owner);
+                        publication(ConfigWritePublication::Owner(owner));
                     }
                 },
             )
@@ -251,7 +279,7 @@ impl SqlxConfigRepository {
     /// Publication runs after commit even if the caller is cancelled, so caches
     /// and the runtime never keep the deleted owner or its profiles.
     async fn delete_owned(&self, owner: CredentialOwner) -> Result<()> {
-        let publication = self.publication.get().cloned();
+        let publication = self.publish_callback();
         let published = owner.clone();
         self.writer
             .transaction(
@@ -287,7 +315,7 @@ impl SqlxConfigRepository {
                 },
                 move |_| {
                     if let Some(publication) = publication {
-                        publication(published);
+                        publication(ConfigWritePublication::Owner(published));
                     }
                 },
             )
@@ -305,7 +333,7 @@ impl SqlxConfigRepository {
         let owner = CredentialOwner::Template {
             template_id: model.id.clone(),
         };
-        let publication = self.publication.get().cloned();
+        let publication = self.publish_callback();
         self.writer
             .transaction(
                 "write template configuration",
@@ -337,7 +365,7 @@ impl SqlxConfigRepository {
                 },
                 move |_| {
                     if let Some(publication) = publication {
-                        publication(owner);
+                        publication(ConfigWritePublication::Owner(owner));
                     }
                 },
             )
@@ -347,6 +375,10 @@ impl SqlxConfigRepository {
 
 #[async_trait]
 impl ConfigRepository for SqlxConfigRepository {
+    fn has_bound_publication(&self) -> bool {
+        self.config_publication.get().is_some()
+    }
+
     async fn clone_template_config(
         &self,
         source_id: &str,
@@ -372,13 +404,61 @@ impl ConfigRepository for SqlxConfigRepository {
         route: Option<&ProxyRoute>,
     ) -> Result<()> {
         validate_global_retention(config)?;
-        let mut tx = crate::database::begin_immediate(&self.write_pool).await?;
-        writes::write_global(&mut tx, config, super::row_write::WriteMode::Update).await?;
-        if let Some(route) = route {
-            proxies::set_route(&mut tx, &RouteOwner::Global, route).await?;
-        }
-        tx.commit().await?;
-        Ok(())
+        let model = config.clone();
+        let route = route.cloned();
+        let publication = self.publish_callback();
+        self.writer
+            .transaction(
+                "update global configuration",
+                move |connection| {
+                    Box::pin(async move {
+                        writes::write_global(
+                            connection,
+                            &model,
+                            super::row_write::WriteMode::Update,
+                        )
+                        .await?;
+                        if let Some(route) = &route {
+                            proxies::set_route(connection, &RouteOwner::Global, route).await?;
+                        }
+                        Ok(())
+                    })
+                },
+                move |_| {
+                    if let Some(publication) = publication {
+                        publication(ConfigWritePublication::Global);
+                    }
+                },
+            )
+            .await
+    }
+
+    async fn update_log_filter_directive(&self, directive: &str) -> Result<()> {
+        let directive = directive.to_owned();
+        let publication = self.publish_callback();
+        self.writer
+            .transaction(
+                "update log filter directive",
+                move |connection| {
+                    Box::pin(async move {
+                        let result =
+                            sqlx::query("UPDATE global_config SET log_filter_directive = ?")
+                                .bind(&directive)
+                                .execute(&mut *connection)
+                                .await?;
+                        if result.rows_affected() == 0 {
+                            return Err(Error::not_found("GlobalConfig", "singleton"));
+                        }
+                        Ok(())
+                    })
+                },
+                move |_| {
+                    if let Some(publication) = publication {
+                        publication(ConfigWritePublication::Global);
+                    }
+                },
+            )
+            .await
     }
 
     async fn resolve_streamer_route(
@@ -424,13 +504,28 @@ impl ConfigRepository for SqlxConfigRepository {
 
     async fn create_global_config(&self, config: &GlobalConfigDbModel) -> Result<()> {
         validate_global_retention(config)?;
-        writes::write_global(
-            &mut *self.write_pool.acquire().await?,
-            config,
-            super::row_write::WriteMode::Insert,
-        )
-        .await?;
-        Ok(())
+        let model = config.clone();
+        let publication = self.publish_callback();
+        self.writer
+            .transaction(
+                "create global configuration",
+                move |connection| {
+                    Box::pin(async move {
+                        writes::write_global(
+                            connection,
+                            &model,
+                            super::row_write::WriteMode::Insert,
+                        )
+                        .await
+                    })
+                },
+                move |_| {
+                    if let Some(publication) = publication {
+                        publication(ConfigWritePublication::Global);
+                    }
+                },
+            )
+            .await
     }
 
     async fn get_platform_config(&self, id: &str) -> Result<PlatformConfigDbModel> {
@@ -572,28 +667,80 @@ impl ConfigRepository for SqlxConfigRepository {
     }
 
     async fn create_engine_config(&self, config: &EngineConfigurationDbModel) -> Result<()> {
-        writes::write_engine(
-            &mut *self.write_pool.acquire().await?,
-            config,
-            super::row_write::WriteMode::Insert,
-        )
-        .await?;
-        Ok(())
+        let model = config.clone();
+        let engine_id = model.id.clone();
+        let publication = self.publish_callback();
+        self.writer
+            .transaction(
+                "create engine configuration",
+                move |connection| {
+                    Box::pin(async move {
+                        writes::write_engine(
+                            connection,
+                            &model,
+                            super::row_write::WriteMode::Insert,
+                        )
+                        .await
+                    })
+                },
+                move |_| {
+                    if let Some(publication) = publication {
+                        publication(ConfigWritePublication::Engine { engine_id });
+                    }
+                },
+            )
+            .await
     }
 
     async fn update_engine_config(&self, config: &EngineConfigurationDbModel) -> Result<()> {
-        writes::write_engine(
-            &mut *self.write_pool.acquire().await?,
-            config,
-            super::row_write::WriteMode::Update,
-        )
-        .await?;
-        Ok(())
+        let model = config.clone();
+        let engine_id = model.id.clone();
+        let publication = self.publish_callback();
+        self.writer
+            .transaction(
+                "update engine configuration",
+                move |connection| {
+                    Box::pin(async move {
+                        writes::write_engine(
+                            connection,
+                            &model,
+                            super::row_write::WriteMode::Update,
+                        )
+                        .await
+                    })
+                },
+                move |_| {
+                    if let Some(publication) = publication {
+                        publication(ConfigWritePublication::Engine { engine_id });
+                    }
+                },
+            )
+            .await
     }
 
     async fn delete_engine_config(&self, id: &str) -> Result<()> {
-        writes::delete_engine(&mut *self.write_pool.acquire().await?, id).await?;
-        Ok(())
+        let engine_id = id.to_owned();
+        let published_id = engine_id.clone();
+        let publication = self.publish_callback();
+        self.writer
+            .transaction(
+                "delete engine configuration",
+                move |connection| {
+                    Box::pin(async move {
+                        writes::delete_engine(connection, &engine_id)
+                            .await
+                            .map_err(Into::into)
+                    })
+                },
+                move |_| {
+                    if let Some(publication) = publication {
+                        publication(ConfigWritePublication::Engine {
+                            engine_id: published_id,
+                        });
+                    }
+                },
+            )
+            .await
     }
 }
 
@@ -676,8 +823,10 @@ mod tests {
                     .await
                     .unwrap();
                 let (published, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-                repository.bind_publication(Arc::new(move |owner| {
-                    published.send(owner).unwrap();
+                repository.bind_config_publication(Arc::new(move |write| {
+                    if let ConfigWritePublication::Owner(owner) = write {
+                        published.send(owner).unwrap();
+                    }
                 }));
                 let gate = Arc::new(crate::database::committed_writer::CommitTestGate::default());
                 repository.writer.set_commit_gate(
@@ -729,8 +878,10 @@ mod tests {
                 .await
                 .unwrap();
                 let (published, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-                repository.bind_publication(Arc::new(move |owner| {
-                    published.send(owner).unwrap();
+                repository.bind_config_publication(Arc::new(move |write| {
+                    if let ConfigWritePublication::Owner(owner) = write {
+                        published.send(owner).unwrap();
+                    }
                 }));
                 let gate = Arc::new(crate::database::committed_writer::CommitTestGate::default());
                 repository.writer.set_commit_gate(

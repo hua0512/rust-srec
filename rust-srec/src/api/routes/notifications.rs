@@ -5,22 +5,24 @@ use axum::{
     routing::{get, post},
 };
 use base64::Engine as _;
-use url::Url;
 
+use crate::api::auth_service::AuthPrincipal;
 use crate::api::error::ApiError;
 use crate::api::extract::{ApiJson, ApiPath, ApiQuery};
-use crate::api::jwt::Claims;
 use crate::api::server::AppState;
 use crate::database::models::notification::{
     ChannelType, NotificationChannelDbModel, NotificationEventLogDbModel,
 };
 use crate::notification::NotificationPriority;
-use crate::notification::events::{NotificationEventTypeInfo, notification_event_types};
+use crate::notification::events::{
+    NotificationEventTypeInfo, canonicalize_subscription_event_name, notification_event_types,
+};
 use crate::notification::service::NotificationChannelInstance;
 use crate::proxies::ProxyRoute;
 
 #[derive(Clone)]
 pub struct NotificationRouteState {
+    auth_enabled: bool,
     notification_repository:
         std::sync::Arc<dyn crate::database::repositories::NotificationRepository>,
     notification_service: std::sync::Arc<crate::notification::NotificationService>,
@@ -30,10 +32,36 @@ pub struct NotificationRouteState {
 impl FromRef<AppState> for NotificationRouteState {
     fn from_ref(state: &AppState) -> Self {
         Self {
+            auth_enabled: state.auth_service.is_some(),
             notification_repository: state.notification_repository.clone(),
             notification_service: state.notification_service.clone(),
             web_push_service: state.web_push_service.clone(),
         }
+    }
+}
+
+impl NotificationRouteState {
+    async fn resolve_web_push_user_id(
+        &self,
+        identity: Option<axum::Extension<AuthPrincipal>>,
+    ) -> Result<Option<String>, ApiError> {
+        if self.auth_enabled {
+            return super::request_principal(true, identity).map(Some);
+        }
+        self.notification_repository
+            .default_web_push_user_id()
+            .await
+            .map_err(ApiError::from)
+    }
+}
+
+/// Brings the running channels in line with a change that is already stored.
+/// A failed reload is logged rather than failing the request: the client would
+/// see an error for a change that took effect, and a retried create would add
+/// a second channel.
+async fn reload_channels(service: &crate::notification::NotificationService) {
+    if let Err(error) = service.reload_from_db().await {
+        tracing::error!(%error, "Failed to reload notification channels after a stored change");
     }
 }
 
@@ -194,13 +222,17 @@ pub async fn get_web_push_public_key(
 )]
 pub async fn list_web_push_subscriptions(
     State(state): State<NotificationRouteState>,
-    axum::Extension(claims): axum::Extension<Claims>,
+    identity: Option<axum::Extension<AuthPrincipal>>,
 ) -> Result<Json<Vec<WebPushSubscriptionResponse>>, ApiError> {
     let service = state
         .web_push_service
+        .clone()
         .ok_or_else(|| ApiError::service_unavailable("Web push is not configured"))?;
+    let Some(user_id) = state.resolve_web_push_user_id(identity).await? else {
+        return Ok(Json(Vec::new()));
+    };
 
-    let rows = service.list_subscriptions_for_user(&claims.sub).await?;
+    let rows = service.list_subscriptions_for_user(&user_id).await?;
 
     Ok(Json(
         rows.into_iter()
@@ -229,29 +261,33 @@ pub async fn list_web_push_subscriptions(
 )]
 pub async fn subscribe_web_push(
     State(state): State<NotificationRouteState>,
-    axum::Extension(claims): axum::Extension<Claims>,
+    identity: Option<axum::Extension<AuthPrincipal>>,
     ApiJson(req): ApiJson<SubscribeWebPushRequest>,
 ) -> Result<Json<WebPushSubscriptionResponse>, ApiError> {
     let service = state
         .web_push_service
+        .clone()
         .ok_or_else(|| ApiError::service_unavailable("Web push is not configured"))?;
+    let user_id = state
+        .resolve_web_push_user_id(identity)
+        .await?
+        .ok_or_else(|| {
+            ApiError::service_unavailable(
+                "No local user account available for Web Push subscription",
+            )
+        })?;
 
     let endpoint = req.subscription.endpoint.trim();
     if endpoint.is_empty() {
         return Err(ApiError::bad_request("subscription.endpoint is required"));
     }
-    let endpoint_url = Url::parse(endpoint)
-        .map_err(|e| ApiError::bad_request(format!("Invalid endpoint URL: {}", e)))?;
-    let host = endpoint_url
-        .host()
-        .ok_or_else(|| ApiError::bad_request("subscription.endpoint missing host"))?;
-    if endpoint_url.scheme() != "https"
-        && !(endpoint_url.scheme() == "http" && is_local_host(&host))
-    {
-        return Err(ApiError::bad_request(
-            "subscription.endpoint must use https scheme (or http for localhost)",
-        ));
-    }
+    service
+        .validate_endpoint(endpoint)
+        .await
+        .map_err(|error| match error {
+            crate::Error::Validation(msg) => ApiError::bad_request(msg),
+            other => ApiError::from(other),
+        })?;
 
     let p256dh_raw = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(req.subscription.keys.p256dh.as_bytes())
@@ -293,7 +329,7 @@ pub async fn subscribe_web_push(
 
     let saved = service
         .upsert_subscription(
-            &claims.sub,
+            &user_id,
             endpoint,
             &req.subscription.keys.p256dh,
             &req.subscription.keys.auth,
@@ -323,19 +359,23 @@ pub async fn subscribe_web_push(
 )]
 pub async fn unsubscribe_web_push(
     State(state): State<NotificationRouteState>,
-    axum::Extension(claims): axum::Extension<Claims>,
+    identity: Option<axum::Extension<AuthPrincipal>>,
     ApiJson(req): ApiJson<UnsubscribeWebPushRequest>,
 ) -> Result<StatusCode, ApiError> {
     let service = state
         .web_push_service
+        .clone()
         .ok_or_else(|| ApiError::service_unavailable("Web push is not configured"))?;
+    let Some(user_id) = state.resolve_web_push_user_id(identity).await? else {
+        return Ok(StatusCode::OK);
+    };
 
     let endpoint = req.endpoint.trim();
     if endpoint.is_empty() {
         return Err(ApiError::bad_request("endpoint is required"));
     }
 
-    service.unsubscribe(&claims.sub, endpoint).await?;
+    service.unsubscribe(&user_id, endpoint).await?;
 
     Ok(StatusCode::OK)
 }
@@ -476,10 +516,7 @@ pub async fn create_channel(
     // Save to DB
     repo.create_channel(&channel).await?;
 
-    // Reload service to pick up new channel immediately
-    if let Err(e) = service.reload_from_db().await {
-        tracing::error!("Failed to reload notification service: {}", e);
-    }
+    reload_channels(service).await;
 
     Ok((StatusCode::CREATED, Json(channel)))
 }
@@ -520,10 +557,7 @@ pub async fn update_channel(
         )
         .await?;
 
-    // Reload service
-    if let Err(e) = service.reload_from_db().await {
-        tracing::error!("Failed to reload notification service: {}", e);
-    }
+    reload_channels(service).await;
 
     Ok(Json(channel))
 }
@@ -548,10 +582,7 @@ pub async fn delete_channel(
 
     repo.delete_channel(&id).await?;
 
-    // Reload service
-    if let Err(e) = service.reload_from_db().await {
-        tracing::error!("Failed to reload notification service: {}", e);
-    }
+    reload_channels(service).await;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -583,7 +614,9 @@ pub async fn get_subscriptions(
     params(("id" = String, Path, description = "Channel ID")),
     request_body = UpdateSubscriptionsRequest,
     responses(
-        (status = 200, description = "Subscriptions updated", body = Vec<String>)
+        (status = 200, description = "Subscriptions updated", body = Vec<String>),
+        (status = 400, description = "Unknown or retired notification event name", body = crate::api::error::ApiErrorResponse),
+        (status = 404, description = "Channel not found", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]
@@ -595,30 +628,20 @@ pub async fn update_subscriptions(
     let repo = &state.notification_repository;
     let service = &state.notification_service;
 
-    // Verify channel exists
-    repo.get_channel(&id).await?;
-
-    // Get existing
-    let existing = repo.get_subscriptions_for_channel(&id).await?;
-
-    // Determine diff
-    let new_set: std::collections::HashSet<_> = req.events.iter().cloned().collect();
-    let old_set: std::collections::HashSet<_> = existing.into_iter().collect();
-
-    // Add new
-    for event in new_set.difference(&old_set) {
-        repo.subscribe(&id, event).await?;
+    let mut seen = std::collections::HashSet::with_capacity(req.events.len());
+    let mut canonical_events = Vec::with_capacity(req.events.len());
+    for event in &req.events {
+        let canonical = canonicalize_subscription_event_name(event).ok_or_else(|| {
+            ApiError::bad_request(format!("Unknown notification event type: '{event}'"))
+        })?;
+        if seen.insert(canonical) {
+            canonical_events.push(canonical.to_string());
+        }
     }
 
-    // Remove old
-    for event in old_set.difference(&new_set) {
-        repo.unsubscribe(&id, event).await?;
-    }
+    repo.replace_subscriptions(&id, &canonical_events).await?;
 
-    // Reload service
-    if let Err(e) = service.reload_from_db().await {
-        tracing::error!("Failed to reload notification service: {}", e);
-    }
+    reload_channels(service).await;
 
     Ok(Json(req.events))
 }
@@ -646,44 +669,126 @@ pub async fn test_channel(
     Ok(StatusCode::OK)
 }
 
-/// Whether a push endpoint host is this machine, where plain http is allowed.
-///
-/// Matches on the parsed host rather than `Url::host_str`, which renders IPv6
-/// literals in brackets (`[::1]`).
-fn is_local_host(host: &url::Host<&str>) -> bool {
-    match host {
-        url::Host::Domain(domain) => *domain == "localhost",
-        url::Host::Ipv4(ip) => ip.is_loopback(),
-        url::Host::Ipv6(ip) => ip.is_loopback(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use axum::body::{Body, to_bytes};
+    use axum::http::Request;
+    use p256::ecdsa::SigningKey;
+    use tower::ServiceExt;
+
     use super::*;
+    use crate::database::repositories::SqlxNotificationRepository;
+    use crate::notification::NotificationService;
+    use crate::notification::web_push::WebPushService;
 
-    fn local(endpoint: &str) -> bool {
-        let url = Url::parse(endpoint).expect("valid URL");
-        is_local_host(&url.host().expect("URL has a host"))
-    }
+    #[tokio::test]
+    async fn web_push_routes_work_when_auth_disabled_and_reject_private_endpoints() {
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
 
-    /// The subscribe route is unreachable from the E2E suite: it answers 503
-    /// unless the VAPID keys are set in the process environment.
-    #[test]
-    fn loopback_endpoints_are_local_in_every_address_form() {
-        for endpoint in [
-            "http://localhost:8080/push",
-            "http://127.0.0.1:8080/push",
-            "http://[::1]:8080/push",
-        ] {
-            assert!(local(endpoint), "{endpoint}");
-        }
-        for endpoint in [
-            "http://push.example.com/push",
-            "http://192.168.1.10/push",
-            "http://[2001:db8::1]/push",
-        ] {
-            assert!(!local(endpoint), "{endpoint}");
-        }
+        let repo = Arc::new(SqlxNotificationRepository::new(pool.clone(), pool.clone()));
+        let notification_service = Arc::new(NotificationService::with_repository(
+            Default::default(),
+            repo.clone(),
+        ));
+
+        let private = [41u8; 32];
+        let signing = SigningKey::from_bytes((&private).into()).unwrap();
+        let public = signing.verifying_key().to_sec1_point(false);
+        let pub_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(public.as_bytes());
+        let auth_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode([7u8; 16]);
+        let web_push_service = Arc::new(
+            WebPushService::test_new(pool.clone(), pool.clone(), pub_b64.clone(), private).unwrap(),
+        );
+
+        let state = NotificationRouteState {
+            auth_enabled: false,
+            notification_repository: repo,
+            notification_service,
+            web_push_service: Some(web_push_service),
+        };
+
+        let app = Router::new()
+            .route("/web-push/subscriptions", get(list_web_push_subscriptions))
+            .route("/web-push/subscribe", post(subscribe_web_push))
+            .route("/web-push/unsubscribe", post(unsubscribe_web_push))
+            .with_state(state);
+
+        // Rejects private metadata IP with 400 BAD_REQUEST.
+        let ssrf_body = serde_json::json!({
+            "subscription": {
+                "endpoint": "https://169.254.169.254/latest/meta-data",
+                "keys": { "p256dh": pub_b64, "auth": auth_b64 }
+            }
+        });
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/web-push/subscribe")
+                    .header("content-type", "application/json")
+                    .body(Body::from(ssrf_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+        // Works without Extension<AuthPrincipal> when AUTH_DISABLED=true.
+        let ok_body = serde_json::json!({
+            "subscription": {
+                "endpoint": "http://127.0.0.1:9999/push",
+                "keys": { "p256dh": pub_b64, "auth": auth_b64 }
+            }
+        });
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/web-push/subscribe")
+                    .header("content-type", "application/json")
+                    .body(Body::from(ok_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/web-push/subscriptions")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let listed: Vec<serde_json::Value> =
+            serde_json::from_slice(&to_bytes(resp.into_body(), 64 * 1024).await.unwrap()).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0]["endpoint"], "http://127.0.0.1:9999/push");
+
+        let unsub_body = serde_json::json!({ "endpoint": "http://127.0.0.1:9999/push" });
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/web-push/unsubscribe")
+                    .header("content-type", "application/json")
+                    .body(Body::from(unsub_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 }

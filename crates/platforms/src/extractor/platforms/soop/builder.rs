@@ -497,17 +497,9 @@ impl Soop {
             return None;
         }
 
-        let parts: Vec<&str> = chip.split('.').collect();
-        if parts.len() == 4
-            && parts
-                .iter()
-                .all(|p| p.parse::<u8>().is_ok() && !p.is_empty())
-        {
-            let hex: String = parts
-                .iter()
-                .map(|p| format!("{:02X}", p.parse::<u8>().unwrap()))
-                .collect();
-            return Some(format!("chat-{hex}.sooplive.com").to_ascii_lowercase());
+        if let Ok(ipv4) = chip.parse::<std::net::Ipv4Addr>() {
+            let [a, b, c, d] = ipv4.octets();
+            return Some(format!("chat-{a:02x}{b:02x}{c:02x}{d:02x}.sooplive.com"));
         }
 
         Some(chip.to_ascii_lowercase())

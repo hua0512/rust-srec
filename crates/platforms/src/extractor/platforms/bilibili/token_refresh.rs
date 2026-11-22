@@ -34,7 +34,7 @@ pub enum TokenRefreshError {
 }
 
 /// Result of a successful token refresh.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct RefreshedTokens {
     /// New cookie string (semicolon-separated key=value pairs from cookie_info)
     pub cookies: String,
@@ -46,6 +46,18 @@ pub struct RefreshedTokens {
     pub mid: u64,
     /// Token validity in seconds (typically 2592000 = 30 days)
     pub expires_in: u64,
+}
+
+impl std::fmt::Debug for RefreshedTokens {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RefreshedTokens")
+            .field("cookies", &"[redacted]")
+            .field("access_token", &"[redacted]")
+            .field("refresh_token", &"[redacted]")
+            .field("mid", &self.mid)
+            .field("expires_in", &self.expires_in)
+            .finish()
+    }
 }
 
 /// Validate an OAuth2 access token.
