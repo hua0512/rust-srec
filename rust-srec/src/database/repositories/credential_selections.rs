@@ -180,9 +180,19 @@ pub(crate) async fn load_streamers(
     if streamer_ids.is_empty() {
         return Ok(Vec::new());
     }
-    let placeholders = vec!["?"; streamer_ids.len()].join(", ");
-    let filter = format!(" WHERE s.streamer_id IN ({placeholders})");
-    fetch(connection, &filter, streamer_ids).await
+    let mut seen = std::collections::HashSet::with_capacity(streamer_ids.len());
+    let unique: Vec<&str> = streamer_ids
+        .iter()
+        .copied()
+        .filter(|id| seen.insert(*id))
+        .collect();
+    let mut selections = Vec::new();
+    for chunk in unique.chunks(super::LOOKUP_BATCH_SIZE) {
+        let placeholders = vec!["?"; chunk.len()].join(", ");
+        let filter = format!(" WHERE s.streamer_id IN ({placeholders})");
+        selections.extend(fetch(&mut *connection, &filter, chunk).await?);
+    }
+    Ok(selections)
 }
 
 /// The selections an owner stores: a platform's own, a template's for each

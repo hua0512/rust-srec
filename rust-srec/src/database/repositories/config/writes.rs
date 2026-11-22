@@ -141,7 +141,7 @@ pub(crate) async fn write_engine(
     connection: &mut sqlx::SqliteConnection,
     model: &EngineConfigurationDbModel,
     mode: WriteMode,
-) -> Result<(), sqlx::Error> {
+) -> crate::Result<()> {
     let mutation = match mode {
         WriteMode::Insert => Mutation::Insert,
         WriteMode::Update => Mutation::Update,
@@ -151,13 +151,22 @@ pub(crate) async fn write_engine(
     row.field("name", &model.name, true)?;
     row.field("engine_type", &model.engine_type, true)?;
     row.field("config", &model.config, true)?;
-    row.execute(connection).await
+    row.execute(connection).await.map_err(|error| {
+        if super::super::is_sqlite_unique_violation(&error) {
+            crate::Error::conflict(format!(
+                "An engine configuration with name '{}' already exists",
+                model.name
+            ))
+        } else {
+            error.into()
+        }
+    })
 }
 
 pub(crate) async fn import_engine(
     connection: &mut sqlx::SqliteConnection,
     model: &EngineConfigurationDbModel,
-) -> Result<(), sqlx::Error> {
+) -> crate::Result<()> {
     write_engine(connection, model, WriteMode::Import).await
 }
 
@@ -230,7 +239,16 @@ pub(crate) async fn write_template(
     row.field("offline_check_delay_ms", model.offline_check_delay_ms, true)?;
     row.field("created_at", model.created_at.as_millisecond(), false)?;
     row.field("updated_at", updated_at, true)?;
-    row.execute(&mut *connection).await?;
+    row.execute(&mut *connection).await.map_err(|error| {
+        if super::super::is_sqlite_unique_violation(&error) {
+            crate::Error::conflict(format!(
+                "A template with name '{}' already exists",
+                model.name
+            ))
+        } else {
+            error.into()
+        }
+    })?;
     credential_selections::write_template(connection, &model.id, selections).await
 }
 
@@ -315,7 +333,16 @@ pub(crate) async fn write_platform(
     )?;
     row.field("offline_check_count", model.offline_check_count, true)?;
     row.field("offline_check_delay_ms", model.offline_check_delay_ms, true)?;
-    row.execute(&mut *connection).await?;
+    row.execute(&mut *connection).await.map_err(|error| {
+        if super::super::is_sqlite_unique_violation(&error) {
+            crate::Error::conflict(format!(
+                "A platform configuration with name '{}' already exists",
+                model.platform_name
+            ))
+        } else {
+            error.into()
+        }
+    })?;
     if let Some(selection) = selection {
         credential_selections::set(
             connection,

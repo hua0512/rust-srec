@@ -168,32 +168,47 @@ where
 
         let mut commands = Vec::new();
         let should_run_session_complete = cause.should_run_session_complete_pipeline();
-        let config = match &self.config_service {
-            Some(service) => match service.get_config_for_streamer(&streamer_id).await {
-                Ok(config) => Some(config),
-                Err(error) => {
-                    warn!(%session_id, %streamer_id, %error, "Session pipeline configuration remains unresolved");
-                    return;
-                }
-            },
-            None => None,
-        };
-        if let Some(config) = config {
-            commands.extend(
-                self.pipeline_coordinator.apply_event(
-                    PipelineCoordinationEvent::ConfigureSession {
-                        session_id: session_id.clone(),
-                        streamer_id: streamer_id.clone(),
-                        danmu_enabled: config.record_danmu,
-                        segment_pipeline: config.pipeline.clone(),
-                        paired_segment_pipeline: config
-                            .paired_segment_pipeline
-                            .clone()
-                            .filter(|_| config.record_danmu),
-                        session_complete_pipeline: config.session_complete_pipeline.clone(),
-                    },
-                ),
-            );
+        if should_run_session_complete {
+            let config = match &self.config_service {
+                Some(service) => match service.get_config_for_streamer(&streamer_id).await {
+                    Ok(config) => Some(config),
+                    Err(error) => {
+                        if self
+                            .pipeline_coordinator
+                            .has_configured_session(&session_id)
+                        {
+                            warn!(
+                                %session_id,
+                                %streamer_id,
+                                %error,
+                                "Failed to refresh streamer config at session end; falling back to existing coordinator session configuration"
+                            );
+                            None
+                        } else {
+                            warn!(%session_id, %streamer_id, %error, "Session pipeline configuration remains unresolved");
+                            return;
+                        }
+                    }
+                },
+                None => None,
+            };
+            if let Some(config) = config {
+                commands.extend(
+                    self.pipeline_coordinator.apply_event(
+                        PipelineCoordinationEvent::ConfigureSession {
+                            session_id: session_id.clone(),
+                            streamer_id: streamer_id.clone(),
+                            danmu_enabled: config.record_danmu,
+                            segment_pipeline: config.pipeline.clone(),
+                            paired_segment_pipeline: config
+                                .paired_segment_pipeline
+                                .clone()
+                                .filter(|_| config.record_danmu),
+                            session_complete_pipeline: config.session_complete_pipeline.clone(),
+                        },
+                    ),
+                );
+            }
         }
 
         commands.extend(self.pipeline_coordinator.apply_event(
@@ -355,12 +370,22 @@ where
                     streamer_id, session_id, segment_path, message_count
                 );
 
-                // Check if the danmu file still exists before processing.
+                // Stat the danmu file asynchronously once before processing.
                 // The file may have been deleted if the corresponding video segment was too small.
-                if !output_path.exists() {
-                    debug!("Danmu segment file no longer exists: {}", segment_path);
-                    return Ok(());
-                }
+                let metadata = match tokio::fs::metadata(&output_path).await {
+                    Ok(metadata) => metadata,
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                        debug!("Danmu segment file no longer exists: {}", segment_path);
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        return Err(crate::Error::io_path(
+                            "reading danmu segment metadata",
+                            &output_path,
+                            e,
+                        ));
+                    }
+                };
 
                 let Some(segment_index) = parse_segment_index_from_danmu(&segment_id, &output_path)
                 else {
@@ -374,8 +399,13 @@ where
                 };
 
                 // Persist danmu segment to database as a media output
-                self.persist_danmu_segment(&session_id, &segment_path, message_count)
-                    .await?;
+                self.persist_danmu_segment(
+                    &session_id,
+                    &segment_path,
+                    message_count,
+                    metadata.len(),
+                )
+                .await?;
 
                 let merged_config = if let Some(config_service) = &self.config_service {
                     config_service
@@ -499,21 +529,10 @@ where
         session_id: &str,
         path: &str,
         message_count: u64,
+        size_bytes: u64,
     ) -> Result<()> {
         if let Some(repo) = &self.session_repo {
-            // Get actual file size from disk
-            let size_bytes = match tokio::fs::metadata(path).await {
-                Ok(metadata) => metadata.len() as i64,
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to get file size for danmu segment {}: {}, using 0",
-                        path,
-                        e
-                    );
-                    0
-                }
-            };
-
+            let size_bytes = i64::try_from(size_bytes).unwrap_or(i64::MAX);
             let output =
                 MediaOutputDbModel::new(session_id, path, MediaFileType::DanmuXml, size_bytes);
 

@@ -116,6 +116,8 @@ impl StreamerActor {
         }
 
         if old_config.priority != self.config.priority {
+            self.actor_metadata
+                .set_high_priority(self.config.priority == Priority::High);
             info!(
                 "StreamerActor {} priority changed: {:?} -> {:?}",
                 self.id, old_config.priority, self.config.priority

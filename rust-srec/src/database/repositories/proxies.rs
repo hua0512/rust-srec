@@ -509,24 +509,34 @@ async fn fetch_routes(
     owner_kind: &RouteOwner,
     ids: Option<&[&str]>,
 ) -> Result<HashMap<String, ProxyRoute>> {
-    let mut query = format!(
+    let base = format!(
         "SELECT id, proxy_route, proxy_id FROM {} WHERE proxy_route != 'inherit'",
         owner_kind.table()
     );
-    if let Some(ids) = ids {
-        query.push_str(&format!(" AND id IN ({})", vec!["?"; ids.len()].join(", ")));
+    let Some(ids) = ids else {
+        return sqlx::query_as::<_, (String, String, Option<String>)>(sqlx::AssertSqlSafe(base))
+            .fetch_all(connection)
+            .await?
+            .into_iter()
+            .map(|(id, kind, proxy)| Ok((id, ProxyRoute::from_columns(&kind, proxy.as_deref())?)))
+            .collect();
+    };
+
+    let mut seen = std::collections::HashSet::with_capacity(ids.len());
+    let unique: Vec<&str> = ids.iter().copied().filter(|id| seen.insert(*id)).collect();
+    let mut routes = HashMap::new();
+    for chunk in unique.chunks(super::LOOKUP_BATCH_SIZE) {
+        let query = format!("{base} AND id IN ({})", vec!["?"; chunk.len()].join(", "));
+        let mut statement =
+            sqlx::query_as::<_, (String, String, Option<String>)>(sqlx::AssertSqlSafe(query));
+        for id in chunk {
+            statement = statement.bind(*id);
+        }
+        for (id, kind, proxy) in statement.fetch_all(&mut *connection).await? {
+            routes.insert(id, ProxyRoute::from_columns(&kind, proxy.as_deref())?);
+        }
     }
-    let mut statement =
-        sqlx::query_as::<_, (String, String, Option<String>)>(sqlx::AssertSqlSafe(query));
-    for id in ids.unwrap_or_default() {
-        statement = statement.bind(*id);
-    }
-    statement
-        .fetch_all(connection)
-        .await?
-        .into_iter()
-        .map(|(id, kind, proxy)| Ok((id, ProxyRoute::from_columns(&kind, proxy.as_deref())?)))
-        .collect()
+    Ok(routes)
 }
 
 /// Stores `route` on `owner`. The global route cannot inherit, and a route

@@ -135,17 +135,21 @@ impl MonitorOutboxOps {
         }
 
         let now = crate::database::time::now_ms();
-        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-        let sql = format!(
-            "UPDATE monitor_event_outbox SET delivered_at = ?, attempts = attempts + 1, last_error = NULL WHERE id IN ({})",
-            placeholders
-        );
-
-        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql)).bind(now);
-        for id in ids {
-            query = query.bind(id);
+        // Reserve one bind variable for `delivered_at` and stay under SQLite's bind limit.
+        let chunk_size = super::LOOKUP_BATCH_SIZE.min(super::MAX_SQLITE_BIND_VARS - 1);
+        let mut tx = crate::database::begin_immediate(pool).await?;
+        for chunk in ids.chunks(chunk_size) {
+            let placeholders = vec!["?"; chunk.len()].join(", ");
+            let sql = format!(
+                "UPDATE monitor_event_outbox SET delivered_at = ?, attempts = attempts + 1, last_error = NULL WHERE id IN ({placeholders})"
+            );
+            let mut query = sqlx::query(sqlx::AssertSqlSafe(sql)).bind(now);
+            for id in chunk {
+                query = query.bind(id);
+            }
+            query.execute(&mut *tx).await?;
         }
-        query.execute(pool).await?;
+        tx.commit().await?;
 
         Ok(())
     }
@@ -155,27 +159,26 @@ impl MonitorOutboxOps {
             return Ok(());
         }
 
-        let when_clauses = failures
-            .iter()
-            .map(|_| " WHEN ? THEN ?")
-            .collect::<Vec<_>>()
-            .join("");
-        let id_placeholders = failures.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-        let sql = format!(
-            "UPDATE monitor_event_outbox SET attempts = attempts + 1, last_error = CASE id{} ELSE last_error END WHERE id IN ({})",
-            when_clauses, id_placeholders
-        );
+        // Each failure binds 3 parameters (`WHEN ? THEN ?` plus `IN (?)`).
+        let chunk_size = super::MAX_SQLITE_BIND_VARS / 3;
+        let mut tx = crate::database::begin_immediate(pool).await?;
+        for chunk in failures.chunks(chunk_size) {
+            let when_clauses = vec![" WHEN ? THEN ?"; chunk.len()].join("");
+            let id_placeholders = vec!["?"; chunk.len()].join(", ");
+            let sql = format!(
+                "UPDATE monitor_event_outbox SET attempts = attempts + 1, last_error = CASE id{when_clauses} ELSE last_error END WHERE id IN ({id_placeholders})"
+            );
 
-        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
-        for (id, error) in failures {
-            query = query.bind(id).bind(error);
+            let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
+            for (id, error) in chunk {
+                query = query.bind(id).bind(error);
+            }
+            for (id, _) in chunk {
+                query = query.bind(id);
+            }
+            query.execute(&mut *tx).await?;
         }
-
-        for (id, _) in failures {
-            query = query.bind(id);
-        }
-
-        query.execute(pool).await?;
+        tx.commit().await?;
 
         Ok(())
     }
@@ -279,5 +282,55 @@ mod tests {
         assert!(failed_row.1.is_none());
         assert_eq!(failed_row.2, 1);
         assert_eq!(failed_row.3.as_deref(), Some("no receivers"));
+    }
+
+    #[tokio::test]
+    async fn batch_operations_chunk_above_sqlite_bind_limit() {
+        let pool = setup_test_db().await;
+        let now = crate::database::time::now_ms();
+        let mut tx = crate::database::begin_immediate(&pool).await.unwrap();
+        for _ in 0..1_050 {
+            sqlx::query(
+                "INSERT INTO monitor_event_outbox (streamer_id, event_type, payload, created_at) VALUES ('s0', 'StateChanged', '{}', ?)",
+            )
+            .bind(now)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        }
+        tx.commit().await.unwrap();
+
+        let rows: Vec<(i64,)> = sqlx::query_as("SELECT id FROM monitor_event_outbox ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        let ids: Vec<i64> = rows.into_iter().map(|(id,)| id).collect();
+        assert_eq!(ids.len(), 1_050);
+
+        let failures: Vec<(i64, String)> =
+            ids.iter().map(|&id| (id, format!("err-{id}"))).collect();
+        MonitorOutboxOps::record_failure_batch(&pool, &failures)
+            .await
+            .unwrap();
+
+        let failed_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM monitor_event_outbox WHERE attempts = 1 AND last_error IS NOT NULL",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(failed_count, 1_050);
+
+        MonitorOutboxOps::mark_delivered_batch(&pool, &ids)
+            .await
+            .unwrap();
+
+        let delivered_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM monitor_event_outbox WHERE delivered_at IS NOT NULL AND attempts = 2 AND last_error IS NULL",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(delivered_count, 1_050);
     }
 }

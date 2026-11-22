@@ -231,12 +231,13 @@ where
             std::mem::take(&mut runtime.tasks)
         };
 
-        let (cpu_aborted, io_aborted, upload_aborted) = tokio::join!(
+        let (cpu_aborted, io_aborted, upload_aborted, aggregator_aborted) = tokio::join!(
             self.cpu_pool.abort(deadline),
             self.io_pool.abort(deadline),
-            self.upload_pool.abort(deadline)
+            self.upload_pool.abort(deadline),
+            self.job_queue.abort_progress_aggregator(deadline)
         );
-        let mut aborted = cpu_aborted + io_aborted + upload_aborted;
+        let mut aborted = cpu_aborted + io_aborted + upload_aborted + aggregator_aborted;
 
         aborted += runtime_tasks.len();
         runtime_tasks.abort_all();

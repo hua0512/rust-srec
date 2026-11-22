@@ -106,7 +106,13 @@ async fn create_derives_the_platform_from_the_url_and_rejects_malformed_urls() {
         assert_eq!(created["url"], url);
     }
 
-    for url in ["", "not-a-url", "https://live.bilibili.com/1 2"] {
+    for url in [
+        "",
+        "not-a-url",
+        "https://",
+        "http:///room",
+        "https://live.bilibili.com/1 2",
+    ] {
         let response = app
             .post(
                 "/api/streamers",

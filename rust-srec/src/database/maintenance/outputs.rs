@@ -77,7 +77,7 @@ impl MaintenanceScheduler {
                 }
             };
             if candidates.is_empty() {
-                return;
+                break;
             }
             for candidate in candidates {
                 cursor = (candidate.created_at, candidate.id.clone());
@@ -116,7 +116,7 @@ impl MaintenanceScheduler {
                 // Once admitted, finish unlink/accounting before observing
                 // cancellation. Dropping a tokio filesystem future does not stop IO.
                 match self
-                    .prune_output(&candidate.id, cutoff, delete_files, downloads.as_deref())
+                    .prune_output(&candidate, cutoff, delete_files, downloads.as_deref())
                     .await
                 {
                     Ok(Some(file_deleted)) => {
@@ -133,14 +133,47 @@ impl MaintenanceScheduler {
 
     async fn prune_output(
         &self,
-        id: &str,
+        candidate: &MediaOutputDbModel,
         cutoff: i64,
         delete_files: bool,
         downloads: Option<&crate::downloader::DownloadManager>,
     ) -> Result<Option<bool>> {
-        // The writer reservation serializes the final eligibility check and unlink
-        // against job admission/retry and session mutations. Keep it to ONE file;
-        // never hold this transaction across a whole batch or a retry sleep.
+        let id = candidate.id.as_str();
+        if !delete_files {
+            let mut tx = begin_immediate(&self.write_pool).await?;
+            let sql = format!("{ELIGIBLE} AND m.id = ?2");
+            let eligible = sqlx::query_as::<_, MediaOutputDbModel>(sqlx::AssertSqlSafe(sql))
+                .bind(cutoff)
+                .bind(id)
+                .fetch_optional(&mut *tx)
+                .await?;
+            if eligible.is_none() {
+                return Ok(None);
+            }
+            crate::database::repositories::session_tx::SessionTxOps::delete_media_output(
+                &mut tx, id,
+            )
+            .await?;
+            tx.commit().await?;
+            return Ok(Some(false));
+        }
+
+        // Preflight path normalization, active-download directory checks, and
+        // ancestor symlink traversal outside the SQLite write transaction so slow
+        // or network storage does not stall unrelated database writers.
+        let path = normalize_media_path(&candidate.file_path);
+        if let Some(downloads) = downloads
+            && downloads.output_directory_in_use(&path).await?
+        {
+            return Ok(None);
+        }
+        let Some(absolute) = preflight_expired_file(&path, cutoff).await? else {
+            return Ok(None);
+        };
+
+        // Re-verify eligibility, exclusive path ownership, and file state inside
+        // one immediate write transaction so no job enqueue or shared-path insert
+        // can race between the database check and unlink.
         let mut tx = begin_immediate(&self.write_pool).await?;
         let sql = format!("{ELIGIBLE} AND m.id = ?2");
         let Some(output) = sqlx::query_as::<_, MediaOutputDbModel>(sqlx::AssertSqlSafe(sql))
@@ -151,30 +184,23 @@ impl MaintenanceScheduler {
         else {
             return Ok(None);
         };
-        let mut file_deleted = false;
-        if delete_files {
-            // Never unlink a file while another output still owns its path.
-            let shared: bool = sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM media_outputs WHERE file_path = ? AND id != ?)",
-            )
-            .bind(&output.file_path)
-            .bind(id)
-            .fetch_one(&mut *tx)
-            .await?;
-            if shared {
-                return Ok(None);
-            }
-            let path = normalize_media_path(&output.file_path);
-            if let Some(downloads) = downloads
-                && downloads.output_directory_in_use(&path).await?
-            {
-                return Ok(None);
-            }
-            match remove_expired_file(&path, cutoff).await? {
-                Some(deleted) => file_deleted = deleted,
-                None => return Ok(None),
-            }
+        if output.file_path != candidate.file_path {
+            return Ok(None);
         }
+        // Never unlink a file while another output still owns its path.
+        let shared: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM media_outputs WHERE file_path = ? AND id != ?)",
+        )
+        .bind(&output.file_path)
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+        if shared {
+            return Ok(None);
+        }
+        let Some(file_deleted) = unlink_verified_expired_file(&absolute, cutoff).await? else {
+            return Ok(None);
+        };
         crate::database::repositories::session_tx::SessionTxOps::delete_media_output(&mut tx, id)
             .await?;
         tx.commit().await?;
@@ -182,10 +208,11 @@ impl MaintenanceScheduler {
     }
 }
 
-/// None means the path was replaced/modified too recently to delete safely.
-/// A missing file is reconciled only when its parent is accessible; a missing
-/// mount or directory must not silently erase the inventory.
-async fn remove_expired_file(path: &Path, cutoff: i64) -> Result<Option<bool>> {
+/// Inspect ancestor directories and file metadata before taking the database
+/// write lock. `None` means the path was replaced/modified too recently to
+/// delete safely. A missing file is reconciled only when its parent is
+/// accessible; a missing mount or directory must not silently erase inventory.
+async fn preflight_expired_file(path: &Path, cutoff: i64) -> Result<Option<std::path::PathBuf>> {
     let absolute = std::path::absolute(path).map_err(|e| Error::io_path("absolute", path, e))?;
     for parent in absolute.ancestors().skip(1) {
         let metadata = tokio::fs::symlink_metadata(parent)
@@ -198,10 +225,17 @@ async fn remove_expired_file(path: &Path, cutoff: i64) -> Result<Option<bool>> {
             )));
         }
     }
-    let metadata = match tokio::fs::symlink_metadata(&absolute).await {
+    if !check_file_expired(&absolute, cutoff).await? {
+        return Ok(None);
+    }
+    Ok(Some(absolute))
+}
+
+async fn check_file_expired(absolute: &Path, cutoff: i64) -> Result<bool> {
+    let metadata = match tokio::fs::symlink_metadata(absolute).await {
         Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Some(false)),
-        Err(error) => return Err(Error::io_path("inspect output file", &absolute, error)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(true),
+        Err(error) => return Err(Error::io_path("inspect output file", absolute, error)),
     };
     if !metadata.is_file() || metadata.is_symlink() {
         return Err(Error::config(format!(
@@ -211,15 +245,19 @@ async fn remove_expired_file(path: &Path, cutoff: i64) -> Result<Option<bool>> {
     }
     let modified = metadata
         .modified()
-        .map_err(|e| Error::io_path("read modification time", &absolute, e))?;
+        .map_err(|e| Error::io_path("read modification time", absolute, e))?;
     let cutoff_time = UNIX_EPOCH + Duration::from_millis(u64::try_from(cutoff).unwrap_or_default());
-    if modified >= cutoff_time {
+    Ok(modified < cutoff_time)
+}
+
+async fn unlink_verified_expired_file(absolute: &Path, cutoff: i64) -> Result<Option<bool>> {
+    if !check_file_expired(absolute, cutoff).await? {
         return Ok(None);
     }
-    match tokio::fs::remove_file(&absolute).await {
+    match tokio::fs::remove_file(absolute).await {
         Ok(()) => Ok(Some(true)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Some(false)),
-        Err(error) => Err(Error::io_path("delete expired output", &absolute, error)),
+        Err(error) => Err(Error::io_path("delete expired output", absolute, error)),
     }
 }
 
@@ -344,7 +382,7 @@ mod tests {
         .execute(&pool).await.unwrap();
         assert_eq!(
             scheduler
-                .prune_output("output", CUTOFF, false, None)
+                .prune_output(&candidates[0], CUTOFF, false, None)
                 .await
                 .unwrap(),
             None

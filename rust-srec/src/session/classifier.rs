@@ -160,6 +160,11 @@ impl OfflineClassifier {
         }
     }
 
+    /// Evict per-streamer failure history when a streamer is disabled or deleted.
+    pub fn purge_streamer(&self, streamer_id: &str) {
+        self.failure_log.remove(streamer_id);
+    }
+
     /// Append a Network failure to the per-streamer log and decide if the
     /// trailing-window threshold has been reached.
     fn record_network_failure_and_check(&self, streamer_id: &str) -> Option<OfflineSignal> {
@@ -350,5 +355,25 @@ mod tests {
         assert_eq!(network("b"), None);
         assert_eq!(network("a"), Some(OfflineSignal::ConsecutiveFailures(2)));
         assert_eq!(network("b"), Some(OfflineSignal::ConsecutiveFailures(2)));
+    }
+
+    #[test]
+    fn purge_streamer_evicts_only_target_streamer_history() {
+        let c = classic_classifier();
+        let network = |streamer| {
+            c.classify_failure(
+                streamer,
+                &EngineKind::MesioFlv,
+                &DownloadFailureKind::Network,
+            )
+        };
+
+        assert_eq!(network("deleted"), None);
+        assert_eq!(network("kept"), None);
+
+        c.purge_streamer("deleted");
+        assert!(!c.failure_log.contains_key("deleted"));
+        assert_eq!(network("deleted"), None);
+        assert_eq!(network("kept"), Some(OfflineSignal::ConsecutiveFailures(2)));
     }
 }

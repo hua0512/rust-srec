@@ -339,6 +339,7 @@ async fn the_export_carries_what_a_restore_needs_and_leaves_out_sessions_and_api
         .await
         .expect_status(StatusCode::OK);
     assert_eq!(response.header("content-type"), Some("application/json"));
+    assert_eq!(response.header("cache-control"), Some("private, no-store"));
     let disposition = response.header("content-disposition").unwrap_or_default();
     assert!(
         disposition.starts_with("attachment; filename=\"rust-srec-backup-")
@@ -724,9 +725,33 @@ async fn a_replace_import_keeps_an_omitted_preset_a_kept_pipeline_names() {
     )
     .await
     .created();
+    let omitted_account = app
+        .post(
+            "/api/credentials/profiles",
+            &token,
+            &json!({
+                "platform_id": "platform-bilibili",
+                "label": "Omitted Bilibili",
+                "enabled": true,
+                "material": { "cookies": "SESSDATA=omitted-secret" },
+            }),
+        )
+        .await
+        .expect_status(StatusCode::OK);
+    let mut bilibili = app
+        .get_ok("/api/config/platforms/platform-bilibili", &token)
+        .await;
+    bilibili["download_engine"] = json!("default-ffmpeg");
+    bilibili["output_folder"] = json!("/srv/bilibili");
+    bilibili["credential_selection"] = json!(
+        json!({ "mode": "fixed", "credential_id": id_of(&omitted_account.body) }).to_string()
+    );
+    app.put("/api/config/platforms/platform-bilibili", &token, &bilibili)
+        .await
+        .expect_status(StatusCode::OK);
 
-    // Omit the preset the kept template names, and a workflow chain nothing
-    // kept names.
+    // Omit the preset the kept template names, a workflow chain nothing kept
+    // names, and the customized Bilibili platform and its account.
     let mut bundle = export(&app, &token).await;
     let omitted = ["E2E Archive", "E2E Tidy", "E2E Chain"];
     for list in ["job_presets", "pipeline_presets"] {
@@ -735,6 +760,14 @@ async fn a_replace_import_keeps_an_omitted_preset_a_kept_pipeline_names() {
             .expect("bundle presets")
             .retain(|preset| !omitted.iter().any(|name| preset["name"] == *name));
     }
+    bundle["platforms"]
+        .as_array_mut()
+        .expect("bundle platforms")
+        .retain(|platform| platform["platform_name"] != "bilibili");
+    bundle["credential_profiles"]
+        .as_array_mut()
+        .expect("bundle profiles")
+        .retain(|profile| profile["label"] != "Omitted Bilibili");
     let replaced = import(&app, &token, &bundle, "replace").await.ok();
     assert_eq!(replaced["stats"]["job_presets_deleted"], 0);
     assert_eq!(replaced["stats"]["pipeline_presets_deleted"], 2);
@@ -742,6 +775,21 @@ async fn a_replace_import_keeps_an_omitted_preset_a_kept_pipeline_names() {
     assert!(
         message.contains("kept preset 'E2E Archive'") && message.contains("template 'Evening'"),
         "{message}"
+    );
+    let token = sign_in_again(&app, ADMIN_PASSWORD).await;
+    let bilibili_after = app
+        .get_ok("/api/config/platforms/platform-bilibili", &token)
+        .await;
+    assert_eq!(bilibili_after["download_engine"], Value::Null);
+    assert_eq!(bilibili_after["output_folder"], Value::Null);
+    assert_eq!(bilibili_after["credential_selection"], Value::Null);
+    assert_eq!(
+        app.get_ok(
+            "/api/credentials/profiles?platform_id=platform-bilibili",
+            &token
+        )
+        .await,
+        json!([])
     );
 
     app.shutdown().await;
@@ -938,7 +986,24 @@ async fn a_rejected_import_changes_nothing_and_a_successful_one_ends_every_sessi
         })
     };
     type Corrupt = Box<dyn Fn(&mut Value)>;
-    let cases: [(&str, Corrupt, &str); 8] = [
+    let cases: [(&str, Corrupt, &str); 11] = [
+        (
+            "invalid log filter directive",
+            Box::new(|bundle| {
+                bundle["global_config"]["log_filter_directive"] = json!("rust_srec=[unclosed")
+            }),
+            "log_filter_directive",
+        ),
+        (
+            "non-positive offline check delay",
+            Box::new(|bundle| bundle["global_config"]["offline_check_delay_ms"] = json!(0)),
+            "offline_check_delay_ms",
+        ),
+        (
+            "hostless streamer URL",
+            Box::new(|bundle| streamer_named(bundle, "Stable")["url"] = json!("https://")),
+            "URL",
+        ),
         (
             "unknown platform config",
             Box::new(|bundle| {
@@ -1048,16 +1113,61 @@ async fn a_rejected_import_changes_nothing_and_a_successful_one_ends_every_sessi
         .expect_status(StatusCode::OK);
     let second = tokens_from(&refreshed.body);
 
-    // Revocation does not depend on the bundle replacing any user.
-    let mut bundle = baseline;
-    bundle.as_object_mut().expect("bundle").remove("users");
+    // Revocation does not depend on the bundle replacing any user, and cached
+    // API key grants are evicted immediately when an import mutates user state.
+    let warm_key = app
+        .create_api_key(&second.access, "warm before import", "full")
+        .await
+        .raw;
+    assert_eq!(
+        app.get("/api/streamers", &warm_key).await.status,
+        StatusCode::OK
+    );
+    let mut bundle = baseline.clone();
+    bundle["users"][0]["must_change_password"] = json!(true);
     import(&app, &second.access, &bundle, "merge")
         .await
         .expect_status(StatusCode::OK);
+    app.get("/api/streamers", &warm_key)
+        .await
+        .assert_error(StatusCode::FORBIDDEN, "PASSWORD_CHANGE_REQUIRED");
     for response in [
         app.get("/api/streamers", &first.access).await,
         app.get("/api/streamers", &second.access).await,
         app.refresh(&second.refresh).await,
+    ] {
+        assert_eq!(
+            response.status,
+            StatusCode::UNAUTHORIZED,
+            "{}",
+            response.text
+        );
+    }
+    let forced = tokens_from(
+        &app.login(ADMIN_USERNAME, ADMIN_PASSWORD)
+            .await
+            .expect_status(StatusCode::OK)
+            .body,
+    );
+    let mut clear_bundle = baseline;
+    clear_bundle
+        .as_object_mut()
+        .expect("bundle")
+        .remove("users");
+    // Restore the active admin without `users` after clearing forced password change via SQL
+    // so we also verify session revocation when `users` is omitted.
+    app.run_sql(&format!(
+        "UPDATE users SET must_change_password = 0 WHERE username = '{ADMIN_USERNAME}'"
+    ))
+    .await;
+    let third = app.login_tokens(ADMIN_USERNAME, ADMIN_PASSWORD).await;
+    import(&app, &third.access, &clear_bundle, "merge")
+        .await
+        .expect_status(StatusCode::OK);
+    for response in [
+        app.get("/api/streamers", &forced.access).await,
+        app.get("/api/streamers", &third.access).await,
+        app.refresh(&third.refresh).await,
     ] {
         assert_eq!(
             response.status,

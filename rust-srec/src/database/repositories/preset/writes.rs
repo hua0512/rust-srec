@@ -29,7 +29,24 @@ pub(crate) async fn write_job_preset(
     row.field("config", &model.config, true)?;
     row.field("created_at", model.created_at.as_millisecond(), false)?;
     row.field("updated_at", updated_at, true)?;
-    Ok(row.execute(connection).await?)
+    row.execute(connection).await.map_err(|error| {
+        if super::super::is_sqlite_unique_violation(&error) {
+            crate::Error::conflict(format!(
+                "A job preset with name '{}' already exists",
+                model.name
+            ))
+        } else if matches!(
+            &error,
+            sqlx::Error::Database(db_err) if db_err.code().as_deref() == Some("1555")
+        ) {
+            crate::Error::conflict(format!(
+                "A job preset with id '{}' already exists",
+                model.id
+            ))
+        } else {
+            error.into()
+        }
+    })
 }
 
 pub(crate) async fn import_job_preset(
@@ -71,7 +88,16 @@ pub(crate) async fn write_pipeline_preset(
     row.field("pipeline_type", &model.pipeline_type, true)?;
     row.field("created_at", model.created_at.as_millisecond(), false)?;
     row.field("updated_at", updated_at, true)?;
-    Ok(row.execute(connection).await?)
+    row.execute(connection).await.map_err(|error| {
+        if super::super::is_sqlite_unique_violation(&error) {
+            crate::Error::conflict(format!(
+                "A pipeline preset with name '{}' already exists",
+                model.name
+            ))
+        } else {
+            error.into()
+        }
+    })
 }
 
 pub(crate) async fn import_pipeline_preset(

@@ -77,7 +77,10 @@ async fn run_probe(mut command: tokio::process::Command, budget: Duration) -> Op
 /// Reads block until the probe settles, which [`PROBE_TIMEOUT`] bounds. The
 /// probe has its own thread and runtime, so a read from inside an async
 /// runtime cannot deadlock with it.
-pub(crate) struct EngineVersion(Arc<OnceLock<Option<String>>>);
+pub(crate) struct EngineVersion {
+    version: Arc<OnceLock<Option<String>>>,
+    ready: tokio::sync::watch::Receiver<bool>,
+}
 
 impl EngineVersion {
     /// Start probing `path argument`; `parse` turns its output into the version.
@@ -86,45 +89,69 @@ impl EngineVersion {
         argument: &'static str,
         parse: fn(String) -> Option<String>,
     ) -> Self {
-        let version = Arc::new(OnceLock::new());
-        let result = version.clone();
         let path = path.to_owned();
+        Self::probe_with(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build();
+            match runtime {
+                Ok(runtime) => runtime
+                    .block_on(probe_version(&path, argument))
+                    .and_then(parse),
+                Err(error) => {
+                    warn!(%error, "Could not create engine probe runtime");
+                    None
+                }
+            }
+        })
+    }
+
+    fn probe_with(probe_fn: impl FnOnce() -> Option<String> + Send + 'static) -> Self {
+        let version = Arc::new(OnceLock::new());
+        let (ready_tx, ready) = tokio::sync::watch::channel(false);
+        let result = version.clone();
         let worker = std::thread::Builder::new()
             .name("engine-version-probe".to_owned())
             .spawn(move || {
-                let probed = std::panic::catch_unwind(move || {
-                    let runtime = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()?;
-                    Ok::<_, std::io::Error>(runtime.block_on(probe_version(&path, argument)))
-                });
+                let probed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(probe_fn));
                 let output = match probed {
-                    Ok(Ok(output)) => output,
-                    Ok(Err(error)) => {
-                        warn!(%error, "Could not create engine probe runtime");
-                        None
-                    }
+                    Ok(output) => output,
                     Err(_) => {
                         warn!("Engine probe worker panicked");
                         None
                     }
                 };
-                result.get_or_init(|| output.and_then(parse));
+                result.get_or_init(|| output);
+                let _ = ready_tx.send(true);
             });
         if let Err(error) = worker {
             warn!(%error, "Could not create engine probe worker");
             version.get_or_init(|| None);
         }
-        Self(version)
+        Self { version, ready }
     }
 
     /// An already known version.
     pub(crate) fn settled(version: Option<String>) -> Self {
-        Self(Arc::new(OnceLock::from(version)))
+        let (_, ready) = tokio::sync::watch::channel(true);
+        Self {
+            version: Arc::new(OnceLock::from(version)),
+            ready,
+        }
     }
 
     pub(crate) fn get(&self) -> Option<&str> {
-        self.0.wait().as_deref()
+        self.version.wait().as_deref()
+    }
+
+    /// Wait for the version probe to settle without blocking the async runtime.
+    pub(crate) async fn wait(&self) -> Option<&str> {
+        if let Some(version) = self.version.get() {
+            return version.as_deref();
+        }
+        let mut ready = self.ready.clone();
+        let _ = ready.wait_for(|&done| done).await;
+        self.version.get().and_then(Option::as_deref)
     }
 }
 
@@ -265,5 +292,29 @@ mod tests {
             Some,
         );
         assert!(version.get().is_none());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn wait_yields_runtime_worker_until_background_probe_finishes() {
+        let (entered_tx, entered_rx) = std::sync::mpsc::sync_channel(1);
+        let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
+        let version = EngineVersion::probe_with(move || {
+            entered_tx.send(()).unwrap();
+            release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            Some("7.1.1".to_string())
+        });
+        entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        let mut waiting = Box::pin(version.wait());
+        assert!(
+            futures::poll!(&mut waiting).is_pending(),
+            "async wait must yield instead of blocking the Tokio worker thread"
+        );
+
+        release_tx.send(()).unwrap();
+        assert_eq!(
+            timeout(Duration::from_secs(5), waiting).await.unwrap(),
+            Some("7.1.1")
+        );
     }
 }

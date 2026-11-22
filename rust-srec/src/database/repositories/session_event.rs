@@ -41,10 +41,17 @@ const LIST_BY_SESSION_SQL: &str = r#"
     ORDER BY occurred_at ASC, id ASC
 "#;
 
+pub const MAX_STREAMER_SESSION_EVENTS: i64 = 1_000;
+
 const LIST_BY_STREAMER_SQL: &str = r#"
     SELECT id, session_id, streamer_id, kind, occurred_at, payload
-    FROM session_events
-    WHERE streamer_id = ?
+    FROM (
+        SELECT id, session_id, streamer_id, kind, occurred_at, payload
+        FROM session_events
+        WHERE streamer_id = ?
+        ORDER BY occurred_at DESC, id DESC
+        LIMIT ?
+    )
     ORDER BY occurred_at ASC, id ASC
 "#;
 
@@ -127,6 +134,7 @@ impl SessionEventRepository for SqlxSessionEventRepository {
     async fn list_for_streamer(&self, streamer_id: &str) -> Result<Vec<SessionEvent>> {
         let rows = sqlx::query_as::<_, SessionEventDbModel>(LIST_BY_STREAMER_SQL)
             .bind(streamer_id)
+            .bind(MAX_STREAMER_SESSION_EVENTS)
             .fetch_all(&self.pool)
             .await?;
         Ok(rows.into_iter().map(Into::into).collect())

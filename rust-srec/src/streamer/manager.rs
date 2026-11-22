@@ -330,6 +330,11 @@ where
             entry.priority = priority;
         }
 
+        self.broadcaster
+            .publish(ConfigUpdateEvent::StreamerMetadataUpdated {
+                streamer_id: id.to_owned(),
+            });
+
         Ok(())
     }
 
@@ -1074,8 +1079,14 @@ mod tests {
             Ok(())
         }
 
-        async fn update_streamer_priority(&self, _id: &str, _priority: &str) -> Result<()> {
-            Ok(())
+        async fn update_streamer_priority(&self, id: &str, priority: &str) -> Result<()> {
+            let mut streamers = self.streamers.lock().unwrap();
+            if let Some(s) = streamers.iter_mut().find(|s| s.id == id) {
+                s.priority = priority.to_string();
+                Ok(())
+            } else {
+                Err(crate::Error::not_found("Streamer", id))
+            }
         }
 
         async fn set_disabled_until(&self, _id: &str, _until: Option<i64>) -> Result<()> {

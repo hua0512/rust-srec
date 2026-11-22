@@ -16,7 +16,7 @@ impl SqlxConfigRepository {
         }
         let source_id = source_id.to_owned();
         let new_name = new_name.to_owned();
-        let publication = self.publication.get().cloned();
+        let publication = self.publish_callback();
         self.writer.transaction("clone template configuration", move |connection| Box::pin(async move {
             let mut cloned = sqlx::query_as::<_, TemplateConfigDbModel>("SELECT * FROM template_config WHERE id = ? AND NOT EXISTS(SELECT 1 FROM retirement_config_deletions WHERE kind = 'template' AND config_id = template_config.id)")
                 .bind(&source_id).fetch_optional(&mut *connection).await?.ok_or_else(|| Error::not_found("TemplateConfig", &source_id))?;
@@ -37,7 +37,9 @@ impl SqlxConfigRepository {
             super::proxies::set_route(connection, &super::RouteOwner::Template(cloned.id.clone()), &route).await?;
             Ok(cloned)
         }), move |cloned| {
-            if let Some(publication) = publication { publication(CredentialOwner::Template { template_id: cloned.id.clone() }); }
+            if let Some(publication) = publication {
+                publication(super::ConfigWritePublication::Owner(CredentialOwner::Template { template_id: cloned.id.clone() }));
+            }
         }).await
     }
 }

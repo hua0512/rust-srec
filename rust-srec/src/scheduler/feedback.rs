@@ -4,7 +4,7 @@
 //! itself be waiting for that producer's startup. Only lifecycle envelopes are
 //! retained here; progress uses the ordinary lossy observer path.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -55,8 +55,23 @@ const MAX_STREAMER_ENVELOPES: usize = 32;
 #[derive(Debug)]
 pub(crate) struct FeedbackPermit {
     streamer_id: String,
+    owner: std::sync::Weak<SchedulerFeedback>,
     _global: OwnedSemaphorePermit,
-    _streamer: OwnedSemaphorePermit,
+    _streamer: Option<OwnedSemaphorePermit>,
+}
+
+impl Drop for FeedbackPermit {
+    fn drop(&mut self) {
+        // Release the per-streamer permit first so `purge_deleted_if_idle_locked`
+        // observes the recovered permit count.
+        drop(self._streamer.take());
+        if let Some(owner) = self.owner.upgrade() {
+            let mut state = owner.state.lock();
+            if state.deleted.contains(&self.streamer_id) {
+                SchedulerFeedback::purge_deleted_if_idle_locked(&mut state, &self.streamer_id, 0);
+            }
+        }
+    }
 }
 
 struct PendingEvent {
@@ -85,6 +100,7 @@ struct FeedbackState {
     targets_revision: Option<u64>,
     queues: HashMap<String, StreamQueue>,
     retired: HashMap<String, FeedbackDisposition>,
+    deleted: HashSet<String>,
     active_downloads: HashMap<String, (String, String)>,
     latest_attempts: HashMap<String, (String, String)>,
     /// Attempts still running when their streamer was retired and then
@@ -95,6 +111,7 @@ struct FeedbackState {
 }
 
 pub(crate) struct SchedulerFeedback {
+    weak_self: std::sync::Weak<Self>,
     state: Mutex<FeedbackState>,
     targets_changed: watch::Sender<u64>,
     stop: CancellationToken,
@@ -111,7 +128,8 @@ impl SchedulerFeedback {
         let stop = CancellationToken::new();
         let (targets_changed, _) = watch::channel(0);
         let (failure_tx, _) = watch::channel(None);
-        Arc::new(Self {
+        Arc::new_cyclic(|weak_self| Self {
+            weak_self: weak_self.clone(),
             state: Mutex::new(FeedbackState {
                 capacity_limit: MAX_FEEDBACK_ENVELOPES,
                 ..FeedbackState::default()
@@ -161,8 +179,9 @@ impl SchedulerFeedback {
             .map_err(|_| "streamer lifecycle capacity is full".to_owned())?;
         Ok(FeedbackPermit {
             streamer_id: id.to_owned(),
+            owner: self.weak_self.clone(),
             _global: global,
-            _streamer: streamer,
+            _streamer: Some(streamer),
         })
     }
 
@@ -254,10 +273,14 @@ impl SchedulerFeedback {
             None
         };
         if let Some(disposition) = disposition {
+            drop(state);
+            drop(permit);
             let _ = applied.send(Ok(disposition));
             return receipt;
         }
         if self.stop.is_cancelled() {
+            drop(state);
+            drop(permit);
             let _ = applied.send(Err("scheduler feedback owner failed".to_owned()));
             return receipt;
         }
@@ -270,8 +293,10 @@ impl SchedulerFeedback {
             .clone();
         let epoch = current_epoch.load(Ordering::Acquire);
         self.ensure_queue(&mut state, &id);
-        if let Some(queue) = state.queues.get(&id)
-            && let Err(error) = queue.events.send(PendingEvent {
+        let events_tx = state.queues.get(&id).map(|queue| queue.events.clone());
+        drop(state);
+        if let Some(events_tx) = events_tx
+            && let Err(error) = events_tx.send(PendingEvent {
                 permit: Arc::new(permit),
                 epoch,
                 current_epoch,
@@ -315,10 +340,17 @@ impl SchedulerFeedback {
         let retry_id = id.clone();
         let retry_retired = retired.clone();
         self.tasks.spawn("scheduler admission retry", async move {
+            let purge_id = retry_id.clone();
             let outcome =
                 AssertUnwindSafe(retry_owner.admission_rechecks(retry_id, checks, retry_retired))
                     .catch_unwind()
                     .await;
+            {
+                let mut state = retry_owner.state.lock();
+                if state.deleted.contains(&purge_id) {
+                    Self::purge_deleted_if_idle_locked(&mut state, &purge_id, 0);
+                }
+            }
             if outcome.is_err() {
                 retry_owner
                     .failure_tx
@@ -434,6 +466,20 @@ impl SchedulerFeedback {
         self.target_scans.load(Ordering::Relaxed)
     }
 
+    #[cfg(test)]
+    pub(crate) fn has_tracked_state_for(&self, id: &str) -> bool {
+        let state = self.state.lock();
+        state.targets.contains_key(id)
+            || state.queues.contains_key(id)
+            || state.retired.contains_key(id)
+            || state.deleted.contains(id)
+            || state.active_downloads.contains_key(id)
+            || state.latest_attempts.contains_key(id)
+            || state.retired_attempts.contains_key(id)
+            || state.epochs.contains_key(id)
+            || state.capacity.contains_key(id)
+    }
+
     /// Clear a retirement so feedback reaches the streamer's actor again.
     ///
     /// A download still running from before the retirement is being stopped on
@@ -441,6 +487,7 @@ impl SchedulerFeedback {
     /// apply its ending, which would otherwise park the new actor.
     pub(crate) fn activate(&self, id: &str) {
         let mut state = self.state.lock();
+        state.deleted.remove(id);
         if state.retired.remove(id).is_some()
             && let Some(attempt) = state.active_downloads.remove(id)
         {
@@ -454,6 +501,47 @@ impl SchedulerFeedback {
 
     pub(crate) fn unavailable(&self, id: &str) {
         self.stop_streamer(id, FeedbackDisposition::ActorUnavailable);
+    }
+
+    /// Evict per-streamer tracking for a permanently deleted streamer once no
+    /// active download or in-flight envelope lease remains.
+    pub(crate) fn purge_streamer(&self, id: &str) {
+        let mut state = self.state.lock();
+        state.deleted.insert(id.to_owned());
+        state
+            .retired
+            .insert(id.to_owned(), FeedbackDisposition::Retired);
+        if state.targets.remove(id).is_some() {
+            state.targets_revision = None;
+        }
+        if let Some(queue) = state.queues.remove(id) {
+            queue.retired.cancel();
+        }
+        Self::purge_deleted_if_idle_locked(&mut state, id, 0);
+        self.targets_changed
+            .send_modify(|revision| *revision = revision.wrapping_add(1));
+    }
+
+    fn purge_deleted_if_idle_locked(state: &mut FeedbackState, id: &str, releasing_permits: usize) {
+        if !state.deleted.contains(id)
+            || state.active_downloads.contains_key(id)
+            || state.retired_attempts.contains_key(id)
+            || state.queues.contains_key(id)
+        {
+            return;
+        }
+        let has_other_permits = state.capacity.get(id).is_some_and(|sem| {
+            sem.available_permits().saturating_add(releasing_permits) < MAX_STREAMER_ENVELOPES
+        });
+        if has_other_permits {
+            return;
+        }
+        state.deleted.remove(id);
+        state.retired.remove(id);
+        state.latest_attempts.remove(id);
+        state.retired_attempts.remove(id);
+        state.epochs.remove(id);
+        state.capacity.remove(id);
     }
 
     fn retirement_disposition(&self, id: &str) -> FeedbackDisposition {
@@ -632,6 +720,12 @@ impl SchedulerFeedback {
         events.close();
         while let Some(event) = events.recv().await {
             let _ = event.applied.send(Ok(disposition));
+        }
+        {
+            let mut state = self.state.lock();
+            if state.deleted.contains(&id) {
+                Self::purge_deleted_if_idle_locked(&mut state, &id, 0);
+            }
         }
         Ok(())
     }
