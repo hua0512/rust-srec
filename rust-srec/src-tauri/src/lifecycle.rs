@@ -232,10 +232,19 @@ impl DesktopBackendState {
         self.container.lock().ok().and_then(|c| c.clone())
     }
 
-    /// A receiver of the boot task's progress, for work that must wait until
-    /// the boot task has returned.
-    pub(crate) fn boot_phase(&self) -> tokio::sync::watch::Receiver<BootPhase> {
-        self.boot_phase.clone()
+    /// Whether the boot task returns within `cap`. A boot task that ended
+    /// without settling (a panic dropped its sender) counts as returned.
+    pub(crate) async fn boot_returned_within(&self, cap: Duration) -> bool {
+        let mut boot_phase = self.boot_phase.clone();
+        match tokio::time::timeout(
+            cap,
+            boot_phase.wait_for(|phase| *phase == BootPhase::Settled),
+        )
+        .await
+        {
+            Ok(Ok(_)) | Ok(Err(_)) => true,
+            Err(_) => false,
+        }
     }
 
     pub(crate) fn window_state(&self) -> Option<WindowState> {

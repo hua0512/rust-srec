@@ -19,9 +19,9 @@ pub use crate::server::run as run_server;
 pub use crate::services::{ActiveRecordingSummary, ServiceContainer, ServiceContainerConfig};
 pub use crate::utils::http_client::install_rustls_provider;
 
-/// The HTTP client for the desktop app's check for a newer release, on the
-/// global route of `container` as it is now. Callers set timeouts per
-/// request.
+/// The HTTP client for the desktop app's check for a newer release, chosen
+/// from the global route of `container` as it is now. Callers set timeouts
+/// per request.
 ///
 /// A global route naming a saved proxy takes that proxy, through the shared
 /// client; a saved proxy that no longer exists fails rather than connecting

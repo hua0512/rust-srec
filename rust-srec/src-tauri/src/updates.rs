@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::DesktopBackendState;
 use crate::desktop_settings::{BackendMode, DesktopSettings};
-use crate::lifecycle::BootPhase;
 
 pub const EVENT_DESKTOP_UPDATE_AVAILABLE: &str = "rust-srec://desktop-update-available";
 
@@ -146,25 +145,22 @@ pub fn select_latest_release(
 /// - In local mode the check first waits, for at most
 ///   [`UPDATE_CHECK_BOOT_WAIT`], until the boot task has returned (or its
 ///   sender is gone), so a check made during startup does not go out before
-///   the settings can be read. A boot still running after the wait fails the
-///   check without making a request. The boot task stores the backend before
+///   the settings can be read. A boot still running after the wait, or an
+///   exit that has begun, fails the check without making a request. The boot
+///   task stores the backend before
 ///   it looks at the outcome of its start, so most failed starts still have
 ///   one; only a start that failed before its services existed has none.
 async fn update_check_client(state: &DesktopBackendState) -> Result<reqwest::Client, String> {
     let backend = if state.active_backend_mode == BackendMode::Remote {
         None
     } else {
-        let mut boot_phase = state.boot_phase();
-        match tokio::time::timeout(
-            UPDATE_CHECK_BOOT_WAIT,
-            boot_phase.wait_for(|phase| *phase == BootPhase::Settled),
-        )
-        .await
-        {
-            // A dropped sender means the boot task has ended, which is what
-            // the wait is for.
-            Ok(Ok(_)) | Ok(Err(_)) => {}
-            Err(_) => return Err("The built-in backend is still starting".to_string()),
+        if !state.boot_returned_within(UPDATE_CHECK_BOOT_WAIT).await {
+            return Err("The built-in backend is still starting".to_string());
+        }
+        // An exit stops the boot task, which ends the wait above; a check
+        // released that way would report while the app drains.
+        if state.init_cancel.is_cancelled() {
+            return Err("Rust-Srec is exiting".to_string());
         }
         let backend = state.backend();
         if backend.is_none() {
