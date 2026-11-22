@@ -40,7 +40,7 @@ If filesystem sampling takes longer than one second, health checks retain previo
 
 ## SQLite Memory Budget
 
-Database connections share a suggested 64 MiB private page-cache allowance. File-backed databases also use a 256 MiB memory-mapping setting. Neither is a hard process-memory limit: recordings, queries, connection overhead, and operating-system caching also use memory. Allocation details are in [Monitoring implementation](../development/monitoring.md#sqlite-memory-budget).
+Database connections share a suggested 64 MiB private page-cache allowance, and database files are not memory-mapped. The allowance is not a hard process-memory limit: recordings, queries, connection overhead, and operating-system caching also use memory. Allocation details are in [Monitoring implementation](../development/monitoring.md#sqlite-memory-budget).
 
 ## Logs
 
