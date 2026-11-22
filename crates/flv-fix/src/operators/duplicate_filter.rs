@@ -1,8 +1,12 @@
-//! Bounded, byte-verified duplicate suppression for recognized media packets.
+//! Bounded duplicate suppression for recognized media packets.
 //!
-//! CRC32 is only a lookup accelerator; matching payload bytes are required before
-//! dropping a tag. Payloads are copied into bounded storage so small tags cannot
-//! pin large decoder buffers. Opaque, control, and multitrack tags pass through.
+//! History retains a fixed-size SHA-256 digest and byte length per packet rather
+//! than raw payload buffers. A 32-bit CRC can collide within a live stream,
+//! whereas a 256-bit cryptographic digest identifies payloads without per-tag
+//! variable-sized heap allocations that fragment the allocator across medium and
+//! large size classes. The sliding window still tracks cumulative payload bytes
+//! against `window_capacity_bytes` so retention covers the configured stream
+//! byte horizon. Opaque, control, and multitrack tags pass through.
 //! With offset matching disabled, exact-match history survives timestamp jumps
 //! until eviction or a source barrier. A sequence header is a barrier only when
 //! its bytes differ from the previous one on that track, because some sources
@@ -13,12 +17,12 @@
 //! timestamp deltas. Ambiguous or incomplete candidates are emitted unchanged.
 //! This remains a heuristic and is disabled by default, as is pipeline filtering.
 use std::collections::{HashSet, VecDeque};
-use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use bytes::Bytes;
 use flv::{FlvData, FlvTag, SplitReason};
-use pipeline_common::{PipelineError, Processor, StreamerContext, crc32};
+use pipeline_common::{PipelineError, Processor, StreamerContext};
+use sha2::{Digest, Sha256};
 use tracing::{debug, trace};
 
 const REPLAY_CONFIRMATION_PACKETS: usize = 3;
@@ -30,47 +34,30 @@ const MAX_REPLAY_CANDIDATES: usize = 16;
 const REPLAY_GAP_MS: u32 = 500;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-struct TagKey {
+struct SeenTag {
     tag_type: u8,
     stream_id: u32,
     timestamp_ms: u32,
     len: usize,
-    crc: u32,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct SeenTag {
-    key: TagKey,
-    data: Bytes,
-}
-
-impl Hash for SeenTag {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        // Hash collisions still undergo the derived, byte-for-byte Eq check.
-        self.key.hash(state);
-    }
+    digest: [u8; 32],
 }
 
 impl SeenTag {
     fn new(tag: &FlvTag) -> Self {
         Self {
-            key: TagKey {
-                tag_type: tag.tag_type().into(),
-                stream_id: tag.stream_id,
-                timestamp_ms: tag.timestamp_ms,
-                len: tag.data().len(),
-                crc: crc32::crc32(tag.data()),
-            },
-            data: tag.data().clone(),
+            tag_type: tag.tag_type().into(),
+            stream_id: tag.stream_id,
+            timestamp_ms: tag.timestamp_ms,
+            len: tag.data().len(),
+            digest: Sha256::digest(tag.data()).into(),
         }
     }
 
     fn same_payload(&self, other: &Self) -> bool {
-        self.key.tag_type == other.key.tag_type
-            && self.key.stream_id == other.key.stream_id
-            && self.key.len == other.key.len
-            && self.key.crc == other.key.crc
-            && self.data == other.data
+        self.tag_type == other.tag_type
+            && self.stream_id == other.stream_id
+            && self.len == other.len
+            && self.digest == other.digest
     }
 }
 
@@ -88,10 +75,10 @@ impl History {
         self.bytes = 0;
     }
 
-    /// Returns false only for a retained, byte-identical duplicate. Packets that
-    /// cannot be retained still return true so their caller can forward them.
-    fn remember(&mut self, mut tag: SeenTag, config: &DuplicateTagFilterConfig) -> bool {
-        if config.window_capacity_tags == 0 || tag.data.len() > config.window_capacity_bytes {
+    /// Returns false only for a retained duplicate. Packets that cannot be
+    /// retained still return true so their caller can forward them.
+    fn remember(&mut self, tag: SeenTag, config: &DuplicateTagFilterConfig) -> bool {
+        if config.window_capacity_tags == 0 || tag.len > config.window_capacity_bytes {
             // Missing packets must not join two unrelated historical replay runs.
             self.clear();
             return true;
@@ -100,16 +87,15 @@ impl History {
             return false;
         }
         while self.order.len() >= config.window_capacity_tags
-            || self.bytes > config.window_capacity_bytes - tag.data.len()
+            || self.bytes > config.window_capacity_bytes - tag.len
         {
             if let Some(old) = self.order.pop_front() {
-                self.bytes -= old.data.len();
+                self.bytes -= old.len;
                 self.seen.remove(&old);
             }
         }
-        tag.data = Bytes::copy_from_slice(&tag.data);
-        self.bytes += tag.data.len();
-        self.seen.insert(tag.clone());
+        self.bytes += tag.len;
+        self.seen.insert(tag);
         self.order.push_back(tag);
         true
     }
@@ -119,8 +105,10 @@ impl History {
 pub struct DuplicateTagFilterConfig {
     /// Maximum number of media packets retained. Zero disables retention.
     pub window_capacity_tags: usize,
-    /// Maximum retained payload bytes (16 MiB by default). Oversized packets
-    /// pass through. Replay lookahead additionally retains at most 1 MiB.
+    /// Maximum cumulative payload bytes covered by the retention window
+    /// (16 MiB by default). History stores fixed-size packet digests while
+    /// accounting against original payload lengths; oversized packets pass
+    /// through. Replay lookahead additionally retains at most 1 MiB.
     pub window_capacity_bytes: usize,
     /// Minimum per-stream backwards jump that starts offset replay matching.
     /// Ignored when offset matching is disabled; exact-match history is retained.
@@ -153,7 +141,7 @@ impl ReplayCursor {
     fn advance(&mut self, history: &History, tag: &SeenTag) -> bool {
         if history.order.get(self.next).is_some_and(|old| {
             old.same_payload(tag)
-                && old.key.timestamp_ms as i64 - tag.key.timestamp_ms as i64 == self.offset_ms
+                && old.timestamp_ms as i64 - tag.timestamp_ms as i64 == self.offset_ms
         }) {
             self.next += 1;
             true
@@ -282,7 +270,7 @@ impl DuplicateTagFilterOperator {
                     }
                     cursors.push(ReplayCursor {
                         next: index,
-                        offset_ms: old.key.timestamp_ms as i64 - tag.key.timestamp_ms as i64,
+                        offset_ms: old.timestamp_ms as i64 - tag.timestamp_ms as i64,
                     });
                 }
             }
@@ -291,7 +279,7 @@ impl DuplicateTagFilterOperator {
                     cursors,
                     pending: Vec::new(),
                     bytes: 0,
-                    first_timestamp: tag.key.timestamp_ms,
+                    first_timestamp: tag.timestamp_ms,
                 });
                 return;
             }
@@ -367,12 +355,12 @@ impl DuplicateTagFilterOperator {
                     .count();
                 if candidate.cursors.len() == 1
                     && distinct >= REPLAY_CONFIRMATION_PACKETS
-                    && seen.key.timestamp_ms > candidate.first_timestamp
+                    && seen.timestamp_ms > candidate.first_timestamp
                 {
                     debug!(streamer = %self.context.name, packets = candidate.pending.len(), offset_ms = candidate.cursors[0].offset_ms, "Confirmed media replay");
                     self.replay = ReplayState::Confirmed {
                         cursor: candidate.cursors[0],
-                        last_timestamp: seen.key.timestamp_ms,
+                        last_timestamp: seen.timestamp_ms,
                     };
                 } else if candidate.pending.len() >= MAX_PENDING_TAGS {
                     self.release_candidate(candidate, output)?;
@@ -461,7 +449,7 @@ impl Processor<FlvData> for DuplicateTagFilterOperator {
 #[cfg(test)]
 mod tests {
     use flv::{FlvHeader, FlvTagType};
-    use pipeline_common::CancellationToken;
+    use pipeline_common::{CancellationToken, crc32};
 
     use super::*;
     use crate::test_utils::fixtures::{

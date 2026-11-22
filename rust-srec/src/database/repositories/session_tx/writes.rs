@@ -62,8 +62,16 @@ pub(crate) async fn end_session(
         .bind(id)
         .bind(id)
         .bind(matches!(condition, EndCondition::Any))
-        .execute(connection)
+        .execute(&mut *connection)
         .await?;
+    if result.rows_affected() > 0 {
+        // An ended session will not resume danmu collection; discard any
+        // transient aggregator checkpoint left behind by an interrupted run.
+        sqlx::query("DELETE FROM danmu_aggregator_state WHERE session_id = ?")
+            .bind(id)
+            .execute(connection)
+            .await?;
+    }
     Ok(result.rows_affected())
 }
 

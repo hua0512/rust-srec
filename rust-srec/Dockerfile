@@ -165,6 +165,11 @@ RUN pip3 install --break-system-packages streamlink \
 # `baidupcs` pipeline processor and /api/tools/baidupcs both honor this.
 ENV BAIDUPCS_GO_CONFIG_DIR=/app/config/BaiduPCS-Go
 
+# Disable mimalloc transparent hugepage advising and 2 MiB minimum purge
+# granularity so freed 4 KiB pages inside partially-occupied arenas can be
+# returned to the OS on Linux hosts with transparent_hugepage=always.
+ENV MIMALLOC_ALLOW_THP=0
+
 WORKDIR /app
 
 # Copy the built binary from the builder stage

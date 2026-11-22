@@ -437,6 +437,10 @@ impl DanmuStatisticsDbModel {
     }
 }
 
+fn is_zero_i64(value: &i64) -> bool {
+    *value == 0
+}
+
 /// Top talker entry for danmu statistics.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopTalkerEntry {
@@ -444,13 +448,13 @@ pub struct TopTalkerEntry {
     pub username: String,
     pub message_count: i64,
     /// Overestimate bound; the true count is at least `message_count - error`.
-    /// Absent on rows written before the field existed.
-    #[serde(default)]
+    /// Omitted when exact (`0`) and absent on rows written before the field existed.
+    #[serde(default, skip_serializing_if = "is_zero_i64")]
     pub error: i64,
 }
 
 /// Gift tally entry for danmu statistics (gift name -> total items).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GiftTallyEntry {
     pub name: String,
     pub count: i64,
@@ -462,17 +466,30 @@ pub struct WordFrequencyEntry {
     pub word: String,
     pub count: i64,
     /// Overestimate bound; the true count is at least `count - error`.
-    /// Absent on rows written before the field existed.
-    #[serde(default)]
+    /// Omitted when exact (`0`) and absent on rows written before the field existed.
+    #[serde(default, skip_serializing_if = "is_zero_i64")]
     pub error: i64,
 }
 
 /// Danmu rate entry for timeseries.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// Serializes as a compact `[ts, count]` pair to reduce storage in
+/// `danmu_statistics.danmu_rate_timeseries`, while [`Deserialize`] accepts
+/// both `[ts, count]` arrays and `{"ts": ..., "count": ...}` objects.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct DanmuRateEntry {
     /// Unix epoch milliseconds (UTC).
     pub ts: i64,
     pub count: i64,
+}
+
+impl Serialize for DanmuRateEntry {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        (&self.ts, &self.count).serialize(serializer)
+    }
 }
 
 /// Output metadata needed to render one session without loading its output rows.
@@ -481,4 +498,34 @@ pub struct SessionOutputSummary {
     pub session_id: String,
     pub output_count: i64,
     pub thumbnail_id: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn danmu_rate_entry_uses_compact_tuple_json_and_reads_legacy_objects() {
+        let rate = vec![
+            DanmuRateEntry {
+                ts: 1_700_000_000_000,
+                count: 12,
+            },
+            DanmuRateEntry {
+                ts: 1_700_000_010_000,
+                count: 7,
+            },
+        ];
+        let compact_rate = serde_json::to_string(&rate).unwrap();
+        assert_eq!(compact_rate, "[[1700000000000,12],[1700000010000,7]]");
+        assert_eq!(
+            serde_json::from_str::<Vec<DanmuRateEntry>>(&compact_rate).unwrap(),
+            rate
+        );
+        let legacy_rate = r#"[{"ts":1700000000000,"count":12},{"ts":1700000010000,"count":7}]"#;
+        assert_eq!(
+            serde_json::from_str::<Vec<DanmuRateEntry>>(legacy_rate).unwrap(),
+            rate
+        );
+    }
 }

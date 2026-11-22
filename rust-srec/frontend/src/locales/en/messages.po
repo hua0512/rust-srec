@@ -296,7 +296,7 @@ msgstr "{count} overridden"
 msgid "{displayName} Configuration"
 msgstr "{displayName} Configuration"
 
-#: src/components/config/engines/engine-editor.tsx:77
+#: src/components/config/engines/engine-editor.tsx:93
 msgid "{engine} Settings"
 msgstr "{engine} Settings"
 
@@ -568,7 +568,7 @@ msgstr "A template being removed lets go of the proxy once the recordings using 
 msgid "A template can't turn this off; do that on the engine."
 msgstr "A template can't turn this off; do that on the engine."
 
-#: src/components/config/engines/engine-editor.tsx:200
+#: src/components/config/engines/engine-editor.tsx:221
 msgid "A unique and descriptive name for this configuration."
 msgstr "A unique and descriptive name for this configuration."
 
@@ -701,7 +701,7 @@ msgstr "Active Download"
 msgid "Active Recordings"
 msgstr "Active Recordings"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:226
+#: src/components/config/shared/danmu-statistics-card.tsx:231
 msgid "Activity resolution (seconds)"
 msgstr "Activity resolution (seconds)"
 
@@ -1390,14 +1390,14 @@ msgstr "Avg. Duration"
 msgid "Awaiting first check"
 msgstr "Awaiting first check"
 
-#: src/components/config/platforms/platform-editor.tsx:171
-#: src/components/config/templates/template-editor.tsx:187
-#: src/components/config/templates/template-editor.tsx:190
+#: src/components/config/platforms/platform-editor.tsx:185
+#: src/components/config/templates/template-editor.tsx:201
+#: src/components/config/templates/template-editor.tsx:204
 msgid "Back"
 msgstr "Back"
 
-#: src/components/config/engines/engine-editor.tsx:317
-#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:51
+#: src/components/config/engines/engine-editor.tsx:328
+#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:50
 msgid "Back to engines"
 msgstr "Back to engines"
 
@@ -1416,7 +1416,7 @@ msgstr "Back to link"
 msgid "Back to Pipeline Jobs"
 msgstr "Back to Pipeline Jobs"
 
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:88
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:90
 msgid "Back to platforms"
 msgstr "Back to platforms"
 
@@ -1434,7 +1434,7 @@ msgstr "Back to Sessions"
 msgid "Back to streamers"
 msgstr "Back to streamers"
 
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:80
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:75
 msgid "Back to templates"
 msgstr "Back to templates"
 
@@ -1544,7 +1544,7 @@ msgstr "Basic Auth"
 msgid "Basic details for this configuration template."
 msgstr "Basic details for this configuration template."
 
-#: src/components/config/engines/engine-editor.tsx:175
+#: src/components/config/engines/engine-editor.tsx:196
 msgid "Basic Information"
 msgstr "Basic Information"
 
@@ -1951,7 +1951,7 @@ msgstr "channels"
 msgid "Channels"
 msgstr "Channels"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:195
+#: src/components/config/shared/danmu-statistics-card.tsx:196
 msgid "Chat files are still recorded when this is off; only the per-session summary, which stores viewer names, is skipped."
 msgstr "Chat files are still recorded when this is off; only the per-session summary, which stores viewer names, is skipped."
 
@@ -1960,7 +1960,7 @@ msgstr "Chat files are still recorded when this is off; only the per-session sum
 msgid "Chat ID"
 msgstr "Chat ID"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:235
+#: src/components/config/shared/danmu-statistics-card.tsx:240
 msgid "Chatters tracked"
 msgstr "Chatters tracked"
 
@@ -2197,7 +2197,7 @@ msgstr "Collapse sidebar"
 msgid "Collapsible"
 msgstr "Collapsible"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:192
+#: src/components/config/shared/danmu-statistics-card.tsx:193
 msgid "Collect statistics"
 msgstr "Collect statistics"
 
@@ -2354,11 +2354,11 @@ msgstr "Configure a download tool to record with."
 msgid "Configure and launch a manual processing pipeline."
 msgstr "Configure and launch a manual processing pipeline."
 
-#: src/components/config/engines/engine-editor.tsx:327
+#: src/components/config/engines/engine-editor.tsx:338
 msgid "Configure download engine parameters"
 msgstr "Configure download engine parameters"
 
-#: src/components/config/engines/engine-editor.tsx:99
+#: src/components/config/engines/engine-editor.tsx:115
 msgid "Configure granular options for the selected engine."
 msgstr "Configure granular options for the selected engine."
 
@@ -2649,7 +2649,7 @@ msgstr "Could not show the file: {message}"
 msgid "Count"
 msgstr "Count"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:236
+#: src/components/config/shared/danmu-statistics-card.tsx:241
 msgid "Counts stay exact while a stream has fewer distinct chatters than this. 64–8192."
 msgstr "Counts stay exact while a stream has fewer distinct chatters than this. 64–8192."
 
@@ -2674,7 +2674,7 @@ msgstr "CPU Usage"
 msgid "CQ (Constant Quality)"
 msgstr "CQ (Constant Quality)"
 
-#: src/components/config/templates/template-editor.tsx:209
+#: src/components/config/templates/template-editor.tsx:223
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:508
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:130
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:402
@@ -2713,11 +2713,11 @@ msgstr "Create channel"
 msgid "Create Directories"
 msgstr "Create Directories"
 
-#: src/components/config/engines/engine-editor.tsx:271
+#: src/components/config/engines/engine-editor.tsx:292
 msgid "Create engine"
 msgstr "Create engine"
 
-#: src/components/config/engines/engine-editor.tsx:323
+#: src/components/config/engines/engine-editor.tsx:334
 msgid "Create Engine"
 msgstr "Create Engine"
 
@@ -2754,7 +2754,7 @@ msgstr "Create Preset"
 msgid "Create streamer"
 msgstr "Create streamer"
 
-#: src/components/config/templates/template-editor.tsx:161
+#: src/components/config/templates/template-editor.tsx:175
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:199
 msgid "Create Template"
 msgstr "Create Template"
@@ -2787,7 +2787,7 @@ msgstr "Creating..."
 msgid "Creating…"
 msgstr "Creating…"
 
-#: src/components/config/engines/engine-editor.tsx:344
+#: src/components/config/engines/engine-editor.tsx:355
 msgid "Creation Mode"
 msgstr "Creation Mode"
 
@@ -2819,7 +2819,7 @@ msgstr "Credentials could not be stored for automatic re-login"
 msgid "Credentials remembered for automatic re-login"
 msgstr "Credentials remembered for automatic re-login"
 
-#: src/components/credentials/credential-login-dialog.tsx:176
+#: src/components/credentials/credential-login-dialog.tsx:183
 msgid "Credentials saved successfully"
 msgstr "Credentials saved successfully"
 
@@ -2996,7 +2996,7 @@ msgstr "Danmu Service"
 msgid "Danmu settings"
 msgstr "Danmu settings"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:174
+#: src/components/config/shared/danmu-statistics-card.tsx:175
 #: src/components/sessions/danmu-stats-panel.tsx:181
 #: src/components/sessions/overview-tab.tsx:283
 msgid "Danmu Statistics"
@@ -3789,7 +3789,7 @@ msgstr "e.g. gdrive:/videos"
 msgid "e.g. hflip,noise=alls=20:allf=t+u"
 msgstr "e.g. hflip,noise=alls=20:allf=t+u"
 
-#: src/components/config/engines/engine-editor.tsx:195
+#: src/components/config/engines/engine-editor.tsx:216
 msgid "e.g. High Quality Streamlink"
 msgstr "e.g. High Quality Streamlink"
 
@@ -3850,7 +3850,7 @@ msgstr "Edit account"
 msgid "Edit channel"
 msgstr "Edit channel"
 
-#: src/components/config/engines/engine-editor.tsx:323
+#: src/components/config/engines/engine-editor.tsx:334
 msgid "Edit Engine"
 msgstr "Edit Engine"
 
@@ -3873,7 +3873,7 @@ msgstr "Edit proxy"
 msgid "Edit Workflow: {0}"
 msgstr "Edit Workflow: {0}"
 
-#: src/components/config/engines/engine-editor.tsx:342
+#: src/components/config/engines/engine-editor.tsx:353
 msgid "Editing Mode"
 msgstr "Editing Mode"
 
@@ -3988,11 +3988,11 @@ msgstr "Engine created successfully"
 msgid "Engine deleted"
 msgstr "Engine deleted"
 
-#: src/components/config/engines/engine-editor.tsx:190
+#: src/components/config/engines/engine-editor.tsx:211
 msgid "Engine Name"
 msgstr "Engine Name"
 
-#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:48
+#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:47
 msgid "Engine not found"
 msgstr "Engine not found"
 
@@ -4000,11 +4000,11 @@ msgstr "Engine not found"
 msgid "Engine Overrides"
 msgstr "Engine Overrides"
 
-#: src/components/config/engines/engine-editor.tsx:215
+#: src/components/config/engines/engine-editor.tsx:236
 msgid "Engine Type"
 msgstr "Engine Type"
 
-#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:62
+#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:61
 msgid "Engine updated successfully"
 msgstr "Engine updated successfully"
 
@@ -4016,7 +4016,7 @@ msgstr "Engine used for downloads when not specified by platform/streamer."
 #: src/components/config/global/backup-restore-card.tsx:398
 #: src/components/config/global/backup-restore-card.tsx:403
 #: src/components/config/global/backup-restore-card.tsx:408
-#: src/components/config/templates/template-editor.tsx:250
+#: src/components/config/templates/template-editor.tsx:264
 #: src/components/layout/site-header.tsx:66
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:62
 msgid "Engines"
@@ -4099,7 +4099,7 @@ msgstr "Error"
 msgid "Error Details"
 msgstr "Error Details"
 
-#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:46
+#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:45
 msgid "Error loading engine"
 msgstr "Error loading engine"
 
@@ -4111,7 +4111,7 @@ msgstr "Error Loading Job"
 msgid "Error Loading Pipeline"
 msgstr "Error Loading Pipeline"
 
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:83
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:85
 msgid "Error loading platform"
 msgstr "Error loading platform"
 
@@ -4123,7 +4123,7 @@ msgstr "Error loading preset"
 msgid "Error Loading Session"
 msgstr "Error Loading Session"
 
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:75
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:70
 msgid "Error loading template"
 msgstr "Error loading template"
 
@@ -4649,7 +4649,7 @@ msgid "Failed to update logging configuration"
 msgstr "Failed to update logging configuration"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:62
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:64
 msgid "Failed to update platform: {0}"
 msgstr "Failed to update platform: {0}"
 
@@ -4676,7 +4676,7 @@ msgid "Failed to update subscriptions"
 msgstr "Failed to update subscriptions"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:50
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:49
 msgid "Failed to update template: {0}"
 msgstr "Failed to update template: {0}"
 
@@ -5031,7 +5031,7 @@ msgstr "Framerate (FPS)"
 msgid "Free space on the disks recordings are written to."
 msgstr "Free space on the disks recordings are written to."
 
-#: src/components/config/shared/danmu-statistics-card.tsx:220
+#: src/components/config/shared/danmu-statistics-card.tsx:221
 msgid "Frequent words to keep"
 msgstr "Frequent words to keep"
 
@@ -5118,8 +5118,8 @@ msgstr "Gaps and stalls"
 msgid "GB"
 msgstr "GB"
 
-#: src/components/config/platforms/platform-editor.tsx:220
-#: src/components/config/templates/template-editor.tsx:240
+#: src/components/config/platforms/platform-editor.tsx:234
+#: src/components/config/templates/template-editor.tsx:254
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:43
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:297
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:99
@@ -5160,11 +5160,11 @@ msgstr "Generate a thumbnail image from the video at 10 seconds (320px width)."
 msgid "Generate multiple preview images at different timestamps for a gallery view."
 msgstr "Generate multiple preview images at different timestamps for a gallery view."
 
-#: src/components/credentials/credential-login-dialog.tsx:208
+#: src/components/credentials/credential-login-dialog.tsx:215
 msgid "Generate new QR code"
 msgstr "Generate new QR code"
 
-#: src/components/credentials/credential-login-dialog.tsx:154
+#: src/components/credentials/credential-login-dialog.tsx:161
 msgid "Generating QR code..."
 msgstr "Generating QR code..."
 
@@ -5432,7 +5432,7 @@ msgstr "Hour {hour}"
 msgid "Hours"
 msgstr "Hours"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:177
+#: src/components/config/shared/danmu-statistics-card.tsx:178
 msgid "How chat activity is summarised on the session page."
 msgstr "How chat activity is summarised on the session page."
 
@@ -5468,13 +5468,13 @@ msgstr "How long an FLV stream may deliver no audio or video before the recordin
 msgid "How long to wait for a missing VOD segment before skipping it."
 msgstr "How long to wait for a missing VOD segment before skipping it."
 
-#: src/components/config/shared/danmu-statistics-card.tsx:215
+#: src/components/config/shared/danmu-statistics-card.tsx:216
 msgid "How many appear in the ranking. 1–500."
 msgstr "How many appear in the ranking. 1–500."
 
-#: src/components/config/shared/danmu-statistics-card.tsx:221
-msgid "How many appear in the word chart. 1–500."
-msgstr "How many appear in the word chart. 1–500."
+#: src/components/config/shared/danmu-statistics-card.tsx:222
+msgid "How many appear in the word chart. 0–500; set to 0 to disable word counting and CJK segmentation."
+msgstr "How many appear in the word chart. 0–500; set to 0 to disable word counting and CJK segmentation."
 
 #: src/components/config/global/concurrency-card.tsx:170
 msgid "How many CPU-bound pipeline steps, such as transcodes, may run at the same time. Raising this past your core count slows every job down."
@@ -5576,7 +5576,7 @@ msgstr "ID is required"
 msgid "ID: {jobId}"
 msgstr "ID: {jobId}"
 
-#: src/components/config/engines/engine-editor.tsx:178
+#: src/components/config/engines/engine-editor.tsx:199
 msgid "Identity and type of the engine."
 msgstr "Identity and type of the engine."
 
@@ -6223,11 +6223,11 @@ msgstr "Log in"
 msgid "Log in again"
 msgstr "Log in again"
 
-#: src/components/credentials/credential-login-dialog.tsx:126
+#: src/components/credentials/credential-login-dialog.tsx:133
 msgid "Log in again to “{accountLabel}”"
 msgstr "Log in again to “{accountLabel}”"
 
-#: src/components/credentials/credential-login-dialog.tsx:128
+#: src/components/credentials/credential-login-dialog.tsx:135
 msgid "Log in to “{accountLabel}”"
 msgstr "Log in to “{accountLabel}”"
 
@@ -8230,7 +8230,7 @@ msgstr "Platform"
 msgid "Platform {label}"
 msgstr "Platform {label}"
 
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:52
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:51
 msgid "Platform configuration updated successfully"
 msgstr "Platform configuration updated successfully"
 
@@ -8242,7 +8242,7 @@ msgstr "Platform configurations will appear here when available."
 msgid "Platform name"
 msgstr "Platform name"
 
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:85
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:87
 msgid "Platform not found"
 msgstr "Platform not found"
 
@@ -8275,7 +8275,7 @@ msgid "platforms"
 msgstr "platforms"
 
 #: src/components/config/global/backup-restore-card.tsx:415
-#: src/components/config/templates/template-editor.tsx:260
+#: src/components/config/templates/template-editor.tsx:274
 #: src/components/layout/site-header.tsx:68
 #: src/components/pipeline/step-in-use-dialog.tsx:99
 #: src/components/proxies/proxy-references.tsx:91
@@ -8704,7 +8704,7 @@ msgstr "Proxy"
 msgid "Put the login in the username and password fields instead."
 msgstr "Put the login in the username and password fields instead."
 
-#: src/components/credentials/credential-login-dialog.tsx:184
+#: src/components/credentials/credential-login-dialog.tsx:191
 msgid "QR code expired"
 msgstr "QR code expired"
 
@@ -9598,7 +9598,7 @@ msgstr "Saturday"
 msgid "Save account"
 msgstr "Save account"
 
-#: src/components/config/engines/engine-editor.tsx:271
+#: src/components/config/engines/engine-editor.tsx:292
 #: src/components/filters/FilterDialog.tsx:299
 #: src/components/notifications/channel-form.tsx:448
 #: src/components/proxies/proxy-editor-dialog.tsx:363
@@ -9607,8 +9607,8 @@ msgstr "Save account"
 msgid "Save changes"
 msgstr "Save changes"
 
-#: src/components/config/platforms/platform-editor.tsx:189
-#: src/components/config/templates/template-editor.tsx:211
+#: src/components/config/platforms/platform-editor.tsx:203
+#: src/components/config/templates/template-editor.tsx:225
 #: src/components/notifications/subscription-manager.tsx:487
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:780
@@ -9677,8 +9677,8 @@ msgstr "Saved together with this configuration."
 msgid "Saving"
 msgstr "Saving"
 
-#: src/components/config/platforms/platform-editor.tsx:187
-#: src/components/config/templates/template-editor.tsx:207
+#: src/components/config/platforms/platform-editor.tsx:201
+#: src/components/config/templates/template-editor.tsx:221
 #: src/components/pipeline/workflows/workflow-editor.tsx:168
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:355
 msgid "Saving..."
@@ -9700,31 +9700,31 @@ msgstr "Scan Directory"
 msgid "Scan QR code"
 msgstr "Scan QR code"
 
-#: src/components/credentials/credential-login-dialog.tsx:220
+#: src/components/credentials/credential-login-dialog.tsx:227
 msgid "Scan with Bilibili mobile app"
 msgstr "Scan with Bilibili mobile app"
 
-#: src/components/credentials/credential-login-dialog.tsx:222
+#: src/components/credentials/credential-login-dialog.tsx:229
 msgid "Scan with the Douyu app"
 msgstr "Scan with the Douyu app"
 
-#: src/components/credentials/credential-login-dialog.tsx:226
+#: src/components/credentials/credential-login-dialog.tsx:233
 msgid "Scan with the platform's mobile app"
 msgstr "Scan with the platform's mobile app"
 
-#: src/components/credentials/credential-login-dialog.tsx:224
+#: src/components/credentials/credential-login-dialog.tsx:231
 msgid "Scan with the Weibo app"
 msgstr "Scan with the Weibo app"
 
-#: src/components/credentials/credential-login-dialog.tsx:167
+#: src/components/credentials/credential-login-dialog.tsx:174
 msgid "Scanned! Please confirm on your phone"
 msgstr "Scanned! Please confirm on your phone"
 
-#: src/components/credentials/credential-login-dialog.tsx:138
+#: src/components/credentials/credential-login-dialog.tsx:145
 msgid "Scanning adds the account. Account selections are not changed."
 msgstr "Scanning adds the account. Account selections are not changed."
 
-#: src/components/credentials/credential-login-dialog.tsx:133
+#: src/components/credentials/credential-login-dialog.tsx:140
 msgid "Scanning replaces this account's saved login. Account selections are not changed."
 msgstr "Scanning replaces this account's saved login. Account selections are not changed."
 
@@ -10044,7 +10044,7 @@ msgstr "Select the highest quality level you want to attempt capturing."
 msgid "Select the steps that must complete successfully before this step runs."
 msgstr "Select the steps that must complete successfully before this step runs."
 
-#: src/components/config/engines/engine-editor.tsx:231
+#: src/components/config/engines/engine-editor.tsx:252
 #: src/components/notifications/channel-form.tsx:381
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:146
 msgid "Select type"
@@ -10215,7 +10215,7 @@ msgstr "Set priority"
 msgid "Set to 0 to disable automatic output cleanup. Cleanup runs every 30 minutes and only includes ended sessions with no active or recently updated processing jobs."
 msgstr "Set to 0 to disable automatic output cleanup. Cleanup runs every 30 minutes and only includes ended sessions with no active or recently updated processing jobs."
 
-#: src/components/config/engines/engine-editor.tsx:329
+#: src/components/config/engines/engine-editor.tsx:340
 msgid "Set up a new download tool configuration"
 msgstr "Set up a new download tool configuration"
 
@@ -10438,7 +10438,7 @@ msgstr "Sort by"
 msgid "Space Saver"
 msgstr "Space Saver"
 
-#: src/components/config/platforms/platform-editor.tsx:230
+#: src/components/config/platforms/platform-editor.tsx:244
 #: src/components/config/templates/tabs/platform-override-card.tsx:99
 msgid "Specific"
 msgstr "Specific"
@@ -10974,11 +10974,11 @@ msgstr "Template Information"
 msgid "Template Name"
 msgstr "Template Name"
 
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:77
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:72
 msgid "Template not found"
 msgstr "Template not found"
 
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:43
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:42
 msgid "Template updated successfully"
 msgstr "Template updated successfully"
 
@@ -11032,7 +11032,7 @@ msgstr "Testing…"
 msgid "The access token alone signs in; cookies are optional."
 msgstr "The access token alone signs in; cookies are optional."
 
-#: src/components/credentials/credential-login-dialog.tsx:189
+#: src/components/credentials/credential-login-dialog.tsx:196
 msgid "The account or the proxy it uses was changed or removed in the meantime. Reload the page and try again."
 msgstr "The account or the proxy it uses was changed or removed in the meantime. Reload the page and try again."
 
@@ -11188,7 +11188,7 @@ msgstr "The streamer's BIGO account is not known yet; its next check finds it"
 msgid "The streaming source could not be reached through the server. Retry or choose another source."
 msgstr "The streaming source could not be reached through the server. Retry or choose another source."
 
-#: src/components/config/engines/engine-editor.tsx:256
+#: src/components/config/engines/engine-editor.tsx:277
 msgid "The underlying tool used for downloading."
 msgstr "The underlying tool used for downloading."
 
@@ -11442,7 +11442,7 @@ msgstr "time-of-day timetable"
 msgid "Timeline"
 msgstr "Timeline"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:227
+#: src/components/config/shared/danmu-statistics-card.tsx:232
 msgid "Timeline granularity. Very long streams are automatically coarsened past a point."
 msgstr "Timeline granularity. Very long streams are automatically coarsened past a point."
 
@@ -11542,7 +11542,7 @@ msgctxt "danmu"
 msgid "Top"
 msgstr "Top"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:214
+#: src/components/config/shared/danmu-statistics-card.tsx:215
 msgid "Top chatters to keep"
 msgstr "Top chatters to keep"
 
@@ -12400,7 +12400,7 @@ msgstr "Width"
 msgid "Width in pixels (keeps aspect ratio)"
 msgstr "Width in pixels (keeps aspect ratio)"
 
-#: src/components/config/templates/template-editor.tsx:118
+#: src/components/config/templates/template-editor.tsx:123
 msgid "With the engine's settings, this records neither video nor audio"
 msgstr "With the engine's settings, this records neither video nor audio"
 
