@@ -411,6 +411,15 @@ async fn supervise_command_with_monitor(
     }
 
     let generation = RuntimeGeneration::generate();
+    if cfg!(target_os = "linux") && std::env::var_os("MIMALLOC_ALLOW_THP").is_none() {
+        // Where the host sets `transparent_hugepage=always`, the kernel backs
+        // the worker's heap with 2 MiB pages and keeps far more memory resident
+        // than the worker uses. `0` makes mimalloc disable hugepages for the
+        // worker as it initialises, before any Rust code runs; a value already
+        // in the environment wins. The worker keeps the opt-out away from the
+        // tools it starts (`process_utils::confine_thp_opt_out`).
+        command.env("MIMALLOC_ALLOW_THP", "0");
+    }
     command
         .env(RUNTIME_ROLE_ENV, RUNTIME_WORKER_ROLE)
         .env(RUNTIME_GENERATION_ENV, generation.to_string())

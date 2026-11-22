@@ -55,6 +55,57 @@ pub use contained_child::{ContainedChild, ContainmentError, TreeTerminator};
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+/// Set by [`confine_thp_opt_out`] when transparent hugepages are disabled for
+/// this process.
+#[cfg(target_os = "linux")]
+static THP_OPT_OUT_CONFINED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Keep this process's transparent hugepage opt-out away from the processes it
+/// starts.
+///
+/// Linux hands `PR_SET_THP_DISABLE` down to forked children and keeps it across
+/// `execve`, so a process that opts out to keep its own heap small would also
+/// switch hugepages off for every tool it launches. Once this has been called
+/// in a process whose hugepages are disabled, commands spawned through
+/// [`ContainedChild`] or prepared with [`use_system_thp`] clear the flag before
+/// they exec. Does nothing when hugepages are not disabled for this process,
+/// and on other platforms.
+pub fn confine_thp_opt_out() {
+    #[cfg(target_os = "linux")]
+    {
+        // SAFETY: `PR_GET_THP_DISABLE` takes no pointers and only reads a flag
+        // of the calling process.
+        let disabled = unsafe { libc::prctl(libc::PR_GET_THP_DISABLE, 0, 0, 0, 0) } == 1;
+        THP_OPT_OUT_CONFINED.store(disabled, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Start `command` under the system's transparent hugepage policy while
+/// [`confine_thp_opt_out`] is in effect; a no-op otherwise.
+///
+/// The hook makes the spawn fork instead of using `posix_spawn`, so it is only
+/// installed when there is a flag to clear.
+#[cfg(feature = "tokio")]
+pub fn use_system_thp(command: &mut tokio::process::Command) {
+    #[cfg(target_os = "linux")]
+    if THP_OPT_OUT_CONFINED.load(std::sync::atomic::Ordering::Relaxed) {
+        // SAFETY: the hook runs in the forked child before exec and makes a
+        // single raw `prctl` system call, which is async-signal-safe: it
+        // allocates nothing and takes no locks.
+        unsafe {
+            command.pre_exec(|| {
+                // A failure leaves the child with hugepages off, which is no
+                // reason to refuse to start it.
+                libc::prctl(libc::PR_SET_THP_DISABLE, 0, 0, 0, 0);
+                Ok(())
+            });
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = command;
+}
+
 /// Apply the Windows `CREATE_NO_WINDOW` flag to child processes.
 ///
 /// On non-Windows targets this is a no-op.

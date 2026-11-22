@@ -82,6 +82,10 @@ async fn run_worker() -> anyhow::Result<()> {
     // soon as `ServiceContainer` is ready.
     let direct_signal = worker_shutdown_signal()?;
 
+    // The supervisor starts the worker with transparent hugepages off. ffmpeg,
+    // rclone and the other tools the worker launches keep the system's policy.
+    process_utils::confine_thp_opt_out();
+
     // The worker is already enrolled in its OS containment domain. It cannot
     // open SQLite, output files, or sockets until the supervisor has durably
     // installed the generation marker and sent START.
