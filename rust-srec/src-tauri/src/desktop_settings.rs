@@ -31,8 +31,8 @@ pub enum BackendMode {
 /// `require_login` defaults to off: the shell signs the webview in without a
 /// password. That is safe on a fresh install whose `admin` still has the
 /// seeded default password because the built-in backend always runs in local
-/// desktop mode (`ServiceContainer::enable_local_desktop_mode`, set before the
-/// API starts): a password login for an account that must still change its
+/// desktop mode (`ServiceContainerConfig::local_desktop_mode`, set in its
+/// configuration): a password login for an account that must still change its
 /// password never succeeds there, so the seeded password never signs in.
 ///
 /// The stored `require_login` is what the user asked for. In local mode
@@ -799,15 +799,33 @@ mod tests {
 
     #[test]
     fn unreadable_settings_file_keeps_password_sign_in_required() {
-        let data_dir = std::env::temp_dir().join(format!(
-            "rust-srec-desktop-settings-test-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&data_dir).expect("test data dir");
-        std::fs::write(desktop_settings_path(&data_dir), "{ not json").expect("corrupt file");
+        let data_dir = crate::test_support::TempDir::new("settings");
+        std::fs::write(desktop_settings_path(data_dir.path()), "{ not json").expect("corrupt file");
 
-        let settings = load_desktop_settings_or_fallback(&data_dir);
-        std::fs::remove_dir_all(&data_dir).expect("remove test data dir");
-        assert!(settings.require_login);
+        assert!(load_desktop_settings_or_fallback(data_dir.path()).require_login);
+    }
+
+    #[test]
+    fn password_sign_in_is_required_only_once_a_password_exists() {
+        let account = |password_setup_required| rust_srec::backend::LocalDesktopAccount {
+            username: "admin".to_owned(),
+            password_setup_required,
+        };
+        let seeded = account(true);
+        let set = account(false);
+        for (require_login, account, required) in [
+            (true, Some(&seeded), false),
+            (true, Some(&set), true),
+            // A failed lookup keeps the stored value.
+            (true, None, true),
+            (false, Some(&set), false),
+            (false, None, false),
+        ] {
+            assert_eq!(
+                password_sign_in_required(require_login, account),
+                required,
+                "require_login={require_login}, account={account:?}"
+            );
+        }
     }
 }

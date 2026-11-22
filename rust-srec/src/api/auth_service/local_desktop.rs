@@ -47,8 +47,10 @@ impl AuthService {
     ///   by a build without this mode) are refused like revoked ones, for
     ///   access and for refresh, instead of being allowed to change the
     ///   password;
-    /// - its API keys are honoured: password logins being impossible, a key
-    ///   can only have been created from an in-process session.
+    /// - its API keys are honoured: no session but an in-process one can act
+    ///   for it, so any key it has was created by a session that was allowed
+    ///   to act (an in-process one, or one from before a restored backup
+    ///   flagged the account again).
     pub(crate) fn with_local_desktop_mode(mut self) -> Self {
         self.local_desktop_mode = true;
         self

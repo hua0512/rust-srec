@@ -95,6 +95,19 @@ pub struct ServiceContainerConfig {
     pub download_config: DownloadManagerConfig,
     pub pipeline_config: PipelineManagerConfig,
     pub api_config: ApiServerConfig,
+    /// Serve the API as the desktop app's built-in backend. The shell signs
+    /// its user in without a password, so nobody is ever made to change the
+    /// seeded default password, and `must_change_password` then means "no
+    /// password has been set". With this set, an account with that flag is
+    /// reachable only through sessions issued by
+    /// [`ServiceContainer::issue_local_desktop_session`]: a password login for
+    /// it never succeeds (the seeded password never signs in), its other
+    /// sessions are refused like revoked ones, and its API keys are honoured.
+    ///
+    /// Part of the configuration so it is fixed before the container, and so
+    /// the API server's `AuthService`, exists. Only the desktop shell's local
+    /// mode sets it; the server and Docker builds never do.
+    pub local_desktop_mode: bool,
 }
 
 /// Snapshot of currently active recordings for desktop status and exit guards.
@@ -112,6 +125,7 @@ impl ServiceContainerConfig {
             download_config: DownloadManagerConfig::default(),
             pipeline_config: PipelineManagerConfig::default(),
             api_config: ApiServerConfig::from_env()?,
+            local_desktop_mode: false,
         })
     }
 }
@@ -234,9 +248,9 @@ pub struct ServiceContainer {
     logging_config: Arc<std::sync::OnceLock<Arc<LoggingConfig>>>,
     /// Installed when the API server starts with database authentication.
     auth_service: std::sync::OnceLock<Arc<crate::api::auth_service::AuthService>>,
-    /// Read when the API server's `AuthService` is built; see
-    /// [`Self::enable_local_desktop_mode`].
-    local_desktop_mode: std::sync::atomic::AtomicBool,
+    /// See [`ServiceContainerConfig::local_desktop_mode`]; read when the API
+    /// server's `AuthService` is built.
+    local_desktop_mode: bool,
     startup_recovery_complete: std::sync::atomic::AtomicBool,
     /// Segment keys that should be discarded (min-size gate) to prevent danmu/xml and video
     /// from racing into the pipeline while being deleted.
@@ -630,23 +644,6 @@ impl ServiceContainer {
         auth.issue_local_desktop_session()
             .await
             .map_err(|error| crate::Error::ApiError(error.to_string()))
-    }
-
-    /// Run the API as the desktop app's built-in backend: an account that
-    /// still has `must_change_password` is reachable only through sessions
-    /// issued by [`Self::issue_local_desktop_session`], so a password login
-    /// for it never succeeds and the seeded default password never signs in.
-    ///
-    /// Only the desktop shell calls this, in local mode, before
-    /// [`Self::start_api_server_bound_with_jwt_secret`]: the mode is fixed
-    /// when the API server's `AuthService` is built, so it is in effect for
-    /// the first request. A call after the server started has no effect.
-    pub fn enable_local_desktop_mode(&self) {
-        if self.auth_service.get().is_some() {
-            warn!("Local desktop mode requested after the API server started; ignored");
-        }
-        self.local_desktop_mode
-            .store(true, std::sync::atomic::Ordering::Release);
     }
 
     /// The account local desktop sessions are issued for, or `None` when

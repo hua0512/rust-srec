@@ -16,6 +16,8 @@ mod desktop_settings;
 mod json_file;
 mod lifecycle;
 mod sleep_inhibitor;
+#[cfg(test)]
+mod test_support;
 mod tool_check;
 mod tray;
 mod updates;
@@ -419,6 +421,10 @@ async fn run_desktop_backend_init(
             download_config: backend::DownloadManagerConfig::default(),
             pipeline_config: backend::PipelineManagerConfig::default(),
             api_config,
+            // This is the local-mode backend: an account still on its seeded
+            // password is reachable only through auto-login sessions, so the
+            // seeded password never signs in over the loopback API.
+            local_desktop_mode: true,
         },
     )
     .await
@@ -516,12 +522,6 @@ async fn run_desktop_backend_init(
         "Desktop init: service initialization took {}ms",
         services_ms
     );
-
-    // Before the API server is built, so it is in effect for the first
-    // request: a password login for an account that must still change its
-    // password never succeeds here, and the seeded default password never
-    // signs in.
-    container.enable_local_desktop_mode();
 
     emit_boot_progress(&app_handle, "Starting API server...", 0.9);
 

@@ -249,6 +249,17 @@ function DesktopSettingsContent() {
     );
   };
 
+  // Writes are built from the snapshot, which may be stale (for example a
+  // backup restored since the page loaded makes the shell refuse the
+  // `requireLogin: true` every write carries), so a failed write of any
+  // setting fetches it again.
+  const refetchAfterFailedWrite = () => {
+    void queryClient.invalidateQueries({
+      queryKey: DESKTOP_SETTINGS_QUERY_KEY,
+      exact: true,
+    });
+  };
+
   const writeDesktopSettings = (change: DesktopSettingsChange) => {
     const confirmed = confirmedDesktopSettings.current;
     if (!confirmed) {
@@ -354,16 +365,7 @@ function DesktopSettingsContent() {
       // Back to what the shell holds, keeping later toggles' optimistic values.
       const confirmed = confirmedDesktopSettings.current;
       if (confirmed) applyConfirmedSettings(confirmed, change);
-      // The shell refuses sign-in while the account has no password of its
-      // own; `passwordSetupRequired` may be stale (a backup restored since
-      // the page loaded), so the next toggle needs a fresh snapshot to open
-      // the password dialog.
-      if (change.requireLogin === true) {
-        void queryClient.invalidateQueries({
-          queryKey: DESKTOP_SETTINGS_QUERY_KEY,
-          exact: true,
-        });
-      }
+      refetchAfterFailedWrite();
       toast.error(
         errorMessage(
           mutationError,
@@ -377,12 +379,14 @@ function DesktopSettingsContent() {
     scope: DESKTOP_SETTINGS_WRITE_SCOPE,
     mutationFn: writeDesktopSettings,
     onSuccess: (updated) => applyConfirmedSettings(updated),
+    onError: refetchAfterFailedWrite,
   });
 
   const skipVersionMutation = useMutation({
     scope: DESKTOP_SETTINGS_WRITE_SCOPE,
     mutationFn: skipDesktopUpdateVersion,
     onSuccess: (updated) => applyConfirmedSettings(updated),
+    onError: refetchAfterFailedWrite,
   });
 
   const autostartMutation = useMutation({
@@ -450,10 +454,7 @@ function DesktopSettingsContent() {
       );
       // The account may have a password by now (set elsewhere, or restored
       // from a backup), which only a fresh snapshot shows.
-      void queryClient.invalidateQueries({
-        queryKey: DESKTOP_SETTINGS_QUERY_KEY,
-        exact: true,
-      });
+      refetchAfterFailedWrite();
       return false;
     }
     queryClient.setQueryData<DesktopSettingsSnapshot>(

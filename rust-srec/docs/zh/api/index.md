@@ -14,6 +14,8 @@ Swagger 属于正在运行的 Rust-Srec 后端，并不位于 `docs.srec.rs` 文
 
 初始账号为 `admin` / `admin123!`，在调用其他受保护接口前必须修改密码。
 
+桌面应用的内置后端不接受这个密码，请改为在桌面应用的**API 密钥**中创建密钥（参见 [API 密钥与 MCP](./api-keys-mcp.md)）。
+
 ```bash
 curl -X POST http://localhost:12555/api/auth/login \
   -H "Content-Type: application/json" \

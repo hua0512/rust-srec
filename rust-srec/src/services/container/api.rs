@@ -195,10 +195,7 @@ impl ServiceContainer {
             jwt,
             auth_config,
         );
-        if self
-            .local_desktop_mode
-            .load(std::sync::atomic::Ordering::Acquire)
-        {
+        if self.local_desktop_mode {
             service.with_local_desktop_mode()
         } else {
             service
@@ -346,7 +343,7 @@ mod tests {
         use crate::api::rate_limit::LoginRateLimiter;
 
         let directory = tempfile::tempdir().unwrap();
-        let (container, pool) = served_test_container(directory.path()).await;
+        let (container, pool) = served_test_container(directory.path(), false).await;
         let auth = AuthService::new(
             Arc::new(SqlxUserRepository::new(pool.clone(), pool.clone())),
             Arc::new(SqlxRefreshTokenRepository::new(pool.clone(), pool.clone())),
@@ -393,15 +390,13 @@ mod tests {
         container.cancellation_token.cancel();
     }
 
-    /// The desktop shell enables local desktop mode on the container before
-    /// starting the API. The served login must then answer the seeded
+    /// The desktop shell builds its container with local desktop mode on. The served login must then answer the seeded
     /// `admin` / `admin123!` exactly like a wrong password, which only holds
     /// if the container hands the mode to the `AuthService` it builds.
     #[tokio::test]
     async fn local_desktop_mode_reaches_the_served_login() {
         let directory = tempfile::tempdir().unwrap();
-        let (container, _pool) = served_test_container(directory.path()).await;
-        container.enable_local_desktop_mode();
+        let (container, _pool) = served_test_container(directory.path(), true).await;
         let address = container
             .start_api_server_bound_with_jwt_secret(
                 "local-desktop-mode-test-secret-with-entropy".to_owned(),
@@ -433,6 +428,7 @@ mod tests {
     /// an ephemeral loopback port.
     async fn served_test_container(
         log_dir: &std::path::Path,
+        local_desktop_mode: bool,
     ) -> (ServiceContainer, sqlx::SqlitePool) {
         use std::time::Duration;
 
@@ -457,6 +453,7 @@ mod tests {
                     enable_cors: false,
                     body_limit: 1024 * 1024,
                 },
+                local_desktop_mode,
             },
         )
         .await

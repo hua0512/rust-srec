@@ -605,10 +605,14 @@ async fn local_desktop_mode_reaches_an_account_without_a_password_only_in_proces
         .create_api_key(&admin.id, "desktop", ApiKeyAccessLevel::Full, None)
         .await
         .unwrap();
-    service
+    let principal = service
         .authorize_api_key(&key)
         .await
         .expect("a key of an account without a password works in local desktop mode");
+    service
+        .revalidate_principal(&principal)
+        .await
+        .expect("a held key principal of such an account stays valid in local desktop mode");
     assert!(matches!(
         fixture.service.authorize_api_key(&key).await,
         Err(AuthError::PasswordChangeRequired)

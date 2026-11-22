@@ -45,6 +45,7 @@ pub(super) async fn serve(
                 enable_cors: true,
                 body_limit: 10 * 1024 * 1024,
             },
+            local_desktop_mode: false,
         },
     )
     .await

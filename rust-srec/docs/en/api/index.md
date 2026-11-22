@@ -14,6 +14,8 @@ Most routes require an access token in the `Authorization: Bearer <token>` heade
 
 The initial account is `admin` / `admin123!` and must change its password before it can use other protected endpoints.
 
+The desktop app's built-in backend refuses this password; create a key under **API Keys** in the desktop app instead (see [API Keys & MCP](./api-keys-mcp.md)).
+
 ```bash
 curl -X POST http://localhost:12555/api/auth/login \
   -H "Content-Type: application/json" \

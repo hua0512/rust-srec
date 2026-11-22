@@ -193,8 +193,9 @@ impl AuthService {
                     return Err(AuthError::AccountDisabled);
                 }
                 // In local desktop mode the flag means "no password has been
-                // set": password logins for the account are impossible, so the
-                // key was created from an in-process session.
+                // set" and only in-process sessions can act for the account,
+                // so any key it has was created by a session that was allowed
+                // to act; it is honoured.
                 if user.must_change_password && !self.is_local_desktop_mode() {
                     return Err(AuthError::PasswordChangeRequired);
                 }
