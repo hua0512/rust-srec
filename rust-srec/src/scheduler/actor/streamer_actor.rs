@@ -28,7 +28,7 @@ use tracing::{debug, info, trace, warn};
 use super::handle::{ActorHandle, ActorMetadata, DEFAULT_MAILBOX_CAPACITY};
 use super::messages::{CheckResult, StreamerActorState, StreamerConfig, StreamerMessage};
 use super::monitor_adapter::StatusChecker;
-use crate::domain::{Priority, StreamerState};
+use crate::domain::StreamerState;
 use crate::downloader::DownloadStopCause;
 use crate::monitor::{LiveStatus, ProcessStatusResult, ProcessStatusSuppression};
 use crate::scheduler::actor::DownloadEndPolicy;
@@ -125,8 +125,6 @@ pub struct StreamerActor {
     batch_wake_routine_deadline: Option<Instant>,
     /// Shared metadata store for fetching fresh streamer data.
     metadata_store: Arc<DashMap<String, Arc<StreamerMetadata>>>,
-    /// Shared actor handle metadata kept synchronized on live config updates.
-    actor_metadata: ActorMetadata,
     /// Configuration.
     config: StreamerConfig,
     /// Cancellation token.
@@ -161,14 +159,12 @@ impl StreamerActor {
     ) -> (Self, ActorHandle<StreamerMessage>) {
         let (tx, rx) = mpsc::channel(DEFAULT_MAILBOX_CAPACITY);
         let (priority_tx, priority_rx) = mpsc::channel(DEFAULT_PRIORITY_MAILBOX_CAPACITY);
-        let is_high_priority = config.priority == Priority::High;
-
-        let actor_metadata = ActorMetadata::streamer(&streamer_id, is_high_priority);
+        let actor_metadata = ActorMetadata::streamer(&streamer_id);
         let handle = ActorHandle::with_priority(
             tx.clone(),
             priority_tx,
             cancellation_token.clone(),
-            actor_metadata.clone(),
+            actor_metadata,
         );
 
         // Get initial state from metadata store
@@ -190,7 +186,6 @@ impl StreamerActor {
             live_watchdog_backoff_until: None,
             batch_wake_routine_deadline: None,
             metadata_store,
-            actor_metadata,
             config,
             cancellation_token,
             status_checker,

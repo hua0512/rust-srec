@@ -441,7 +441,7 @@ mod tests {
     }
 
     #[test]
-    fn half_open_close_clears_partial_failures_and_reopen_enforces_fresh_cooldown() {
+    fn each_half_open_cycle_tolerates_one_failure_and_reopening_restarts_the_cooldown() {
         let breaker = CircuitBreaker::with_half_open(1, 60, 2, 2);
 
         breaker.record_failure();
@@ -455,7 +455,6 @@ mod tests {
         breaker.record_success();
         breaker.record_success();
         assert_eq!(breaker.state(), CircuitState::Closed);
-        assert_eq!(breaker.inner.lock().half_open_failures, 0);
 
         // Next half-open cycle must tolerate a single transient failure again before reopening,
         // and once reopened must stay Open for a full fresh cooldown window.

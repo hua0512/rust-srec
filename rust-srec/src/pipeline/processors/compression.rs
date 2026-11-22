@@ -301,10 +301,10 @@ impl CompressionProcessor {
         cancel: CancellationToken,
         started: Instant,
     ) -> Result<(u64, u64)> {
+        #[cfg(test)]
+        tests::run_before_archive_create_hook(output_path);
         let file = File::create(output_path)
             .map_err(|e| crate::Error::io_path("creating ZIP archive", output_path, e))?;
-        #[cfg(test)]
-        tests::run_archive_open_hook(output_path);
 
         let file = BufWriter::new(file);
         let mut zip = ZipWriter::new(file);
@@ -372,7 +372,7 @@ impl CompressionProcessor {
                 if cancel.is_cancelled() {
                     crate::Error::PipelineError("Compression cancelled".to_string())
                 } else {
-                    crate::Error::io_path("writing ZIP entry", output_path, e)
+                    crate::Error::io_path("adding file to ZIP archive", Path::new(input_path), e)
                 }
             })?;
             bytes_done = reader.bytes_done;
@@ -468,7 +468,11 @@ impl CompressionProcessor {
                     if cancel.is_cancelled() {
                         crate::Error::PipelineError("Compression cancelled".to_string())
                     } else {
-                        crate::Error::io_path("writing tar.gz entry", output_path, e)
+                        crate::Error::io_path(
+                            "adding file to tar.gz archive",
+                            Path::new(input_path),
+                            e,
+                        )
                     }
                 })?;
 
@@ -626,9 +630,10 @@ impl Processor for CompressionProcessor {
         let cancel = ctx.cancellation_token.child_token();
         let cancel_on_drop = cancel.clone().drop_guard();
         let progress = ctx.progress.clone();
-        // Workers drain the log collector before releasing CPU admission and
-        // forgetting staged outputs. Retaining its sender contains a cancelled
-        // archive build until its blocking file handle closes and unlinks `tmp_path`.
+        // The worker drains the log collector before it releases its slot and
+        // forgets the job's staged outputs. Holding a sender in the blocking
+        // task keeps both until a cancelled archive build has closed and
+        // removed `staged_path`.
         let attempt_activity = ctx.log_sink.clone();
         let staged_path = tmp_path;
 
@@ -1014,23 +1019,24 @@ mod tests {
         assert!(names[1].ends_with("b/rec.mp4"), "{names:?}");
     }
 
-    type ArchiveOpenHook = Box<dyn FnOnce() + Send>;
-    type ArchiveOpenHookMap = std::collections::HashMap<std::path::PathBuf, ArchiveOpenHook>;
+    type ArchiveCreateHook = Box<dyn FnOnce() + Send>;
+    type ArchiveCreateHookMap = std::collections::HashMap<std::path::PathBuf, ArchiveCreateHook>;
 
-    static ARCHIVE_OPEN_HOOKS: std::sync::LazyLock<parking_lot::Mutex<ArchiveOpenHookMap>> =
+    /// Keyed by the archive's directory, which is unique to one test.
+    static ARCHIVE_CREATE_HOOKS: std::sync::LazyLock<parking_lot::Mutex<ArchiveCreateHookMap>> =
         std::sync::LazyLock::new(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
 
-    pub(super) fn run_archive_open_hook(output_path: &Path) {
+    pub(super) fn run_before_archive_create_hook(output_path: &Path) {
         let hook = output_path
             .parent()
-            .and_then(|dir| ARCHIVE_OPEN_HOOKS.lock().remove(dir));
+            .and_then(|dir| ARCHIVE_CREATE_HOOKS.lock().remove(dir));
         if let Some(hook) = hook {
             hook();
         }
     }
 
     #[tokio::test]
-    async fn cancelled_compression_retains_log_sink_and_unlinks_staged_archive_on_exit() {
+    async fn cancelled_compression_holds_its_log_sink_and_removes_the_archive_it_staged() {
         let temp_dir = TempDir::new().unwrap();
         let input_path = temp_dir.path().join("input.txt");
         let output_path = temp_dir.path().join("output.zip");
@@ -1038,7 +1044,7 @@ mod tests {
 
         let (opened_tx, opened_rx) = tokio::sync::oneshot::channel();
         let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
-        ARCHIVE_OPEN_HOOKS.lock().insert(
+        ARCHIVE_CREATE_HOOKS.lock().insert(
             temp_dir.path().to_path_buf(),
             Box::new(move || {
                 let _ = opened_tx.send(());
@@ -1073,10 +1079,15 @@ mod tests {
                 opened.unwrap().unwrap();
             }
         }
-        // Drop the async future and caller context while the blocking worker holds
-        // the staged `.tmp-*` archive open on disk.
+        // Drop the future and the caller's context while the blocking worker is
+        // about to create the staged `.tmp-*` archive. The archive is then
+        // written after the future's own cleanup has run, so only the worker
+        // can remove it.
         drop(running);
         drop(ctx);
+        // The dropped future queued its own removal of the staged path. A task
+        // queued behind it gives that removal time to find nothing yet.
+        tokio::task::spawn_blocking(|| {}).await.unwrap();
 
         // Drain any initial info log lines; the channel must stay open (not Disconnected)
         // while the blocking archive worker is still running.

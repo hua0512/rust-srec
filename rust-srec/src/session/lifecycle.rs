@@ -194,11 +194,6 @@ impl SessionLifecycle {
         self.repo.bind_committed_state(state);
     }
 
-    /// Evict per-streamer failure classification state when a streamer is deleted.
-    pub fn purge_streamer(&self, streamer_id: &str) {
-        self.classifier.purge_streamer(streamer_id);
-    }
-
     pub fn new(
         repo: Arc<SessionLifecycleRepository>,
         classifier: Arc<OfflineClassifier>,

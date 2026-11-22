@@ -16,9 +16,8 @@ use tokio::time::MissedTickBehavior;
 
 use super::traits::JobLogSink;
 use super::utils::{
-    CappedLines, CommandMode, CommandOutput, StreamReaderArgs, parse_eta_to_secs,
-    parse_size_to_bytes, parse_speed_to_bytes_per_sec, run_logged_command,
-    run_logged_command_until,
+    CappedLines, CommandMode, CommandOutput, parse_eta_to_secs, parse_size_to_bytes,
+    parse_speed_to_bytes_per_sec, run_logged_command, run_logged_command_until,
 };
 use crate::pipeline::job_queue::{JobLogEntry, LogLevel};
 use crate::pipeline::progress::{
@@ -792,7 +791,7 @@ fn determine_rclone_log_level(line: &str) -> LogLevel {
 /// [`parse_rclone_line`]: stats entries go to `progress`, everything else to
 /// the bounded log channel (`dropped_count` tracks `try_send` overflow).
 /// Overlong lines are skipped and counted by [`CappedLines`].
-async fn consume_rclone_stderr<R: AsyncRead + Unpin>(
+pub(super) async fn consume_rclone_stderr<R: AsyncRead + Unpin>(
     reader: R,
     progress: ProgressReporter,
     tx: tokio::sync::mpsc::Sender<JobLogEntry>,
@@ -822,24 +821,7 @@ pub(super) async fn run_rclone_with_progress(
     progress: &ProgressReporter,
     log_sink: Option<JobLogSink>,
 ) -> crate::Result<CommandOutput> {
-    let progress = progress.clone();
-    let mode = CommandMode::Custom {
-        pipe_stdout: false,
-        consumer: Arc::new(move |reader, args: StreamReaderArgs| {
-            let progress = progress.clone();
-            Box::pin(async move {
-                consume_rclone_stderr(
-                    reader,
-                    progress,
-                    args.tx,
-                    args.dropped_count,
-                    args.overlong_count,
-                )
-                .await
-            })
-        }),
-    };
-    run_logged_command(command, mode, log_sink).await
+    run_logged_command(command, CommandMode::Rclone(progress.clone()), log_sink).await
 }
 
 /// Minimum seconds between progress-bar lines forwarded to the live log
@@ -858,7 +840,7 @@ fn is_baidupcs_progress_noise(line: &str) -> bool {
 /// End of the bar BaiduPCS-Go prints when it uploads one file at a time.
 /// That bar starts with `\r` and has no newline after it, so BaiduPCS-Go's
 /// next output follows these dots.
-const BAIDUPCS_BAR_END: &str = "............";
+pub(super) const BAIDUPCS_BAR_END: &str = "............";
 
 /// One redraw of a BaiduPCS-Go upload task's progress bar.
 struct BaiduPcsBar<'a> {
@@ -901,7 +883,7 @@ fn determine_baidupcs_log_level(line: &str) -> LogLevel {
 /// straight to `noise_sink` at most once per [`BAIDUPCS_NOISE_INTERVAL_SECS`]
 /// and are never captured; empty segments produced by `\r\n` are dropped,
 /// and every other line is sent to the bounded log channel for capture.
-async fn consume_baidupcs_stream<R: AsyncRead + Unpin>(
+pub(super) async fn consume_baidupcs_stream<R: AsyncRead + Unpin>(
     reader: R,
     tracker: Option<Arc<UploadTracker>>,
     noise_sink: Option<JobLogSink>,
@@ -909,8 +891,7 @@ async fn consume_baidupcs_stream<R: AsyncRead + Unpin>(
     dropped_count: Arc<AtomicUsize>,
     overlong_count: Arc<AtomicUsize>,
 ) -> std::io::Result<()> {
-    let mut lines =
-        CappedLines::with_cr_splitting(reader, overlong_count, BAIDUPCS_BAR_END.as_bytes());
+    let mut lines = CappedLines::with_cr_splitting(reader, overlong_count);
     let mut last_noise: Option<std::time::Instant> = None;
     while let Some(segment) = lines.next_line().await? {
         // A line printed right after a bar ending in `BAIDUPCS_BAR_END`, such
@@ -963,24 +944,13 @@ pub(super) async fn run_baidupcs_with_logs(
     log_sink: Option<JobLogSink>,
     stop: &tokio_util::sync::CancellationToken,
 ) -> crate::Result<CommandOutput> {
-    let mode = CommandMode::Custom {
-        pipe_stdout: true,
-        consumer: Arc::new(move |reader, args: StreamReaderArgs| {
-            let tracker = tracker.clone();
-            Box::pin(async move {
-                consume_baidupcs_stream(
-                    reader,
-                    tracker,
-                    args.log_sink,
-                    args.tx,
-                    args.dropped_count,
-                    args.overlong_count,
-                )
-                .await
-            })
-        }),
-    };
-    run_logged_command_until(command, mode, log_sink, Some(stop)).await
+    run_logged_command_until(
+        command,
+        CommandMode::BaiduPcs(tracker),
+        log_sink,
+        Some(stop),
+    )
+    .await
 }
 
 #[cfg(test)]

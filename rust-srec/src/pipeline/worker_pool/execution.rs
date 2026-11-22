@@ -72,7 +72,8 @@ pub(super) struct JobFacts {
     /// Retries this attempt already sits on top of; decides whether a step's
     /// retry budget has another attempt left.
     pub(super) retry_count: i32,
-    pub(super) attempt: Option<AttemptToken>,
+    /// The attempt every terminal write is fenced to.
+    pub(super) attempt: AttemptToken,
 }
 
 impl JobRunner {
@@ -128,6 +129,10 @@ impl JobRunner {
     /// `Processor::can_process` disagree, since the filter is built from the same
     /// `job_types()`.
     pub(super) async fn run(&self, job: Job) {
+        let Some(attempt) = self.job_queue.attempt_token(&job.id) else {
+            info!(job_id = %job.id, "Skipping withdrawn job");
+            return;
+        };
         let Some(processor) = self
             .processors
             .iter()
@@ -139,17 +144,10 @@ impl JobRunner {
                 job.job_type,
                 self.processors.iter().map(|p| p.name()).collect::<Vec<_>>()
             );
-            let attempt = self.job_queue.attempt_token(&job.id);
             match self
-                .persist_failure_with_retry(&job.id, || async {
-                    match &attempt {
-                        Some(token) => {
-                            self.job_queue
-                                .fail_attempt(&job.id, token, NO_PROCESSOR_ERROR)
-                                .await
-                        }
-                        None => self.job_queue.fail(&job.id, NO_PROCESSOR_ERROR).await,
-                    }
+                .persist_failure_with_retry(&job.id, || {
+                    self.job_queue
+                        .fail_attempt(&job.id, &attempt, NO_PROCESSOR_ERROR)
                 })
                 .await
             {
@@ -164,7 +162,7 @@ impl JobRunner {
             return;
         };
 
-        if self.settle_multi_input(&job, &processor).await {
+        if self.settle_multi_input(&job, &processor, &attempt).await {
             return;
         }
 
@@ -176,7 +174,12 @@ impl JobRunner {
     /// Returns `true` when the job has been dealt with here and must not be executed: either
     /// it was split into single-input jobs, or — for a DAG step, where splitting would let one
     /// step complete several times — it was failed and its DAG failed with it.
-    async fn settle_multi_input(&self, job: &Job, processor: &Arc<dyn Processor>) -> bool {
+    async fn settle_multi_input(
+        &self,
+        job: &Job,
+        processor: &Arc<dyn Processor>,
+        attempt: &AttemptToken,
+    ) -> bool {
         if job.inputs.len() <= 1 || processor.supports_batch_input() {
             return false;
         }
@@ -195,7 +198,7 @@ impl JobRunner {
                 processor_name: processor.name(),
                 dag_step_execution_id: Some(dag_step_id.to_string()),
                 retry_count: job.retry_count,
-                attempt: self.job_queue.attempt_token(&job.id),
+                attempt: attempt.clone(),
             };
             self.finish_failed(&facts, &reason, StepFailureKind::NonBatchInput, &[])
                 .await;
@@ -209,7 +212,6 @@ impl JobRunner {
             job.inputs.len(),
             processor.name()
         );
-        let attempt = self.job_queue.attempt_token(&job.id);
         match self.job_queue.split_job_for_single_input(job).await {
             Ok(split_ids) => {
                 info!(
@@ -223,13 +225,8 @@ impl JobRunner {
                 error!("Failed to split job {}: {}", job.id, e);
                 let reason = format!("Failed to split job: {e}");
                 if let Err(fail_error) = self
-                    .persist_failure_with_retry(&job.id, || async {
-                        match &attempt {
-                            Some(token) => {
-                                self.job_queue.fail_attempt(&job.id, token, &reason).await
-                            }
-                            None => self.job_queue.fail(&job.id, &reason).await,
-                        }
+                    .persist_failure_with_retry(&job.id, || {
+                        self.job_queue.fail_attempt(&job.id, attempt, &reason)
                     })
                     .await
                 {
@@ -340,7 +337,7 @@ impl JobRunner {
             processor_name: processor.name(),
             dag_step_execution_id: job.dag_step_execution_id.take(),
             retry_count: job.retry_count,
-            attempt: Some(job_token.clone()),
+            attempt: job_token.clone(),
         };
 
         let input = ProcessorInput {
@@ -631,18 +628,10 @@ impl JobRunner {
             input_size_bytes: output.input_size_bytes,
             output_size_bytes: output.output_size_bytes,
         };
-        let persisted = match &facts.attempt {
-            Some(attempt) => {
-                self.job_queue
-                    .complete_attempt(&facts.id, attempt, result)
-                    .await
-            }
-            None => {
-                self.job_queue
-                    .complete_if_processing(&facts.id, result)
-                    .await
-            }
-        };
+        let persisted = self
+            .job_queue
+            .complete_attempt(&facts.id, &facts.attempt, result)
+            .await;
 
         match persisted {
             Ok(true) => {}
@@ -666,7 +655,7 @@ impl JobRunner {
             duration_secs: completed_duration,
         });
 
-        // `JobQueue::complete_if_processing` persists outputs before
+        // `JobQueue::complete_attempt` persists outputs before
         // `DagScheduler::on_job_completed` derives graph advancement from them.
         debug!(
             "Job {} completed, dag_step_execution_id={:?}",
@@ -729,32 +718,15 @@ impl JobRunner {
         let persist = |planned: Option<PlannedRetry>| async move {
             let retry_after = planned.map(|planned| planned.retry_after);
             let outcome = self
-                .persist_failure_with_retry(&facts.id, || async {
-                    match &facts.attempt {
-                        Some(attempt) => {
-                            self.job_queue
-                                .fail_attempt_with_step_info(
-                                    &facts.id,
-                                    attempt,
-                                    error,
-                                    retry_after,
-                                    Some(facts.processor_name),
-                                    uploads,
-                                )
-                                .await
-                        }
-                        None => {
-                            self.job_queue
-                                .fail_with_step_info(
-                                    &facts.id,
-                                    error,
-                                    retry_after,
-                                    Some(facts.processor_name),
-                                    uploads,
-                                )
-                                .await
-                        }
-                    }
+                .persist_failure_with_retry(&facts.id, || {
+                    self.job_queue.fail_attempt_with_step_info(
+                        &facts.id,
+                        &facts.attempt,
+                        error,
+                        retry_after,
+                        Some(facts.processor_name),
+                        uploads,
+                    )
                 })
                 .await?;
             if outcome == JobFailureOutcome::Transitioned {

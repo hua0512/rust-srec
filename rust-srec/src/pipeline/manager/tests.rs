@@ -3385,13 +3385,16 @@ async fn queue_depth_events_carry_configured_thresholds() {
     assert_eq!(queue_events, [("warning", 1, 1), ("critical", 2, 2)]);
 }
 
-#[tokio::test]
-async fn session_transition_skips_config_lookup_for_non_completing_causes_and_falls_back_to_configured_session()
- {
+/// A manager whose `ConfigService` fails every lookup, with the repositories
+/// the session-end handler writes to.
+async fn manager_with_failing_config() -> (
+    PipelineManager,
+    Arc<crate::database::repositories::SqlxDagRepository>,
+    Arc<TestSessionRepository>,
+) {
     use crate::database::repositories::{
         SqlxConfigRepository, SqlxDagRepository, SqlxJobRepository, SqlxStreamerRepository,
     };
-    use crate::session::{SessionTransition, TerminalCause};
 
     let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
         .await
@@ -3403,7 +3406,6 @@ async fn session_transition_skips_config_lookup_for_non_completing_causes_and_fa
         jiff::Timestamp::now().as_millisecond(),
     )));
 
-    // Use a closed pool for ConfigService so `get_config_for_streamer` fails deterministically.
     let closed_pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
         .await
         .unwrap();
@@ -3423,83 +3425,131 @@ async fn session_transition_skips_config_lookup_for_non_completing_causes_and_fa
         .with_dag_repository(dags.clone())
         .with_session_repository(sessions.clone())
         .with_config_service(config_service);
+    (manager, dags, sessions)
+}
 
-    // 1. `!should_run_session_complete` marks the session settled even when config lookup fails.
+fn session_ended(
+    session_id: &str,
+    cause: crate::session::TerminalCause,
+) -> crate::session::SessionTransition {
+    crate::session::SessionTransition::Ended {
+        streamer_id: "streamer".to_string(),
+        streamer_name: "Streamer".to_string(),
+        session_id: session_id.to_string(),
+        started_at: Some(jiff::Timestamp::now()),
+        ended_at: jiff::Timestamp::now(),
+        cause,
+        via_hysteresis: false,
+    }
+}
+
+#[tokio::test]
+async fn non_completing_session_end_settles_without_a_config_lookup() {
+    let (manager, _dags, sessions) = manager_with_failing_config().await;
+
     manager
-        .handle_session_transition(SessionTransition::Ended {
-            streamer_id: "missing-streamer".to_string(),
-            streamer_name: "Missing Streamer".to_string(),
-            session_id: "rejected-session".to_string(),
-            started_at: Some(jiff::Timestamp::now()),
-            ended_at: jiff::Timestamp::now(),
-            cause: TerminalCause::Rejected {
+        .handle_session_transition(session_ended(
+            "session",
+            crate::session::TerminalCause::Rejected {
                 reason: "circuit breaker".to_string(),
             },
-            via_hysteresis: false,
-        })
+        ))
         .await;
+
     assert!(
         sessions
             .session_complete_dispatched
             .lock()
             .unwrap()
-            .contains("rejected-session"),
-        "non-completing transition must record its skip receipt without requiring config lookup"
+            .contains("session")
     );
+}
 
-    // 2. `should_run_session_complete` falls back to pre-configured coordinator state on transient config failure.
-    let complete_def = DagPipelineDefinition::new(
-        "session-complete",
-        vec![DagStep::new(
-            "A",
-            PipelineStep::inline("remux", serde_json::json!({})),
-        )],
-    );
+#[tokio::test]
+async fn session_end_uses_the_captured_configuration_when_the_config_lookup_fails() {
+    let (manager, dags, sessions) = manager_with_failing_config().await;
     manager
         .pipeline_coordinator
         .apply_event(PipelineCoordinationEvent::ConfigureSession {
-            session_id: "configured-session".to_string(),
-            streamer_id: "transient-streamer".to_string(),
+            session_id: "session".to_string(),
+            streamer_id: "streamer".to_string(),
             danmu_enabled: false,
             segment_pipeline: None,
             paired_segment_pipeline: None,
-            session_complete_pipeline: Some(complete_def),
+            session_complete_pipeline: Some(DagPipelineDefinition::new(
+                "session-complete",
+                vec![DagStep::new(
+                    "A",
+                    PipelineStep::inline("remux", serde_json::json!({})),
+                )],
+            )),
         });
     manager
         .pipeline_coordinator
         .apply_event(PipelineCoordinationEvent::VideoSegmentCompleted {
-            session_id: "configured-session".to_string(),
-            streamer_id: "transient-streamer".to_string(),
+            session_id: "session".to_string(),
+            streamer_id: "streamer".to_string(),
             segment_index: 0,
             path: PathBuf::from("/recordings/seg0.flv"),
         });
 
     manager
-        .handle_session_transition(SessionTransition::Ended {
-            streamer_id: "transient-streamer".to_string(),
-            streamer_name: "Transient Streamer".to_string(),
-            session_id: "configured-session".to_string(),
-            started_at: Some(jiff::Timestamp::now()),
-            ended_at: jiff::Timestamp::now(),
-            cause: TerminalCause::StreamerOffline,
-            via_hysteresis: false,
-        })
+        .handle_session_transition(session_ended(
+            "session",
+            crate::session::TerminalCause::StreamerOffline,
+        ))
         .await;
 
-    let created_dags = dags
-        .list_dags(None, Some("configured-session"), 10, 0)
-        .await
-        .unwrap();
-    assert_eq!(
-        created_dags.len(),
-        1,
-        "pre-configured session must trigger session-complete DAG despite transient config error"
-    );
+    let created_dags = dags.list_dags(None, Some("session"), 10, 0).await.unwrap();
+    assert_eq!(created_dags.len(), 1);
     assert!(
         sessions
             .session_complete_dispatched
             .lock()
             .unwrap()
-            .contains("configured-session")
+            .contains("session")
+    );
+}
+
+/// A session whose every config lookup failed has no pipeline definitions, so
+/// ending it must leave it for recovery instead of settling it as done.
+#[tokio::test]
+async fn session_end_stays_unsettled_when_no_configuration_was_ever_resolved() {
+    let (manager, _dags, sessions) = manager_with_failing_config().await;
+    manager
+        .handle_download_event(DownloadManagerEvent::Progress(
+            DownloadProgressEvent::SegmentCompleted {
+                download_id: "download".to_string(),
+                streamer_id: "streamer".to_string(),
+                streamer_name: "Streamer".to_string(),
+                session_id: "session".to_string(),
+                segment_path: "/recordings/seg1.flv".to_string(),
+                // Segment 0 would also start the automatic thumbnail DAG.
+                segment_index: 1,
+                started_at: None,
+                completed_at: jiff::Timestamp::now(),
+                duration_secs: 1.0,
+                size_bytes: 1,
+                split_reason_code: None,
+                split_reason_details_json: None,
+                split_by_format_change: false,
+            },
+        ))
+        .await
+        .unwrap();
+
+    manager
+        .handle_session_transition(session_ended(
+            "session",
+            crate::session::TerminalCause::StreamerOffline,
+        ))
+        .await;
+
+    assert!(
+        !sessions
+            .session_complete_dispatched
+            .lock()
+            .unwrap()
+            .contains("session")
     );
 }

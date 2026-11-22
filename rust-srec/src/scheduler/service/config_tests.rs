@@ -509,7 +509,7 @@ async fn streamer_deleted_evicts_heartbeat_revision_and_idle_feedback_maps() {
     assert!(!scheduler.supervisor.registry().has_streamer("gone"));
     assert!(!scheduler.download_heartbeat_last_sent.contains_key("gone"));
     assert!(!scheduler.configuration.revisions.contains_key("gone"));
-    assert!(!feedback.has_tracked_state_for("gone"));
+    assert!(!feedback.has_bookkeeping_for("gone"));
     assert!(scheduler.supervisor.registry().has_streamer("stay"));
 
     tokio::time::timeout(Duration::from_secs(2), scheduler.shutdown())

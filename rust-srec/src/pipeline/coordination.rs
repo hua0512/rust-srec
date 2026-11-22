@@ -390,7 +390,10 @@ impl PipelineCoordinator {
         self.inner.lock().session_outstanding(session_id)
     }
 
-    /// Whether `ConfigureSession` has already populated pipeline definitions for `session_id`.
+    /// Whether a resolved streamer configuration has been applied to `session_id`.
+    ///
+    /// Callers send `ConfigureSession` only with a configuration they resolved,
+    /// so a session whose lookups all failed stays unconfigured.
     pub fn has_configured_session(&self, session_id: &str) -> bool {
         self.inner
             .lock()

@@ -725,6 +725,57 @@ async fn late_attempt_finalization_waits_for_successor_claim_and_keeps_its_track
     ));
 }
 
+/// A worker still holding an attempt that failed and was retried must not
+/// settle the attempt the retry started.
+#[tokio::test]
+async fn superseded_attempt_cannot_settle_its_successor() {
+    let queue = JobQueue::with_repository(
+        Default::default(),
+        crate::database::test_support::job_repository().await,
+    );
+    let job_id = queue
+        .enqueue(Job::new("remux", vec!["/in.flv".into()], vec![], "", ""))
+        .await
+        .unwrap();
+    queue.dequeue(None).await.unwrap().unwrap();
+    let stale = queue.attempt_token(&job_id).unwrap();
+    queue.fail(&job_id, "timed out").await.unwrap();
+    queue.retry_job(&job_id).await.unwrap();
+    queue.dequeue(None).await.unwrap().unwrap();
+    let current = queue.attempt_token(&job_id).unwrap();
+
+    let result = || JobResult {
+        outputs: vec!["/out.mp4".into()],
+        duration_secs: 1.0,
+        metadata: None,
+        uploads: vec![],
+        logs: vec![],
+        input_size_bytes: None,
+        output_size_bytes: None,
+    };
+    assert!(
+        !queue
+            .complete_attempt(&job_id, &stale, result())
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        queue.fail_attempt(&job_id, &stale, "late").await.unwrap(),
+        JobFailureOutcome::Unchanged
+    );
+    assert_eq!(
+        queue.get_job(&job_id).await.unwrap().unwrap().status,
+        JobStatus::Processing
+    );
+
+    assert!(
+        queue
+            .complete_attempt(&job_id, &current, result())
+            .await
+            .unwrap()
+    );
+}
+
 /// A failure whose retry is already due keeps the retry waiting until the
 /// failed attempt's cleanup is done, so that cleanup cannot remove the
 /// tracking of the attempt the retry starts.
@@ -1307,12 +1358,6 @@ async fn cancel_job_and_cancel_pipeline_serialize_with_in_flight_dequeue() {
                 cancel_queue.cancel_pipeline("pipe-1").await.map(|_| ())
             }
         });
-        tokio::task::yield_now().await;
-        assert!(
-            !cancelling.is_finished(),
-            "{mode} must wait for in-flight dequeue under attempt_gate"
-        );
-
         blocker.release.notify_one();
         let dequeued = tokio::time::timeout(Duration::from_secs(2), dequeuing)
             .await

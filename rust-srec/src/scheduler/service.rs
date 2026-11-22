@@ -698,27 +698,15 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     fn handle_task_completion_action(&self, action: TaskCompletionAction) {
         match action {
             TaskCompletionAction::Stopped { actor_id } => {
-                if self.streamer_manager.get_streamer(&actor_id).is_none() {
-                    self.feedback.purge_streamer(&actor_id);
-                } else {
-                    self.feedback.retire(&actor_id);
-                }
+                self.feedback.retire(&actor_id);
                 debug!("Actor {} stopped gracefully", actor_id);
             }
             TaskCompletionAction::Cancelled { actor_id } => {
-                if self.streamer_manager.get_streamer(&actor_id).is_none() {
-                    self.feedback.purge_streamer(&actor_id);
-                } else {
-                    self.feedback.retire(&actor_id);
-                }
+                self.feedback.retire(&actor_id);
                 debug!("Actor {} was cancelled", actor_id);
             }
             TaskCompletionAction::Completed { actor_id } => {
-                if self.streamer_manager.get_streamer(&actor_id).is_none() {
-                    self.feedback.purge_streamer(&actor_id);
-                } else {
-                    self.feedback.retire(&actor_id);
-                }
+                self.feedback.retire(&actor_id);
                 debug!("Actor {} completed", actor_id);
             }
             TaskCompletionAction::Crashed { actor_id } => {

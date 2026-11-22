@@ -102,16 +102,23 @@ where
                     .await;
                 }
 
-                let mut commands = self.pipeline_coordinator.apply_event(
-                    PipelineCoordinationEvent::ConfigureSession {
-                        session_id: session_id.clone(),
-                        streamer_id: streamer_id.clone(),
-                        danmu_enabled,
-                        segment_pipeline: pipeline_config,
-                        paired_segment_pipeline: paired_segment_pipeline.filter(|_| danmu_enabled),
-                        session_complete_pipeline,
-                    },
-                );
+                // A session counts as configured only once a resolved config has
+                // been applied; `handle_session_transition` relies on that when
+                // its own lookup fails.
+                let mut commands = Vec::new();
+                if merged_config.is_some() {
+                    commands.extend(self.pipeline_coordinator.apply_event(
+                        PipelineCoordinationEvent::ConfigureSession {
+                            session_id: session_id.clone(),
+                            streamer_id: streamer_id.clone(),
+                            danmu_enabled,
+                            segment_pipeline: pipeline_config,
+                            paired_segment_pipeline:
+                                paired_segment_pipeline.filter(|_| danmu_enabled),
+                            session_complete_pipeline,
+                        },
+                    ));
+                }
                 commands.extend(self.pipeline_coordinator.apply_event(
                     PipelineCoordinationEvent::VideoSegmentCompleted {
                         session_id,
@@ -181,7 +188,7 @@ where
                                 %session_id,
                                 %streamer_id,
                                 %error,
-                                "Failed to refresh streamer config at session end; falling back to existing coordinator session configuration"
+                                "Failed to refresh streamer config at session end; using the configuration the session already captured"
                             );
                             None
                         } else {
@@ -370,8 +377,8 @@ where
                     streamer_id, session_id, segment_path, message_count
                 );
 
-                // Stat the danmu file asynchronously once before processing.
                 // The file may have been deleted if the corresponding video segment was too small.
+                // Its size is persisted with the segment below.
                 let metadata = match tokio::fs::metadata(&output_path).await {
                     Ok(metadata) => metadata,
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -428,16 +435,20 @@ where
                     .map(|c| c.record_danmu)
                     .unwrap_or(false);
 
-                let mut commands = self.pipeline_coordinator.apply_event(
-                    PipelineCoordinationEvent::ConfigureSession {
-                        session_id: session_id.clone(),
-                        streamer_id: streamer_id.clone(),
-                        danmu_enabled,
-                        segment_pipeline: pipeline_config,
-                        paired_segment_pipeline: paired_segment_pipeline.filter(|_| danmu_enabled),
-                        session_complete_pipeline,
-                    },
-                );
+                let mut commands = Vec::new();
+                if merged_config.is_some() {
+                    commands.extend(self.pipeline_coordinator.apply_event(
+                        PipelineCoordinationEvent::ConfigureSession {
+                            session_id: session_id.clone(),
+                            streamer_id: streamer_id.clone(),
+                            danmu_enabled,
+                            segment_pipeline: pipeline_config,
+                            paired_segment_pipeline:
+                                paired_segment_pipeline.filter(|_| danmu_enabled),
+                            session_complete_pipeline,
+                        },
+                    ));
+                }
                 commands.extend(self.pipeline_coordinator.apply_event(
                     PipelineCoordinationEvent::DanmuSegmentCompleted {
                         session_id,

@@ -251,7 +251,7 @@ impl JobQueue {
     }
 
     /// Publish `Started` for an upload job. Any other job is registered for
-    /// `JobStarted` emission on the progress aggregator's 1-second tick once
+    /// `JobStarted` emission on the progress aggregator's flush tick once
     /// [`JobQueueConfig::long_job_after`] elapses while `attempt` is still running.
     pub(super) fn announce_started(&self, job: &Job, attempt: u64) {
         if let Some(event) = upload_started_event(job) {
@@ -494,7 +494,7 @@ impl JobQueue {
     /// Persist the logs a processor returned with its result and fold them into
     /// the job's execution summary. Entries the streaming collector already wrote
     /// are not duplicated. Used for a result the pool turns into a failure, where
-    /// `complete_if_processing` never runs.
+    /// `complete_attempt` never runs.
     pub(crate) async fn record_result_logs(
         &self,
         job_id: &str,
@@ -934,9 +934,6 @@ pub(super) fn spawn_progress_aggregator(
         let mut pending: HashMap<String, JobProgressSnapshot> = HashMap::new();
         let flush_every = std::time::Duration::from_millis(PROGRESS_FLUSH_INTERVAL_MS);
         let mut tick = tokio::time::interval(flush_every);
-        let long_job_poll = std::time::Duration::from_secs(1)
-            .min(long_job_after.max(std::time::Duration::from_millis(50)));
-        let mut long_job_tick = tokio::time::interval(long_job_poll);
         let mut heartbeat = tokio::time::interval_at(
             tokio::time::Instant::now() + HEARTBEAT_INTERVAL,
             HEARTBEAT_INTERVAL,
@@ -955,30 +952,7 @@ pub(super) fn spawn_progress_aggregator(
             tokio::select! {
                 biased;
                 _ = shutdown.cancelled() => break,
-                _ = long_job_tick.tick() => {
-                    announce_due_long_jobs(
-                        &long_job_tracking,
-                        &jobs_cache,
-                        &cancellation_tokens,
-                        &progress_cache,
-                        &upload_broadcaster,
-                        &mut pending,
-                        Timestamp::now(),
-                        long_job_after,
-                    );
-                }
                 _ = heartbeat.tick() => {
-                    let now = Timestamp::now();
-                    announce_due_long_jobs(
-                        &long_job_tracking,
-                        &jobs_cache,
-                        &cancellation_tokens,
-                        &progress_cache,
-                        &upload_broadcaster,
-                        &mut pending,
-                        now,
-                        long_job_after,
-                    );
                     if let Some(broadcaster) = upload_broadcaster.get()
                         && broadcaster.has_subscribers()
                     {

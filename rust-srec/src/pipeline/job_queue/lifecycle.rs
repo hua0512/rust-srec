@@ -112,18 +112,9 @@ impl JobQueue {
         Ok(())
     }
 
-    /// Mark a job as completed and report whether it left an active state.
-    pub(crate) async fn complete_if_processing(
-        &self,
-        job_id: &str,
-        result: JobResult,
-    ) -> Result<bool> {
-        self.complete_if_processing_inner(job_id, None, result)
-            .await
-    }
-
-    /// Mark a specific worker attempt as completed, rejecting completions from
-    /// cancelled or superseded attempts without clobbering a retried successor.
+    /// Mark a specific worker attempt as completed and report whether the job
+    /// left an active state. A cancelled or superseded attempt is rejected, so
+    /// it cannot overwrite the attempt a retry has started since.
     pub(crate) async fn complete_attempt(
         &self,
         job_id: &str,

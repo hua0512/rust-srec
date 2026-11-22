@@ -16,6 +16,9 @@ use tokio_util::task::AbortOnDropHandle;
 use tracing::{debug, warn};
 
 use super::traits::{JobLogSink, ProcessorContext};
+use super::upload_runner::{
+    BAIDUPCS_BAR_END, UploadTracker, consume_baidupcs_stream, consume_rclone_stderr,
+};
 use crate::pipeline::job_queue::{JobLogEntry, LogLevel};
 use crate::pipeline::{JobPhase, JobProgressSnapshot, ProgressKind, ProgressReporter};
 
@@ -310,10 +313,14 @@ pub(super) struct CappedLines<R> {
     partial: Vec<u8>,
     skipping_to_newline: bool,
     overlong_count: Arc<AtomicUsize>,
-    /// Treat `\r` as a line terminator alongside `\n`, and optionally yield
-    /// a partial segment as soon as it ends with `cr_bar_end`.
+    /// Treat `\r` as a line terminator alongside `\n`. Needed for
+    /// BaiduPCS-Go, whose upload progress bar redraws via bare `\r`
+    /// (`run_baidupcs_with_logs`): without CR splitting an entire
+    /// transfer's redraws accumulate into one overlong "line" that gets
+    /// skipped wholesale. `\r\n` then yields an empty line for the `\n`,
+    /// which callers must skip. A segment ending in [`BAIDUPCS_BAR_END`] is
+    /// also yielded as soon as it is read, without waiting for a terminator.
     split_cr: bool,
-    cr_bar_end: Option<&'static [u8]>,
 }
 
 impl<R: AsyncRead + Unpin> CappedLines<R> {
@@ -324,18 +331,12 @@ impl<R: AsyncRead + Unpin> CappedLines<R> {
             skipping_to_newline: false,
             overlong_count,
             split_cr: false,
-            cr_bar_end: None,
         }
     }
 
-    pub(super) fn with_cr_splitting(
-        reader: R,
-        overlong_count: Arc<AtomicUsize>,
-        bar_end: &'static [u8],
-    ) -> Self {
+    pub(super) fn with_cr_splitting(reader: R, overlong_count: Arc<AtomicUsize>) -> Self {
         Self {
             split_cr: true,
-            cr_bar_end: Some(bar_end),
             ..Self::new(reader, overlong_count)
         }
     }
@@ -396,9 +397,9 @@ impl<R: AsyncRead + Unpin> CappedLines<R> {
                         }
                     }
                     self.reader.consume(chunk_len);
-                    if let Some(bar_end) = self.cr_bar_end
-                        && self.partial.ends_with(bar_end)
-                    {
+                    // Only BaiduPCS-Go's next output ends such a bar, and that
+                    // may be the next bar 3 s later.
+                    if self.split_cr && self.partial.ends_with(BAIDUPCS_BAR_END.as_bytes()) {
                         return Ok(Some(self.take_line()));
                     }
                 }
@@ -430,24 +431,6 @@ fn push_overlong_summary(
 }
 
 #[derive(Clone)]
-pub(super) struct StreamReaderArgs {
-    pub tx: tokio::sync::mpsc::Sender<JobLogEntry>,
-    pub dropped_count: Arc<AtomicUsize>,
-    pub overlong_count: Arc<AtomicUsize>,
-    pub log_sink: Option<JobLogSink>,
-}
-
-pub(super) type CustomStreamReader = Arc<
-    dyn Fn(
-            Box<dyn AsyncRead + Unpin + Send>,
-            StreamReaderArgs,
-        )
-            -> std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<()>> + Send>>
-        + Send
-        + Sync,
->;
-
-#[derive(Clone)]
 pub(super) enum CommandMode {
     Plain,
     Ffmpeg {
@@ -455,10 +438,9 @@ pub(super) enum CommandMode {
         /// Shared by the run's stdout and stderr readers.
         state: Arc<Mutex<FfmpegProgressState>>,
     },
-    Custom {
-        pipe_stdout: bool,
-        consumer: CustomStreamReader,
-    },
+    Rclone(ProgressReporter),
+    /// Follows an `upload` invocation's progress when present.
+    BaiduPcs(Option<Arc<UploadTracker>>),
 }
 
 #[derive(Clone)]
@@ -470,21 +452,29 @@ struct ReaderContext {
     log_sink: Option<JobLogSink>,
 }
 
-async fn consume_command_stream<R: AsyncRead + Unpin + Send + 'static>(
+async fn consume_command_stream<R: AsyncRead + Unpin>(
     reader: R,
     stdout: bool,
     context: ReaderContext,
 ) -> std::io::Result<()> {
-    if let CommandMode::Custom { consumer, .. } = &context.mode {
-        let consumer = consumer.clone();
-        return consumer(
-            Box::new(reader),
-            StreamReaderArgs {
-                tx: context.tx,
-                dropped_count: context.dropped_count,
-                overlong_count: context.overlong_count,
-                log_sink: context.log_sink,
-            },
+    if let CommandMode::Rclone(progress) = &context.mode {
+        return consume_rclone_stderr(
+            reader,
+            progress.clone(),
+            context.tx,
+            context.dropped_count,
+            context.overlong_count,
+        )
+        .await;
+    }
+    if let CommandMode::BaiduPcs(tracker) = &context.mode {
+        return consume_baidupcs_stream(
+            reader,
+            tracker.clone(),
+            context.log_sink,
+            context.tx,
+            context.dropped_count,
+            context.overlong_count,
         )
         .await;
     }
@@ -559,19 +549,11 @@ pub(super) async fn run_logged_command_until(
 ) -> crate::Result<CommandOutput> {
     let start = std::time::Instant::now();
     command.stdin(Stdio::null());
-    command.stdout(
-        if matches!(
-            &mode,
-            CommandMode::Custom {
-                pipe_stdout: false,
-                ..
-            }
-        ) {
-            Stdio::null()
-        } else {
-            Stdio::piped()
-        },
-    );
+    command.stdout(if matches!(&mode, CommandMode::Rclone(_)) {
+        Stdio::null()
+    } else {
+        Stdio::piped()
+    });
     command.stderr(Stdio::piped());
     let mut child = ContainedChild::spawn(command)
         .map_err(|error| crate::Error::Other(format!("Failed to spawn command: {error}")))?;
@@ -1161,37 +1143,14 @@ mod tests {
     }
 
     fn command_modes() -> [CommandMode; 4] {
-        let drain_custom = |split_cr: bool| -> CustomStreamReader {
-            Arc::new(move |reader, args: StreamReaderArgs| {
-                Box::pin(async move {
-                    let mut lines = if split_cr {
-                        CappedLines::with_cr_splitting(reader, args.overlong_count, b"............")
-                    } else {
-                        CappedLines::new(reader, args.overlong_count)
-                    };
-                    while let Some(line) = lines.next_line().await? {
-                        if !line.is_empty() && args.tx.try_send(JobLogEntry::info(line)).is_err() {
-                            args.dropped_count.fetch_add(1, Ordering::Relaxed);
-                        }
-                    }
-                    Ok(())
-                })
-            })
-        };
         [
             CommandMode::Plain,
             CommandMode::Ffmpeg {
                 progress: ProgressReporter::noop("test"),
                 state: Arc::default(),
             },
-            CommandMode::Custom {
-                pipe_stdout: false,
-                consumer: drain_custom(false),
-            },
-            CommandMode::Custom {
-                pipe_stdout: true,
-                consumer: drain_custom(true),
-            },
+            CommandMode::Rclone(ProgressReporter::noop("test")),
+            CommandMode::BaiduPcs(None),
         ]
     }
 

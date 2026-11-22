@@ -6,8 +6,6 @@
 //! - Priority channel support for high-priority messages
 
 use std::fmt;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use tokio::sync::mpsc;
@@ -92,27 +90,12 @@ pub enum SendError {
 pub struct ActorMetadata {
     /// Unique actor identifier.
     pub id: String,
-    /// Shared priority flag updated live when the actor applies a `ConfigUpdate`.
-    high_priority: Arc<AtomicBool>,
 }
 
 impl ActorMetadata {
     /// Create metadata for a streamer actor.
-    pub fn streamer(id: impl Into<String>, high_priority: bool) -> Self {
-        Self {
-            id: id.into(),
-            high_priority: Arc::new(AtomicBool::new(high_priority)),
-        }
-    }
-
-    /// Update whether this actor is high-priority across all cloned handles.
-    pub fn set_high_priority(&self, high_priority: bool) {
-        self.high_priority.store(high_priority, Ordering::Release);
-    }
-
-    /// Check if this is a high-priority actor.
-    pub fn is_high_priority(&self) -> bool {
-        self.high_priority.load(Ordering::Acquire)
+    pub fn streamer(id: impl Into<String>) -> Self {
+        Self { id: id.into() }
     }
 }
 
@@ -286,11 +269,6 @@ impl<M> ActorHandle<M> {
     /// the caller can await the exit `ActorHandle::cancel` only requested.
     pub(super) fn stop_signal(&self) -> &ActorStopSignal {
         &self.stop_signal
-    }
-
-    /// Check if this is a high-priority actor.
-    pub fn is_high_priority(&self) -> bool {
-        self.metadata.is_high_priority()
     }
 }
 

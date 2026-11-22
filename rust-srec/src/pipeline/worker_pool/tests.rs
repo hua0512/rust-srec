@@ -1036,7 +1036,7 @@ async fn late_failures_preserve_terminal_jobs_and_do_not_emit_events() {
         let job = Job::new("noop", vec!["input.flv".into()], vec![], "", "");
         queue.enqueue(job.clone()).await.unwrap();
         queue.dequeue(None).await.unwrap().unwrap();
-        let attempt = queue.attempt_token(&job.id);
+        let attempt = queue.attempt_token(&job.id).unwrap();
         match terminal {
             JobStatus::Cancelled => {
                 queue.cancel_job(&job.id).await.unwrap();
