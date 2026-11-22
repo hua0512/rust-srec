@@ -31,6 +31,8 @@
 - Fixed **Min Segment Size** deleting valid parts mid-recording and leaving gaps. When a stream's resolution or codec changes, recording continues in a new file; on low-bitrate streams, a part between two changes can be smaller than the minimum (1 MiB by default) and was previously deleted along with its chat file. Parts ended by a resolution or codec change are now kept even if smaller than the minimum, while short parts from stops, reconnects or ad breaks are still cleaned up. See [Resource Limits](https://docs.srec.rs/en/reference/settings#resource-limits).
 - Reduced server memory usage during FLV recordings with **Loop Protection** enabled and on installations with a large history of **Danmu Statistics**.
 - Setting **Frequent words to keep** under **Danmu Statistics** to `0` now disables word frequency counting and CJK word segmentation while keeping the rest of the session's chat summary (totals, activity timeline, top chatters and gifts).
+- Fixed Huya **Record Danmu** failing to capture live chat, including on rooms with custom URLs or links with query parameters, and stopped sending your Twitch login token to video servers.
+- Fixed negative bitrate values on some Douyin streams breaking bitrate filters, and fixed password-protected Twitcasting links entered without `https://` losing their password.
 
 ## Workflows and file processing
 

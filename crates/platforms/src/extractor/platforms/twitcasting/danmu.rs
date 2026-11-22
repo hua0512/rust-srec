@@ -13,6 +13,7 @@
 use md5::{Digest, Md5};
 use reqwest::Client;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::time::Duration;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::{debug, warn};
@@ -177,7 +178,7 @@ impl TwitcastingDanmuProtocol {
             params.push(("word", hash));
         }
 
-        let response = self
+        let mut request = self
             .client
             .get(STREAM_SERVER_API)
             .query(&params)
@@ -185,7 +186,19 @@ impl TwitcastingDanmuProtocol {
                 "User-Agent",
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             )
-            .header("Referer", "https://twitcasting.tv/")
+            .header("Referer", "https://twitcasting.tv/");
+        if let Some(cookies) = self
+            .cookies
+            .as_deref()
+            .map(str::trim)
+            .filter(|c| !c.is_empty())
+            && let Ok(mut cookie_val) = reqwest::header::HeaderValue::from_str(cookies)
+        {
+            cookie_val.set_sensitive(true);
+            request = request.header(reqwest::header::COOKIE, cookie_val);
+        }
+
+        let response = request
             .send()
             .await
             .map_err(|e| DanmakuError::connection(format!("Failed to get stream info: {}", e)))?;
@@ -214,11 +227,10 @@ impl TwitcastingDanmuProtocol {
         // Build form data with movie_id and optional password
         let password = self.password.as_deref().unwrap_or("");
 
-        let request = self
+        let mut request = self
             .client
             .post(EVENT_PUBSUB_URL)
             .header("Accept", "*/*")
-            .header("Accept-Encoding", "gzip, deflate, br")
             .header("Cache-Control", "no-cache")
             .header("Referer", "https://twitcasting.tv/")
             .header(
@@ -227,6 +239,16 @@ impl TwitcastingDanmuProtocol {
             )
             .form(&[("movie_id", movie_id), ("password", password)])
             .timeout(std::time::Duration::from_secs(5));
+        if let Some(cookies) = self
+            .cookies
+            .as_deref()
+            .map(str::trim)
+            .filter(|c| !c.is_empty())
+            && let Ok(mut cookie_val) = reqwest::header::HeaderValue::from_str(cookies)
+        {
+            cookie_val.set_sensitive(true);
+            request = request.header(reqwest::header::COOKIE, cookie_val);
+        }
 
         let response = request
             .send()
@@ -374,6 +396,22 @@ impl DanmuProtocol for TwitcastingDanmuProtocol {
         self.client = client;
     }
 
+    fn configure_connection(
+        &mut self,
+        cookies: Option<&str>,
+        extras: Option<&HashMap<String, String>>,
+    ) {
+        if let Some(cookies) = cookies.map(str::trim).filter(|c| !c.is_empty()) {
+            self.cookies = Some(cookies.to_owned());
+        }
+        if let Some(password) = extras
+            .and_then(|map| map.get("password").or_else(|| map.get("stream_password")))
+            .filter(|p| !p.is_empty())
+        {
+            self.password = Some(password.clone());
+        }
+    }
+
     async fn websocket_url(&mut self, room_id: &str) -> Result<String> {
         // First get the movie ID from streamserver.php
         let movie_id = self.get_movie_id(room_id).await?;
@@ -381,7 +419,10 @@ impl DanmuProtocol for TwitcastingDanmuProtocol {
 
         // Then get the WebSocket URL
         let ws_url = self.get_event_pubsub_url(&movie_id).await?;
-        debug!("TwitCasting WebSocket URL: {}", ws_url);
+        debug!(
+            "TwitCasting WebSocket URL: {}",
+            crate::proxy::redacted_url(&ws_url)
+        );
 
         Ok(ws_url)
     }

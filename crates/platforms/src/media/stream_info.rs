@@ -193,11 +193,15 @@ impl StreamInfo {
             let _ = writeln!(output, "{}", details);
         }
 
-        // URL line (truncated if too long)
-        let url_display = if self.url.len() > 50 {
-            format!("{}...", &self.url[..50])
+        // URL line (redacted and truncated safely on UTF-8 char boundaries)
+        let redacted_url = super::redact_url_for_display(&self.url);
+        let url_display = if redacted_url.len() > 50 {
+            format!(
+                "{}...",
+                &redacted_url[..redacted_url.floor_char_boundary(50)]
+            )
         } else {
-            self.url.clone()
+            redacted_url
         };
         let url_line = format!("    └─ URL: {}", url_display);
         if width > 0 {
@@ -205,6 +209,35 @@ impl StreamInfo {
             let _ = write!(output, "║{}{}║", url_line, " ".repeat(url_padding));
         } else {
             let _ = write!(output, "{}", url_line);
+        }
+
+        if let Some(extras_obj) = self
+            .extras
+            .as_ref()
+            .and_then(|v| v.as_object())
+            .filter(|m| !m.is_empty())
+        {
+            for (key, value) in extras_obj {
+                let _ = writeln!(output);
+                let raw_val = value
+                    .as_str()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| value.to_string());
+                let val_display = if super::is_sensitive_key(key) {
+                    "[redacted]".to_owned()
+                } else if raw_val.len() > 35 {
+                    format!("{}...", &raw_val[..raw_val.floor_char_boundary(35)])
+                } else {
+                    raw_val
+                };
+                let extra_line = format!("    └─ {}: {}", key, val_display);
+                if width > 0 {
+                    let extra_padding = width.saturating_sub(extra_line.len());
+                    let _ = write!(output, "║{}{}║", extra_line, " ".repeat(extra_padding));
+                } else {
+                    let _ = write!(output, "{}", extra_line);
+                }
+            }
         }
 
         output

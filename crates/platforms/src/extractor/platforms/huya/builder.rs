@@ -37,7 +37,7 @@ pub enum HuyaApiMode {
 
 impl From<&str> for HuyaApiMode {
     fn from(value: &str) -> Self {
-        match value {
+        match value.trim().to_ascii_uppercase().as_str() {
             "WUP" => Self::Wup,
             "MP" => Self::Mp,
             "WEB" => Self::Web,
@@ -99,12 +99,7 @@ impl Huya {
     pub(super) async fn check_http_response(
         response: reqwest::Response,
     ) -> Result<reqwest::Response, ExtractorError> {
-        if response.status().is_client_error() || response.status().is_server_error() {
-            return Err(ExtractorError::HttpError(
-                response.error_for_status().unwrap_err(),
-            ));
-        }
-        Ok(response)
+        ExtractorError::check_response(response)
     }
 
     /// Helper method to create stream info for both FLV and HLS formats
@@ -224,12 +219,13 @@ impl PlatformExtractor for Huya {
     }
 
     async fn extract(&self) -> Result<MediaInfo, ExtractorError> {
-        let room_id = self
-            .extractor
-            .url
-            .split('/')
-            .next_back()
+        let room_id = URL_REGEX
+            .captures(&self.extractor.url)
+            .and_then(|c| c.get(1))
+            .map(|m| m.as_str())
+            .filter(|s| s.bytes().all(|b| b.is_ascii_digit()))
             .and_then(|s| s.parse::<i64>().ok())
+            .filter(|&id| id > 0)
             .unwrap_or(0);
 
         // if we have a non-numeric room_id, or we are in WEB mode, use the web page

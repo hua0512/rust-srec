@@ -218,6 +218,7 @@ pub fn batch_probe_for_url(url: &str) -> Option<&'static dyn BatchStatusProbe> {
 }
 
 /// A factory for creating platform-specific extractors.
+#[derive(Clone)]
 pub struct ExtractorFactory {
     client: Client,
     proxy: ProxyTarget,

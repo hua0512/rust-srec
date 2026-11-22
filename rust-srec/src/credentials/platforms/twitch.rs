@@ -94,13 +94,13 @@ mod tests {
             None,
             Some(serde_json::Value::Object(extras)),
         );
-        assert_eq!(
-            twitch
+        assert_eq!(twitch.configured_oauth_token(), Some("token"));
+        assert!(
+            !twitch
                 .get_extractor()
                 .get_platform_headers()
-                .get(reqwest::header::AUTHORIZATION)
-                .and_then(|value| value.to_str().ok()),
-            Some("OAuth token")
+                .contains_key(reqwest::header::AUTHORIZATION),
+            "OAuth token must stay on GQL requests and out of stream headers"
         );
     }
 

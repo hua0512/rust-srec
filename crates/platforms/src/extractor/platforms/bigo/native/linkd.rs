@@ -316,7 +316,9 @@ pub struct MediaServer {
 /// Sends the client's key and returns the session key from the server's
 /// answer.
 async fn exchange_keys(io: &mut BoxedTransport) -> Result<Vec<u8>, NativeError> {
-    let key = RsaKey::generate();
+    let key = tokio::task::spawn_blocking(RsaKey::generate)
+        .await
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
     let hello = {
         let mut rng = rand::rng();
         let mut seed = [0u8; 4];
@@ -450,13 +452,24 @@ fn decode_channel(mut body: &[u8]) -> Result<Channel, NativeError> {
 }
 
 fn get_servers(body: &mut &[u8]) -> Result<Vec<MediaServer>, NativeError> {
-    let count = body.try_get_u32_le()?;
-    let mut servers = Vec::new();
+    let count = body.try_get_u32_le()? as usize;
+    // Each entry carries at least 4 (IP) + 4 (TCP port count) + 4 (UDP port count) = 12 bytes.
+    if body.len() / 12 < count {
+        return Err(TryGetError {
+            requested: count.saturating_mul(12),
+            available: body.len(),
+        }
+        .into());
+    }
+    let mut servers = Vec::with_capacity(count);
     for _ in 0..count {
         let ip = Ipv4Addr::from(body.try_get_u32_le()?.to_le_bytes());
-        let tcp_ports = (0..body.try_get_u32_le()?)
-            .map(|_| body.try_get_u16_le())
-            .collect::<Result<_, _>>()?;
+        let port_count = body.try_get_u32_le()? as usize;
+        let mut port_bytes = take(body, port_count.saturating_mul(2))?;
+        let mut tcp_ports = Vec::with_capacity(port_count);
+        for _ in 0..port_count {
+            tcp_ports.push(port_bytes.try_get_u16_le()?);
+        }
         // UDP ports; media runs over TCP.
         skip_list(body, 2)?;
         servers.push(MediaServer { ip, tcp_ports });

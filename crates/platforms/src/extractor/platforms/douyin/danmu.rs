@@ -7,16 +7,16 @@ use bytes::Bytes;
 use flate2::read::GzDecoder;
 use prost::Message as ProstMessage;
 use rustc_hash::FxHashMap;
-use std::io::Read;
 use std::time::Duration;
 
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
 
-use crate::danmaku::error::{DanmakuError, Result};
+use crate::danmaku::error::Result;
 use crate::danmaku::websocket::ws_headers_origin_ua;
 use crate::danmaku::websocket::{
-    DanmuProtocol, DanmuProtocolFactory, DanmuProtocolOutput, WebSocketDanmuProvider,
+    DanmuProtocol, DanmuProtocolFactory, DanmuProtocolOutput, MAX_DECOMPRESSED_FRAME_BYTES,
+    WebSocketDanmuProvider, read_bounded,
 };
 use crate::danmaku::{DanmuControlEvent, DanmuItem, DanmuMessage};
 use crate::extractor::default::DEFAULT_UA;
@@ -150,14 +150,13 @@ impl DouyinDanmuProtocol {
         id.to_string()
     }
 
-    /// Decompresses gzip data
+    /// Decompresses gzip data with bounded size enforcement
     fn decompress_gzip(data: &[u8]) -> Result<Vec<u8>> {
-        let mut decoder = GzDecoder::new(data);
-        let mut decompressed = Vec::new();
-        decoder
-            .read_to_end(&mut decompressed)
-            .map_err(|e| DanmakuError::protocol(format!("Failed to decompress gzip: {}", e)))?;
-        Ok(decompressed)
+        read_bounded(
+            GzDecoder::new(data),
+            MAX_DECOMPRESSED_FRAME_BYTES,
+            "Douyin gzip",
+        )
     }
 
     fn create_ack_packet(log_id: u64, internal_ext: Vec<u8>) -> Result<Bytes> {

@@ -110,14 +110,12 @@ impl Twitcasting {
 
         let response = self
             .extractor
-            .client
             .get(STREAM_SERVER_API)
             .query(&params)
             .send()
-            .await
-            .map_err(ExtractorError::HttpError)?;
-
-        let body = response.text().await.map_err(ExtractorError::HttpError)?;
+            .await?;
+        let response = ExtractorError::check_response(response)?;
+        let body = response.text().await?;
 
         serde_json::from_str::<TwitcastingData>(&body).map_err(ExtractorError::JsonError)
     }
@@ -352,6 +350,21 @@ mod tests {
         assert_eq!(
             from_url.extract_password_hash().unwrap(),
             Some(md5_hex("from-url"))
+        );
+
+        let schemeless = Twitcasting::new(
+            "twitcasting.tv/someone?password=from-schemeless".to_string(),
+            default_client(),
+            None,
+            None,
+        );
+        assert_eq!(
+            schemeless.extractor.url,
+            "https://twitcasting.tv/someone?password=from-schemeless"
+        );
+        assert_eq!(
+            schemeless.extract_password_hash().unwrap(),
+            Some(md5_hex("from-schemeless"))
         );
     }
 }

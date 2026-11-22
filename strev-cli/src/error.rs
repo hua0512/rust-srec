@@ -29,9 +29,13 @@ pub enum CliError {
     #[error("Platform extraction error: {0}")]
     Extraction(String),
 
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
     #[error("No streams available for the provided URL")]
     NoStreamsAvailable,
 
+    #[cfg(feature = "interactive")]
     #[error("Stream selection cancelled by user")]
     SelectionCancelled,
 
@@ -48,24 +52,26 @@ pub enum CliError {
 }
 
 impl CliError {
+    #[cfg(feature = "regex-filters")]
     pub fn invalid_filter(msg: impl Into<String>) -> Self {
         Self::InvalidFilter(msg.into())
     }
 
-    pub fn timeout() -> Self {
-        Self::Timeout { seconds: 30 }
+    pub fn timeout(seconds: u64) -> Self {
+        Self::Timeout { seconds }
     }
 
     pub fn no_streams_found() -> Self {
         Self::NoStreamsAvailable
     }
 
+    #[cfg(feature = "interactive")]
     pub fn user_cancelled() -> Self {
         Self::SelectionCancelled
     }
 
     pub fn invalid_input(msg: impl Into<String>) -> Self {
-        Self::Extraction(msg.into())
+        Self::InvalidInput(msg.into())
     }
 
     pub fn no_matching_stream() -> Self {
