@@ -1,3 +1,6 @@
+use std::sync::{Mutex, PoisonError};
+use std::time::{Duration, Instant};
+
 #[cfg(feature = "devtools")]
 use tauri::Manager;
 use tauri::menu::{Menu, MenuItem};
@@ -8,6 +11,10 @@ use crate::window_state::{show_main_window, toggle_main_window};
 /// Identifier of the application menu's Quit item.
 pub(crate) const APP_MENU_QUIT_ID: &str = "app-menu-quit";
 
+/// Longest gap between two left clicks on the tray icon that are handled as
+/// one double-click. Equals the default Windows double-click time.
+const TRAY_DOUBLE_CLICK_WINDOW: Duration = Duration::from_millis(500);
+
 /// Tauri's default macOS menu with Quit routed through this app.
 ///
 /// The predefined Quit item sends AppKit `terminate:`, which never raises
@@ -16,7 +23,6 @@ pub(crate) const APP_MENU_QUIT_ID: &str = "app-menu-quit";
 /// equivalent goes through `AppHandle::exit` instead. Everything else mirrors
 /// `Menu::default` so the Edit key equivalents keep reaching the webview and
 /// the Window and Help submenus keep their AppKit roles.
-#[cfg(desktop)]
 pub(crate) fn app_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     use tauri::menu::{
         AboutMetadata, HELP_SUBMENU_ID, PredefinedMenuItem, Submenu, WINDOW_SUBMENU_ID,
@@ -97,7 +103,6 @@ pub(crate) fn app_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>
     Menu::with_items(app, &[&application, &file, &edit, &view, &window, &help])
 }
 
-#[cfg(desktop)]
 pub(crate) fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
     let handle = app.handle().clone();
 
@@ -130,6 +135,7 @@ pub(crate) fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
     let quit_id = quit.id().clone();
 
     let icon = tauri::include_image!("./icons/32x32.png");
+    let last_left_click = Mutex::new(None::<Instant>);
 
     TrayIconBuilder::with_id("rust-srec-tray")
         .icon(icon)
@@ -158,24 +164,34 @@ pub(crate) fn setup_tray_icon(app: &tauri::App) -> tauri::Result<()> {
                 toggle_main_window(app);
             }
         })
-        .on_tray_icon_event(|tray: &tauri::tray::TrayIcon, event| match event {
-            TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } => {
+        .on_tray_icon_event(move |tray: &tauri::tray::TrayIcon, event| {
+            // A double-click must leave the window shown, but it does not
+            // arrive as one event: Windows reports click, double-click, click,
+            // and macOS reports two clicks and no double-click. So a click
+            // toggles the window only when no other click came just before it.
+            let double_click = match event {
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } => false,
+                TrayIconEvent::DoubleClick {
+                    button: MouseButton::Left,
+                    ..
+                } => true,
+                _ => return,
+            };
+            let now = Instant::now();
+            let follows_click = last_left_click
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .replace(now)
+                .is_some_and(|previous| now.duration_since(previous) < TRAY_DOUBLE_CLICK_WINDOW);
+            if double_click || follows_click {
+                show_main_window(tray.app_handle());
+            } else {
                 toggle_main_window(tray.app_handle());
             }
-            // Platforms emit Click(Up) before DoubleClick; calling show_main_window
-            // rather than toggling a second time avoids showing then immediately
-            // hiding the window on a double-click.
-            TrayIconEvent::DoubleClick {
-                button: MouseButton::Left,
-                ..
-            } => {
-                show_main_window(tray.app_handle());
-            }
-            _ => {}
         })
         .build(&handle)?;
 

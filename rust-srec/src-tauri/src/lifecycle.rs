@@ -44,7 +44,7 @@ pub(crate) enum BootPhase {
 
 /// Outcome of waiting for the boot task before containing the backend.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum BootSettle {
+enum BootSettle {
     /// The boot task never entered `BootPhase::Services`, and once cancelled it
     /// cannot enter it any more.
     NotStarted,
@@ -61,7 +61,7 @@ pub(crate) enum BootSettle {
 /// before calling this. The boot task publishes `BootPhase::Services` before it
 /// checks that token, so a `Preparing` reading here proves the boot task will
 /// observe the cancellation and return before starting services.
-pub(crate) async fn wait_for_boot_settled(
+async fn wait_for_boot_settled(
     mut boot_phase: tokio::sync::watch::Receiver<BootPhase>,
     cap: Duration,
 ) -> BootSettle {
@@ -85,7 +85,7 @@ pub struct DesktopBackendState {
     log_guard: std::sync::Mutex<Option<tracing_appender::non_blocking::WorkerGuard>>,
     _instance_lock: Option<backend::RuntimeLease>,
     boot_failed: AtomicBool,
-    pub(crate) shutdown_started: AtomicBool,
+    shutdown_started: AtomicBool,
     /// Set once the exit owner has drained the backend (`finish_exit`,
     /// `restart_desktop` just before its restart, or the `Exit` arm after
     /// draining an AppKit termination). While `shutdown_started` is set and
@@ -101,7 +101,7 @@ pub struct DesktopBackendState {
     pub(crate) init_cancel: tokio_util::sync::CancellationToken,
     /// Published by the boot task; read by the exit path through
     /// `wait_for_boot_settled`.
-    pub(crate) boot_phase: tokio::sync::watch::Receiver<BootPhase>,
+    boot_phase: tokio::sync::watch::Receiver<BootPhase>,
 
     pub(crate) data_dir: PathBuf,
     pub(crate) log_dir: PathBuf,
@@ -294,6 +294,16 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn boot_settle_does_not_wait_before_services_start() {
+        let (_tx, rx) = tokio::sync::watch::channel(BootPhase::Preparing);
+
+        assert_eq!(
+            wait_for_boot_settled(rx, Duration::from_secs(5)).await,
+            BootSettle::NotStarted
+        );
+    }
+
+    #[tokio::test]
     async fn boot_settle_waits_for_the_boot_task_to_return() {
         let (tx, rx) = tokio::sync::watch::channel(BootPhase::Services);
         let waiter = tokio::spawn(wait_for_boot_settled(rx, Duration::from_secs(5)));
@@ -303,5 +313,26 @@ mod tests {
         tx.send_replace(BootPhase::Settled);
 
         assert_eq!(waiter.await.expect("waiter task"), BootSettle::Settled);
+    }
+
+    #[tokio::test]
+    async fn boot_settle_treats_a_dropped_boot_task_as_settled() {
+        let (tx, rx) = tokio::sync::watch::channel(BootPhase::Services);
+        drop(tx);
+
+        assert_eq!(
+            wait_for_boot_settled(rx, Duration::from_secs(5)).await,
+            BootSettle::Abandoned
+        );
+    }
+
+    #[tokio::test]
+    async fn boot_settle_gives_up_after_the_cap() {
+        let (_tx, rx) = tokio::sync::watch::channel(BootPhase::Services);
+
+        assert_eq!(
+            wait_for_boot_settled(rx, Duration::from_millis(20)).await,
+            BootSettle::TimedOut
+        );
     }
 }

@@ -11,7 +11,11 @@ Applies to the desktop wrapper. Follow root workflow rules; apply parent backend
 
 ## WHERE TO LOOK
 - `src/main.rs`: Binary shim calling `rust_srec_desktop_lib::run()`; keep its `windows_subsystem` attribute.
-- `src/lib.rs`: App setup, single-instance plugin, database lease, backend initialization, state management, window events.
+- `src/lib.rs`: App setup, single-instance plugin, database lease, backend initialization, run-loop event dispatch.
+- `src/lifecycle.rs`: `DesktopBackendState`, boot phases, and the exit path that drains the backend before the process ends.
+- `src/boot_error.rs`: Startup failure classification, the recovery window, boot progress, and the webview init script.
+- `src/tray.rs`: Tray icon and menu, and the macOS application menu.
+- `src/window_state.rs`: Showing, hiding and centring the main window; close and minimize-to-tray handling.
 - `src/desktop_notifications.rs`: Native OS notification integration.
 - `tauri.conf.json`: Tauri configuration (capabilities, build settings, beforeDevCommand).
 

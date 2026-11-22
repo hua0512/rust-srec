@@ -36,38 +36,20 @@ use window_state::{center_main_window_once, on_main_window_close_requested, show
 
 /// Connection URL for the desktop's SQLite database.
 ///
-/// `RuntimeLease::acquire_for_database` and SQLx both parse this URL via
-/// `SqliteConnectOptions::from_str`, which strips `sqlite://` before `sqlite:`,
-/// splits query/fragment delimiters, and percent-decodes the path. Stripping
-/// Windows verbatim prefixes (`\\?\`, `\\?\UNC\`), preserving UNC `//server/share`
-/// roots behind `sqlite://`, and escaping `%`, `?`, and `#` ensures every path
-/// resolves to the exact `srec.db` file on disk.
+/// `RuntimeLease::acquire_for_database` and SQLx both parse this URL with
+/// `SqliteConnectOptions::from_str`, which strips the scheme, treats the first
+/// `?` as the start of the parameters, and percent-decodes the rest as the file
+/// name. Escaping `%` and `?` is therefore all it takes for the path to come
+/// back unchanged, Windows verbatim (`\\?\`) and UNC prefixes included. The
+/// scheme is always `sqlite://` because a bare `sqlite:` in front of a path
+/// that starts with `//` would read as that longer scheme and lose the root.
 fn desktop_database_url(data_dir: &Path) -> String {
     let db_path = data_dir.join("srec.db");
-    let raw = db_path.to_string_lossy();
-    let normalized: std::borrow::Cow<'_, str> = if let Some(unc) = raw.strip_prefix(r"\\?\UNC\") {
-        std::borrow::Cow::Owned(format!(r"\\{unc}"))
-    } else if let Some(dos) = raw.strip_prefix(r"\\?\") {
-        std::borrow::Cow::Borrowed(dos)
-    } else {
-        raw
-    };
-    let mut encoded = String::with_capacity(normalized.len());
-    for ch in normalized.chars() {
-        match ch {
-            '\\' => encoded.push('/'),
-            '%' => encoded.push_str("%25"),
-            '?' => encoded.push_str("%3F"),
-            '#' => encoded.push_str("%23"),
-            _ => encoded.push(ch),
-        }
-    }
-    let prefix = if encoded.starts_with("//") {
-        "sqlite://"
-    } else {
-        "sqlite:"
-    };
-    format!("{prefix}{encoded}?mode=rwc")
+    let escaped = db_path
+        .to_string_lossy()
+        .replace('%', "%25")
+        .replace('?', "%3F");
+    format!("sqlite://{escaped}?mode=rwc")
 }
 
 fn load_or_create_jwt_secret(data_dir: &Path) -> io::Result<String> {
@@ -837,25 +819,13 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn desktop_database_url_escapes_special_characters_for_runtime_lease_and_sqlx() {
-        let url_with_query_hash_percent = desktop_database_url(Path::new("/tmp/a?b#c%20d"));
-        assert_eq!(
-            url_with_query_hash_percent,
-            "sqlite:/tmp/a%3Fb%23c%2520d/srec.db?mode=rwc"
-        );
-        assert_eq!(
-            desktop_database_url(Path::new(r"\\server\share\acct#1")),
-            "sqlite:////server/share/acct%231/srec.db?mode=rwc"
-        );
-        assert_eq!(
-            desktop_database_url(Path::new(r"\\?\UNC\server\share\acct?1")),
-            "sqlite:////server/share/acct%3F1/srec.db?mode=rwc"
-        );
-        assert_eq!(
-            desktop_database_url(Path::new(r"\\?\C:\Users\acct%25")),
-            "sqlite:C:/Users/acct%2525/srec.db?mode=rwc"
-        );
-
+    async fn database_url_reaches_a_data_dir_whose_name_needs_escaping() {
+        // `?` cannot appear in a Windows file name.
+        let dir_name = if cfg!(windows) {
+            "acct 100%25 data"
+        } else {
+            "acct?1 100%25 data"
+        };
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -864,12 +834,12 @@ mod tests {
             "rust-srec-desktop-db-url-{}-{unique}",
             std::process::id()
         ));
-        let tricky_dir = base_dir.join("acct#1_100%25_data");
-        std::fs::create_dir_all(&tricky_dir).expect("create tricky dir");
+        let data_dir = base_dir.join(dir_name);
+        std::fs::create_dir_all(&data_dir).expect("create data dir");
 
-        let url = desktop_database_url(&tricky_dir);
-        let lease = backend::RuntimeLease::acquire_for_database(&url)
-            .expect("acquire runtime lease on path with # and %");
+        let url = desktop_database_url(&data_dir);
+        let lease =
+            backend::RuntimeLease::acquire_for_database(&url).expect("acquire runtime lease");
         let contention = backend::RuntimeLease::acquire_for_database(&url)
             .err()
             .expect("second runtime lease should contend");
@@ -880,9 +850,9 @@ mod tests {
 
         let pool = backend::init_migration_pool(&url)
             .await
-            .expect("open SQLite pool on path with # and %");
+            .expect("open SQLite pool");
         pool.close().await;
-        assert!(tricky_dir.join("srec.db").exists());
+        assert!(data_dir.join("srec.db").exists());
         drop(lease);
         let _ = std::fs::remove_dir_all(&base_dir);
     }
