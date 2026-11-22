@@ -17,7 +17,9 @@
 //! [`ServiceRoutes`]: notification channels and the
 //! rclone and BaiduPCS-Go upload steps choose a route of their own, else the
 //! global route, and browser push and BaiduPCS-Go account commands follow the
-//! global route. Email cannot use a proxy and always connects directly.
+//! global route. The desktop app's release check follows the global route
+//! too, except that a direct global route gives it the environment's proxy.
+//! Email cannot use a proxy and always connects directly.
 
 mod endpoint;
 mod error;

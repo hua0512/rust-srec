@@ -1029,16 +1029,14 @@ pub fn run() {
                     if exit_owned(&update_app) {
                         return;
                     }
-                    let Some(settings) = update_app
-                        .try_state::<DesktopBackendState>()
-                        .map(|state| state.desktop_settings())
-                    else {
+                    let Some(state) = update_app.try_state::<DesktopBackendState>() else {
                         return;
                     };
+                    let settings = state.desktop_settings();
                     if !settings.check_updates_on_startup {
                         return;
                     }
-                    match updates::fetch_update_info().await {
+                    match updates::fetch_update_info(&state).await {
                         Ok(info) => {
                             if info.update_available
                                 && settings.skipped_update_version.as_deref()
