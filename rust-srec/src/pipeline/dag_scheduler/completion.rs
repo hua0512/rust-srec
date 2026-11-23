@@ -321,6 +321,8 @@ impl DagScheduler {
                 session_start,
                 manifest: None,
                 timeout_secs: None,
+                has_step_retry: false,
+                enqueued_at_ms: None,
             };
 
             match self

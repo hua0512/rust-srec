@@ -2575,9 +2575,8 @@ async fn pipeline_failure_notices(app: &TestApp, token: &str, job_id: &str) -> V
 }
 
 /// A failed step with attempts left keeps its workflow running and is run
-/// again; once the attempts are spent the workflow fails. The job keeps its
-/// plain error; only the notification of a failure that will be retried says
-/// so.
+/// again without firing a failure notification; once the attempts are spent
+/// the workflow fails and a single failure notification is emitted.
 #[tokio::test]
 async fn a_step_with_a_retry_budget_runs_again_before_its_workflow_fails() {
     let app = TestApp::start().await;
@@ -2623,15 +2622,12 @@ async fn a_step_with_a_retry_budget_runs_again_before_its_workflow_fails() {
     let failed = app.settled_dag(&token, &dag_id).await;
     assert_eq!(failed["status"], "FAILED");
     assert_eq!(step(&failed, "run")["status"], "FAILED");
-    let notices = eventually(WAIT, "both failures to be notified", || async {
+    let notices = eventually(WAIT, "terminal failure to be notified", || async {
         let notices = pipeline_failure_notices(&app, &token, &job_id).await;
-        (notices.len() == 2).then_some(notices)
+        (!notices.is_empty()).then_some(notices)
     })
     .await;
-    assert!(
-        notices[1].contains("; attempt 1 of 2 failed, retrying at "),
-        "{notices:?}"
-    );
+    assert_eq!(notices.len(), 1, "{notices:?}");
     assert!(!notices[0].contains("retrying"), "{notices:?}");
 
     app.shutdown().await;

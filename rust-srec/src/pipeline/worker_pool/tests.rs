@@ -990,7 +990,7 @@ async fn failed_status_writes_retry_without_rerunning_and_allow_cancel_or_shutdo
                 );
                 assert_eq!(queue.depth(), 0);
                 assert!(queue.get_cancellation_token(&job_id).await.is_none());
-                assert_eq!(failed_events, 1);
+                assert_eq!(failed_events, 0);
             }
             "cancel" => {
                 assert_eq!(stored.get_status(), Some(JobStatus::Cancelled));
@@ -1445,4 +1445,118 @@ fn timeout_progress_clause_names_the_phase() {
         clause.starts_with(", progress waiting to retry, last updated 59m "),
         "{clause}"
     );
+}
+
+#[tokio::test]
+async fn non_retryable_step_failures_skip_dag_retry_and_notify_immediately() {
+    use crate::database::models::{
+        DagExecutionStatus, DagPipelineDefinition, DagStep, DagStepStatus, PipelineStep,
+        StepRetryPolicy,
+    };
+    use crate::database::repositories::{
+        DagRepository, JobRepository, SqlxDagRepository, SqlxJobRepository,
+    };
+    use crate::pipeline::dag_scheduler::DagRunContext;
+
+    #[derive(Clone, Copy)]
+    enum Mode {
+        Validation,
+        NonRetryableErr,
+        NonRetryablePartialOutput,
+    }
+
+    struct FailingProcessor(Mode);
+    #[async_trait]
+    impl Processor for FailingProcessor {
+        fn processor_type(&self) -> ProcessorType {
+            ProcessorType::Cpu
+        }
+        fn job_types(&self) -> Vec<&'static str> {
+            vec!["non_retryable_test"]
+        }
+        fn name(&self) -> &'static str {
+            "non_retryable_test"
+        }
+        async fn process(
+            &self,
+            _: &ProcessorInput,
+            _: &ProcessorContext,
+        ) -> crate::Result<ProcessorOutput> {
+            match self.0 {
+                Mode::Validation => Err(crate::Error::Validation("bad config".into())),
+                Mode::NonRetryableErr => {
+                    Err(crate::Error::NonRetryablePipeline("invalid_grant".into()))
+                }
+                Mode::NonRetryablePartialOutput => Ok(ProcessorOutput {
+                    succeeded_inputs: vec!["ok.mp4".into()],
+                    failed_inputs: vec![("bad.mp4".into(), "illegal name".into())],
+                    non_retryable: true,
+                    ..Default::default()
+                }),
+            }
+        }
+    }
+
+    for mode in [
+        Mode::Validation,
+        Mode::NonRetryableErr,
+        Mode::NonRetryablePartialOutput,
+    ] {
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        let jobs = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
+        let dags = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
+        let queue = Arc::new(JobQueue::with_repository(Default::default(), jobs.clone()));
+        let scheduler = Arc::new(DagScheduler::new(queue.clone(), dags.clone(), jobs.clone()));
+        let created = scheduler
+            .create_dag_pipeline(
+                DagPipelineDefinition::new(
+                    "non-retryable",
+                    vec![
+                        DagStep::new(
+                            "upload",
+                            PipelineStep::inline("non_retryable_test", serde_json::json!({})),
+                        )
+                        .with_retry(StepRetryPolicy {
+                            max_attempts: 3,
+                            backoff_secs: 60,
+                        }),
+                    ],
+                ),
+                &["input.flv".into()],
+                DagRunContext::default(),
+            )
+            .await
+            .unwrap();
+        let (job, attempt) = queue.dequeue(None).await.unwrap().unwrap();
+        assert!(job.has_step_retry);
+        let job_id = job.id.clone();
+        let step_id = job.dag_step_execution_id.clone().unwrap();
+
+        let (events, mut receiver) = broadcast::channel(16);
+        let mut runner = observed_runner(queue.clone(), events);
+        runner.dag_scheduler = Some(scheduler.clone());
+        let processor: Arc<dyn Processor> = Arc::new(FailingProcessor(mode));
+        runner.execute_job(job, &processor, attempt).await;
+
+        let stored = jobs.get_job(&job_id).await.unwrap();
+        assert_eq!(stored.get_status(), Some(JobStatus::Failed));
+        assert_eq!(stored.retry_after, None);
+        assert_eq!(
+            dags.get_step(&step_id).await.unwrap().get_status(),
+            Some(DagStepStatus::Failed)
+        );
+        assert_eq!(
+            dags.get_dag(&created.dag_id).await.unwrap().get_status(),
+            Some(DagExecutionStatus::Failed)
+        );
+        let failed_events = std::iter::from_fn(|| receiver.try_recv().ok())
+            .filter(|event| matches!(event, PipelineEvent::JobFailed { .. }))
+            .count();
+        assert_eq!(failed_events, 1);
+
+        queue.stop_progress_aggregator().await;
+    }
 }

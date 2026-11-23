@@ -541,7 +541,19 @@ impl Processor for BaiduPcsProcessor {
         let file_sizes = super::inputs::input_size_map(&pending).await;
         let total_input_size = file_sizes.values().copied().sum::<u64>();
         let job_inputs = pending.clone();
-        let attempts_max = config.max_retries.clamp(1, MAX_ATTEMPTS_CAP);
+        let configured_attempts = config.max_retries.clamp(1, MAX_ATTEMPTS_CAP);
+        let attempts_max = if ctx.has_step_retry {
+            if configured_attempts > 1 {
+                info!(
+                    job_id = %ctx.job_id,
+                    configured_attempts,
+                    "Workflow step retry policy is active; deferring BaiduPCS-Go retries to the DAG scheduler"
+                );
+            }
+            1
+        } else {
+            configured_attempts
+        };
 
         let mut completed: HashMap<String, String> = resumed
             .iter()
@@ -608,17 +620,20 @@ impl Processor for BaiduPcsProcessor {
             );
 
             // At most one stored-credential re-login per job run: on the
-            // first attempt only when a `who` probe positively reports a
-            // logged-out session, on a retry unconditionally because an
-            // expired session is a common cause of the failure and `who`
-            // cannot see server-side expiry. Must run before the read guard
-            // below — `relogin` takes the write side of `cli_lock`.
+            // first attempt of a fresh job only when a `who` probe positively
+            // reports a logged-out session; on an in-run or workflow-scheduled
+            // retry unconditionally because an expired session is a common
+            // cause of the failure and `who` cannot see server-side expiry.
+            // Must run before the read guard below — `relogin` takes the write
+            // side of `cli_lock`.
             if let Some(authenticator) = &authenticator
                 && !relogin_done
                 && authenticator
                     .has_credentials(config.config_dir.as_deref())
                     .await
-                && (attempt > 0 || self.session_logged_out(&binary_path, &config, ctx).await)
+                && (attempt > 0
+                    || ctx.is_retry
+                    || self.session_logged_out(&binary_path, &config, ctx).await)
             {
                 relogin_done = true;
                 self.attempt_relogin(authenticator, &binary_path, &config, &proxy, ctx)
@@ -772,6 +787,8 @@ impl Processor for BaiduPcsProcessor {
         }
 
         if !pending.is_empty() {
+            let all_permanent =
+                !permanent.is_empty() && pending.iter().all(|path| permanent.contains_key(path));
             let detail = pending
                 .iter()
                 .map(|path| {
@@ -793,12 +810,17 @@ impl Processor for BaiduPcsProcessor {
                 "BaiduPCS-Go upload failed"
             );
             if completed.is_empty() && skipped.is_empty() {
-                return Err(crate::Error::Other(format!(
+                let message = format!(
                     "BaiduPCS-Go upload failed for {} file(s) after {} attempt(s): {}",
                     pending.len(),
                     attempts_used,
                     detail
-                )));
+                );
+                return Err(if all_permanent {
+                    crate::Error::NonRetryablePipeline(message)
+                } else {
+                    crate::Error::Other(message)
+                });
             }
             // Some files did upload: hand the per-file results to the worker
             // pool, which fails the job from `failed_inputs` and records every
@@ -864,6 +886,7 @@ impl Processor for BaiduPcsProcessor {
                     .collect(),
                 uploads,
                 logs,
+                non_retryable: all_permanent,
             });
         }
 
@@ -924,6 +947,7 @@ impl Processor for BaiduPcsProcessor {
             skipped_inputs: vec![],
             uploads,
             logs,
+            non_retryable: false,
         })
         }
         .await;

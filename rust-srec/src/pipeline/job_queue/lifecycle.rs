@@ -172,9 +172,14 @@ impl JobQueue {
         }
         db_job.duration_secs = Some(result.duration_secs);
 
-        // Calculate queue wait time (DB stores epoch millis)
-        if let (created_ms, Some(started_ms)) = (db_job.created_at, db_job.started_at) {
-            let wait_ms = started_ms.saturating_sub(created_ms);
+        // Calculate queue wait time for this attempt (DB stores epoch millis).
+        // Retried jobs record when they re-entered PENDING in `state.enqueued_at_ms`
+        // so prior attempts and retry backoff are not counted as queue wait.
+        let enqueued_ms = super::parse_job_state(&db_job.state)
+            .enqueued_at_ms
+            .unwrap_or(db_job.created_at);
+        if let Some(started_ms) = db_job.started_at {
+            let wait_ms = started_ms.saturating_sub(enqueued_ms);
             db_job.queue_wait_secs = Some((wait_ms as f64 / 1000.0).max(0.0));
         }
 
@@ -1101,14 +1106,19 @@ impl JobQueue {
         self.decrement_depth(1);
 
         if let Some(context) = failed_upload_ctx {
+            let status = if retry_after.is_some() {
+                UploadTerminalStatus::Retrying
+            } else {
+                UploadTerminalStatus::Failed
+            };
             self.emit_upload_event(UploadStatusEvent::Terminal {
                 job_id: job_id.to_string(),
                 streamer_id: context.streamer_id,
-                status: UploadTerminalStatus::Failed,
+                status,
                 files_succeeded: file_counts.0,
                 files_failed: file_counts.1,
                 files_skipped: file_counts.2,
-                error: Some(error.to_string()),
+                error: (status == UploadTerminalStatus::Failed).then(|| error.to_string()),
             });
         }
         Ok(JobFailureOutcome::Transitioned)

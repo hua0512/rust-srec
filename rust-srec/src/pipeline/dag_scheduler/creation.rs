@@ -197,6 +197,8 @@ impl DagScheduler {
             retry_count: 0,
             retry_after: None,
             timeout_secs: dag_step.timeout_secs,
+            has_step_retry: dag_step.retry.as_ref().is_some_and(|p| p.max_attempts > 1),
+            enqueued_at_ms: None,
             pipeline_id: Some(dag_id.to_string()),
             execution_info: None,
             duration_secs: None,

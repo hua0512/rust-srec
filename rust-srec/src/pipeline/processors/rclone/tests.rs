@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use super::super::test_utils::{test_exit_status, utc_datetime};
+use super::super::test_utils::{test_exit_code, test_exit_status, utc_datetime};
 use super::*;
 use crate::pipeline::{JobPhase, JobProgressSnapshot};
 
@@ -192,6 +192,8 @@ impl MockRcloneCommandRunner {
                     "simulated mkdir failure",
                 )]
             },
+            fatal_error: false,
+            last_stats_error: None,
         }
     }
 }
@@ -275,6 +277,8 @@ impl RcloneCommandRunner for MockRcloneCommandRunner {
                     "simulated partial move failure",
                 )]
             },
+            fatal_error: false,
+            last_stats_error: None,
         })
     }
 }
@@ -1015,6 +1019,10 @@ async fn mkdir_uses_transfer_flags_and_covers_nested_batch_directories() {
             "--use-json-log",
             "--log-level",
             "NOTICE",
+            "--retries",
+            "1",
+            "--low-level-retries",
+            "3",
             "mkdir",
             "remote:records/day",
             "--transfers",
@@ -1160,6 +1168,10 @@ async fn single_copy_passes_json_stats_flags() {
     assert!(!args.iter().any(|arg| arg == "--stats-one-line-date"));
     assert!(args.iter().any(|arg| arg == "copyto"));
     assert!(args.windows(2).any(|pair| pair == ["--retries", "1"]));
+    assert!(
+        args.windows(2)
+            .any(|pair| pair == ["--low-level-retries", "3"])
+    );
 }
 
 #[tokio::test]
@@ -1197,6 +1209,10 @@ async fn batch_copy_passes_json_stats_flags() {
     assert!(!args.iter().any(|arg| arg == "--stats-one-line-date"));
     assert!(args.iter().any(|arg| arg == "--files-from"));
     assert!(args.windows(2).any(|pair| pair == ["--retries", "1"]));
+    assert!(
+        args.windows(2)
+            .any(|pair| pair == ["--low-level-retries", "3"])
+    );
 }
 
 #[tokio::test]
@@ -1531,4 +1547,266 @@ fn rclone_config_round_trips_all_throughput_fields() {
     .map(|s| s.to_string())
     .collect();
     assert_eq!(cfg.throughput_args(), expected);
+}
+
+#[tokio::test(start_paused = true)]
+async fn step_retry_defers_rclone_retries_to_workflow_policy() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let file = temp_dir.path().join("clip.mp4");
+    tokio::fs::write(&file, b"video").await.unwrap();
+    let file_str = file.to_string_lossy().into_owned();
+
+    // Transfer runs only once when workflow step retry is active, despite max_retries=3.
+    let runner = Arc::new(MockRcloneCommandRunner::new(vec![MockAttempt {
+        moved_inputs: vec![],
+        succeeds: false,
+    }]));
+    let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+    let input = ProcessorInput {
+        inputs: vec![file_str.clone()],
+        config: Some(r#"{"destination_root":"remote:/videos","max_retries":3}"#.to_string()),
+        ..Default::default()
+    };
+    let ctx = ProcessorContext::noop("step-retry-transfer").with_step_retry(true);
+
+    let err = processor.process(&input, &ctx).await.unwrap_err();
+    assert!(!err.is_non_retryable_step_error());
+    assert_eq!(runner.commands().len(), 1);
+
+    // Same for mkdir: fails after 1 attempt instead of sleeping under the dir lock.
+    let mkdir_runner = Arc::new(
+        MockRcloneCommandRunner::new(vec![]).with_mkdir_outcomes(vec![MkdirOutcome::Fail]),
+    );
+    let mkdir_processor = RcloneProcessor::with_command_runner("rclone", mkdir_runner.clone());
+    let err = mkdir_processor
+        .process(
+            &input,
+            &ProcessorContext::noop("step-retry-mkdir").with_step_retry(true),
+        )
+        .await
+        .unwrap_err();
+    assert!(!err.is_non_retryable_step_error());
+    assert_eq!(mkdir_runner.mkdirs().len(), 1);
+    assert!(mkdir_runner.commands().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn rate_limit_and_permanent_failures_stop_in_run_retries_with_distinct_retryability() {
+    use crate::pipeline::job_queue::JobLogEntry;
+
+    struct ScriptedRunner {
+        outputs: Mutex<VecDeque<(Vec<PathBuf>, CommandOutput)>>,
+        calls: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl RcloneCommandRunner for ScriptedRunner {
+        async fn run(
+            &self,
+            command: &mut Command,
+            _context: &ProcessorContext,
+        ) -> Result<CommandOutput> {
+            let args: Vec<String> = command
+                .as_std()
+                .get_args()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect();
+            if args.iter().any(|a| a == "mkdir") {
+                return Ok(CommandOutput {
+                    status: test_exit_code(0),
+                    duration: 0.0,
+                    logs: Vec::new(),
+                    fatal_error: false,
+                    last_stats_error: None,
+                });
+            }
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let (moved, output) = self
+                .outputs
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("unexpected extra rclone attempt");
+            for path in moved {
+                tokio::fs::remove_file(&path).await.unwrap();
+            }
+            Ok(output)
+        }
+    }
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let file_a = temp_dir.path().join("a.mp4");
+    let file_b = temp_dir.path().join("b.mp4");
+    tokio::fs::write(&file_a, b"a").await.unwrap();
+    tokio::fs::write(&file_b, b"b").await.unwrap();
+    let file_a_str = file_a.to_string_lossy().into_owned();
+    let file_b_str = file_b.to_string_lossy().into_owned();
+
+    // 1. Transient NewFs network errors stay retryable (not misclassified as permanent).
+    let runner = Arc::new(ScriptedRunner {
+        outputs: Mutex::new(VecDeque::from([
+            (
+                vec![],
+                CommandOutput {
+                    status: test_exit_code(1),
+                    duration: 0.0,
+                    logs: vec![JobLogEntry::error(
+                        "Failed to create file system for \"remote:/videos\": dial tcp: i/o timeout",
+                    )],
+                    fatal_error: false,
+                    last_stats_error: None,
+                },
+            ),
+            (
+                vec![],
+                CommandOutput {
+                    status: test_exit_code(0),
+                    duration: 0.0,
+                    logs: Vec::new(),
+                    fatal_error: false,
+                    last_stats_error: None,
+                },
+            ),
+        ])),
+        calls: AtomicUsize::new(0),
+    });
+    let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+    let input = ProcessorInput {
+        inputs: vec![file_a_str.clone()],
+        config: Some(r#"{"destination_root":"remote:/videos","max_retries":3}"#.to_string()),
+        ..Default::default()
+    };
+    processor
+        .process(&input, &ProcessorContext::noop("transient-newfs"))
+        .await
+        .expect("transient NewFs timeout should retry and succeed");
+    assert_eq!(runner.calls.load(Ordering::SeqCst), 2);
+
+    // 2. Rate-limit errors (including exit 7 + fatalError where the rate-limit detail only
+    //    arrived via JSON stats.lastError alongside a generic Error line, or with no Error line)
+    //    skip remaining in-run retries while staying retryable for the DAG.
+    for (exit_code, fatal_error, logs, last_stats_error, expected_in_err) in [
+        (
+            1,
+            false,
+            vec![JobLogEntry::error(
+                "googleapi: Error 403: Quota exceeded, rateLimitExceeded",
+            )],
+            None,
+            "rateLimitExceeded",
+        ),
+        (
+            7,
+            true,
+            vec![JobLogEntry::error("context canceled")],
+            Some("googleapi: Error 403: User rate limit exceeded, uploadLimitExceeded"),
+            "context canceled",
+        ),
+        (
+            7,
+            true,
+            vec![],
+            Some("googleapi: Error 403: User rate limit exceeded, uploadLimitExceeded"),
+            "uploadLimitExceeded",
+        ),
+    ] {
+        let runner = Arc::new(ScriptedRunner {
+            outputs: Mutex::new(VecDeque::from([(
+                vec![],
+                CommandOutput {
+                    status: test_exit_code(exit_code),
+                    duration: 0.0,
+                    logs,
+                    fatal_error,
+                    last_stats_error: last_stats_error.map(str::to_owned),
+                },
+            )])),
+            calls: AtomicUsize::new(0),
+        });
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let err = processor
+            .process(&input, &ProcessorContext::noop("rate-limit"))
+            .await
+            .unwrap_err();
+        assert_eq!(runner.calls.load(Ordering::SeqCst), 1);
+        assert!(
+            !err.is_non_retryable_step_error(),
+            "rate-limit error must stay retryable for workflow backoff: {err}"
+        );
+        assert!(
+            err.to_string().contains(expected_in_err),
+            "expected {expected_in_err:?} in {err}"
+        );
+    }
+
+    // 3. Permanent errors (exit 2 usage error, exit 7 auth failure, missing config section)
+    //    stop immediately and return NonRetryablePipeline.
+    for (exit_code, fatal_error, msg) in [
+        (
+            2,
+            false,
+            "invalid argument \"bogus\" for \"--bwlimit\" flag",
+        ),
+        (7, true, "oauth2: cannot fetch token: invalid_grant"),
+        (1, false, "didn't find section in config file (\"missing\")"),
+    ] {
+        let runner = Arc::new(ScriptedRunner {
+            outputs: Mutex::new(VecDeque::from([(
+                vec![],
+                CommandOutput {
+                    status: test_exit_code(exit_code),
+                    duration: 0.0,
+                    logs: vec![JobLogEntry::error(msg)],
+                    fatal_error,
+                    last_stats_error: None,
+                },
+            )])),
+            calls: AtomicUsize::new(0),
+        });
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let err = processor
+            .process(&input, &ProcessorContext::noop("permanent"))
+            .await
+            .unwrap_err();
+        assert_eq!(runner.calls.load(Ordering::SeqCst), 1, "{msg}");
+        assert!(
+            matches!(err, crate::Error::NonRetryablePipeline(_)),
+            "expected NonRetryablePipeline, got {err:?}"
+        );
+    }
+
+    // 4. Partial move batch with a permanent error preserves per-file results and flags non_retryable.
+    let runner = Arc::new(ScriptedRunner {
+        outputs: Mutex::new(VecDeque::from([(
+            vec![file_a.clone()],
+            CommandOutput {
+                status: test_exit_code(7),
+                duration: 0.0,
+                logs: vec![JobLogEntry::error(
+                    "oauth2: token has been expired or revoked",
+                )],
+                fatal_error: true,
+                last_stats_error: None,
+            },
+        )])),
+        calls: AtomicUsize::new(0),
+    });
+    let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+    let input = ProcessorInput {
+        inputs: vec![file_a_str.clone(), file_b_str.clone()],
+        config: Some(
+            r#"{"destination_root":"remote:/videos","operation":"move","max_retries":3}"#
+                .to_string(),
+        ),
+        ..Default::default()
+    };
+    let output = processor
+        .process(&input, &ProcessorContext::noop("partial-permanent"))
+        .await
+        .unwrap();
+    assert_eq!(runner.calls.load(Ordering::SeqCst), 1);
+    assert!(output.non_retryable);
+    assert_eq!(output.succeeded_inputs, vec![file_a_str]);
+    assert_eq!(output.failed_inputs.len(), 1);
+    assert_eq!(output.failed_inputs[0].0, file_b_str);
 }

@@ -113,6 +113,10 @@ pub(crate) struct JobStateMeta {
     pub(crate) manifest: Option<Arc<PipelineInputManifest>>,
     /// Per-attempt timeout of a workflow step job; not a placeholder source.
     pub(crate) timeout_secs: Option<u64>,
+    /// Whether this step job has an automatic DAG retry policy (`max_attempts > 1`).
+    pub(crate) has_step_retry: bool,
+    /// Epoch milliseconds when the latest retry re-queued this job.
+    pub(crate) enqueued_at_ms: Option<i64>,
 }
 
 impl JobStateMeta {
@@ -139,6 +143,8 @@ pub(crate) fn job_state_json(job: &Job) -> String {
         || job.session_start.is_some()
         || job.manifest.is_some()
         || job.timeout_secs.is_some()
+        || job.has_step_retry
+        || job.enqueued_at_ms.is_some()
     {
         let mut state = serde_json::json!({
             "streamer_name": job.streamer_name.clone(),
@@ -148,6 +154,12 @@ pub(crate) fn job_state_json(job: &Job) -> String {
         });
         if let Some(timeout_secs) = job.timeout_secs {
             state["timeout_secs"] = serde_json::json!(timeout_secs);
+        }
+        if job.has_step_retry {
+            state["has_step_retry"] = serde_json::json!(true);
+        }
+        if let Some(enqueued_at_ms) = job.enqueued_at_ms {
+            state["enqueued_at_ms"] = serde_json::json!(enqueued_at_ms);
         }
         if let Some(manifest) = job.manifest.as_deref() {
             state["manifest"] = match serde_json::to_value(manifest) {
@@ -201,6 +213,11 @@ pub(crate) fn parse_job_state(state: &str) -> JobStateMeta {
             })
             .map(Arc::new),
         timeout_secs: obj.get("timeout_secs").and_then(|v| v.as_u64()),
+        has_step_retry: obj
+            .get("has_step_retry")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        enqueued_at_ms: obj.get("enqueued_at_ms").and_then(|v| v.as_i64()),
     }
 }
 
@@ -311,6 +328,8 @@ pub(crate) fn db_model_to_job(db_job: &JobDbModel) -> Job {
         session_start,
         manifest,
         timeout_secs,
+        has_step_retry,
+        enqueued_at_ms,
     } = parse_job_state(&db_job.state);
 
     Job {
@@ -336,6 +355,8 @@ pub(crate) fn db_model_to_job(db_job: &JobDbModel) -> Job {
             .retry_after
             .map(crate::database::time::ms_to_datetime),
         timeout_secs,
+        has_step_retry,
+        enqueued_at_ms,
         pipeline_id: db_job.pipeline_id.clone(),
         // Parse execution_info JSON
         execution_info: db_job

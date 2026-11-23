@@ -260,7 +260,7 @@ impl ExecuteCommandProcessor {
 
     fn parse_config(input: &ProcessorInput) -> Result<ExecuteConfig> {
         let Some(config_str) = input.config.as_ref() else {
-            return Err(crate::Error::Other(
+            return Err(crate::Error::Validation(
                 "No config specified for execute processor".to_string(),
             ));
         };
@@ -276,7 +276,7 @@ impl ExecuteCommandProcessor {
         }
 
         let value: serde_json::Value = serde_json::from_str(config_str).map_err(|e| {
-            crate::Error::Other(format!(
+            crate::Error::Validation(format!(
                 "Invalid JSON for execute processor config: {e}. If you intended a raw command, \
                  pass it as a plain string (not starting with '{{', '[', or '\"') or as \
                  {{\"command\":\"...\"}}."
@@ -285,12 +285,12 @@ impl ExecuteCommandProcessor {
 
         let config: ExecuteConfig = match value {
             serde_json::Value::Object(_) => serde_json::from_value(value).map_err(|e| {
-                crate::Error::Other(format!(
+                crate::Error::Validation(format!(
                     "Invalid execute processor config object (expected command or program with args): {e}"
                 ))
             }),
             serde_json::Value::String(command) => Ok(ExecuteConfig::shell(command)),
-            _ => Err(crate::Error::Other(
+            _ => Err(crate::Error::Validation(
                 "Execute processor config must be a JSON object or JSON string".to_string(),
             )),
         }?;

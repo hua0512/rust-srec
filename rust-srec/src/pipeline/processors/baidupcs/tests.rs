@@ -87,6 +87,8 @@ impl BaiduPcsCommandRunner for MockBaiduPcsCommandRunner {
             status: test_exit_status(attempt.exit_ok),
             duration: 0.0,
             logs,
+            fatal_error: false,
+            last_stats_error: None,
         })
     }
 }
@@ -1014,6 +1016,7 @@ async fn permanent_failures_are_not_retried() {
     assert_eq!(output.succeeded_inputs, vec![flaky_str]);
     assert_eq!(output.uploads[0].status, UploadItemStatus::Failed);
     assert_eq!(output.uploads[1].status, UploadItemStatus::Completed);
+    assert!(output.non_retryable);
 
     // Only permanent failures: no retry runs at all, and the job fails.
     let runner = Arc::new(MockBaiduPcsCommandRunner::new(vec![MockAttempt {
@@ -1037,6 +1040,7 @@ async fn permanent_failures_are_not_retried() {
         .await
         .unwrap_err();
     assert_eq!(runner.commands().len(), 1);
+    assert!(matches!(error, crate::Error::NonRetryablePipeline(_)));
     assert!(error.to_string().contains("after 1 attempt(s)"), "{error}");
 }
 
@@ -1173,4 +1177,105 @@ async fn login_probe_output_stays_out_of_the_job_log() {
         logged.iter().any(|line| line.contains(&file_str)),
         "{logged:?}"
     );
+}
+
+#[tokio::test]
+async fn step_retry_defers_baidupcs_retries_and_relogins_on_workflow_retry() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let file = temp_dir.path().join("a.flv");
+    tokio::fs::write(&file, b"video").await.unwrap();
+    let file_str = file.to_string_lossy().into_owned();
+    let input = ProcessorInput {
+        inputs: vec![file_str.clone()],
+        config: Some(r#"{"destination_root":"/rec","max_retries":3}"#.to_string()),
+        ..Default::default()
+    };
+
+    // First workflow attempt: `who` reports logged in, upload fails once and does not loop in-run.
+    let runner_first = Arc::new(MockBaiduPcsCommandRunner::new(vec![
+        MockAttempt {
+            exit_ok: true,
+            lines: vec![who_line(42)],
+        },
+        MockAttempt {
+            exit_ok: false,
+            lines: vec![queue_line(1, &file_str)],
+        },
+    ]));
+    let auth_first = MockAuthenticator::new(true, true);
+    let processor_first = MockBaiduPcsCommandRunner::processor(runner_first.clone())
+        .with_authenticator(auth_first.clone());
+    let err = processor_first
+        .process(
+            &input,
+            &ProcessorContext::noop("step-retry-1").with_step_retry(true),
+        )
+        .await
+        .unwrap_err();
+    assert!(!err.is_non_retryable_step_error());
+    assert_eq!(runner_first.commands().len(), 2); // who + 1 upload
+    assert_eq!(auth_first.relogin_calls(), 0);
+
+    // Workflow-scheduled retry (`is_retry = true`, `has_step_retry = true`): still refreshes the
+    // session via stored credentials before the single upload attempt.
+    let runner_retry = Arc::new(MockBaiduPcsCommandRunner::new(vec![MockAttempt {
+        exit_ok: true,
+        lines: vec![
+            queue_line(1, &file_str),
+            success_line(1, "/rec/a.flv"),
+            finished_line(),
+        ],
+    }]));
+    let auth_retry = MockAuthenticator::new(true, true);
+    let processor_retry = MockBaiduPcsCommandRunner::processor(runner_retry.clone())
+        .with_authenticator(auth_retry.clone());
+    let ctx_retry = ProcessorContext::noop("step-retry-2")
+        .with_retry(true)
+        .with_step_retry(true);
+    let output = processor_retry.process(&input, &ctx_retry).await.unwrap();
+    assert_eq!(auth_retry.relogin_calls(), 1);
+    assert_eq!(runner_retry.commands().len(), 1);
+    assert_eq!(output.succeeded_inputs, vec![file_str]);
+}
+
+#[tokio::test]
+async fn mixed_permanent_and_transient_failures_remain_retryable() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let ok_file = temp_dir.path().join("ok.flv");
+    let bad_file = temp_dir.path().join("bad.flv");
+    let transient_file = temp_dir.path().join("retry.flv");
+    tokio::fs::write(&ok_file, b"ok").await.unwrap();
+    tokio::fs::write(&bad_file, b"bad").await.unwrap();
+    tokio::fs::write(&transient_file, b"retry").await.unwrap();
+    let ok_str = ok_file.to_string_lossy().into_owned();
+    let bad_str = bad_file.to_string_lossy().into_owned();
+    let transient_str = transient_file.to_string_lossy().into_owned();
+
+    // Partial batch mixing permanent and transient failures must stay retryable
+    // so the workflow can still retry the transiently failed file.
+    let runner = Arc::new(MockBaiduPcsCommandRunner::new(vec![MockAttempt {
+        exit_ok: true,
+        lines: vec![
+            queue_line(1, &ok_str),
+            queue_line(2, &transient_str),
+            success_line(1, "/rec/ok.flv"),
+            format!("[0] {bad_str} 文件路径含有非法字符，已跳过!"),
+            "[2] 上传文件失败, 网络超时".to_string(),
+            finished_line(),
+        ],
+    }]));
+    let processor = MockBaiduPcsCommandRunner::processor(runner);
+    let output = processor
+        .process(
+            &ProcessorInput {
+                inputs: vec![ok_str, bad_str, transient_str],
+                config: Some(r#"{"destination_root":"/rec","max_retries":1}"#.to_string()),
+                ..Default::default()
+            },
+            &ProcessorContext::noop("partial-mixed"),
+        )
+        .await
+        .unwrap();
+    assert!(!output.non_retryable);
+    assert_eq!(output.failed_inputs.len(), 2);
 }

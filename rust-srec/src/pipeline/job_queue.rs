@@ -356,6 +356,14 @@ pub struct Job {
     /// Timeout for one attempt, in seconds, set by the workflow step; the
     /// worker pool's default applies when absent.
     pub timeout_secs: Option<u64>,
+    /// Whether this job's workflow step has an automatic retry policy
+    /// (`max_attempts > 1`). Upload processors defer transfer-level retries to
+    /// the workflow step instead of running their own short-backoff loop.
+    pub has_step_retry: bool,
+    /// Epoch milliseconds when this attempt entered `PENDING` after a retry.
+    /// Used so `queue_wait_secs` measures the current attempt's queue wait
+    /// rather than accumulating earlier attempts and backoff intervals.
+    pub enqueued_at_ms: Option<i64>,
     // Pipeline chain fields
     /// Pipeline ID to group related jobs (first job's ID).
     pub pipeline_id: Option<String>,
@@ -402,6 +410,8 @@ impl Job {
             retry_count: 0,
             retry_after: None,
             timeout_secs: None,
+            has_step_retry: false,
+            enqueued_at_ms: None,
             pipeline_id: None,
             execution_info: None,
             duration_secs: None,
@@ -441,6 +451,8 @@ impl Job {
             retry_count: 0,
             retry_after: None,
             timeout_secs: None,
+            has_step_retry: false,
+            enqueued_at_ms: None,
             pipeline_id,
             execution_info: None,
             duration_secs: None,

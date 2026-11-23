@@ -735,8 +735,10 @@ function StepConfigDialogBody({
                   <p className="text-[10px] text-muted-foreground">
                     <Trans>
                       Leave attempts empty or at 1 for no automatic retry; the
-                      backoff doubles after each failed attempt. Leave the
-                      timeout empty to use the worker pool default.
+                      backoff doubles after each failed attempt and takes over
+                      retries from upload processors. Failure notifications are
+                      only sent once all attempts are spent. Leave the timeout
+                      empty to use the worker pool default.
                     </Trans>
                   </p>
                 </div>

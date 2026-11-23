@@ -385,6 +385,7 @@ impl JobRunner {
             processor_token.clone(),
         )
         .with_retry(is_retry)
+        .with_step_retry(job.has_step_retry)
         .with_step_timeout(step_timeout)
         .with_staged_outputs(staged_outputs.clone());
 
@@ -457,8 +458,12 @@ impl JobRunner {
                 );
             }
             JobOutcome::Failed(e) => {
-                self.finish_failed(&facts, &e.to_string(), StepFailureKind::ProcessorError, &[])
-                    .await;
+                let kind = if e.is_non_retryable_step_error() {
+                    StepFailureKind::NonRetryable
+                } else {
+                    StepFailureKind::ProcessorError
+                };
+                self.finish_failed(&facts, &e.to_string(), kind, &[]).await;
             }
             JobOutcome::TimedOut if timeout_recorded => {}
             JobOutcome::TimedOut => {
@@ -614,13 +619,13 @@ impl JobRunner {
             {
                 warn!(job_id = %facts.id, error = %e, "Failed to record logs of a partially failed job");
             }
-            self.finish_failed(
-                facts,
-                &error,
-                StepFailureKind::ProcessorError,
-                &output.uploads,
-            )
-            .await;
+            let kind = if output.non_retryable {
+                StepFailureKind::NonRetryable
+            } else {
+                StepFailureKind::ProcessorError
+            };
+            self.finish_failed(facts, &error, kind, &output.uploads)
+                .await;
             return;
         }
 
@@ -711,10 +716,11 @@ impl JobRunner {
     /// Record a failed or timed-out attempt. For a workflow step the scheduler
     /// decides whether the step gets another attempt or fails, and the job row
     /// is written with the retry it plans; the worker itself only persists and
-    /// announces. The row keeps the plain error, while the failure event says
-    /// when a planned retry runs. Processors own cleanup of their staged outputs;
-    /// persisted artifact paths may belong to earlier attempts. `uploads` are
-    /// the per-file results of a partially failed upload batch.
+    /// announces. The row keeps the plain error; a failure event is emitted
+    /// only when no further automatic retry is planned. Processors own cleanup
+    /// of their staged outputs; persisted artifact paths may belong to earlier
+    /// attempts. `uploads` are the per-file results of a partially failed
+    /// upload batch.
     pub(super) async fn finish_failed(
         &self,
         facts: &JobFacts,
@@ -736,12 +742,14 @@ impl JobRunner {
                     )
                 })
                 .await?;
-            if outcome == JobFailureOutcome::Transitioned {
+            // Only announce a terminal failure once no automatic retry remains;
+            // intermediate attempts keep the step waiting and show their
+            // countdown via `retry_after` without firing failure alerts.
+            if outcome == JobFailureOutcome::Transitioned && planned.is_none() {
                 self.emit(PipelineEvent::JobFailed {
                     job_id: facts.id.clone(),
                     job_type: facts.job_type.clone(),
-                    error: planned
-                        .map_or_else(|| error.to_string(), |planned| planned.describe(error)),
+                    error: error.to_string(),
                 });
             }
             Ok(outcome)
@@ -789,7 +797,8 @@ impl JobRunner {
                     ),
                     StepFailureKind::ProcessorError
                     | StepFailureKind::NonBatchInput
-                    | StepFailureKind::ExecutionStart => info!(
+                    | StepFailureKind::ExecutionStart
+                    | StepFailureKind::NonRetryable => info!(
                         "DAG step {} failed, cancelled {} jobs (fail-fast)",
                         dag_step_id, cancelled_count
                     ),

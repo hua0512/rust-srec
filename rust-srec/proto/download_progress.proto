@@ -398,6 +398,8 @@ enum UploadTerminalStatus {
   UPLOAD_TERMINAL_STATUS_COMPLETED = 1;
   UPLOAD_TERMINAL_STATUS_FAILED = 2;
   UPLOAD_TERMINAL_STATUS_CANCELLED = 3;
+  // This attempt failed, and the workflow step scheduled an automatic retry.
+  UPLOAD_TERMINAL_STATUS_RETRYING = 4;
 }
 
 // An upload job reached a terminal state. The frontend removes the job

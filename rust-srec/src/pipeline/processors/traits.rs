@@ -192,6 +192,11 @@ pub struct ProcessorContext {
     pub log_sink: JobLogSink,
     pub cancellation_token: CancellationToken,
     pub is_retry: bool,
+    /// True when the owning workflow step carries an automatic retry policy
+    /// (`max_attempts > 1`). Upload processors defer transfer-level retries to
+    /// the workflow step so retries do not multiply and workers are freed
+    /// between attempts.
+    pub has_step_retry: bool,
     /// The workflow step's own timeout, when it sets one. It replaces both the
     /// worker pool's job timeout and any processor-specific default, such as
     /// the `execute` command timeout.
@@ -241,6 +246,7 @@ impl ProcessorContext {
             log_sink: JobLogSink::new(log_tx, dropped),
             cancellation_token: CancellationToken::new(),
             is_retry: false,
+            has_step_retry: false,
             step_timeout: None,
             staged_outputs: StagedOutputRecorder::default(),
         }
@@ -258,6 +264,7 @@ impl ProcessorContext {
             log_sink,
             cancellation_token,
             is_retry: false,
+            has_step_retry: false,
             step_timeout: None,
             staged_outputs: StagedOutputRecorder::default(),
         }
@@ -266,6 +273,12 @@ impl ProcessorContext {
     /// Mark this execution as a retry of a previously persisted job.
     pub fn with_retry(mut self, is_retry: bool) -> Self {
         self.is_retry = is_retry;
+        self
+    }
+
+    /// Mark whether this job's workflow step has its own automatic retry policy.
+    pub fn with_step_retry(mut self, has_step_retry: bool) -> Self {
+        self.has_step_retry = has_step_retry;
         self
     }
 
@@ -301,6 +314,7 @@ impl ProcessorContext {
             log_sink: JobLogSink::new(log_tx, Arc::new(AtomicUsize::new(0))),
             cancellation_token: self.cancellation_token.clone(),
             is_retry: self.is_retry,
+            has_step_retry: self.has_step_retry,
             step_timeout: self.step_timeout,
             staged_outputs: self.staged_outputs.clone(),
         }
@@ -401,6 +415,9 @@ pub struct ProcessorOutput {
     pub uploads: Vec<UploadResultItem>,
     /// Execution logs captured during processing.
     pub logs: Vec<JobLogEntry>,
+    /// True when every remaining failure in `failed_inputs` is permanent and
+    /// retrying the step with the same inputs and configuration cannot succeed.
+    pub non_retryable: bool,
 }
 
 impl ProcessorOutput {
@@ -416,6 +433,9 @@ impl ProcessorOutput {
             }
             Err(crate::Error::Validation(message)) => {
                 return Err(crate::Error::Validation(scrubber.scrub(&message)));
+            }
+            Err(crate::Error::NonRetryablePipeline(message)) => {
+                return Err(crate::Error::NonRetryablePipeline(scrubber.scrub(&message)));
             }
             Err(error) => return Err(error),
         };

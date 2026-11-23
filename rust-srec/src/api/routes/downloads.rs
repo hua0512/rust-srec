@@ -949,6 +949,7 @@ pub fn map_upload_event_to_protobuf(
                 UploadTerminalStatus::Cancelled => {
                     crate::api::proto::UploadTerminalStatus::Cancelled
                 }
+                UploadTerminalStatus::Retrying => crate::api::proto::UploadTerminalStatus::Retrying,
             };
             WsMessage {
                 event_type: EventType::UploadTerminal as i32,
