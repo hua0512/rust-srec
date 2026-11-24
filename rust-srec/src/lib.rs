@@ -49,6 +49,8 @@ pub mod pipeline;
 #[doc(hidden)]
 pub mod proxies;
 #[doc(hidden)]
+pub mod recorder;
+#[doc(hidden)]
 pub mod scheduler;
 #[doc(hidden)]
 pub mod session;
