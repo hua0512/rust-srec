@@ -37,6 +37,7 @@ fn pending(id: u64) -> PendingNotification {
         retry_generation: 0,
         retry_cancel: CancellationToken::new(),
         next_retry_at: None,
+        durable_settled: None,
     }
 }
 
@@ -691,4 +692,207 @@ async fn dispatch_rejected_by_a_closed_supervisor_is_counted() {
     assert_eq!(service.stats().dispatch_dropped, 1);
     service.dispatch_notification(event());
     assert_eq!(service.stats().dispatch_dropped, 2);
+}
+
+#[tokio::test(start_paused = true)]
+async fn durable_entries_survive_full_queue_eviction_and_settle_on_completion() {
+    let service = Arc::new(NotificationService::with_config(
+        NotificationServiceConfig {
+            max_queue_size: 1,
+            max_retries: 2,
+            initial_retry_delay_ms: 60_000,
+            max_retry_delay_ms: 60_000,
+            ..Default::default()
+        },
+    ));
+    let mut starts = controlled_targets(&service, &["target"]);
+
+    let durable_task = tokio::spawn({
+        let service = service.clone();
+        async move { service.deliver_durable(event()).await }
+    });
+    let (_, release_durable) = tokio::time::timeout(Duration::from_secs(1), starts.recv())
+        .await
+        .expect("durable send must start")
+        .unwrap();
+    let durable_id = *service.pending_queue.iter().next().unwrap().key();
+    let durable_cancel = service
+        .pending_queue
+        .get(&durable_id)
+        .unwrap()
+        .retry_cancel
+        .clone();
+
+    // Queue is at capacity (1) with a durable entry: ordinary traffic must be
+    // rejected instead of evicting the durable notification.
+    service.notify(event()).await.unwrap();
+    assert!(service.pending_queue.contains_key(&durable_id));
+    assert!(!durable_cancel.is_cancelled());
+    assert_eq!(service.pending_queue.len(), 1);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(10), starts.recv())
+            .await
+            .is_err(),
+        "dropped ordinary notification must not start delivery"
+    );
+
+    release_durable.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(1), durable_task)
+        .await
+        .unwrap()
+        .unwrap()
+        .expect("durable delivery must settle once its target succeeds");
+    assert!(service.pending_queue.is_empty());
+
+    // With capacity 2 holding [durable (older), ordinary (newer)], an incoming
+    // ordinary notification evicts the newer ordinary entry and spares the older durable one.
+    let service2 = Arc::new(NotificationService::with_config(
+        NotificationServiceConfig {
+            max_queue_size: 2,
+            ..Default::default()
+        },
+    ));
+    let (tx, _rx) = oneshot::channel();
+    let mut older_durable = pending(1);
+    older_durable.created_at = Timestamp::new(10, 0).unwrap();
+    older_durable.durable_settled = Some(DurableSettlement::new(tx));
+    let mut newer_ordinary = pending(2);
+    newer_ordinary.created_at = Timestamp::new(20, 0).unwrap();
+    let ordinary_cancel = newer_ordinary.retry_cancel.clone();
+    assert!(service2.enqueue_pending(1, older_durable));
+    assert!(service2.enqueue_pending(2, newer_ordinary));
+    assert!(service2.enqueue_pending(3, pending(3)));
+    assert!(service2.pending_queue.contains_key(&1));
+    assert!(!service2.pending_queue.contains_key(&2));
+    assert!(ordinary_cancel.is_cancelled());
+    assert!(service2.pending_queue.contains_key(&3));
+
+    service.stop().await;
+    service2.stop().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn deliver_durable_rejects_shutdown_and_dead_letter_persistence_failures() {
+    // 1. Mid-delivery shutdown and post-stop calls must return TransientShuttingDown,
+    //    drop in-flight sends, and leave pending_queue empty.
+    let service = Arc::new(NotificationService::new());
+    let mut starts = controlled_targets(&service, &["stalled"]);
+    let in_flight = tokio::spawn({
+        let service = service.clone();
+        async move { service.deliver_durable(event()).await }
+    });
+    let (_key, held_release) = tokio::time::timeout(Duration::from_secs(1), starts.recv())
+        .await
+        .expect("target must begin delivery")
+        .unwrap();
+    service.stop().await;
+    let mid_result = tokio::time::timeout(Duration::from_secs(1), in_flight)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(mid_result, Err(DurableDeliveryError::TransientShuttingDown));
+    assert!(
+        held_release.send(()).is_err(),
+        "cancelled durable send must be dropped rather than left detached"
+    );
+    assert!(service.pending_queue.is_empty());
+    assert_eq!(
+        service.deliver_durable(event()).await,
+        Err(DurableDeliveryError::TransientShuttingDown)
+    );
+
+    // 2. Dropping the caller future mid-delivery (e.g. drainer cancellation before stop)
+    //    must clean up the non-evictable pending_queue entry and cancel retry_cancel.
+    let drop_service = Arc::new(NotificationService::new());
+    let mut drop_starts = controlled_targets(&drop_service, &["stalled"]);
+    let caller_task = tokio::spawn({
+        let service = drop_service.clone();
+        async move { service.deliver_durable(event()).await }
+    });
+    let (_key, drop_release) = tokio::time::timeout(Duration::from_secs(1), drop_starts.recv())
+        .await
+        .expect("target must begin delivery")
+        .unwrap();
+    let entry_cancel = drop_service
+        .pending_queue
+        .iter()
+        .next()
+        .unwrap()
+        .retry_cancel
+        .clone();
+    caller_task.abort();
+    assert!(caller_task.await.unwrap_err().is_cancelled());
+    assert!(drop_service.pending_queue.is_empty());
+    assert!(entry_cancel.is_cancelled());
+    assert!(drop_release.send(()).is_err());
+    drop_service.stop().await;
+
+    // 3. Failing to persist the terminal dead-letter row must refuse Ok(()) settlement
+    //    and leave pending_queue empty.
+    let repo = Arc::new(MockNotificationRepo {
+        fail_dead_letter_insert: true,
+        ..MockNotificationRepo::new()
+    });
+    let failing_dl_service = Arc::new(NotificationService::with_repository(
+        NotificationServiceConfig {
+            max_retries: 1,
+            initial_retry_delay_ms: 1,
+            max_retry_delay_ms: 1,
+            ..Default::default()
+        },
+        repo,
+    ));
+    failing_dl_service
+        .registry
+        .write()
+        .insert(Arc::new(RuntimeChannel {
+            breaker: failing_dl_service.new_breaker(),
+            key: "db:ch-1".into(),
+            db_channel_id: Some("ch-1".into()),
+            display_name: "ch-1".into(),
+            channel_type: "test".into(),
+            channel: Arc::new(TestChannel {
+                channel_type: "test",
+                fail_for_attempts: u32::MAX,
+                attempts: Arc::new(AtomicU32::new(0)),
+            }),
+        }));
+    failing_dl_service
+        .registry
+        .write()
+        .subscriptions_by_event
+        .insert("system_startup".into(), vec!["ch-1".into()]);
+    let dl_result = tokio::time::timeout(
+        Duration::from_secs(1),
+        failing_dl_service.deliver_durable(event()),
+    )
+    .await
+    .unwrap();
+    assert!(
+        matches!(dl_result, Err(DurableDeliveryError::Transient(_))),
+        "dead-letter DB insert failure must return Transient error, got {dl_result:?}"
+    );
+    assert!(failing_dl_service.pending_queue.is_empty());
+    failing_dl_service.stop().await;
+
+    // 4. Disabled service and zero subscribed targets settle Ok(()) while running,
+    //    and reject with TransientShuttingDown once stopped.
+    let disabled = NotificationService::with_config(NotificationServiceConfig {
+        enabled: false,
+        ..Default::default()
+    });
+    assert_eq!(disabled.deliver_durable(event()).await, Ok(()));
+    disabled.stop().await;
+    assert_eq!(
+        disabled.deliver_durable(event()).await,
+        Err(DurableDeliveryError::TransientShuttingDown)
+    );
+
+    let unsubscribed = NotificationService::new();
+    assert_eq!(unsubscribed.deliver_durable(event()).await, Ok(()));
+    unsubscribed.stop().await;
+    assert_eq!(
+        unsubscribed.deliver_durable(event()).await,
+        Err(DurableDeliveryError::TransientShuttingDown)
+    );
 }

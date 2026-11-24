@@ -288,8 +288,14 @@ pub enum StreamOnlineKind {
 }
 
 /// Notification-only durable outbox event persisted alongside state mutations.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+///
+/// Serializes in an externally tagged wire envelope (`{"StreamOnline": ...}`,
+/// `{"FatalError": ...}`, etc.) with required epoch-millisecond fields so
+/// [`crate::notification::OutboxRecord`] unambiguously distinguishes these
+/// records from legacy `MonitorEvent` rows while preserving the `FatalError`
+/// payload keys (`message`, RFC 3339 `timestamp`) read from
+/// `monitor_event_outbox`.
+#[derive(Debug, Clone, PartialEq)]
 pub enum OutboxEvent {
     StreamOnline {
         streamer_id: String,
@@ -328,6 +334,232 @@ pub enum OutboxEvent {
         streamer_name: String,
         occurred_at_ms: i64,
     },
+}
+
+impl OutboxEvent {
+    /// Stable `monitor_event_outbox.event_type` column discriminator.
+    pub fn event_type(&self) -> &'static str {
+        match self {
+            Self::StreamOnline { .. } => "StreamOnline",
+            Self::StreamOffline { .. } => "StreamOffline",
+            Self::FatalError { .. } => "FatalError",
+            Self::ChecksFailing { .. } => "ChecksFailing",
+            Self::ChecksRestored { .. } => "ChecksRestored",
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+enum OutboxEventWire {
+    StreamOnline {
+        streamer_id: String,
+        streamer_name: String,
+        session_id: String,
+        title: String,
+        category: Option<String>,
+        started_at_ms: i64,
+        kind: StreamOnlineKind,
+    },
+    StreamOffline {
+        streamer_id: String,
+        streamer_name: String,
+        session_id: String,
+        duration_secs: Option<f64>,
+        ended_at_ms: i64,
+    },
+    FatalError {
+        streamer_id: String,
+        streamer_name: String,
+        error_type: FatalErrorType,
+        message: String,
+        new_state: StreamerState,
+        occurred_at_ms: i64,
+        #[serde(default)]
+        timestamp: Option<Timestamp>,
+    },
+    ChecksFailing {
+        streamer_id: String,
+        streamer_name: String,
+        platform: String,
+        last_error: String,
+        consecutive_errors: i32,
+        occurred_at_ms: i64,
+        #[serde(default)]
+        timestamp: Option<Timestamp>,
+    },
+    ChecksRestored {
+        streamer_id: String,
+        streamer_name: String,
+        occurred_at_ms: i64,
+        #[serde(default)]
+        timestamp: Option<Timestamp>,
+    },
+}
+
+impl Serialize for OutboxEvent {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let wire = match self {
+            Self::StreamOnline {
+                streamer_id,
+                streamer_name,
+                session_id,
+                title,
+                category,
+                started_at_ms,
+                kind,
+            } => OutboxEventWire::StreamOnline {
+                streamer_id: streamer_id.clone(),
+                streamer_name: streamer_name.clone(),
+                session_id: session_id.clone(),
+                title: title.clone(),
+                category: category.clone(),
+                started_at_ms: *started_at_ms,
+                kind: *kind,
+            },
+            Self::StreamOffline {
+                streamer_id,
+                streamer_name,
+                session_id,
+                duration_secs,
+                ended_at_ms,
+            } => OutboxEventWire::StreamOffline {
+                streamer_id: streamer_id.clone(),
+                streamer_name: streamer_name.clone(),
+                session_id: session_id.clone(),
+                duration_secs: *duration_secs,
+                ended_at_ms: *ended_at_ms,
+            },
+            Self::FatalError {
+                streamer_id,
+                streamer_name,
+                error_type,
+                message,
+                new_state,
+                occurred_at_ms,
+            } => OutboxEventWire::FatalError {
+                streamer_id: streamer_id.clone(),
+                streamer_name: streamer_name.clone(),
+                error_type: *error_type,
+                message: message.clone(),
+                new_state: *new_state,
+                occurred_at_ms: *occurred_at_ms,
+                timestamp: Some(crate::database::time::ms_to_datetime(*occurred_at_ms)),
+            },
+            Self::ChecksFailing {
+                streamer_id,
+                streamer_name,
+                platform,
+                last_error,
+                consecutive_errors,
+                occurred_at_ms,
+            } => OutboxEventWire::ChecksFailing {
+                streamer_id: streamer_id.clone(),
+                streamer_name: streamer_name.clone(),
+                platform: platform.clone(),
+                last_error: last_error.clone(),
+                consecutive_errors: *consecutive_errors,
+                occurred_at_ms: *occurred_at_ms,
+                timestamp: Some(crate::database::time::ms_to_datetime(*occurred_at_ms)),
+            },
+            Self::ChecksRestored {
+                streamer_id,
+                streamer_name,
+                occurred_at_ms,
+            } => OutboxEventWire::ChecksRestored {
+                streamer_id: streamer_id.clone(),
+                streamer_name: streamer_name.clone(),
+                occurred_at_ms: *occurred_at_ms,
+                timestamp: Some(crate::database::time::ms_to_datetime(*occurred_at_ms)),
+            },
+        };
+        wire.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for OutboxEvent {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = OutboxEventWire::deserialize(deserializer)?;
+        Ok(match wire {
+            OutboxEventWire::StreamOnline {
+                streamer_id,
+                streamer_name,
+                session_id,
+                title,
+                category,
+                started_at_ms,
+                kind,
+            } => Self::StreamOnline {
+                streamer_id,
+                streamer_name,
+                session_id,
+                title,
+                category,
+                started_at_ms,
+                kind,
+            },
+            OutboxEventWire::StreamOffline {
+                streamer_id,
+                streamer_name,
+                session_id,
+                duration_secs,
+                ended_at_ms,
+            } => Self::StreamOffline {
+                streamer_id,
+                streamer_name,
+                session_id,
+                duration_secs,
+                ended_at_ms,
+            },
+            OutboxEventWire::FatalError {
+                streamer_id,
+                streamer_name,
+                error_type,
+                message,
+                new_state,
+                occurred_at_ms,
+                ..
+            } => Self::FatalError {
+                streamer_id,
+                streamer_name,
+                error_type,
+                message,
+                new_state,
+                occurred_at_ms,
+            },
+            OutboxEventWire::ChecksFailing {
+                streamer_id,
+                streamer_name,
+                platform,
+                last_error,
+                consecutive_errors,
+                occurred_at_ms,
+                ..
+            } => Self::ChecksFailing {
+                streamer_id,
+                streamer_name,
+                platform,
+                last_error,
+                consecutive_errors,
+                occurred_at_ms,
+            },
+            OutboxEventWire::ChecksRestored {
+                streamer_id,
+                streamer_name,
+                occurred_at_ms,
+                ..
+            } => Self::ChecksRestored {
+                streamer_id,
+                streamer_name,
+                occurred_at_ms,
+            },
+        })
+    }
 }
 
 /// Whether `StartOrResumeSession` created a fresh row or reused an active one.

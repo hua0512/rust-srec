@@ -7,6 +7,7 @@ use sqlx::{Row, SqliteConnection, SqlitePool};
 
 use crate::Result;
 use crate::monitor::MonitorEvent;
+use crate::recorder::OutboxEvent;
 
 /// Transactional operations for monitor event outbox.
 ///
@@ -45,6 +46,33 @@ impl MonitorOutboxTxOps {
         .bind(event_type)
         .bind(payload)
         .bind(crate::database::time::now_ms())
+        .execute(tx)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Enqueue a typed notification-only [`OutboxEvent`] within a transaction,
+    /// using the transaction's exact millisecond timestamp.
+    pub async fn enqueue_outbox_event(
+        tx: &mut SqliteConnection,
+        streamer_id: Option<&str>,
+        event: &OutboxEvent,
+        created_at_ms: i64,
+    ) -> Result<()> {
+        let payload = serde_json::to_string(event)
+            .map_err(|e| crate::Error::Other(format!("Failed to serialize outbox event: {}", e)))?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO monitor_event_outbox (streamer_id, event_type, payload, created_at)
+            VALUES (?, ?, ?, ?)
+            "#,
+        )
+        .bind(streamer_id)
+        .bind(event.event_type())
+        .bind(payload)
+        .bind(created_at_ms)
         .execute(tx)
         .await?;
 
@@ -91,7 +119,7 @@ impl MonitorOutboxOps {
     pub async fn fetch_undelivered(pool: &SqlitePool, limit: i32) -> Result<Vec<OutboxEntry>> {
         let rows = sqlx::query(
             r#"
-            SELECT id, payload, created_at, attempts
+            SELECT id, streamer_id, event_type, payload, created_at, attempts
             FROM monitor_event_outbox
             WHERE delivered_at IS NULL
             ORDER BY id
@@ -106,6 +134,8 @@ impl MonitorOutboxOps {
             .into_iter()
             .map(|row| OutboxEntry {
                 id: row.get("id"),
+                streamer_id: row.get("streamer_id"),
+                event_type: row.get("event_type"),
                 payload: row.get("payload"),
                 created_at: row.get("created_at"),
                 attempts: row.get("attempts"),
@@ -187,6 +217,8 @@ impl MonitorOutboxOps {
 /// An entry from the outbox table.
 pub struct OutboxEntry {
     pub id: i64,
+    pub streamer_id: Option<String>,
+    pub event_type: String,
     pub payload: String,
     pub created_at: i64,
     pub attempts: i64,

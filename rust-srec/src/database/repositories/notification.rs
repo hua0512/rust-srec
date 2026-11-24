@@ -323,11 +323,18 @@ impl NotificationRepository for SqlxNotificationRepository {
     }
 
     async fn add_event_log(&self, entry: &NotificationEventLogDbModel) -> Result<()> {
+        // Resolve the foreign-key column against `streamers` atomically so
+        // replaying an event after a streamer row is physically deleted stores
+        // NULL in the FK column while preserving the original IDs in `payload`.
         sqlx::query(
             r#"
             INSERT INTO notification_event_log (
                 id, event_type, priority, payload, streamer_id, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
+            ) VALUES (
+                ?, ?, ?, ?,
+                (SELECT id FROM streamers WHERE id = ?),
+                ?
+            )
             "#,
         )
         .bind(&entry.id)

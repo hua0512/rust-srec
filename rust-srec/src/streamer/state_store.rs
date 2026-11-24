@@ -156,6 +156,15 @@ pub struct CommittedStreamerState {
 }
 
 impl CommittedStreamerState {
+    /// Return the latest published metadata snapshot for `id`, if cached.
+    pub fn get_streamer(&self, id: &str) -> Option<Arc<StreamerMetadata>> {
+        let _publication = self.cache.publication.read();
+        self.cache
+            .metadata
+            .get(id)
+            .map(|entry| Arc::clone(entry.value()))
+    }
+
     pub(crate) fn new(writer: Arc<CommittedWriter>, broadcaster: ConfigEventBroadcaster) -> Self {
         Self {
             writer,

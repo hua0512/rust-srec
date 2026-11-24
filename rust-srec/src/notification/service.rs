@@ -16,7 +16,7 @@ use dashmap::DashMap;
 use jiff::Timestamp;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{Semaphore, SemaphorePermit, broadcast, mpsc};
+use tokio::sync::{Semaphore, SemaphorePermit, broadcast, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -174,6 +174,66 @@ struct ChannelDeliveryState {
     last_error: Option<String>,
 }
 
+/// Error returned by [`NotificationService::deliver_durable`].
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum DurableDeliveryError {
+    /// The notification service is shutting down or was cancelled before all
+    /// subscribed channels settled. The caller must keep the outbox row
+    /// undelivered for replay on the next startup.
+    #[error("notification service is shutting down")]
+    TransientShuttingDown,
+    /// A durable persistence step (such as recording a dead-letter entry in
+    /// SQLite) failed transiently so settlement cannot be confirmed yet.
+    #[error("durable notification settlement failed: {0}")]
+    Transient(String),
+}
+
+#[derive(Clone)]
+struct DurableSettlement {
+    inner: Arc<parking_lot::Mutex<DurableSettlementState>>,
+}
+
+struct DurableSettlementState {
+    sender: Option<oneshot::Sender<std::result::Result<(), DurableDeliveryError>>>,
+    dead_letter_error: Option<String>,
+}
+
+impl DurableSettlement {
+    fn new(sender: oneshot::Sender<std::result::Result<(), DurableDeliveryError>>) -> Self {
+        Self {
+            inner: Arc::new(parking_lot::Mutex::new(DurableSettlementState {
+                sender: Some(sender),
+                dead_letter_error: None,
+            })),
+        }
+    }
+
+    fn record_dead_letter_error(&self, error: String) {
+        let mut guard = self.inner.lock();
+        if guard.dead_letter_error.is_none() {
+            guard.dead_letter_error = Some(error);
+        }
+    }
+
+    fn settle_completed(&self) {
+        let mut guard = self.inner.lock();
+        let outcome = match guard.dead_letter_error.take() {
+            Some(err) => Err(DurableDeliveryError::Transient(err)),
+            None => Ok(()),
+        };
+        if let Some(tx) = guard.sender.take() {
+            let _ = tx.send(outcome);
+        }
+    }
+
+    fn settle_err(&self, err: DurableDeliveryError) {
+        let mut guard = self.inner.lock();
+        if let Some(tx) = guard.sender.take() {
+            let _ = tx.send(Err(err));
+        }
+    }
+}
+
 /// A notification pending delivery.
 #[derive(Clone)]
 struct PendingNotification {
@@ -188,10 +248,32 @@ struct PendingNotification {
     retry_generation: u64,
     retry_cancel: CancellationToken,
     next_retry_at: Option<Timestamp>,
+    /// Present for durable deliveries that must never be evicted under queue
+    /// pressure and must acknowledge only after every target delivers or
+    /// persists to the dead-letter store.
+    durable_settled: Option<DurableSettlement>,
 }
 
 impl PendingNotification {
     fn new(id: u64, event: NotificationEvent, targets: Vec<Arc<RuntimeChannel>>) -> Self {
+        Self::with_durable(id, event, targets, None)
+    }
+
+    fn new_durable(
+        id: u64,
+        event: NotificationEvent,
+        targets: Vec<Arc<RuntimeChannel>>,
+        settlement: DurableSettlement,
+    ) -> Self {
+        Self::with_durable(id, event, targets, Some(settlement))
+    }
+
+    fn with_durable(
+        id: u64,
+        event: NotificationEvent,
+        targets: Vec<Arc<RuntimeChannel>>,
+        durable_settled: Option<DurableSettlement>,
+    ) -> Self {
         let mut channel_state = HashMap::new();
         for channel in &targets {
             channel_state
@@ -214,6 +296,7 @@ impl PendingNotification {
             retry_generation: 0,
             retry_cancel: CancellationToken::new(),
             next_retry_at: None,
+            durable_settled,
         }
     }
 }
@@ -437,16 +520,21 @@ impl NotificationService {
         // Capacity inspection, oldest selection and insertion form one admission.
         // Delivery may remove entries concurrently, but cannot add capacity.
         let _admission = self.queue_admission.lock();
-        if self.config.max_queue_size == 0 {
+        let is_durable = pending.durable_settled.is_some();
+        if !is_durable && self.config.max_queue_size == 0 {
             return false;
         }
-        if self.pending_queue.len() >= self.config.max_queue_size {
-            let oldest_id = self
+        if self.config.max_queue_size > 0 && self.pending_queue.len() >= self.config.max_queue_size
+        {
+            // Durable entries carrying a settlement receipt are never evicted
+            // when the queue reaches capacity.
+            let oldest_evictable_id = self
                 .pending_queue
                 .iter()
+                .filter(|entry| entry.durable_settled.is_none())
                 .min_by_key(|entry| (entry.created_at, *entry.key()))
                 .map(|entry| *entry.key());
-            if let Some(oldest_id) = oldest_id
+            if let Some(oldest_id) = oldest_evictable_id
                 && let Some((_, evicted)) = self.pending_queue.remove(&oldest_id)
             {
                 evicted.retry_cancel.cancel();
@@ -454,6 +542,12 @@ impl NotificationService {
                     notification_id = oldest_id,
                     "Notification queue full, dropping oldest notification"
                 );
+            } else if !is_durable {
+                warn!(
+                    notification_id = id,
+                    "Notification queue full of durable entries, dropping non-durable notification"
+                );
+                return false;
             }
         }
         self.pending_queue.insert(id, pending);
@@ -466,6 +560,180 @@ impl NotificationService {
             return Ok(());
         };
         self.notify_admitted(event).await
+    }
+
+    /// Deliver an event with at-least-once durable settlement semantics.
+    ///
+    /// Returns `Ok(())` only when notifications are disabled, no subscribed
+    /// channels match the event, or every subscribed channel has either
+    /// succeeded or persisted its terminal failure into
+    /// `notification_dead_letter`. Returns
+    /// [`DurableDeliveryError::TransientShuttingDown`] if the service is
+    /// shutting down or cancelled before settlement completes, ensuring the
+    /// caller retains the durable outbox row for replay.
+    pub async fn deliver_durable(
+        &self,
+        event: NotificationEvent,
+    ) -> std::result::Result<(), DurableDeliveryError> {
+        let streamer_id_fk = event.streamer_id().map(str::to_owned);
+        self.deliver_durable_inner(event, streamer_id_fk).await
+    }
+
+    /// Outbox-aware variant of [`Self::deliver_durable`] where the outbox row's
+    /// foreign-key `streamer_id` column may already have been cleared to `NULL`
+    /// after the streamer row was physically deleted.
+    ///
+    /// When `outbox_streamer_id` is `None`, the `notification_event_log`
+    /// foreign-key column is written as `NULL` while the JSON `payload` keeps
+    /// the original `streamer_id` and `streamer_name` embedded in `event`.
+    pub async fn deliver_durable_for_outbox(
+        &self,
+        event: NotificationEvent,
+        outbox_streamer_id: Option<&str>,
+    ) -> std::result::Result<(), DurableDeliveryError> {
+        let streamer_id_fk = outbox_streamer_id
+            .filter(|id| !id.is_empty())
+            .and_then(|id| event.streamer_id().map(|_| id.to_owned()));
+        self.deliver_durable_inner(event, streamer_id_fk).await
+    }
+
+    async fn deliver_durable_inner(
+        &self,
+        event: NotificationEvent,
+        streamer_id_fk: Option<String>,
+    ) -> std::result::Result<(), DurableDeliveryError> {
+        if self.cancellation_token.is_cancelled() {
+            return Err(DurableDeliveryError::TransientShuttingDown);
+        }
+
+        let permit = tokio::select! {
+            biased;
+            _ = self.cancellation_token.cancelled() => {
+                return Err(DurableDeliveryError::TransientShuttingDown);
+            }
+            permit = self.dispatch_permits.acquire() => {
+                permit.map_err(|_| DurableDeliveryError::TransientShuttingDown)?
+            }
+        };
+
+        if self.cancellation_token.is_cancelled() {
+            return Err(DurableDeliveryError::TransientShuttingDown);
+        }
+
+        if !self.config.enabled {
+            return Ok(());
+        }
+
+        let _ = self.event_tx.send(event.clone());
+
+        let event_log_id = Uuid::new_v4().to_string();
+        if let Some(repo) = self.notification_repo.as_ref().cloned() {
+            let entry = NotificationEventLogDbModel {
+                id: event_log_id.clone(),
+                event_type: event.event_type().to_string(),
+                priority: event.priority().as_int() as i32,
+                payload: serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string()),
+                streamer_id: streamer_id_fk,
+                created_at: event.timestamp().as_millisecond(),
+            };
+            if let Err(e) = repo.add_event_log(&entry).await {
+                warn!(error = %e, "Failed to persist notification event log (non-fatal)");
+            }
+        }
+
+        if self.cancellation_token.is_cancelled() {
+            return Err(DurableDeliveryError::TransientShuttingDown);
+        }
+
+        if self.web_push_service.is_some() {
+            let queued = WebPushQueuedEvent {
+                event: event.clone(),
+                event_log_id: Some(event_log_id),
+            };
+            self.enqueue_web_push(queued);
+        }
+
+        let target_channels = self.subscribed_targets_for(&event);
+        if target_channels.is_empty() {
+            if self.cancellation_token.is_cancelled() {
+                return Err(DurableDeliveryError::TransientShuttingDown);
+            }
+            return Ok(());
+        }
+
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let (settled_tx, mut settled_rx) = oneshot::channel();
+        let settlement = DurableSettlement::new(settled_tx);
+        let pending = PendingNotification::new_durable(id, event, target_channels, settlement);
+
+        if !self.enqueue_pending(id, pending) {
+            return Err(DurableDeliveryError::Transient(
+                "failed to enqueue durable notification".to_owned(),
+            ));
+        }
+
+        struct DurableQueueGuard<'a> {
+            id: u64,
+            pending_queue: &'a DashMap<u64, PendingNotification>,
+            armed: bool,
+        }
+
+        impl Drop for DurableQueueGuard<'_> {
+            fn drop(&mut self) {
+                if self.armed
+                    && let Some((_, removed)) = self.pending_queue.remove(&self.id)
+                {
+                    removed.retry_cancel.cancel();
+                }
+            }
+        }
+
+        let mut guard = DurableQueueGuard {
+            id,
+            pending_queue: &self.pending_queue,
+            armed: true,
+        };
+
+        self.process_notification(id).await;
+        // Release the pass permit before waiting across retry backoffs.
+        drop(permit);
+
+        let outcome = tokio::select! {
+            biased;
+            res = &mut settled_rx => match res {
+                Ok(outcome) => outcome,
+                Err(_) => Err(DurableDeliveryError::TransientShuttingDown),
+            },
+            _ = self.cancellation_token.cancelled() => {
+                if let Some((_, removed)) = self.pending_queue.remove(&id) {
+                    removed.retry_cancel.cancel();
+                    if let Some(s) = removed.durable_settled {
+                        s.settle_err(DurableDeliveryError::TransientShuttingDown);
+                    }
+                }
+                match settled_rx.try_recv() {
+                    Ok(outcome) => outcome,
+                    Err(_) => Err(DurableDeliveryError::TransientShuttingDown),
+                }
+            }
+        };
+
+        guard.armed = false;
+        outcome
+    }
+
+    fn subscribed_targets_for(&self, event: &NotificationEvent) -> Vec<Arc<RuntimeChannel>> {
+        let registry = self.registry.read();
+        let subscribed = registry.subscriptions_by_event.get(event.event_type());
+        registry
+            .channels
+            .iter()
+            .filter(|channel| match &channel.db_channel_id {
+                None => true,
+                Some(id) => subscribed.is_some_and(|ids| ids.contains(id)),
+            })
+            .cloned()
+            .collect()
     }
 
     /// Direct callers share the dispatch worker's pass limit. Once the service
@@ -517,19 +785,7 @@ impl NotificationService {
 
         // Queue the notification
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        let target_channels: Vec<Arc<RuntimeChannel>> = {
-            let registry = self.registry.read();
-            let subscribed = registry.subscriptions_by_event.get(event.event_type());
-            registry
-                .channels
-                .iter()
-                .filter(|channel| match &channel.db_channel_id {
-                    None => true,
-                    Some(id) => subscribed.is_some_and(|ids| ids.contains(id)),
-                })
-                .cloned()
-                .collect()
-        };
+        let target_channels = self.subscribed_targets_for(&event);
 
         if target_channels.is_empty() {
             return Ok(());

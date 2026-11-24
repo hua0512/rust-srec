@@ -1686,7 +1686,7 @@ pub enum InfraBlockReason {
 }
 
 impl InfraBlockReason {
-    fn retry_after_secs(&self) -> u64 {
+    pub(crate) fn retry_after_secs(&self) -> u64 {
         match self {
             Self::CircuitBreaker { retry_after_secs }
             | Self::OutputRootUnavailable {
@@ -1695,14 +1695,14 @@ impl InfraBlockReason {
         }
     }
 
-    fn target_state(&self) -> StreamerState {
+    pub(crate) fn target_state(&self) -> StreamerState {
         match self {
             Self::CircuitBreaker { .. } => StreamerState::TemporalDisabled,
             Self::OutputRootUnavailable { .. } => StreamerState::OutOfSpace,
         }
     }
 
-    fn last_error_override(&self) -> Option<String> {
+    pub(crate) fn last_error_override(&self) -> Option<String> {
         match self {
             Self::CircuitBreaker { .. } => None,
             Self::OutputRootUnavailable { path, io_kind, .. } => {

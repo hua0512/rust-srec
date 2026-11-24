@@ -15,8 +15,8 @@ use crate::notification::events::RenderCache;
 use crate::utils::task_supervisor::TaskSupervisor;
 
 use super::{
-    DeadLetterEntry, DeliveryStatus, NotificationService, NotificationServiceConfig,
-    PendingNotification, RuntimeChannel,
+    DeadLetterEntry, DeliveryStatus, DurableDeliveryError, DurableSettlement, NotificationService,
+    NotificationServiceConfig, PendingNotification, RuntimeChannel,
 };
 
 /// State fixed for the lifetime of one notification's delivery and shared by
@@ -39,14 +39,19 @@ struct DeliveryContext {
     retry_cancel: CancellationToken,
     task_supervisor: Arc<TaskSupervisor>,
     delivery_permits: Arc<Semaphore>,
+    durable_settled: Option<DurableSettlement>,
 }
 
 impl NotificationService {
     pub(super) async fn process_notification(&self, id: u64) {
-        let Some((channels, retry_cancel)) = self
-            .pending_queue
-            .get(&id)
-            .map(|pending| (pending.targets.clone(), pending.retry_cancel.clone()))
+        let Some((channels, retry_cancel, durable_settled)) =
+            self.pending_queue.get(&id).map(|pending| {
+                (
+                    pending.targets.clone(),
+                    pending.retry_cancel.clone(),
+                    pending.durable_settled.clone(),
+                )
+            })
         else {
             return;
         };
@@ -64,6 +69,7 @@ impl NotificationService {
                 retry_cancel,
                 task_supervisor: self.task_supervisor.clone(),
                 delivery_permits: self.delivery_permits.clone(),
+                durable_settled,
             }),
             None,
         )
@@ -79,25 +85,46 @@ impl NotificationService {
         );
 
         let supervisor = ctx.task_supervisor.clone();
-        supervisor.spawn("notification retry", async move {
+        let task_ctx = ctx.clone();
+        let spawned = supervisor.spawn("notification retry", async move {
             tokio::select! {
                 biased;
-                _ = ctx.cancellation_token.cancelled() => return,
-                _ = ctx.retry_cancel.cancelled() => return,
+                _ = task_ctx.cancellation_token.cancelled() => {
+                    if let Some(settlement) = &task_ctx.durable_settled {
+                        if let Some((_, removed)) = task_ctx.pending_queue.remove(&task_ctx.id) {
+                            removed.retry_cancel.cancel();
+                        }
+                        settlement.settle_err(DurableDeliveryError::TransientShuttingDown);
+                    }
+                    return;
+                }
+                _ = task_ctx.retry_cancel.cancelled() => {
+                    if let Some(settlement) = &task_ctx.durable_settled {
+                        settlement.settle_err(DurableDeliveryError::TransientShuttingDown);
+                    }
+                    return;
+                }
                 _ = sleep(delay) => {},
             }
 
-            let should_run = ctx
+            let should_run = task_ctx
                 .pending_queue
-                .get(&ctx.id)
+                .get(&task_ctx.id)
                 .map(|pending| pending.retry_generation == expected_generation)
                 .unwrap_or(false);
             if !should_run {
                 return;
             }
 
-            Self::process_notification_detached(ctx, Some(expected_generation)).await;
+            Self::process_notification_detached(task_ctx, Some(expected_generation)).await;
         });
+
+        if !spawned && let Some(settlement) = &ctx.durable_settled {
+            if let Some((_, removed)) = ctx.pending_queue.remove(&ctx.id) {
+                removed.retry_cancel.cancel();
+            }
+            settlement.settle_err(DurableDeliveryError::TransientShuttingDown);
+        }
     }
 
     fn calculate_retry_delay_detached(
@@ -155,6 +182,15 @@ impl NotificationService {
             return;
         };
         let _delivery_guard = delivery_lock.lock().await;
+        if let Some(settlement) = &ctx.durable_settled
+            && ctx.cancellation_token.is_cancelled()
+        {
+            if let Some((_, removed)) = pending_queue.remove(&id) {
+                removed.retry_cancel.cancel();
+            }
+            settlement.settle_err(DurableDeliveryError::TransientShuttingDown);
+            return;
+        }
         let pending_snapshot = match pending_queue.get(&id) {
             Some(pending)
                 if Arc::ptr_eq(&pending.delivery_lock, &delivery_lock)
@@ -221,6 +257,7 @@ impl NotificationService {
             while let Some((channel, result, blocked)) = tokio::select! {
                 biased;
                 _ = ctx.retry_cancel.cancelled() => None,
+                _ = ctx.cancellation_token.cancelled(), if ctx.durable_settled.is_some() => None,
                 next = deliveries.next() => next,
             } {
                 circuit_blocked |= blocked;
@@ -314,6 +351,11 @@ impl NotificationService {
                                                 error = %persist_error,
                                                 "Failed to persist dead letter entry"
                                             );
+                                            if let Some(settlement) = &ctx.durable_settled {
+                                                settlement.record_dead_letter_error(format!(
+                                                    "failed to persist dead letter entry: {persist_error}"
+                                                ));
+                                            }
                                         }
                                     }
                                     Err(serialize_error) => {
@@ -322,6 +364,11 @@ impl NotificationService {
                                             error = %serialize_error,
                                             "Failed to serialize dead letter entry"
                                         );
+                                        if let Some(settlement) = &ctx.durable_settled {
+                                            settlement.record_dead_letter_error(format!(
+                                                "failed to serialize dead letter entry: {serialize_error}"
+                                            ));
+                                        }
                                     }
                                 }
                             }
@@ -351,7 +398,20 @@ impl NotificationService {
         if !has_pending {
             if let Some((_, completed)) = pending_queue.remove(&id) {
                 completed.retry_cancel.cancel();
+                if let Some(settlement) = completed.durable_settled {
+                    settlement.settle_completed();
+                }
             }
+            return;
+        }
+
+        if let Some(settlement) = &ctx.durable_settled
+            && ctx.cancellation_token.is_cancelled()
+        {
+            if let Some((_, cancelled)) = pending_queue.remove(&id) {
+                cancelled.retry_cancel.cancel();
+            }
+            settlement.settle_err(DurableDeliveryError::TransientShuttingDown);
             return;
         }
 

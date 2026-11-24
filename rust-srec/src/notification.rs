@@ -35,12 +35,16 @@
 
 pub mod channels;
 pub mod events;
+pub mod outbox_drainer;
 pub mod service;
 pub mod web_push;
 
 pub use channels::{ChannelConfig, DiscordConfig, EmailConfig, NotificationChannel, WebhookConfig};
 pub use events::{BigoNotificationProblem, NotificationEvent, NotificationPriority};
+pub use outbox_drainer::{
+    NotificationOutboxDrainer, OutboxDrainReport, OutboxRecord, outbox_event_to_notification,
+};
 pub use service::{
-    DeadLetterEntry, NotificationChannelInstance, NotificationChannelSource, NotificationService,
-    NotificationServiceConfig, NotificationStats,
+    DeadLetterEntry, DurableDeliveryError, NotificationChannelInstance, NotificationChannelSource,
+    NotificationService, NotificationServiceConfig, NotificationStats,
 };

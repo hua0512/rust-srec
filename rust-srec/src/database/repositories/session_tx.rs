@@ -9,7 +9,9 @@ use sqlx::{Row, SqliteConnection};
 use tracing::warn;
 
 use crate::Result;
-use crate::database::models::{LiveSessionDbModel, TitleEntry};
+use crate::database::models::{
+    LiveSessionDbModel, MediaOutputDbModel, SessionSegmentDbModel, TitleEntry,
+};
 
 pub(super) mod writes;
 
@@ -20,6 +22,22 @@ pub(super) mod writes;
 pub struct SessionTxOps;
 
 impl SessionTxOps {
+    /// Insert a media output row and add its byte size to `live_sessions.total_size_bytes`.
+    pub(crate) async fn insert_media_output(
+        tx: &mut SqliteConnection,
+        output: &MediaOutputDbModel,
+    ) -> Result<()> {
+        writes::insert_media_output(tx, output).await
+    }
+
+    /// Insert a finalized video segment row into `session_segments`.
+    pub(crate) async fn insert_segment(
+        tx: &mut SqliteConnection,
+        segment: &SessionSegmentDbModel,
+    ) -> Result<()> {
+        writes::insert_segment(tx, segment).await
+    }
+
     /// Remove an output and adjust its session size in the caller's transaction.
     /// Shared by manual deletion and automatic retention; only the transaction
     /// that removed the row owns its size adjustment.

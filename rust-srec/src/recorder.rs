@@ -6,6 +6,7 @@
 
 pub mod fsm;
 pub mod ports;
+pub mod store;
 
 pub use fsm::{
     AttemptPhase, BlockedKind, DanmuSessionState, ErrorTracker, FilteredKind, FsmEffect, FsmInput,
@@ -23,3 +24,4 @@ pub use ports::{
     RetirementBounds, SessionStartDisposition, StreamOnlineKind, StreamerRuntimeView,
     VideoSegmentRecord, should_spawn_actor,
 };
+pub use store::{PostPublicationChangeSet, PostPublicationListener, RecorderStore};
