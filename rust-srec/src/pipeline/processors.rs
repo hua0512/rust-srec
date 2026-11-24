@@ -38,6 +38,6 @@ pub use rclone::RcloneProcessor;
 pub use remux::RemuxProcessor;
 pub use thumbnail::ThumbnailProcessor;
 pub use traits::{
-    ConfirmedUpload, JobLogSink, Processor, ProcessorContext, ProcessorInput, ProcessorOutput,
-    ProcessorType, UploadItemStatus, UploadResultItem,
+    ConfirmedUpload, JobLogSink, LocalFileFingerprint, Processor, ProcessorContext, ProcessorInput,
+    ProcessorOutput, ProcessorType, UploadItemStatus, UploadResultItem,
 };

@@ -42,10 +42,10 @@ pub use manager::{
 pub use manifest::{ManifestScope, ManifestSegment, PipelineInputManifest};
 pub use processors::{
     AssBurnInConfig, AssBurnInProcessor, AssMatchStrategy, BaiduPcsConfig, BaiduPcsPolicy,
-    BaiduPcsProcessor, CopyMoveConfig, CopyMoveOperation, CopyMoveProcessor, DanmakuFactoryConfig,
-    DanmakuFactoryProcessor, ExecuteCommandProcessor, Processor, ProcessorContext, ProcessorInput,
-    ProcessorOutput, ProcessorType, RcloneProcessor, RemuxProcessor, ThumbnailProcessor,
-    UploadItemStatus, UploadResultItem,
+    BaiduPcsProcessor, ConfirmedUpload, CopyMoveConfig, CopyMoveOperation, CopyMoveProcessor,
+    DanmakuFactoryConfig, DanmakuFactoryProcessor, ExecuteCommandProcessor, LocalFileFingerprint,
+    Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, RcloneProcessor,
+    RemuxProcessor, ThumbnailProcessor, UploadItemStatus, UploadResultItem,
 };
 pub use progress::{JobPhase, JobProgressSnapshot, ProgressKind, ProgressReporter};
 pub(crate) use staged_outputs::{
