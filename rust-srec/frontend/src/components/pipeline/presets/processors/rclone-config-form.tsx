@@ -192,8 +192,7 @@ export function RcloneConfigForm({
             description={
               <Trans>
                 Number of attempts per job run before failing the upload.
-                Ignored when the workflow step configures its own retry
-                attempts.
+                Ignored when the workflow step sets Attempts above 1.
               </Trans>
             }
             min={1}

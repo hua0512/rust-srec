@@ -262,10 +262,26 @@ impl CommandOutput {
     }
 
     /// Last captured error line, falling back to rclone's JSON `stats.lastError`
-    /// when no `LogLevel::Error` line was emitted.
+    /// when no `LogLevel::Error` line was emitted or when the last error line is
+    /// generic cancellation/fatal boilerplate (`context canceled` or
+    /// `Fatal error received - not attempting retries`) while stats carry the
+    /// underlying failure.
     pub fn effective_error_message(&self) -> Option<&str> {
-        self.last_error_message()
-            .or(self.last_stats_error.as_deref())
+        fn is_generic_rclone_summary(message: &str) -> bool {
+            let trimmed = message.trim();
+            trimmed.eq_ignore_ascii_case("context canceled")
+                || trimmed.eq_ignore_ascii_case("fatal error received - not attempting retries")
+        }
+
+        match (self.last_error_message(), self.last_stats_error.as_deref()) {
+            (Some(err), Some(stats_err))
+                if is_generic_rclone_summary(err) && !is_generic_rclone_summary(stats_err) =>
+            {
+                Some(stats_err)
+            }
+            (Some(err), _) => Some(err),
+            (None, stats_err) => stats_err,
+        }
     }
 }
 

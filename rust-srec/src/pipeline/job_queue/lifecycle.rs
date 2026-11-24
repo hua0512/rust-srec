@@ -16,7 +16,7 @@ use super::{
 };
 use crate::database::models::{JobFilters, JobStatus, Pagination};
 use crate::database::repositories::JobRepository;
-use crate::pipeline::processors::{UploadItemStatus, UploadResultItem};
+use crate::pipeline::processors::{ConfirmedUpload, UploadItemStatus, UploadResultItem};
 use crate::pipeline::upload_events::{UploadStatusEvent, UploadTerminalStatus};
 use crate::utils::json::{self, JsonContext};
 use crate::{Error, Result};
@@ -175,9 +175,8 @@ impl JobQueue {
         // Calculate queue wait time for this attempt (DB stores epoch millis).
         // Retried jobs record when they re-entered PENDING in `state.enqueued_at_ms`
         // so prior attempts and retry backoff are not counted as queue wait.
-        let enqueued_ms = super::parse_job_state(&db_job.state)
-            .enqueued_at_ms
-            .unwrap_or(db_job.created_at);
+        let enqueued_ms =
+            super::metadata::parse_job_enqueued_at_ms(&db_job.state).unwrap_or(db_job.created_at);
         if let Some(started_ms) = db_job.started_at {
             let wait_ms = started_ms.saturating_sub(enqueued_ms);
             db_job.queue_wait_secs = Some((wait_ms as f64 / 1000.0).max(0.0));
@@ -218,7 +217,11 @@ impl JobQueue {
             }
         };
         let has_sizes = result.input_size_bytes.is_some() || result.output_size_bytes.is_some();
-        if !new_logs.is_empty() || has_sizes {
+        let has_confirmed_uploads = db_job
+            .execution_info
+            .as_deref()
+            .is_some_and(|raw| raw.contains("confirmed_uploads"));
+        if !new_logs.is_empty() || has_sizes || has_confirmed_uploads {
             let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
                 db_job.execution_info.as_deref(),
                 JsonContext::JobField {
@@ -235,6 +238,7 @@ impl JobQueue {
             if result.output_size_bytes.is_some() {
                 exec_info.output_size_bytes = result.output_size_bytes;
             }
+            exec_info.confirmed_uploads.clear();
             match serde_json::to_string(&exec_info) {
                 Ok(execution_info) => {
                     if let Err(error) = repo
@@ -330,6 +334,8 @@ impl JobQueue {
                 None,
                 FailureMetadata::DatabaseLog,
                 &[],
+                None,
+                || {},
             )
             .await?;
         if outcome == JobFailureOutcome::Transitioned {
@@ -353,6 +359,8 @@ impl JobQueue {
                 None,
                 FailureMetadata::DatabaseLog,
                 &[],
+                None,
+                || {},
             )
             .await?;
         if outcome == JobFailureOutcome::Transitioned {
@@ -375,6 +383,8 @@ impl JobQueue {
             None,
             FailureMetadata::Preserve,
             &[],
+            None,
+            || {},
         )
         .await
     }
@@ -393,6 +403,8 @@ impl JobQueue {
             None,
             FailureMetadata::Preserve,
             &[],
+            None,
+            || {},
         )
         .await
     }
@@ -420,6 +432,8 @@ impl JobQueue {
                 processor_name,
                 FailureMetadata::DatabaseLog,
                 uploads,
+                None,
+                || {},
             )
             .await?;
         if outcome == JobFailureOutcome::Transitioned {
@@ -428,6 +442,7 @@ impl JobQueue {
         Ok(outcome)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn fail_attempt_with_step_info(
         &self,
         job_id: &str,
@@ -436,6 +451,8 @@ impl JobQueue {
         retry_after: Option<Timestamp>,
         processor_name: Option<&str>,
         uploads: &[UploadResultItem],
+        confirmed_uploads: Option<&HashMap<String, ConfirmedUpload>>,
+        on_transitioned: impl FnOnce(),
     ) -> Result<JobFailureOutcome> {
         let outcome = self
             .fail_internal(
@@ -446,6 +463,8 @@ impl JobQueue {
                 processor_name,
                 FailureMetadata::DatabaseLog,
                 uploads,
+                confirmed_uploads,
+                on_transitioned,
             )
             .await?;
         if outcome == JobFailureOutcome::Transitioned {
@@ -531,6 +550,20 @@ impl JobQueue {
     /// Retry a failed or cancelled job.
     /// Returns error if job is not in a retryable terminal status.
     pub async fn retry_job(&self, id: &str) -> Result<Job> {
+        self.retry_job_with_hook(id, || {}).await
+    }
+
+    /// Retry a failed or cancelled job, invoking `on_requeued` while still
+    /// holding `attempt_gate` exclusively and before waking workers. Callers
+    /// that broadcast `PipelineEvent::JobEnqueued` use this so the enqueue
+    /// event is strictly ordered after the prior attempt's failure event and
+    /// before the retried attempt can be claimed or completed, without holding
+    /// the write lease across the post-update row read.
+    pub(crate) async fn retry_job_with_hook(
+        &self,
+        id: &str,
+        on_requeued: impl FnOnce(),
+    ) -> Result<Job> {
         let attempt_lease = self.attempt_gate.write().await;
         self.job_repository.reset_job_for_retry(id).await?;
 
@@ -541,6 +574,7 @@ impl JobQueue {
         self.jobs_cache.remove(id);
 
         self.depth.fetch_add(1, Ordering::SeqCst);
+        on_requeued();
         drop(attempt_lease);
         self.wake_workers();
 
@@ -945,6 +979,7 @@ impl JobQueue {
         job_id: &str,
         processor_name: Option<&str>,
         log_entry: &JobLogEntry,
+        confirmed_uploads: Option<&HashMap<String, ConfirmedUpload>>,
     ) -> Result<()> {
         let exec_info_str = repo.get_job_execution_info(job_id).await?;
         let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
@@ -958,6 +993,9 @@ impl JobQueue {
 
         if let Some(name) = processor_name {
             exec_info.current_processor = Some(name.to_string());
+        }
+        if let Some(confirmed) = confirmed_uploads {
+            exec_info.confirmed_uploads = confirmed.clone();
         }
 
         extend_logs_capped(&mut exec_info, std::slice::from_ref(log_entry));
@@ -986,12 +1024,14 @@ impl JobQueue {
         processor_name: Option<&str>,
         metadata: FailureMetadata,
         uploads: &[UploadResultItem],
+        confirmed_uploads: Option<&HashMap<String, ConfirmedUpload>>,
+        on_transitioned: impl FnOnce(),
     ) -> Result<JobFailureOutcome> {
         let log_entry = JobLogEntry::error(format!("Job failed: {}", error));
 
         // The failure write can make a retry due at once. `retry_job` needs the
         // exclusive lease, so it cannot hand the job to a successor attempt
-        // before the cleanup below has removed this attempt's tracking.
+        // before the cleanup and event notification below complete.
         let attempt_lease = self.attempt_gate.read().await;
         if let Some(attempt) = expected_attempt {
             let owns_active = self
@@ -1043,6 +1083,7 @@ impl JobQueue {
                     job_id,
                     processor_name,
                     &log_entry,
+                    confirmed_uploads,
                 )
                 .await
         {
@@ -1121,6 +1162,8 @@ impl JobQueue {
                 error: (status == UploadTerminalStatus::Failed).then(|| error.to_string()),
             });
         }
+        on_transitioned();
+        drop(attempt_lease);
         Ok(JobFailureOutcome::Transitioned)
     }
 }

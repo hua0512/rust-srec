@@ -204,6 +204,13 @@ pub struct ProcessorContext {
     /// Records staged temporary files so a restart can list what an
     /// interrupted attempt left behind.
     pub(crate) staged_outputs: StagedOutputRecorder,
+    /// Per-file `local_path -> ConfirmedUpload` outcomes already confirmed as
+    /// `COMPLETED` by an earlier attempt of this job and bound to the
+    /// destination account. Upload processors use this on retries so
+    /// previously uploaded files still on disk are neither re-uploaded nor
+    /// downgraded to `Skipped`, and remain eligible for source cleanup after
+    /// full batch success only when the active account still matches.
+    pub prior_completed_uploads: std::collections::HashMap<String, ConfirmedUpload>,
 }
 
 #[derive(Clone)]
@@ -249,6 +256,7 @@ impl ProcessorContext {
             has_step_retry: false,
             step_timeout: None,
             staged_outputs: StagedOutputRecorder::default(),
+            prior_completed_uploads: std::collections::HashMap::new(),
         }
     }
 
@@ -267,6 +275,7 @@ impl ProcessorContext {
             has_step_retry: false,
             step_timeout: None,
             staged_outputs: StagedOutputRecorder::default(),
+            prior_completed_uploads: std::collections::HashMap::new(),
         }
     }
 
@@ -294,6 +303,16 @@ impl ProcessorContext {
         self
     }
 
+    /// Attach per-file uploads confirmed by earlier attempts of this job,
+    /// bound to the destination account that received them.
+    pub fn with_prior_completed_uploads(
+        mut self,
+        uploads: std::collections::HashMap<String, ConfirmedUpload>,
+    ) -> Self {
+        self.prior_completed_uploads = uploads;
+        self
+    }
+
     /// A context for a command whose output must not reach the job log, such
     /// as a probe that prints account details. Progress, cancellation and the
     /// retry flag are shared with `self`; entries sent to the returned
@@ -317,6 +336,7 @@ impl ProcessorContext {
             has_step_retry: self.has_step_retry,
             step_timeout: self.step_timeout,
             staged_outputs: self.staged_outputs.clone(),
+            prior_completed_uploads: self.prior_completed_uploads.clone(),
         }
     }
 
@@ -339,6 +359,41 @@ impl ProcessorContext {
     pub fn error(&self, message: impl Into<String>) {
         self.log(JobLogEntry::error(message));
     }
+}
+
+/// Content and metadata snapshot of a local file at the time it was uploaded,
+/// used to verify that the file on disk has not been replaced or modified
+/// before reusing a prior upload confirmation or removing the source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LocalFileFingerprint {
+    pub size_bytes: u64,
+    pub modified_secs: i64,
+    pub modified_subsec_nanos: u32,
+    /// Platform file identity (`(dev, ino)` on Unix, `(volume_serial, file_id)`
+    /// on Windows) when available; detects atomic replacement even when size
+    /// and modification time are preserved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_id: Option<(u64, u64)>,
+    /// Kernel-maintained inode/file change time (Unix `ctime`, Windows NTFS
+    /// `ChangeTime`) as `(secs, subsec_nanos)` when available; advances on any
+    /// write, replacement, or timestamp reset (`utimes` / `SetFileTime`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change_time: Option<(i64, u32)>,
+    /// SHA-256 content digest (full file up to 4 MiB; head, middle, and tail
+    /// 64 KiB slices plus length for larger files), catching same-size content
+    /// edits even on filesystems without inode or change-time tracking.
+    pub content_sha256: [u8; 32],
+}
+
+/// A per-file upload confirmed as `COMPLETED` by an earlier attempt of the
+/// same job, bound to the destination account (`account_uid`) and local file
+/// version (`fingerprint`) so retries never skip a transfer or delete a local
+/// source after an account switch or file replacement.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfirmedUpload {
+    pub remote_path: String,
+    pub account_uid: u64,
+    pub fingerprint: LocalFileFingerprint,
 }
 
 /// Terminal outcome of one uploaded file within an upload job.
@@ -413,6 +468,12 @@ pub struct ProcessorOutput {
     /// Per-file upload results. Filled only by upload processors; the queue
     /// persists these to `upload_records` when the job completes.
     pub uploads: Vec<UploadResultItem>,
+    /// Per-file `local_path -> ConfirmedUpload` entries verified against an
+    /// active destination account in this attempt, persisted on partial
+    /// failure so retries of processors that opt in via
+    /// [`Processor::carries_forward_completed_uploads`] can skip already
+    /// uploaded files safely.
+    pub confirmed_uploads: std::collections::HashMap<String, ConfirmedUpload>,
     /// Execution logs captured during processing.
     pub logs: Vec<JobLogEntry>,
     /// True when every remaining failure in `failed_inputs` is permanent and
@@ -527,6 +588,12 @@ pub trait Processor: Send + Sync {
     /// job per input; a multi-input DAG step job is failed instead, because a step must not
     /// complete more than once.
     fn supports_batch_input(&self) -> bool {
+        false
+    }
+
+    /// Whether retries of this processor consume prior per-file
+    /// [`ConfirmedUpload`] state carried in [`ProcessorContext`].
+    fn carries_forward_completed_uploads(&self) -> bool {
         false
     }
 }

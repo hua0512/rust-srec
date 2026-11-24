@@ -1590,13 +1590,146 @@ async fn step_retry_defers_rclone_retries_to_workflow_policy() {
     assert!(mkdir_runner.commands().is_empty());
 }
 
+#[test]
+fn classify_rclone_diagnostics_ignores_quoted_paths_and_respects_progress() {
+    // Reproduced rclone 1.76.0 WebDAV error: destination path contains "Permission Denied"
+    // while the real cause is a transient connection refusal.
+    assert_eq!(
+        classify_rclone_diagnostics(
+            Some(1),
+            false,
+            [
+                r#"Failed to create file system for "webdav:/Permission Denied": Propfind "http://127.0.0.1:12345/Permission%20Denied": dial tcp 127.0.0.1:12345: connect: connection refused"#,
+            ],
+            false,
+        ),
+        RcloneFailureClass::Transient
+    );
+    assert_eq!(
+        classify_rclone_diagnostics(
+            Some(1),
+            false,
+            [
+                r#"couldn't list directory: Propfind "http://127.0.0.1:12345/Permission Denied": dial tcp 127.0.0.1:12345: connect: connection refused"#,
+            ],
+            false,
+        ),
+        RcloneFailureClass::Transient
+    );
+    assert_eq!(
+        classify_rclone_diagnostics(
+            Some(1),
+            false,
+            [
+                r#"Failed to create file system for "review_webdav:/name ERROR : Permission Denied": dial tcp 127.0.0.1:9: connect: connection refused"#,
+            ],
+            false,
+        ),
+        RcloneFailureClass::Transient
+    );
+    assert_eq!(
+        classify_rclone_diagnostics(
+            Some(1),
+            false,
+            [
+                r#"2026/04/12 10:20:30 ERROR : Failed to create file system for "review_webdav:/name ERROR : Permission Denied": Propfind "http://127.0.0.1:9/a: Failed to copy: Permission Denied": dial tcp 127.0.0.1:9: connect: connection refused"#,
+            ],
+            false,
+        ),
+        RcloneFailureClass::Transient
+    );
+    assert_eq!(
+        classify_rclone_diagnostics(
+            Some(1),
+            false,
+            [r#"open "/mnt/videos/clip.mp4": permission denied"#],
+            false,
+        ),
+        RcloneFailureClass::Permanent
+    );
+    assert_eq!(
+        classify_rclone_diagnostics(
+            Some(2),
+            false,
+            [r#"invalid argument "bogus" for "--bwlimit" flag"#],
+            false,
+        ),
+        RcloneFailureClass::Permanent
+    );
+    assert_eq!(
+        classify_rclone_diagnostics(
+            Some(1),
+            false,
+            [
+                r#"Failed to create file system for "gdrive:/videos": oauth2: cannot fetch token: {"error":"invalid_grant"}"#,
+            ],
+            false,
+        ),
+        RcloneFailureClass::Permanent
+    );
+    // `--max-transfer` (exit 8) and `--max-duration` (exit 10 / `fatalError` with
+    // rclone's real `max transfer duration reached as set by --max-duration`
+    // wording) stay retryable when a batch move made progress, and fail
+    // permanently when a pass made no progress.
+    assert_eq!(
+        classify_rclone_diagnostics(Some(8), false, ["Max transfer limit reached"], true),
+        RcloneFailureClass::RateLimited
+    );
+    assert_eq!(
+        classify_rclone_diagnostics(Some(8), false, ["Max transfer limit reached"], false),
+        RcloneFailureClass::Permanent
+    );
+    assert_eq!(
+        classify_rclone_diagnostics(
+            Some(10),
+            true,
+            [
+                "Fatal error received - not attempting retries",
+                "max transfer duration reached as set by --max-duration",
+            ],
+            true,
+        ),
+        RcloneFailureClass::RateLimited
+    );
+    assert_eq!(
+        classify_rclone_diagnostics(
+            Some(10),
+            true,
+            [
+                "Fatal error received - not attempting retries",
+                "max transfer duration reached as set by --max-duration",
+            ],
+            false,
+        ),
+        RcloneFailureClass::Permanent
+    );
+}
+
 #[tokio::test(start_paused = true)]
 async fn rate_limit_and_permanent_failures_stop_in_run_retries_with_distinct_retryability() {
     use crate::pipeline::job_queue::JobLogEntry;
 
     struct ScriptedRunner {
+        mkdir_outputs: Mutex<VecDeque<CommandOutput>>,
         outputs: Mutex<VecDeque<(Vec<PathBuf>, CommandOutput)>>,
+        mkdir_calls: AtomicUsize,
         calls: AtomicUsize,
+    }
+
+    impl ScriptedRunner {
+        fn new(outputs: Vec<(Vec<PathBuf>, CommandOutput)>) -> Self {
+            Self {
+                mkdir_outputs: Mutex::new(VecDeque::new()),
+                outputs: Mutex::new(outputs.into()),
+                mkdir_calls: AtomicUsize::new(0),
+                calls: AtomicUsize::new(0),
+            }
+        }
+
+        fn with_mkdir_outputs(self, outputs: Vec<CommandOutput>) -> Self {
+            *self.mkdir_outputs.lock().unwrap() = outputs.into();
+            self
+        }
     }
 
     #[async_trait]
@@ -1612,13 +1745,20 @@ async fn rate_limit_and_permanent_failures_stop_in_run_retries_with_distinct_ret
                 .map(|a| a.to_string_lossy().into_owned())
                 .collect();
             if args.iter().any(|a| a == "mkdir") {
-                return Ok(CommandOutput {
-                    status: test_exit_code(0),
-                    duration: 0.0,
-                    logs: Vec::new(),
-                    fatal_error: false,
-                    last_stats_error: None,
-                });
+                self.mkdir_calls.fetch_add(1, Ordering::SeqCst);
+                let output = self
+                    .mkdir_outputs
+                    .lock()
+                    .unwrap()
+                    .pop_front()
+                    .unwrap_or_else(|| CommandOutput {
+                        status: test_exit_code(0),
+                        duration: 0.0,
+                        logs: Vec::new(),
+                        fatal_error: false,
+                        last_stats_error: None,
+                    });
+                return Ok(output);
             }
             self.calls.fetch_add(1, Ordering::SeqCst);
             let (moved, output) = self
@@ -1637,43 +1777,45 @@ async fn rate_limit_and_permanent_failures_stop_in_run_retries_with_distinct_ret
     let temp_dir = tempfile::tempdir().unwrap();
     let file_a = temp_dir.path().join("a.mp4");
     let file_b = temp_dir.path().join("b.mp4");
+    let file_c = temp_dir.path().join("c.mp4");
     tokio::fs::write(&file_a, b"a").await.unwrap();
     tokio::fs::write(&file_b, b"b").await.unwrap();
+    tokio::fs::write(&file_c, b"c").await.unwrap();
     let file_a_str = file_a.to_string_lossy().into_owned();
     let file_b_str = file_b.to_string_lossy().into_owned();
+    let file_c_str = file_c.to_string_lossy().into_owned();
 
-    // 1. Transient NewFs network errors stay retryable (not misclassified as permanent).
-    let runner = Arc::new(ScriptedRunner {
-        outputs: Mutex::new(VecDeque::from([
-            (
-                vec![],
-                CommandOutput {
-                    status: test_exit_code(1),
-                    duration: 0.0,
-                    logs: vec![JobLogEntry::error(
-                        "Failed to create file system for \"remote:/videos\": dial tcp: i/o timeout",
-                    )],
-                    fatal_error: false,
-                    last_stats_error: None,
-                },
-            ),
-            (
-                vec![],
-                CommandOutput {
-                    status: test_exit_code(0),
-                    duration: 0.0,
-                    logs: Vec::new(),
-                    fatal_error: false,
-                    last_stats_error: None,
-                },
-            ),
-        ])),
-        calls: AtomicUsize::new(0),
-    });
+    // 1. Transient NewFs network errors retry and succeed even when destination contains "Permission Denied".
+    let runner = Arc::new(ScriptedRunner::new(vec![
+        (
+            vec![],
+            CommandOutput {
+                status: test_exit_code(1),
+                duration: 0.0,
+                logs: vec![JobLogEntry::error(
+                    "Failed to create file system for \"remote:/Permission Denied\": Propfind \"http://127.0.0.1/Permission%20Denied\": dial tcp: i/o timeout",
+                )],
+                fatal_error: false,
+                last_stats_error: None,
+            },
+        ),
+        (
+            vec![],
+            CommandOutput {
+                status: test_exit_code(0),
+                duration: 0.0,
+                logs: Vec::new(),
+                fatal_error: false,
+                last_stats_error: None,
+            },
+        ),
+    ]));
     let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
     let input = ProcessorInput {
         inputs: vec![file_a_str.clone()],
-        config: Some(r#"{"destination_root":"remote:/videos","max_retries":3}"#.to_string()),
+        config: Some(
+            r#"{"destination_root":"remote:/Permission Denied","max_retries":3}"#.to_string(),
+        ),
         ..Default::default()
     };
     processor
@@ -1682,131 +1824,134 @@ async fn rate_limit_and_permanent_failures_stop_in_run_retries_with_distinct_ret
         .expect("transient NewFs timeout should retry and succeed");
     assert_eq!(runner.calls.load(Ordering::SeqCst), 2);
 
-    // 2. Rate-limit errors (including exit 7 + fatalError where the rate-limit detail only
-    //    arrived via JSON stats.lastError alongside a generic Error line, or with no Error line)
-    //    skip remaining in-run retries while staying retryable for the DAG.
-    for (exit_code, fatal_error, logs, last_stats_error, expected_in_err) in [
-        (
-            1,
-            false,
-            vec![JobLogEntry::error(
-                "googleapi: Error 403: Quota exceeded, rateLimitExceeded",
-            )],
-            None,
-            "rateLimitExceeded",
-        ),
-        (
-            7,
-            true,
-            vec![JobLogEntry::error("context canceled")],
-            Some("googleapi: Error 403: User rate limit exceeded, uploadLimitExceeded"),
-            "context canceled",
-        ),
-        (
-            7,
-            true,
-            vec![],
-            Some("googleapi: Error 403: User rate limit exceeded, uploadLimitExceeded"),
-            "uploadLimitExceeded",
-        ),
-    ] {
-        let runner = Arc::new(ScriptedRunner {
-            outputs: Mutex::new(VecDeque::from([(
-                vec![],
-                CommandOutput {
-                    status: test_exit_code(exit_code),
-                    duration: 0.0,
-                    logs,
-                    fatal_error,
-                    last_stats_error: last_stats_error.map(str::to_owned),
-                },
-            )])),
-            calls: AtomicUsize::new(0),
-        });
-        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
-        let err = processor
-            .process(&input, &ProcessorContext::noop("rate-limit"))
-            .await
-            .unwrap_err();
-        assert_eq!(runner.calls.load(Ordering::SeqCst), 1);
-        assert!(
-            !err.is_non_retryable_step_error(),
-            "rate-limit error must stay retryable for workflow backoff: {err}"
-        );
-        assert!(
-            err.to_string().contains(expected_in_err),
-            "expected {expected_in_err:?} in {err}"
-        );
-    }
-
-    // 3. Permanent errors (exit 2 usage error, exit 7 auth failure, missing config section)
-    //    stop immediately and return NonRetryablePipeline.
-    for (exit_code, fatal_error, msg) in [
-        (
-            2,
-            false,
-            "invalid argument \"bogus\" for \"--bwlimit\" flag",
-        ),
-        (7, true, "oauth2: cannot fetch token: invalid_grant"),
-        (1, false, "didn't find section in config file (\"missing\")"),
-    ] {
-        let runner = Arc::new(ScriptedRunner {
-            outputs: Mutex::new(VecDeque::from([(
-                vec![],
-                CommandOutput {
-                    status: test_exit_code(exit_code),
-                    duration: 0.0,
-                    logs: vec![JobLogEntry::error(msg)],
-                    fatal_error,
-                    last_stats_error: None,
-                },
-            )])),
-            calls: AtomicUsize::new(0),
-        });
-        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
-        let err = processor
-            .process(&input, &ProcessorContext::noop("permanent"))
-            .await
-            .unwrap_err();
-        assert_eq!(runner.calls.load(Ordering::SeqCst), 1, "{msg}");
-        assert!(
-            matches!(err, crate::Error::NonRetryablePipeline(_)),
-            "expected NonRetryablePipeline, got {err:?}"
-        );
-    }
-
-    // 4. Partial move batch with a permanent error preserves per-file results and flags non_retryable.
-    let runner = Arc::new(ScriptedRunner {
-        outputs: Mutex::new(VecDeque::from([(
-            vec![file_a.clone()],
-            CommandOutput {
-                status: test_exit_code(7),
-                duration: 0.0,
-                logs: vec![JobLogEntry::error(
-                    "oauth2: token has been expired or revoked",
-                )],
-                fatal_error: true,
-                last_stats_error: None,
-            },
-        )])),
-        calls: AtomicUsize::new(0),
-    });
+    // 2. Rate-limit via stats.lastError alongside generic `context canceled` stops in-run
+    //    retries, stays retryable for the DAG, and surfaces the actionable stats error.
+    let runner = Arc::new(ScriptedRunner::new(vec![(
+        vec![],
+        CommandOutput {
+            status: test_exit_code(7),
+            duration: 0.0,
+            logs: vec![JobLogEntry::error("context canceled")],
+            fatal_error: true,
+            last_stats_error: Some(
+                "googleapi: Error 403: User rate limit exceeded, uploadLimitExceeded".to_string(),
+            ),
+        },
+    )]));
     let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
-    let input = ProcessorInput {
-        inputs: vec![file_a_str.clone(), file_b_str.clone()],
-        config: Some(
-            r#"{"destination_root":"remote:/videos","operation":"move","max_retries":3}"#
-                .to_string(),
-        ),
-        ..Default::default()
-    };
+    let err = processor
+        .process(&input, &ProcessorContext::noop("rate-limit-stats"))
+        .await
+        .unwrap_err();
+    assert_eq!(runner.calls.load(Ordering::SeqCst), 1);
+    assert!(!err.is_non_retryable_step_error());
+    assert!(err.to_string().contains("uploadLimitExceeded"), "{err}");
+
+    // 3. Permanent mkdir failure stops after 1 attempt and returns NonRetryablePipeline.
+    let mkdir_runner = Arc::new(ScriptedRunner::new(vec![]).with_mkdir_outputs(vec![
+        CommandOutput {
+            status: test_exit_code(1),
+            duration: 0.0,
+            logs: vec![JobLogEntry::error(
+                "Failed to create file system for \"missing:/videos\": didn't find section in config file (\"missing\")",
+            )],
+            fatal_error: false,
+            last_stats_error: None,
+        },
+    ]));
+    let mkdir_processor = RcloneProcessor::with_command_runner("rclone", mkdir_runner.clone());
+    let err = mkdir_processor
+        .process(
+            &ProcessorInput {
+                inputs: vec![file_a_str.clone()],
+                config: Some(
+                    r#"{"destination_root":"missing:/videos","max_retries":3}"#.to_string(),
+                ),
+                ..Default::default()
+            },
+            &ProcessorContext::noop("mkdir-permanent"),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(mkdir_runner.mkdir_calls.load(Ordering::SeqCst), 1);
+    assert!(matches!(err, crate::Error::NonRetryablePipeline(_)));
+
+    // 4. Partial move batch hitting rclone's real `--max-duration` cutoff
+    //    (exit 10, `fatalError: true`, generic fatal summary in Error log,
+    //    specific cutoff in `stats.lastError`) after moving a file stays
+    //    retryable and reports the specific cutoff message, whereas a partial
+    //    move hitting a permanent auth error flags `non_retryable`.
+    let runner = Arc::new(ScriptedRunner::new(vec![(
+        vec![file_a.clone()],
+        CommandOutput {
+            status: test_exit_code(10),
+            duration: 0.0,
+            logs: vec![JobLogEntry::error(
+                "Fatal error received - not attempting retries",
+            )],
+            fatal_error: true,
+            last_stats_error: Some(
+                "max transfer duration reached as set by --max-duration".to_string(),
+            ),
+        },
+    )]));
+    let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
     let output = processor
-        .process(&input, &ProcessorContext::noop("partial-permanent"))
+        .process(
+            &ProcessorInput {
+                inputs: vec![file_a_str, file_b_str.clone(), file_c_str.clone()],
+                config: Some(
+                    r#"{"destination_root":"remote:/videos","operation":"move","max_retries":3}"#
+                        .to_string(),
+                ),
+                ..Default::default()
+            },
+            &ProcessorContext::noop("partial-max-duration"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(runner.calls.load(Ordering::SeqCst), 1);
+    assert!(!output.non_retryable);
+    assert_eq!(output.succeeded_inputs.len(), 1);
+    assert_eq!(output.failed_inputs.len(), 2);
+    assert!(
+        output.failed_inputs[0]
+            .1
+            .contains("max transfer duration reached as set by --max-duration"),
+        "{:?}",
+        output.failed_inputs
+    );
+
+    let runner = Arc::new(ScriptedRunner::new(vec![(
+        vec![file_b.clone()],
+        CommandOutput {
+            status: test_exit_code(7),
+            duration: 0.0,
+            logs: vec![JobLogEntry::error(
+                "oauth2: token has been expired or revoked",
+            )],
+            fatal_error: true,
+            last_stats_error: None,
+        },
+    )]));
+    let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+    let output = processor
+        .process(
+            &ProcessorInput {
+                inputs: vec![file_b_str.clone(), file_c_str.clone()],
+                config: Some(
+                    r#"{"destination_root":"remote:/videos","operation":"move","max_retries":3}"#
+                        .to_string(),
+                ),
+                ..Default::default()
+            },
+            &ProcessorContext::noop("partial-permanent"),
+        )
         .await
         .unwrap();
     assert_eq!(runner.calls.load(Ordering::SeqCst), 1);
     assert!(output.non_retryable);
-    assert_eq!(output.succeeded_inputs, vec![file_a_str]);
+    assert_eq!(output.succeeded_inputs, vec![file_b_str]);
     assert_eq!(output.failed_inputs.len(), 1);
-    assert_eq!(output.failed_inputs[0].0, file_b_str);
+    assert_eq!(output.failed_inputs[0].0, file_c_str);
 }

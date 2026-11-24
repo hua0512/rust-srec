@@ -290,6 +290,13 @@ impl PipelineNotifications {
                     timestamp: now,
                 })
             }
+            PipelineEvent::JobRetryScheduled { job_id } => {
+                // Drop cached enqueue metadata while the job waits in backoff so
+                // cancelling or deleting it never leaks entries; the next retry
+                // re-emits JobEnqueued before starting.
+                self.job_to_streamer.remove(&job_id);
+                None
+            }
             PipelineEvent::QueueWarning { depth, threshold } => {
                 Some(NotificationEvent::PipelineQueueWarning {
                     queue_depth: depth,

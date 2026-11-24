@@ -753,9 +753,13 @@ struct RcloneProgressDiagnostics {
     fatal_error: bool,
 }
 
+// Stack-only return value immediately matched and consumed by
+// `consume_rclone_stderr` (never stored in collections); avoid boxing
+// `JobProgressSnapshot` on every 1-second stats tick.
+#[allow(clippy::large_enum_variant)]
 enum ParsedRcloneLine {
     Progress {
-        snapshot: Box<JobProgressSnapshot>,
+        snapshot: JobProgressSnapshot,
         diagnostics: Option<RcloneProgressDiagnostics>,
     },
     Log(JobLogEntry),
@@ -772,19 +776,24 @@ fn parse_rclone_line(line: &str) -> ParsedRcloneLine {
     if trimmed.starts_with('{')
         && let Ok(parsed) = serde_json::from_str::<RcloneJsonLine>(trimmed)
     {
-        if let Some(stats) = parsed.stats {
+        if let Some(mut stats) = parsed.stats {
+            let last_error = stats.last_error.take().and_then(|msg| {
+                let trimmed = msg.trim();
+                if trimmed.is_empty() {
+                    None
+                } else if trimmed.len() == msg.len() {
+                    Some(msg)
+                } else {
+                    Some(trimmed.to_owned())
+                }
+            });
             let diagnostics = RcloneProgressDiagnostics {
                 errors: stats.errors.unwrap_or(0),
-                last_error: stats
-                    .last_error
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|msg| !msg.is_empty())
-                    .map(str::to_owned),
+                last_error,
                 fatal_error: stats.fatal_error.unwrap_or(false),
             };
             return ParsedRcloneLine::Progress {
-                snapshot: Box::new(snapshot_from_json_stats(stats)),
+                snapshot: snapshot_from_json_stats(stats),
                 diagnostics: Some(diagnostics),
             };
         }
@@ -798,7 +807,7 @@ fn parse_rclone_line(line: &str) -> ParsedRcloneLine {
 
     if let Some(snapshot) = parse_rclone_stats_line(line) {
         return ParsedRcloneLine::Progress {
-            snapshot: Box::new(snapshot),
+            snapshot,
             diagnostics: None,
         };
     }
@@ -836,35 +845,48 @@ pub(super) async fn consume_rclone_stderr<R: AsyncRead + Unpin>(
     let mut lines = CappedLines::new(reader, overlong_count);
     let mut last_error_count = 0u64;
     let mut last_error_message: Option<String> = None;
+    let mut saw_fatal_error = false;
     while let Some(line) = lines.next_line().await? {
         match parse_rclone_line(&line) {
             ParsedRcloneLine::Progress {
                 snapshot,
                 diagnostics,
             } => {
-                progress.report(*snapshot);
+                progress.report(snapshot);
                 if let Some(diag) = diagnostics {
-                    if diag.fatal_error || diag.last_error.is_some() {
-                        let mut run_state = state.lock();
-                        if diag.fatal_error {
-                            run_state.fatal_error = true;
-                        }
-                        if let Some(msg) = &diag.last_error {
-                            run_state.last_stats_error = Some(msg.clone());
-                        }
+                    // When a preset overrides `--retries > 1`, rclone resets
+                    // `stats.errors` to 0 at the start of the next internal
+                    // pass. Reset both count and last message whenever the
+                    // counter drops so a new pass is surfaced even if no zero
+                    // tick was observed before its first error.
+                    if diag.errors < last_error_count {
+                        last_error_count = 0;
+                        last_error_message = None;
                     }
+                    let fatal_flipped = diag.fatal_error && !saw_fatal_error;
                     let count_increased = diag.errors > last_error_count;
                     let message_changed =
                         diag.last_error.is_some() && diag.last_error != last_error_message;
+                    if fatal_flipped || message_changed {
+                        let mut run_state = state.lock();
+                        if fatal_flipped {
+                            saw_fatal_error = true;
+                            run_state.fatal_error = true;
+                        }
+                        if message_changed && let Some(msg) = &diag.last_error {
+                            run_state.last_stats_error = Some(msg.clone());
+                        }
+                    }
                     if count_increased || message_changed {
-                        last_error_count = last_error_count.max(diag.errors);
+                        last_error_count = diag.errors;
                         let message = if let Some(msg) = diag.last_error {
-                            last_error_message = Some(msg.clone());
-                            if last_error_count > 0 {
+                            let formatted = if last_error_count > 0 {
                                 format!("rclone transfer error (#{last_error_count}): {msg}")
                             } else {
                                 format!("rclone transfer error: {msg}")
-                            }
+                            };
+                            last_error_message = Some(msg);
+                            formatted
                         } else {
                             format!("rclone reported {last_error_count} transfer error(s)")
                         };
@@ -1222,8 +1244,6 @@ mod tests {
         assert_eq!(entry.message, "plain log line");
         assert!(log_rx.try_recv().is_err());
 
-        assert!(!state.lock().fatal_error);
-        assert_eq!(state.lock().last_stats_error, None);
         assert_eq!(overlong.load(Ordering::Relaxed), 1);
         assert_eq!(dropped.load(Ordering::Relaxed), 0);
     }
@@ -1237,7 +1257,16 @@ mod tests {
             "\n",
             r#"{"level":"notice","stats":{"bytes":100,"totalBytes":1000,"errors":1,"lastError":"googleapi: Error 403: rateLimitExceeded","fatalError":false}}"#,
             "\n",
-            r#"{"level":"notice","stats":{"bytes":100,"totalBytes":1000,"errors":2,"lastError":"googleapi: Error 403: userRateLimitExceeded","fatalError":true}}"#,
+            r#"{"level":"notice","stats":{"bytes":100,"totalBytes":1000,"errors":2,"lastError":"googleapi: Error 403: rateLimitExceeded","fatalError":false}}"#,
+            "\n",
+            // Next pass starts directly at `errors: 1` with the same `lastError`
+            // (no intervening `errors: 0` tick observed); must still surface.
+            r#"{"level":"notice","stats":{"bytes":100,"totalBytes":1000,"errors":1,"lastError":"googleapi: Error 403: rateLimitExceeded","fatalError":false}}"#,
+            "\n",
+            // Next pass starts via an explicit `errors: 0` tick, then hits fatal.
+            r#"{"level":"notice","stats":{"bytes":0,"totalBytes":1000,"errors":0,"fatalError":false}}"#,
+            "\n",
+            r#"{"level":"notice","stats":{"bytes":100,"totalBytes":1000,"errors":1,"lastError":"googleapi: Error 403: userRateLimitExceeded","fatalError":true}}"#,
             "\n",
         );
 
@@ -1272,7 +1301,17 @@ mod tests {
                 ),
                 (
                     LogLevel::Warn,
-                    "rclone transfer error (#2): googleapi: Error 403: userRateLimitExceeded"
+                    "rclone transfer error (#2): googleapi: Error 403: rateLimitExceeded"
+                        .to_string(),
+                ),
+                (
+                    LogLevel::Warn,
+                    "rclone transfer error (#1): googleapi: Error 403: rateLimitExceeded"
+                        .to_string(),
+                ),
+                (
+                    LogLevel::Warn,
+                    "rclone transfer error (#1): googleapi: Error 403: userRateLimitExceeded"
                         .to_string(),
                 ),
             ]

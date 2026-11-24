@@ -3,14 +3,13 @@
 use dashmap::DashMap;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
-use std::collections::VecDeque;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
-use super::processors::UploadResultItem;
+use super::processors::{ConfirmedUpload, UploadResultItem};
 use super::progress::{JobProgressSnapshot, JobProgressUpdate};
 use super::upload_events::UploadStatusBroadcaster;
 use crate::database::models::JobStatus;
@@ -295,6 +294,11 @@ pub struct JobExecutionInfo {
     /// Number of ERROR lines captured.
     #[serde(default)]
     pub log_error_count: u64,
+    /// Per-file uploads confirmed against an active destination account by an
+    /// earlier attempt of this job, used by retryable uploaders that opt in via
+    /// `Processor::carries_forward_completed_uploads`.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub confirmed_uploads: HashMap<String, ConfirmedUpload>,
     /// Preserve extension fields when artifact and terminal updates rewrite this document.
     #[serde(flatten)]
     pub extra_metadata: serde_json::Map<String, serde_json::Value>,
@@ -357,9 +361,10 @@ pub struct Job {
     /// worker pool's default applies when absent.
     pub timeout_secs: Option<u64>,
     /// Whether this job's workflow step has an automatic retry policy
-    /// (`max_attempts > 1`). Upload processors defer transfer-level retries to
-    /// the workflow step instead of running their own short-backoff loop.
-    pub has_step_retry: bool,
+    /// (`max_attempts > 1`). `Some(true|false)` for workflow step jobs created
+    /// with this field, `None` for standalone jobs or pre-upgrade workflow rows
+    /// (which derive it from the stored workflow definition at execution time).
+    pub has_step_retry: Option<bool>,
     /// Epoch milliseconds when this attempt entered `PENDING` after a retry.
     /// Used so `queue_wait_secs` measures the current attempt's queue wait
     /// rather than accumulating earlier attempts and backoff intervals.
@@ -410,7 +415,7 @@ impl Job {
             retry_count: 0,
             retry_after: None,
             timeout_secs: None,
-            has_step_retry: false,
+            has_step_retry: None,
             enqueued_at_ms: None,
             pipeline_id: None,
             execution_info: None,
@@ -451,7 +456,7 @@ impl Job {
             retry_count: 0,
             retry_after: None,
             timeout_secs: None,
-            has_step_retry: false,
+            has_step_retry: None,
             enqueued_at_ms: None,
             pipeline_id,
             execution_info: None,
@@ -714,6 +719,8 @@ impl JobQueue {
             .unwrap_or_default()
     }
 
+    /// Per-file `local_path -> remote_path` outcomes recorded as `COMPLETED`
+    /// by earlier attempts of `job_id`, when upload-record persistence is wired.
     /// Install the live upload-status broadcaster. This can only be called once.
     pub(crate) fn set_upload_broadcaster(&self, broadcaster: UploadStatusBroadcaster) {
         if self.upload_broadcaster.set(broadcaster).is_err() {

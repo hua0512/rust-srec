@@ -9,16 +9,19 @@
 //! credentials.
 
 use std::collections::{HashMap, HashSet};
+use std::io::{Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tokio::process::Command;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use super::traits::{
-    Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, TimeAnchor,
-    UploadItemStatus, UploadResultItem,
+    ConfirmedUpload, LocalFileFingerprint, Processor, ProcessorContext, ProcessorInput,
+    ProcessorOutput, ProcessorType, TimeAnchor, UploadItemStatus, UploadResultItem,
 };
 #[cfg(test)]
 use super::upload_runner::{MARKER_QUEUED, MARKER_REMOTE_PATH};
@@ -190,6 +193,17 @@ trait BaiduPcsCommandRunner: Send + Sync {
         tracker: Option<Arc<UploadTracker>>,
         config_lease: &ConfigLease,
     ) -> Result<CommandOutput>;
+
+    /// Probe the active Baidu account UID under the caller's held
+    /// `config_lease`. Returns `None` when logged out (`uid == 0`) or when the
+    /// probe fails/cannot be parsed, so retry carry-forward fails closed.
+    async fn active_account_uid(
+        &self,
+        binary_path: &str,
+        config_dir: Option<&str>,
+        context: &ProcessorContext,
+        config_lease: &ConfigLease,
+    ) -> Option<u64>;
 }
 
 /// The read side of [`crate::baidupcs::cli_lock`], shared with the tasks that
@@ -239,6 +253,33 @@ impl BaiduPcsCommandRunner for ProcessBaiduPcsCommandRunner {
         })
         .await
         .map_err(|error| crate::Error::Other(format!("BaiduPCS-Go task failed: {error}")))?
+    }
+
+    async fn active_account_uid(
+        &self,
+        binary_path: &str,
+        config_dir: Option<&str>,
+        context: &ProcessorContext,
+        config_lease: &ConfigLease,
+    ) -> Option<u64> {
+        let mut cmd = crate::baidupcs::base_command(binary_path, config_dir);
+        cmd.arg("who");
+        let output = self
+            .run(cmd, &context.without_job_log(), None, config_lease)
+            .await
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let text = output
+            .logs
+            .iter()
+            .map(|entry| entry.message.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        crate::baidupcs::parse_who(&text)
+            .map(|account| account.uid)
+            .filter(|uid| *uid != 0)
     }
 }
 
@@ -373,17 +414,79 @@ impl BaiduPcsProcessor {
         Self::normalize_remote_dir(&expanded)
     }
 
-    /// Netdisk paths are always absolute and forward-slash separated,
-    /// regardless of the local OS separator.
-    fn normalize_remote_dir(raw: &str) -> String {
-        let cleaned = raw.replace('\\', "/");
-        let trimmed = cleaned.trim().trim_end_matches('/');
-        if trimmed.is_empty() {
+    /// Normalize a Netdisk path with Go `path.Clean` semantics: forward-slash
+    /// separated, leading `/`, repeated slashes and `.` collapsed, `..`
+    /// resolved, and no trailing `/` (except root `/`). Does not trim
+    /// whitespace inside path segments so applying it repeatedly is strictly
+    /// idempotent (for example `/rec/daily /` -> `/rec/daily `).
+    fn normalize_remote_path(raw: &str) -> String {
+        let mut segments: Vec<&str> = Vec::new();
+        for segment in raw.split(['/', '\\']) {
+            match segment {
+                "" | "." => {}
+                ".." => {
+                    segments.pop();
+                }
+                other => segments.push(other),
+            }
+        }
+        if segments.is_empty() {
             "/".to_string()
-        } else if trimmed.starts_with('/') {
-            trimmed.to_string()
         } else {
-            format!("/{trimmed}")
+            format!("/{}", segments.join("/"))
+        }
+    }
+
+    /// Netdisk paths are always absolute and forward-slash separated,
+    /// regardless of the local OS separator. Trims outer whitespace from the
+    /// configured destination once before cleaning.
+    fn normalize_remote_dir(raw: &str) -> String {
+        Self::normalize_remote_path(raw.trim())
+    }
+
+    /// Snapshot `(size, mtime, file_id, change_time, content_sha256)` from a
+    /// single open file handle so carry-forward, in-run retries, and source
+    /// cleanup detect both same-size/preserved-mtime replacements and in-place
+    /// content edits.
+    async fn local_file_fingerprint(path: &Path) -> Option<LocalFileFingerprint> {
+        let path = path.to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            let mut file = std::fs::File::open(&path).ok()?;
+            fingerprint_from_file(&mut file)
+        })
+        .await
+        .ok()
+        .flatten()
+    }
+
+    /// Revalidate `path` against `expected` immediately before deleting it so
+    /// a source replaced after earlier checks is never deleted.
+    async fn verify_and_remove_source(
+        path: &str,
+        expected: LocalFileFingerprint,
+        ctx: &ProcessorContext,
+    ) -> bool {
+        let path_buf = PathBuf::from(path);
+        let outcome =
+            tokio::task::spawn_blocking(move || verify_and_remove_sync(&path_buf, expected)).await;
+        match outcome {
+            Ok(VerifiedRemoval::Removed | VerifiedRemoval::AlreadyAbsent) => true,
+            Ok(VerifiedRemoval::Changed) => {
+                ctx.warn(format!(
+                    "Skipping source removal for {path}: local file changed since it was uploaded"
+                ));
+                false
+            }
+            Ok(VerifiedRemoval::Failed(error)) => {
+                warn!(path = %path, %error, "Failed to remove uploaded source");
+                ctx.warn(format!("Failed to remove uploaded source {path}: {error}"));
+                false
+            }
+            Err(error) => {
+                warn!(path = %path, %error, "Source removal task failed");
+                ctx.warn(format!("Failed to remove uploaded source {path}: {error}"));
+                false
+            }
         }
     }
 
@@ -398,7 +501,8 @@ impl BaiduPcsProcessor {
             .next()
             .filter(|name| !name.is_empty())
             .unwrap_or(local_path);
-        format!("{}/{}", remote_dir.trim_end_matches('/'), file_name)
+        let dir = Self::normalize_remote_path(remote_dir);
+        format!("{}/{}", dir.trim_end_matches('/'), file_name)
     }
 }
 
@@ -476,6 +580,10 @@ impl Processor for BaiduPcsProcessor {
     /// `upload` natively takes N local files and one remote directory, so
     /// batches run as a single invocation.
     fn supports_batch_input(&self) -> bool {
+        true
+    }
+
+    fn carries_forward_completed_uploads(&self) -> bool {
         true
     }
 
@@ -559,7 +667,15 @@ impl Processor for BaiduPcsProcessor {
             .iter()
             .map(|path| (path.clone(), Self::computed_remote_path(&remote_dir, path)))
             .collect();
+        // Track the Baidu account UID and local file version behind every
+        // retained remote outcome so carry-forward, in-run retries, and source
+        // cleanup never trust a different account or a replaced local file.
+        let mut completed_accounts: HashMap<String, u64> = HashMap::new();
+        let mut completed_fingerprints: HashMap<String, LocalFileFingerprint> = HashMap::new();
+        let mut prior_carry_applied = false;
         let mut skipped: HashMap<String, String> = HashMap::new();
+        let mut skipped_accounts: HashMap<String, u64> = HashMap::new();
+        let mut skipped_fingerprints: HashMap<String, LocalFileFingerprint> = HashMap::new();
         let mut permanent: HashMap<String, String> = HashMap::new();
         let mut last_errors: HashMap<String, String> = HashMap::new();
         let mut logs: Vec<JobLogEntry> = Vec::new();
@@ -643,6 +759,139 @@ impl Processor for BaiduPcsProcessor {
             // The read side of `cli_lock` keeps `login`/`logout` from
             // rewriting the session mid-upload.
             let config_lease = config_lease().await;
+            let active_uid = self
+                .command_runner
+                .active_account_uid(&binary_path, config.config_dir.as_deref(), ctx, &config_lease)
+                .await;
+
+            // Carry forward files confirmed by an earlier job attempt only
+            // after re-login and under `config_lease`, and only when the
+            // active account UID, cleaned remote path, and local file version
+            // all match. If the active account or file version cannot be
+            // verified or changed, fail closed and upload the current file.
+            if ctx.is_retry && !prior_carry_applied {
+                prior_carry_applied = true;
+                if let Some(uid) = active_uid
+                    && !ctx.prior_completed_uploads.is_empty()
+                {
+                    let mut carried = Vec::new();
+                    for path in &pending {
+                        let expected_remote = Self::computed_remote_path(&remote_dir, path);
+                        let Some(prior) = ctx.prior_completed_uploads.get(path) else {
+                            continue;
+                        };
+                        if prior.account_uid != uid
+                            || Self::normalize_remote_path(&prior.remote_path) != expected_remote
+                        {
+                            continue;
+                        }
+                        if Self::local_file_fingerprint(std::path::Path::new(path)).await
+                            == Some(prior.fingerprint)
+                        {
+                            carried.push((path.clone(), expected_remote, prior.fingerprint));
+                        }
+                    }
+                    if !carried.is_empty() {
+                        let carried_set: HashSet<&str> =
+                            carried.iter().map(|(path, _, _)| path.as_str()).collect();
+                        pending.retain(|path| !carried_set.contains(path.as_str()));
+                        let previously_completed = carried.len();
+                        for (path, expected_remote, fingerprint) in carried {
+                            completed.insert(path.clone(), expected_remote);
+                            completed_accounts.insert(path.clone(), uid);
+                            completed_fingerprints.insert(path, fingerprint);
+                        }
+                        info!(
+                            previously_completed,
+                            pending = pending.len(),
+                            account_uid = uid,
+                            "BaiduPCS-Go retry carrying forward previously confirmed uploads"
+                        );
+                        ctx.info(format!(
+                            "Carrying forward {previously_completed} file(s) already uploaded in an earlier attempt; {} remain pending",
+                            pending.len()
+                        ));
+                        ctx.progress.report(
+                            UploadCounts::of_job(
+                                &job_inputs,
+                                &file_sizes,
+                                &completed,
+                                &skipped,
+                                &permanent,
+                            )
+                            .snapshot(),
+                        );
+                    }
+                    if pending.is_empty() {
+                        break;
+                    }
+                }
+            }
+
+            // If an in-run backoff allowed a concurrent login to switch the
+            // active account (or either `who` probe failed), OR if a retained
+            // local file changed on disk since the earlier attempt, do not
+            // retain completed or skipped outcomes — re-upload the current
+            // file instead.
+            if attempt > 0 {
+                let mut invalidated: HashSet<String> = HashSet::new();
+                let completed_paths: Vec<String> = completed
+                    .keys()
+                    .filter(|path| !resumed.contains(*path))
+                    .cloned()
+                    .collect();
+                for path in completed_paths {
+                    let same_account = matches!(
+                        (completed_accounts.get(&path).copied(), active_uid),
+                        (Some(prev_uid), Some(curr_uid)) if prev_uid == curr_uid
+                    );
+                    let same_file = match completed_fingerprints.get(&path).copied() {
+                        Some(expected_fp) => {
+                            Self::local_file_fingerprint(Path::new(&path)).await
+                                == Some(expected_fp)
+                        }
+                        None => false,
+                    };
+                    if !same_account || !same_file {
+                        completed.remove(&path);
+                        invalidated.insert(path);
+                    }
+                }
+                let skipped_paths: Vec<String> = skipped.keys().cloned().collect();
+                for path in skipped_paths {
+                    let same_account = matches!(
+                        (skipped_accounts.get(&path).copied(), active_uid),
+                        (Some(prev_uid), Some(curr_uid)) if prev_uid == curr_uid
+                    );
+                    let same_file = match skipped_fingerprints.get(&path).copied() {
+                        Some(expected_fp) => {
+                            Self::local_file_fingerprint(Path::new(&path)).await
+                                == Some(expected_fp)
+                        }
+                        None => false,
+                    };
+                    if !same_account || !same_file {
+                        skipped.remove(&path);
+                        invalidated.insert(path);
+                    }
+                }
+                if !invalidated.is_empty() {
+                    for path in &invalidated {
+                        completed_accounts.remove(path);
+                        completed_fingerprints.remove(path);
+                        skipped_accounts.remove(path);
+                        skipped_fingerprints.remove(path);
+                    }
+                    let mut requeued: Vec<String> = input
+                        .inputs
+                        .iter()
+                        .filter(|path| invalidated.contains(*path))
+                        .cloned()
+                        .collect();
+                    requeued.extend(pending);
+                    pending = requeued;
+                }
+            }
 
             // One invocation per chunk of paths that fits the command line;
             // the lease above spans every chunk of this attempt.
@@ -660,6 +909,14 @@ impl Processor for BaiduPcsProcessor {
                     return Err(crate::Error::Other(
                         "BaiduPCS-Go upload cancelled".to_string(),
                     ));
+                }
+                let mut chunk_fingerprints: HashMap<String, LocalFileFingerprint> =
+                    HashMap::with_capacity(chunk.len());
+                for path in &chunk {
+                    if let Some(fp) = Self::local_file_fingerprint(std::path::Path::new(path)).await
+                    {
+                        chunk_fingerprints.insert(path.clone(), fp);
+                    }
                 }
                 let mut cmd = crate::baidupcs::connected_command(
                     &binary_path,
@@ -722,12 +979,46 @@ impl Processor for BaiduPcsProcessor {
                         last_errors.insert(path.clone(), error.clone());
                         still_pending.push(path);
                     } else if let Some(reason) = outcomes.skipped.get(&path) {
-                        skipped.insert(path, reason.clone());
+                        if let Some(fp) = chunk_fingerprints.get(&path).copied()
+                            && Self::local_file_fingerprint(Path::new(&path)).await == Some(fp)
+                        {
+                            skipped.insert(path.clone(), reason.clone());
+                            if let Some(uid) = active_uid {
+                                skipped_accounts.insert(path.clone(), uid);
+                            }
+                            skipped_fingerprints.insert(path, fp);
+                        } else {
+                            let message = "local file changed during upload".to_string();
+                            ctx.warn(format!(
+                                "Local file {path} changed during upload; re-queuing instead of treating it as skipped"
+                            ));
+                            last_errors.insert(path.clone(), message);
+                            still_pending.push(path);
+                        }
                     } else if let Some(remote) = outcomes.completed.get(&path) {
-                        let remote = remote
-                            .clone()
-                            .unwrap_or_else(|| Self::computed_remote_path(&remote_dir, &path));
-                        completed.insert(path, remote);
+                        if let Some(fp) = chunk_fingerprints.get(&path).copied()
+                            && Self::local_file_fingerprint(Path::new(&path)).await == Some(fp)
+                        {
+                            let remote = remote
+                                .as_deref()
+                                .map(Self::normalize_remote_path)
+                                .unwrap_or_else(|| Self::computed_remote_path(&remote_dir, &path));
+                            completed.insert(path.clone(), remote);
+                            if let Some(uid) = active_uid {
+                                completed_accounts.insert(path.clone(), uid);
+                            }
+                            completed_fingerprints.insert(path, fp);
+                        } else {
+                            // Never treat a file modified mid-upload as completed:
+                            // BaiduPCS-Go may have uploaded stale or torn bytes, and
+                            // later retries/cleanup must not skip or delete the new file.
+                            let message = "local file changed during upload".to_string();
+                            ctx.warn(format!(
+                                "Local file {path} changed during upload; re-queuing instead of treating it as completed"
+                            ));
+                            last_errors.insert(path.clone(), message);
+                            still_pending.push(path);
+                        }
                     } else {
                         unresolved.push(path);
                     }
@@ -752,8 +1043,23 @@ impl Processor for BaiduPcsProcessor {
                             unresolved.len()
                         ));
                         for path in unresolved {
-                            let remote = Self::computed_remote_path(&remote_dir, &path);
-                            completed.insert(path, remote);
+                            if let Some(fp) = chunk_fingerprints.get(&path).copied()
+                                && Self::local_file_fingerprint(Path::new(&path)).await == Some(fp)
+                            {
+                                let remote = Self::computed_remote_path(&remote_dir, &path);
+                                completed.insert(path.clone(), remote);
+                                if let Some(uid) = active_uid {
+                                    completed_accounts.insert(path.clone(), uid);
+                                }
+                                completed_fingerprints.insert(path, fp);
+                            } else {
+                                let message = "local file changed during upload".to_string();
+                                ctx.warn(format!(
+                                    "Local file {path} changed during upload; re-queuing instead of treating it as completed"
+                                ));
+                                last_errors.insert(path.clone(), message);
+                                still_pending.push(path);
+                            }
                         }
                     } else {
                         let message = format!(
@@ -833,6 +1139,21 @@ impl Processor for BaiduPcsProcessor {
                 &file_sizes,
                 &remote_dir,
             );
+            let confirmed_uploads: HashMap<String, ConfirmedUpload> = completed
+                .iter()
+                .filter_map(|(path, remote_path)| {
+                    let account_uid = *completed_accounts.get(path)?;
+                    let fingerprint = *completed_fingerprints.get(path)?;
+                    Some((
+                        path.clone(),
+                        ConfirmedUpload {
+                            remote_path: remote_path.clone(),
+                            account_uid,
+                            fingerprint,
+                        },
+                    ))
+                })
+                .collect();
             return Ok(ProcessorOutput {
                 outputs: input
                     .inputs
@@ -885,6 +1206,7 @@ impl Processor for BaiduPcsProcessor {
                     })
                     .collect(),
                 uploads,
+                confirmed_uploads,
                 logs,
                 non_retryable: all_permanent,
             });
@@ -892,13 +1214,20 @@ impl Processor for BaiduPcsProcessor {
 
         let mut removed: HashSet<String> = resumed.iter().cloned().collect();
         if config.remove_source_after_upload {
-            let pending_removal: Vec<&String> = completed
-                .keys()
-                .filter(|path| !removed.contains(*path))
-                .collect();
-            let summary =
-                super::utils::remove_sources(pending_removal, "uploaded source", ctx).await;
-            removed.extend(summary.removed);
+            for path in &input.inputs {
+                if !completed.contains_key(path) || removed.contains(path) {
+                    continue;
+                }
+                let Some(expected_fp) = completed_fingerprints.get(path).copied() else {
+                    ctx.warn(format!(
+                        "Skipping source removal for {path}: local file version could not be verified"
+                    ));
+                    continue;
+                };
+                if Self::verify_and_remove_source(path, expected_fp, ctx).await {
+                    removed.insert(path.clone());
+                }
+            }
         }
 
         let uploads = Self::upload_results(
@@ -946,12 +1275,311 @@ impl Processor for BaiduPcsProcessor {
             succeeded_inputs: input.inputs.clone(),
             skipped_inputs: vec![],
             uploads,
+            confirmed_uploads: HashMap::new(),
             logs,
             non_retryable: false,
         })
         }
         .await;
         ProcessorOutput::scrubbed(result, &scrubber)
+    }
+}
+
+/// Files up to this size are fully SHA-256 hashed for version verification;
+/// larger recordings hash head, middle, and tail 64 KiB slices alongside
+/// OS file identity and change-time metadata to avoid re-reading gigabytes.
+const FULL_FINGERPRINT_HASH_MAX_BYTES: u64 = 4 * 1024 * 1024;
+const SAMPLE_FINGERPRINT_SLICE_BYTES: usize = 64 * 1024;
+
+enum VerifiedRemoval {
+    Removed,
+    AlreadyAbsent,
+    Changed,
+    Failed(std::io::Error),
+}
+
+fn system_time_to_unix_parts(time: std::time::SystemTime) -> Option<(i64, u32)> {
+    match time.duration_since(std::time::UNIX_EPOCH) {
+        Ok(duration) => Some((
+            i64::try_from(duration.as_secs()).ok()?,
+            duration.subsec_nanos(),
+        )),
+        Err(before_epoch) => {
+            let duration = before_epoch.duration();
+            let secs = i64::try_from(duration.as_secs()).ok()?;
+            let nanos = duration.subsec_nanos();
+            if nanos == 0 {
+                Some((-secs, 0))
+            } else {
+                Some((-secs - 1, 1_000_000_000 - nanos))
+            }
+        }
+    }
+}
+
+struct PlatformFileIdentity {
+    file_id: Option<(u64, u64)>,
+    change_time: Option<(i64, u32)>,
+}
+
+#[cfg(unix)]
+fn platform_file_identity(file: &std::fs::File, meta: &std::fs::Metadata) -> PlatformFileIdentity {
+    use std::os::unix::fs::MetadataExt;
+    let _ = file;
+    let file_id = Some((meta.dev(), meta.ino()));
+    let change_time = u32::try_from(meta.ctime_nsec())
+        .ok()
+        .map(|ns| (meta.ctime(), ns));
+    PlatformFileIdentity {
+        file_id,
+        change_time,
+    }
+}
+
+#[cfg(windows)]
+fn platform_file_identity(file: &std::fs::File, _meta: &std::fs::Metadata) -> PlatformFileIdentity {
+    use std::mem::{size_of, zeroed};
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        BY_HANDLE_FILE_INFORMATION, FILE_BASIC_INFO, FileBasicInfo, GetFileInformationByHandle,
+        GetFileInformationByHandleEx,
+    };
+
+    let handle = file.as_raw_handle();
+    // SAFETY: `handle` is an open file handle owned by `file` for the duration
+    // of this call, and `info` is a properly aligned output buffer.
+    let file_id = unsafe {
+        let mut info: BY_HANDLE_FILE_INFORMATION = zeroed();
+        if GetFileInformationByHandle(handle, &mut info) != 0 {
+            let index = (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow);
+            Some((u64::from(info.dwVolumeSerialNumber), index))
+        } else {
+            None
+        }
+    };
+    // SAFETY: `handle` is an open file handle owned by `file` for the duration
+    // of this call, and `basic` is a properly aligned `FILE_BASIC_INFO` buffer
+    // matching `FileBasicInfo` and the passed byte size.
+    let change_time = unsafe {
+        let mut basic: FILE_BASIC_INFO = zeroed();
+        if GetFileInformationByHandleEx(
+            handle,
+            FileBasicInfo,
+            (&mut basic as *mut FILE_BASIC_INFO).cast(),
+            size_of::<FILE_BASIC_INFO>() as u32,
+        ) != 0
+            && basic.ChangeTime > 0
+        {
+            let secs = basic.ChangeTime.div_euclid(10_000_000);
+            let subsec_nanos = (basic.ChangeTime.rem_euclid(10_000_000) as u32) * 100;
+            Some((secs, subsec_nanos))
+        } else {
+            None
+        }
+    };
+    PlatformFileIdentity {
+        file_id,
+        change_time,
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn platform_file_identity(
+    _file: &std::fs::File,
+    _meta: &std::fs::Metadata,
+) -> PlatformFileIdentity {
+    PlatformFileIdentity {
+        file_id: None,
+        change_time: None,
+    }
+}
+
+fn hash_file_slice(
+    file: &mut std::fs::File,
+    hasher: &mut Sha256,
+    offset: u64,
+    mut remaining: usize,
+    buf: &mut [u8],
+) -> std::io::Result<()> {
+    file.seek(SeekFrom::Start(offset))?;
+    while remaining > 0 {
+        let to_read = remaining.min(buf.len());
+        let n = file.read(&mut buf[..to_read])?;
+        if n == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "file shrank while computing fingerprint",
+            ));
+        }
+        hasher.update(&buf[..n]);
+        remaining -= n;
+    }
+    Ok(())
+}
+
+fn fingerprint_from_file(file: &mut std::fs::File) -> Option<LocalFileFingerprint> {
+    let meta = file.metadata().ok()?;
+    let size_bytes = meta.len();
+    let (modified_secs, modified_subsec_nanos) = system_time_to_unix_parts(meta.modified().ok()?)?;
+    let PlatformFileIdentity {
+        file_id,
+        change_time,
+    } = platform_file_identity(file, &meta);
+
+    let mut hasher = Sha256::new();
+    hasher.update(size_bytes.to_le_bytes());
+    let mut buf = [0u8; 64 * 1024];
+    // Hash the entire file when small or when the OS/filesystem does not
+    // provide a kernel-maintained change time (`ctime` / NTFS `ChangeTime`).
+    if size_bytes <= FULL_FINGERPRINT_HASH_MAX_BYTES || change_time.is_none() {
+        file.seek(SeekFrom::Start(0)).ok()?;
+        let mut total = 0u64;
+        loop {
+            let n = file.read(&mut buf).ok()?;
+            if n == 0 {
+                break;
+            }
+            total += n as u64;
+            hasher.update(&buf[..n]);
+        }
+        if total != size_bytes {
+            return None;
+        }
+    } else {
+        let slice_len = SAMPLE_FINGERPRINT_SLICE_BYTES;
+        let mid_offset = (size_bytes / 2).saturating_sub((slice_len / 2) as u64);
+        let tail_offset = size_bytes.saturating_sub(slice_len as u64);
+        hash_file_slice(file, &mut hasher, 0, slice_len, &mut buf).ok()?;
+        hash_file_slice(file, &mut hasher, mid_offset, slice_len, &mut buf).ok()?;
+        hash_file_slice(file, &mut hasher, tail_offset, slice_len, &mut buf).ok()?;
+    }
+
+    // Re-check metadata on the same handle after reading to fail closed if
+    // the file was written while we were hashing it.
+    let after = file.metadata().ok()?;
+    let (after_mod_secs, after_mod_nanos) = system_time_to_unix_parts(after.modified().ok()?)?;
+    let after_identity = platform_file_identity(file, &after);
+    if after.len() != size_bytes
+        || after_mod_secs != modified_secs
+        || after_mod_nanos != modified_subsec_nanos
+        || after_identity.file_id != file_id
+        || after_identity.change_time != change_time
+    {
+        return None;
+    }
+
+    let content_sha256: [u8; 32] = hasher.finalize().into();
+    Some(LocalFileFingerprint {
+        size_bytes,
+        modified_secs,
+        modified_subsec_nanos,
+        file_id,
+        change_time,
+        content_sha256,
+    })
+}
+
+#[cfg(windows)]
+fn verify_and_remove_sync(path: &Path, expected: LocalFileFingerprint) -> VerifiedRemoval {
+    use std::mem::{size_of, zeroed};
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        BY_HANDLE_FILE_INFORMATION, DELETE, FILE_ATTRIBUTE_REPARSE_POINT, FILE_DISPOSITION_INFO,
+        FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_SHARE_DELETE, FILE_SHARE_READ,
+        FileDispositionInfo, GetFileInformationByHandle, SetFileInformationByHandle,
+    };
+
+    // Open the final component without following reparse points (so a symlink's
+    // target can never be opened or deleted) and without FILE_SHARE_WRITE (so
+    // no concurrent writer can modify the file between verification and
+    // handle-bound deletion).
+    let mut file = match std::fs::OpenOptions::new()
+        .read(true)
+        .access_mode(FILE_GENERIC_READ | DELETE)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_DELETE)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return VerifiedRemoval::AlreadyAbsent;
+        }
+        Err(error) => return VerifiedRemoval::Failed(error),
+    };
+    // SAFETY: `file` owns the open handle for the duration of this call and
+    // `info` is a properly aligned output buffer.
+    let is_reparse_point = unsafe {
+        let mut info: BY_HANDLE_FILE_INFORMATION = zeroed();
+        GetFileInformationByHandle(file.as_raw_handle(), &mut info) == 0
+            || (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0
+    };
+    if is_reparse_point || fingerprint_from_file(&mut file) != Some(expected) {
+        return VerifiedRemoval::Changed;
+    }
+    let disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
+    // SAFETY: `file` is a valid open handle with DELETE access and `disposition`
+    // is a properly aligned `FILE_DISPOSITION_INFO` valid for the call.
+    let ok = unsafe {
+        SetFileInformationByHandle(
+            file.as_raw_handle(),
+            FileDispositionInfo,
+            (&disposition as *const FILE_DISPOSITION_INFO).cast(),
+            size_of::<FILE_DISPOSITION_INFO>() as u32,
+        )
+    };
+    if ok != 0 {
+        // Dropping `file` closes the last handle and completes deletion.
+        drop(file);
+        VerifiedRemoval::Removed
+    } else {
+        VerifiedRemoval::Failed(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(not(windows))]
+fn verify_and_remove_sync(path: &Path, expected: LocalFileFingerprint) -> VerifiedRemoval {
+    // Do not follow or delete symlink inputs during source cleanup.
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => return VerifiedRemoval::Changed,
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return VerifiedRemoval::AlreadyAbsent;
+        }
+        Err(error) => return VerifiedRemoval::Failed(error),
+    }
+    let mut file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return VerifiedRemoval::AlreadyAbsent;
+        }
+        Err(error) => return VerifiedRemoval::Failed(error),
+    };
+    if fingerprint_from_file(&mut file) != Some(expected) {
+        return VerifiedRemoval::Changed;
+    }
+    #[cfg(unix)]
+    if let Some((expected_dev, expected_ino)) = expected.file_id {
+        use std::os::unix::fs::MetadataExt;
+        match std::fs::symlink_metadata(path) {
+            Ok(meta)
+                if !meta.file_type().is_symlink()
+                    && meta.dev() == expected_dev
+                    && meta.ino() == expected_ino => {}
+            Ok(_) => return VerifiedRemoval::Changed,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return VerifiedRemoval::AlreadyAbsent;
+            }
+            Err(error) => return VerifiedRemoval::Failed(error),
+        }
+    }
+    drop(file);
+    match std::fs::remove_file(path) {
+        Ok(()) => VerifiedRemoval::Removed,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            VerifiedRemoval::AlreadyAbsent
+        }
+        Err(error) => VerifiedRemoval::Failed(error),
     }
 }
 

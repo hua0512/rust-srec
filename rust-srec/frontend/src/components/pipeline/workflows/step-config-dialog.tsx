@@ -737,8 +737,9 @@ function StepConfigDialogBody({
                       Leave attempts empty or at 1 for no automatic retry; the
                       backoff doubles after each failed attempt and takes over
                       retries from upload processors. Failure notifications are
-                      only sent once all attempts are spent. Leave the timeout
-                      empty to use the worker pool default.
+                      sent only once all attempts are spent or on a
+                      non-retryable error. Leave the timeout empty to use the
+                      worker pool default.
                     </Trans>
                   </p>
                 </div>

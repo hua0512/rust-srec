@@ -238,12 +238,14 @@ pub enum PipelineEvent {
         job_type: String,
         duration_secs: f64,
     },
-    /// Job failed.
+    /// Job failed terminally.
     JobFailed {
         job_id: String,
         job_type: String,
         error: String,
     },
+    /// Job failed an intermediate attempt and was scheduled for automatic retry.
+    JobRetryScheduled { job_id: String },
     /// Queue depth reached the configured warning threshold.
     QueueWarning { depth: usize, threshold: usize },
     /// Queue depth reached the configured critical threshold.

@@ -79,4 +79,41 @@ fn pipeline_mapping_prefers_explicit_identity_and_forgets_each_terminal_job() {
     assert!(
         matches!(mapper.map(PipelineEvent::QueueCritical { depth: 234, threshold: 230 }, source), Some(NotificationEvent::PipelineQueueCritical { queue_depth: 234, threshold: 230, timestamp }) if timestamp == source)
     );
+
+    // Scheduled retries retire the enqueued-streamer cache without emitting a notification.
+    assert!(
+        mapper
+            .map(
+                PipelineEvent::JobEnqueued {
+                    job_id: "retrying-job".into(),
+                    job_type: "rclone".into(),
+                    streamer_id: "owner".into(),
+                },
+                source
+            )
+            .is_none()
+    );
+    assert!(
+        mapper
+            .map(
+                PipelineEvent::JobRetryScheduled {
+                    job_id: "retrying-job".into(),
+                },
+                source
+            )
+            .is_none()
+    );
+    let after_retry_scheduled = mapper
+        .map(
+            PipelineEvent::JobStarted {
+                job_id: "retrying-job".into(),
+                job_type: "rclone".into(),
+                streamer_id: String::new(),
+            },
+            source,
+        )
+        .unwrap();
+    assert!(
+        matches!(after_retry_scheduled, NotificationEvent::PipelineStarted { streamer_id, .. } if streamer_id.is_empty())
+    );
 }

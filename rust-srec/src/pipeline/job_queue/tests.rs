@@ -1452,7 +1452,7 @@ async fn retried_job_queue_wait_uses_reenqueue_timestamp_in_sqlite() {
     let queue = JobQueue::with_repository(JobQueueConfig::default(), repo.clone());
 
     let mut job = Job::new("rclone", vec!["/a.mp4".into()], vec![], "s1", "");
-    job.has_step_retry = true;
+    job.has_step_retry = Some(true);
     let job_id = queue.enqueue(job).await.unwrap();
 
     // Backdate created_at by 1 hour so a regression falling back to created_at is unmistakable.
@@ -1468,14 +1468,19 @@ async fn retried_job_queue_wait_uses_reenqueue_timestamp_in_sqlite() {
     queue.fail(&job_id, "temporary error").await.unwrap();
     queue.retry_job(&job_id).await.unwrap();
 
+    // Seed a known 12-second queue wait after re-enqueue so an implementation that
+    // always reports 0 fails just as cleanly as one that reports 3600s.
+    let twelve_secs_ago_ms = crate::database::time::now_ms() - 12_000;
+    sqlx::query("UPDATE job SET state = json_set(state, '$.enqueued_at_ms', ?) WHERE id = ?")
+        .bind(twelve_secs_ago_ms)
+        .bind(&job_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
     let (retried, _attempt) = queue.dequeue(None).await.unwrap().unwrap();
-    assert!(retried.has_step_retry);
-    assert!(
-        retried
-            .enqueued_at_ms
-            .is_some_and(|ms| ms > one_hour_ago_ms),
-        "reset_job_for_retry must record enqueued_at_ms in job state"
-    );
+    assert_eq!(retried.has_step_retry, Some(true));
+    assert_eq!(retried.enqueued_at_ms, Some(twelve_secs_ago_ms));
 
     queue
         .complete(
@@ -1495,19 +1500,34 @@ async fn retried_job_queue_wait_uses_reenqueue_timestamp_in_sqlite() {
     let stored = repo.get_job(&job_id).await.unwrap();
     let queue_wait = stored.queue_wait_secs.expect("queue_wait_secs recorded");
     assert!(
-        queue_wait < 60.0,
-        "queue_wait_secs should reflect re-enqueue wait, not original created_at: {queue_wait}"
+        (10.0..60.0).contains(&queue_wait),
+        "queue_wait_secs should reflect the ~12s re-enqueue wait: {queue_wait}"
     );
 
-    // Non-object JSON state (`null`) is normalized to `{}` so `enqueued_at_ms` is still written.
+    // Both startup recovery and retry reset normalize non-object JSON state (`null`)
+    // so `enqueued_at_ms` is recorded cleanly.
     let null_state_job_id = queue
         .enqueue(Job::new("rclone", vec!["/b.mp4".into()], vec![], "s1", ""))
         .await
         .unwrap();
     queue.dequeue(None).await.unwrap().unwrap();
-    queue.fail(&null_state_job_id, "temporary").await.unwrap();
     sqlx::query("UPDATE job SET created_at = ?, state = 'null' WHERE id = ?")
         .bind(one_hour_ago_ms)
+        .bind(&null_state_job_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(repo.reset_processing_jobs().await.unwrap(), 1);
+    let recovered = repo.get_job(&null_state_job_id).await.unwrap();
+    assert!(
+        super::metadata::parse_job_enqueued_at_ms(&recovered.state)
+            .is_some_and(|ms| ms > one_hour_ago_ms),
+        "startup reset must normalize non-object JSON state and set enqueued_at_ms"
+    );
+
+    queue.dequeue(None).await.unwrap().unwrap();
+    queue.fail(&null_state_job_id, "temporary").await.unwrap();
+    sqlx::query("UPDATE job SET state = 'null' WHERE id = ?")
         .bind(&null_state_job_id)
         .execute(&pool)
         .await
@@ -1518,7 +1538,7 @@ async fn retried_job_queue_wait_uses_reenqueue_timestamp_in_sqlite() {
         normalized
             .enqueued_at_ms
             .is_some_and(|ms| ms > one_hour_ago_ms),
-        "non-object JSON state must still receive enqueued_at_ms"
+        "retry reset must normalize non-object JSON state and set enqueued_at_ms"
     );
     queue.stop_progress_aggregator().await;
 }

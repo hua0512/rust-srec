@@ -1076,7 +1076,13 @@ async fn late_failures_preserve_terminal_jobs_and_do_not_emit_events() {
             attempt,
         };
         runner
-            .finish_failed(&facts, "late failure", StepFailureKind::ProcessorError, &[])
+            .finish_failed(
+                &facts,
+                "late failure",
+                StepFailureKind::ProcessorError,
+                &[],
+                None,
+            )
             .await;
         assert!(receiver.try_recv().is_err());
         assert_eq!(
@@ -1460,12 +1466,15 @@ async fn non_retryable_step_failures_skip_dag_retry_and_notify_immediately() {
 
     #[derive(Clone, Copy)]
     enum Mode {
-        Validation,
         NonRetryableErr,
         NonRetryablePartialOutput,
+        LegacyMissingStateFlag,
     }
 
-    struct FailingProcessor(Mode);
+    struct FailingProcessor {
+        mode: Mode,
+        saw_step_retry: Arc<AtomicBool>,
+    }
     #[async_trait]
     impl Processor for FailingProcessor {
         fn processor_type(&self) -> ProcessorType {
@@ -1480,11 +1489,12 @@ async fn non_retryable_step_failures_skip_dag_retry_and_notify_immediately() {
         async fn process(
             &self,
             _: &ProcessorInput,
-            _: &ProcessorContext,
+            ctx: &ProcessorContext,
         ) -> crate::Result<ProcessorOutput> {
-            match self.0 {
-                Mode::Validation => Err(crate::Error::Validation("bad config".into())),
-                Mode::NonRetryableErr => {
+            self.saw_step_retry
+                .store(ctx.has_step_retry, Ordering::SeqCst);
+            match self.mode {
+                Mode::NonRetryableErr | Mode::LegacyMissingStateFlag => {
                     Err(crate::Error::NonRetryablePipeline("invalid_grant".into()))
                 }
                 Mode::NonRetryablePartialOutput => Ok(ProcessorOutput {
@@ -1498,9 +1508,9 @@ async fn non_retryable_step_failures_skip_dag_retry_and_notify_immediately() {
     }
 
     for mode in [
-        Mode::Validation,
         Mode::NonRetryableErr,
         Mode::NonRetryablePartialOutput,
+        Mode::LegacyMissingStateFlag,
     ] {
         let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
             .await
@@ -1530,17 +1540,32 @@ async fn non_retryable_step_failures_skip_dag_retry_and_notify_immediately() {
             )
             .await
             .unwrap();
+        if matches!(mode, Mode::LegacyMissingStateFlag) {
+            // Simulate a pre-upgrade workflow row lacking `has_step_retry` in `job.state`.
+            sqlx::query("UPDATE job SET state = '{}' WHERE id = ?")
+                .bind(&created.root_job_ids[0])
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
         let (job, attempt) = queue.dequeue(None).await.unwrap().unwrap();
-        assert!(job.has_step_retry);
         let job_id = job.id.clone();
         let step_id = job.dag_step_execution_id.clone().unwrap();
 
         let (events, mut receiver) = broadcast::channel(16);
         let mut runner = observed_runner(queue.clone(), events);
         runner.dag_scheduler = Some(scheduler.clone());
-        let processor: Arc<dyn Processor> = Arc::new(FailingProcessor(mode));
+        let saw_step_retry = Arc::new(AtomicBool::new(false));
+        let processor: Arc<dyn Processor> = Arc::new(FailingProcessor {
+            mode,
+            saw_step_retry: saw_step_retry.clone(),
+        });
         runner.execute_job(job, &processor, attempt).await;
 
+        assert!(
+            saw_step_retry.load(Ordering::SeqCst),
+            "processor must see has_step_retry=true (including legacy workflow rows)"
+        );
         let stored = jobs.get_job(&job_id).await.unwrap();
         assert_eq!(stored.get_status(), Some(JobStatus::Failed));
         assert_eq!(stored.retry_after, None);
@@ -1559,4 +1584,420 @@ async fn non_retryable_step_failures_skip_dag_retry_and_notify_immediately() {
 
         queue.stop_progress_aggregator().await;
     }
+}
+
+#[tokio::test]
+async fn baidupcs_worker_retry_persists_account_bound_carry_forward_in_sqlite() {
+    use crate::database::models::{
+        DagPipelineDefinition, DagStep, JobStatus, PipelineStep, StepRetryPolicy,
+    };
+    use crate::database::repositories::{SqlxDagRepository, SqlxJobRepository};
+    use crate::pipeline::dag_scheduler::{DagRunContext, DagScheduler};
+    use crate::pipeline::job_queue::JobQueue;
+    use crate::pipeline::processors::BaiduPcsProcessor;
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let cfg_dir = temp_dir.path().join("cfg");
+    std::fs::create_dir(&cfg_dir).unwrap();
+    let file_a = temp_dir.path().join("a.flv");
+    let file_b = temp_dir.path().join("b.flv");
+    std::fs::write(&file_a, b"video-a").unwrap();
+    std::fs::write(&file_b, b"video-b").unwrap();
+
+    // Compile a tiny cross-platform fake BaiduPCS-Go binary so `who` and
+    // `upload` print exact UTF-8 markers through ProcessBaiduPcsCommandRunner.
+    let fake_src = r#"
+use std::env;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::PathBuf;
+
+fn main() {
+    let args: Vec<String> = env::args().skip(1).collect();
+    let cfg = PathBuf::from(env::var("BAIDUPCS_GO_CONFIG_DIR").expect("config dir"));
+    match args.first().map(String::as_str) {
+        Some("who") => {
+            let uid = fs::read_to_string(cfg.join("uid.txt")).unwrap_or_default();
+            println!("当前帐号 uid: {}, 用户名: tester, 性别: 未知, 年龄: 0.0", uid.trim());
+        }
+        Some("upload") => {
+            let fail_name = fs::read_to_string(cfg.join("fail.txt")).unwrap_or_default();
+            let fail_name = fail_name.trim();
+            let remote_dir = args.last().expect("remote dir");
+            let mut files = Vec::new();
+            let mut i = 1;
+            while i + 1 < args.len() {
+                if args[i] == "--policy" {
+                    i += 2;
+                    continue;
+                }
+                if args[i].starts_with("--") {
+                    i += 1;
+                    continue;
+                }
+                files.push(args[i].clone());
+                i += 1;
+            }
+            let mut log = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(cfg.join("invocations.log"))
+                .unwrap();
+            writeln!(log, "{}", files.join("|")).unwrap();
+            for (idx, path) in files.iter().enumerate() {
+                let id = idx + 1;
+                println!("[{id}] 加入上传队列: {path}");
+                let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
+                if !fail_name.is_empty() && name == fail_name {
+                    println!("[{id}] 上传文件失败, 网络超时");
+                } else {
+                    println!("[{id}] 上传文件成功, 保存到网盘路径: {}/{}", remote_dir.trim_end_matches('/'), name);
+                }
+            }
+            println!("上传结束, 时间: 1s, 总大小: 14B");
+        }
+        other => panic!("unexpected subcommand: {other:?}"),
+    }
+}
+"#;
+    let fake_binary = tokio::task::spawn_blocking({
+        let dir = temp_dir.path().to_path_buf();
+        move || {
+            let src_path = dir.join("fake_baidupcs.rs");
+            std::fs::write(&src_path, fake_src).unwrap();
+            let bin_path = dir.join(format!("fake_baidupcs{}", std::env::consts::EXE_SUFFIX));
+            let output = process_utils::std_command(
+                std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into()),
+            )
+            .arg("--edition=2024")
+            .arg(&src_path)
+            .arg("-o")
+            .arg(&bin_path)
+            .output()
+            .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            bin_path
+        }
+    })
+    .await
+    .unwrap();
+
+    let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+        .await
+        .unwrap();
+    crate::database::run_migrations(&pool).await.unwrap();
+    let jobs = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
+    let dags = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
+    let queue = Arc::new(JobQueue::with_repository(Default::default(), jobs.clone()));
+    let scheduler = Arc::new(DagScheduler::new(queue.clone(), dags.clone(), jobs.clone()));
+    let (events, _rx) = broadcast::channel(32);
+    let mut runner = observed_runner(queue.clone(), events);
+    runner.dag_scheduler = Some(scheduler.clone());
+    let processor: Arc<dyn Processor> = Arc::new(BaiduPcsProcessor::new());
+
+    let file_a_str = file_a.to_string_lossy().into_owned();
+    let file_b_str = file_b.to_string_lossy().into_owned();
+    let created = scheduler
+        .create_dag_pipeline(
+            DagPipelineDefinition::new(
+                "baidupcs-carry-e2e",
+                vec![
+                    DagStep::new(
+                        "upload",
+                        PipelineStep::inline(
+                            "baidupcs",
+                            serde_json::json!({
+                                "binary_path": fake_binary.to_string_lossy(),
+                                "config_dir": cfg_dir.to_string_lossy(),
+                                "destination_root": "/rec//daily",
+                                "policy": "skip",
+                                "remove_source_after_upload": true,
+                                "max_retries": 3,
+                            }),
+                        ),
+                    )
+                    .with_retry(StepRetryPolicy {
+                        max_attempts: 5,
+                        backoff_secs: 0,
+                    }),
+                ],
+            ),
+            &[file_a_str.clone(), file_b_str.clone()],
+            DagRunContext::default(),
+        )
+        .await
+        .unwrap();
+    let job_id = created.root_job_ids[0].clone();
+
+    // Attempt 1 (account 1001): a.flv uploads, b.flv fails -> confirmed_uploads persisted in SQLite.
+    std::fs::write(cfg_dir.join("uid.txt"), "1001").unwrap();
+    std::fs::write(cfg_dir.join("fail.txt"), "b.flv").unwrap();
+    let (job, attempt) = queue.dequeue(None).await.unwrap().unwrap();
+    runner.execute_job(job, &processor, attempt).await;
+    assert!(file_a.exists() && file_b.exists());
+    let after_1 = queue.get_job(&job_id).await.unwrap().unwrap();
+    assert_eq!(after_1.status, JobStatus::Failed);
+    assert_eq!(
+        after_1
+            .execution_info
+            .as_ref()
+            .and_then(|info| info.confirmed_uploads.get(&file_a_str))
+            .map(|c| (c.account_uid, c.remote_path.as_str())),
+        Some((1001, "/rec/daily/a.flv"))
+    );
+
+    // Attempt 2 after switching to account 2002: must NOT carry forward a.flv; b.flv succeeds on 2002, a.flv fails.
+    std::fs::write(cfg_dir.join("uid.txt"), "2002").unwrap();
+    std::fs::write(cfg_dir.join("fail.txt"), "a.flv").unwrap();
+    queue.retry_job(&job_id).await.unwrap();
+    let (job, attempt) = queue.dequeue(None).await.unwrap().unwrap();
+    runner.execute_job(job, &processor, attempt).await;
+    assert!(
+        file_a.exists() && file_b.exists(),
+        "switched-account partial failure must keep both local files"
+    );
+
+    // Attempt 3 still on account 2002, but `b.flv` was replaced on disk: must NOT carry forward
+    // or delete the replacement; `b.flv` is re-uploaded and `a.flv` fails transiently.
+    std::fs::write(&file_b, b"replaced-video-b-v2").unwrap();
+    queue.retry_job(&job_id).await.unwrap();
+    let (job, attempt) = queue.dequeue(None).await.unwrap().unwrap();
+    runner.execute_job(job, &processor, attempt).await;
+    assert!(
+        file_a.exists() && file_b.exists(),
+        "replacement upload partial failure must keep both local files"
+    );
+
+    // Attempt 4 still on account 2002 with unchanged `b.flv`: b.flv is carried forward,
+    // only a.flv is uploaded, and both local files are deleted on full success.
+    std::fs::write(cfg_dir.join("fail.txt"), "").unwrap();
+    queue.retry_job(&job_id).await.unwrap();
+    let (job, attempt) = queue.dequeue(None).await.unwrap().unwrap();
+    runner.execute_job(job, &processor, attempt).await;
+
+    let final_job = queue.get_job(&job_id).await.unwrap().unwrap();
+    assert_eq!(final_job.status, JobStatus::Completed);
+    assert!(
+        final_job
+            .execution_info
+            .as_ref()
+            .is_none_or(|info| info.confirmed_uploads.is_empty()),
+        "completed job should clear retry carry-forward state"
+    );
+    assert!(!file_a.exists() && !file_b.exists());
+
+    let invocations: Vec<String> = std::fs::read_to_string(cfg_dir.join("invocations.log"))
+        .unwrap()
+        .lines()
+        .map(str::to_string)
+        .collect();
+    assert_eq!(
+        invocations,
+        vec![
+            format!("{file_a_str}|{file_b_str}"),
+            format!("{file_a_str}|{file_b_str}"),
+            format!("{file_a_str}|{file_b_str}"),
+            file_a_str,
+        ]
+    );
+
+    queue.stop_progress_aggregator().await;
+}
+
+#[tokio::test]
+async fn zero_backoff_retry_orders_retry_scheduled_before_reenqueue_without_leaking_notifications()
+{
+    use crate::database::models::{DagPipelineDefinition, DagStep, PipelineStep, StepRetryPolicy};
+    use crate::database::repositories::{SqlxDagRepository, SqlxJobRepository};
+    use crate::notification::events::mapping::PipelineNotifications;
+    use crate::pipeline::dag_scheduler::{DagRunContext, DagScheduler};
+    use crate::pipeline::job_queue::JobQueue;
+
+    struct FailOnceProcessor {
+        attempts: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl Processor for FailOnceProcessor {
+        fn processor_type(&self) -> ProcessorType {
+            ProcessorType::Cpu
+        }
+        fn job_types(&self) -> Vec<&'static str> {
+            vec!["flaky_zero_backoff"]
+        }
+        fn name(&self) -> &'static str {
+            "flaky_zero_backoff"
+        }
+        async fn process(
+            &self,
+            input: &ProcessorInput,
+            _ctx: &ProcessorContext,
+        ) -> crate::Result<ProcessorOutput> {
+            if self.attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                Err(crate::Error::Other("transient boom".into()))
+            } else {
+                Ok(ProcessorOutput {
+                    outputs: input.inputs.clone(),
+                    duration_secs: 0.01,
+                    ..Default::default()
+                })
+            }
+        }
+    }
+
+    let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+        .await
+        .unwrap();
+    crate::database::run_migrations(&pool).await.unwrap();
+    let jobs = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
+    let dags = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
+    let queue = Arc::new(JobQueue::with_repository(Default::default(), jobs.clone()));
+    let scheduler = Arc::new(DagScheduler::new(queue.clone(), dags.clone(), jobs.clone()));
+    let (event_tx, mut event_rx) = broadcast::channel(64);
+    let mut runner = observed_runner(queue.clone(), event_tx.clone());
+    runner.dag_scheduler = Some(scheduler.clone());
+
+    let mut notifications = PipelineNotifications::default();
+    let now = jiff::Timestamp::now();
+
+    for round in 0..5 {
+        let created = scheduler
+            .create_dag_pipeline(
+                DagPipelineDefinition::new(
+                    format!("zero-backoff-{round}"),
+                    vec![
+                        DagStep::new(
+                            "step",
+                            PipelineStep::inline("flaky_zero_backoff", serde_json::json!({})),
+                        )
+                        .with_retry(StepRetryPolicy {
+                            max_attempts: 2,
+                            backoff_secs: 0,
+                        }),
+                    ],
+                ),
+                &["clip.mp4".into()],
+                DagRunContext {
+                    streamer_id: Some(format!("streamer-{round}")),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let job_id = created.root_job_ids[0].clone();
+        let processor: Arc<dyn Processor> = Arc::new(FailOnceProcessor {
+            attempts: AtomicUsize::new(0),
+        });
+
+        // Concurrent re-queuer races with attempt 1's failure persistence, and
+        // a second worker task immediately executes attempt 2 once woken.
+        let retry_queue = queue.clone();
+        let retry_tx = event_tx.clone();
+        let retry_job_id = job_id.clone();
+        let requeuer = tokio::spawn(async move {
+            loop {
+                let due = retry_queue
+                    .list_due_retries(jiff::Timestamp::now())
+                    .await
+                    .unwrap();
+                if let Some(due_job) = due.into_iter().find(|j| j.id == retry_job_id) {
+                    retry_queue
+                        .retry_job_with_hook(&due_job.id, || {
+                            let _ = retry_tx.send(PipelineEvent::JobEnqueued {
+                                job_id: due_job.id.clone(),
+                                job_type: due_job.job_type.clone(),
+                                streamer_id: due_job.streamer_id.clone(),
+                            });
+                        })
+                        .await
+                        .unwrap();
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        });
+
+        let (job_1, attempt_1) = queue.dequeue(None).await.unwrap().unwrap();
+
+        // Spawn attempt 2's worker concurrently so it races to claim and
+        // complete the retried job the instant `retry_job_with_hook` wakes it.
+        let worker2_queue = queue.clone();
+        let worker2_events = event_tx.clone();
+        let worker2_scheduler = scheduler.clone();
+        let worker2_processor = processor.clone();
+        let worker2 = tokio::spawn(async move {
+            let mut runner2 = observed_runner(worker2_queue.clone(), worker2_events);
+            runner2.dag_scheduler = Some(worker2_scheduler);
+            let notifier = worker2_queue.notifier();
+            loop {
+                let notified = notifier.notified();
+                tokio::pin!(notified);
+                notified.as_mut().enable();
+                if let Some((job_2, attempt_2)) = worker2_queue.dequeue(None).await.unwrap() {
+                    runner2
+                        .execute_job(job_2, &worker2_processor, attempt_2)
+                        .await;
+                    break;
+                }
+                notified.await;
+            }
+        });
+
+        runner.execute_job(job_1, &processor, attempt_1).await;
+        tokio::time::timeout(Duration::from_secs(10), async {
+            requeuer.await.unwrap();
+            worker2.await.unwrap();
+        })
+        .await
+        .expect("zero-backoff retry and worker2 complete promptly");
+
+        let mut tags = Vec::new();
+        while let Ok(event) = event_rx.try_recv() {
+            match &event {
+                PipelineEvent::JobStarted { .. } => tags.push("started"),
+                PipelineEvent::JobRetryScheduled { .. } => tags.push("retry_scheduled"),
+                PipelineEvent::JobEnqueued { .. } => tags.push("enqueued"),
+                PipelineEvent::JobCompleted { .. } => tags.push("completed"),
+                PipelineEvent::JobFailed { .. } => tags.push("failed"),
+                _ => {}
+            }
+            if let Some(notice) = notifications.map(event, now) {
+                assert_ne!(notice.event_type(), "pipeline_failed");
+            }
+        }
+        assert_eq!(
+            tags,
+            vec![
+                "started",
+                "retry_scheduled",
+                "enqueued",
+                "started",
+                "completed"
+            ],
+            "round {round} must strictly order retry_scheduled -> enqueued -> started -> completed"
+        );
+
+        // Confirm no stale `job_to_streamer` entry survived after completion.
+        let probe = notifications
+            .map(
+                PipelineEvent::JobStarted {
+                    job_id,
+                    job_type: "flaky_zero_backoff".into(),
+                    streamer_id: String::new(),
+                },
+                now,
+            )
+            .unwrap();
+        assert!(matches!(
+            probe,
+            crate::notification::NotificationEvent::PipelineStarted { streamer_id, .. }
+                if streamer_id.is_empty()
+        ));
+    }
+
+    queue.stop_progress_aggregator().await;
 }
