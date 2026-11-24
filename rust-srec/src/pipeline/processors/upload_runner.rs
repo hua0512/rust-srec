@@ -16,8 +16,9 @@ use tokio::time::MissedTickBehavior;
 
 use super::traits::JobLogSink;
 use super::utils::{
-    CappedLines, CommandMode, CommandOutput, parse_eta_to_secs, parse_size_to_bytes,
-    parse_speed_to_bytes_per_sec, run_logged_command, run_logged_command_until,
+    CappedLines, CommandMode, CommandOutput, RcloneRunState, parse_eta_to_secs,
+    parse_size_to_bytes, parse_speed_to_bytes_per_sec, run_logged_command,
+    run_logged_command_until,
 };
 use crate::pipeline::job_queue::{JobLogEntry, LogLevel};
 use crate::pipeline::progress::{
@@ -652,6 +653,12 @@ struct RcloneJsonStats {
     /// Files in flight; rclone leaves the key out when there are none.
     #[serde(default)]
     transferring: Vec<RcloneTransfer>,
+    #[serde(default)]
+    errors: Option<u64>,
+    #[serde(default, rename = "lastError")]
+    last_error: Option<String>,
+    #[serde(default, rename = "fatalError")]
+    fatal_error: Option<bool>,
 }
 
 /// A file in flight.
@@ -740,8 +747,21 @@ fn snapshot_from_json_stats(stats: RcloneJsonStats) -> JobProgressSnapshot {
     snapshot
 }
 
+struct RcloneProgressDiagnostics {
+    errors: u64,
+    last_error: Option<String>,
+    fatal_error: bool,
+}
+
+// Stack-only return value immediately matched and consumed by
+// `consume_rclone_stderr` (never stored in collections); avoid boxing
+// `JobProgressSnapshot` on every 1-second stats tick.
+#[allow(clippy::large_enum_variant)]
 enum ParsedRcloneLine {
-    Progress(JobProgressSnapshot),
+    Progress {
+        snapshot: JobProgressSnapshot,
+        diagnostics: Option<RcloneProgressDiagnostics>,
+    },
     Log(JobLogEntry),
 }
 
@@ -756,8 +776,26 @@ fn parse_rclone_line(line: &str) -> ParsedRcloneLine {
     if trimmed.starts_with('{')
         && let Ok(parsed) = serde_json::from_str::<RcloneJsonLine>(trimmed)
     {
-        if let Some(stats) = parsed.stats {
-            return ParsedRcloneLine::Progress(snapshot_from_json_stats(stats));
+        if let Some(mut stats) = parsed.stats {
+            let last_error = stats.last_error.take().and_then(|msg| {
+                let trimmed = msg.trim();
+                if trimmed.is_empty() {
+                    None
+                } else if trimmed.len() == msg.len() {
+                    Some(msg)
+                } else {
+                    Some(trimmed.to_owned())
+                }
+            });
+            let diagnostics = RcloneProgressDiagnostics {
+                errors: stats.errors.unwrap_or(0),
+                last_error,
+                fatal_error: stats.fatal_error.unwrap_or(false),
+            };
+            return ParsedRcloneLine::Progress {
+                snapshot: snapshot_from_json_stats(stats),
+                diagnostics: Some(diagnostics),
+            };
         }
         let level = map_rclone_json_level(parsed.level.as_deref());
         let message = match parsed.msg.map(|msg| msg.trim().to_string()) {
@@ -768,7 +806,10 @@ fn parse_rclone_line(line: &str) -> ParsedRcloneLine {
     }
 
     if let Some(snapshot) = parse_rclone_stats_line(line) {
-        return ParsedRcloneLine::Progress(snapshot);
+        return ParsedRcloneLine::Progress {
+            snapshot,
+            diagnostics: None,
+        };
     }
     ParsedRcloneLine::Log(JobLogEntry::new(determine_rclone_log_level(line), line))
 }
@@ -788,20 +829,73 @@ fn determine_rclone_log_level(line: &str) -> LogLevel {
 }
 
 /// Reads rclone stderr to EOF, routing each line through
-/// [`parse_rclone_line`]: stats entries go to `progress`, everything else to
-/// the bounded log channel (`dropped_count` tracks `try_send` overflow).
-/// Overlong lines are skipped and counted by [`CappedLines`].
+/// [`parse_rclone_line`]: stats entries go to `progress`, error transitions
+/// inside JSON stats emit deduplicated warning entries and record `fatalError`
+/// and `lastError` in `state`, and everything else goes to the bounded log
+/// channel (`dropped_count` tracks `try_send` overflow). Overlong lines are
+/// skipped and counted by [`CappedLines`].
 pub(super) async fn consume_rclone_stderr<R: AsyncRead + Unpin>(
     reader: R,
     progress: ProgressReporter,
+    state: Arc<Mutex<RcloneRunState>>,
     tx: tokio::sync::mpsc::Sender<JobLogEntry>,
     dropped_count: Arc<AtomicUsize>,
     overlong_count: Arc<AtomicUsize>,
 ) -> std::io::Result<()> {
     let mut lines = CappedLines::new(reader, overlong_count);
+    let mut last_error_count = 0u64;
+    let mut last_error_message: Option<String> = None;
+    let mut saw_fatal_error = false;
     while let Some(line) = lines.next_line().await? {
         match parse_rclone_line(&line) {
-            ParsedRcloneLine::Progress(snapshot) => progress.report(snapshot),
+            ParsedRcloneLine::Progress {
+                snapshot,
+                diagnostics,
+            } => {
+                progress.report(snapshot);
+                if let Some(diag) = diagnostics {
+                    // When a preset overrides `--retries > 1`, rclone resets
+                    // `stats.errors` to 0 at the start of the next internal
+                    // pass. Reset both count and last message whenever the
+                    // counter drops so a new pass is surfaced even if no zero
+                    // tick was observed before its first error.
+                    if diag.errors < last_error_count {
+                        last_error_count = 0;
+                        last_error_message = None;
+                    }
+                    let fatal_flipped = diag.fatal_error && !saw_fatal_error;
+                    let count_increased = diag.errors > last_error_count;
+                    let message_changed =
+                        diag.last_error.is_some() && diag.last_error != last_error_message;
+                    if fatal_flipped || message_changed {
+                        let mut run_state = state.lock();
+                        if fatal_flipped {
+                            saw_fatal_error = true;
+                            run_state.fatal_error = true;
+                        }
+                        if message_changed && let Some(msg) = &diag.last_error {
+                            run_state.last_stats_error = Some(msg.clone());
+                        }
+                    }
+                    if count_increased || message_changed {
+                        last_error_count = diag.errors;
+                        let message = if let Some(msg) = diag.last_error {
+                            let formatted = if last_error_count > 0 {
+                                format!("rclone transfer error (#{last_error_count}): {msg}")
+                            } else {
+                                format!("rclone transfer error: {msg}")
+                            };
+                            last_error_message = Some(msg);
+                            formatted
+                        } else {
+                            format!("rclone reported {last_error_count} transfer error(s)")
+                        };
+                        if tx.try_send(JobLogEntry::warn(message)).is_err() {
+                            dropped_count.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                }
+            }
             ParsedRcloneLine::Log(entry) => {
                 if tx.try_send(entry).is_err() {
                     dropped_count.fetch_add(1, Ordering::Relaxed);
@@ -821,7 +915,15 @@ pub(super) async fn run_rclone_with_progress(
     progress: &ProgressReporter,
     log_sink: Option<JobLogSink>,
 ) -> crate::Result<CommandOutput> {
-    run_logged_command(command, CommandMode::Rclone(progress.clone()), log_sink).await
+    run_logged_command(
+        command,
+        CommandMode::Rclone {
+            progress: progress.clone(),
+            state: Arc::default(),
+        },
+        log_sink,
+    )
+    .await
 }
 
 /// Minimum seconds between progress-bar lines forwarded to the live log
@@ -964,7 +1066,8 @@ mod tests {
 
     #[test]
     fn parse_rclone_line_json_stats_becomes_progress() {
-        let ParsedRcloneLine::Progress(snapshot) = parse_rclone_line(RCLONE_JSON_STATS_LINE) else {
+        let ParsedRcloneLine::Progress { snapshot, .. } = parse_rclone_line(RCLONE_JSON_STATS_LINE)
+        else {
             panic!("stats JSON line should parse as progress");
         };
 
@@ -994,13 +1097,13 @@ mod tests {
     #[test]
     fn parse_rclone_line_names_the_file_in_flight_without_its_directories() {
         let line = r#"{"level":"notice","stats":{"bytes":10,"totalBytes":40,"transferring":[{"name":"day/sub/clip2.mp4","bytes":10}],"transfers":1,"totalTransfers":2}}"#;
-        let ParsedRcloneLine::Progress(snapshot) = parse_rclone_line(line) else {
+        let ParsedRcloneLine::Progress { snapshot, .. } = parse_rclone_line(line) else {
             panic!("stats JSON line should parse as progress");
         };
         assert_eq!(snapshot.current_file.as_deref(), Some("clip2.mp4"));
 
         let line = r#"{"level":"notice","stats":{"bytes":10,"totalBytes":40,"transferring":[{"name":"clip2.mp4","bytes":6},{"name":"clip3.mp4","bytes":4}],"transfers":0,"totalTransfers":2}}"#;
-        let ParsedRcloneLine::Progress(snapshot) = parse_rclone_line(line) else {
+        let ParsedRcloneLine::Progress { snapshot, .. } = parse_rclone_line(line) else {
             panic!("stats JSON line with two transfers in flight should parse as progress");
         };
         assert_eq!(snapshot.current_file, None);
@@ -1008,7 +1111,7 @@ mod tests {
         // rclone leaves `transferring` out when nothing is in flight, as on
         // its final line.
         let line = r#"{"level":"notice","stats":{"bytes":40,"totalBytes":40,"speed":20,"eta":0,"transfers":2,"totalTransfers":2}}"#;
-        let ParsedRcloneLine::Progress(snapshot) = parse_rclone_line(line) else {
+        let ParsedRcloneLine::Progress { snapshot, .. } = parse_rclone_line(line) else {
             panic!("stats JSON line without transfers in flight should parse as progress");
         };
         assert_eq!(
@@ -1020,7 +1123,7 @@ mod tests {
     #[test]
     fn parse_rclone_line_json_stats_with_unknown_totals() {
         let line = r#"{"level":"notice","msg":"early tick","stats":{"bytes":0,"totalBytes":0,"speed":0,"eta":null,"transfers":0,"totalTransfers":0}}"#;
-        let ParsedRcloneLine::Progress(snapshot) = parse_rclone_line(line) else {
+        let ParsedRcloneLine::Progress { snapshot, .. } = parse_rclone_line(line) else {
             panic!("stats JSON line should parse as progress");
         };
 
@@ -1035,7 +1138,7 @@ mod tests {
     fn parse_rclone_line_json_stats_phases() {
         let phase = |stats: &str| {
             let line = format!(r#"{{"level":"notice","stats":{stats}}}"#);
-            let ParsedRcloneLine::Progress(snapshot) = parse_rclone_line(&line) else {
+            let ParsedRcloneLine::Progress { snapshot, .. } = parse_rclone_line(&line) else {
                 panic!("stats JSON line should parse as progress");
             };
             snapshot.phase
@@ -1092,7 +1195,7 @@ mod tests {
     #[test]
     fn parse_rclone_line_legacy_transferred_text() {
         let line = "Transferred:   1.500 MiB / 3 MiB, 50%, 512 KiB/s, ETA 3s";
-        let ParsedRcloneLine::Progress(snapshot) = parse_rclone_line(line) else {
+        let ParsedRcloneLine::Progress { snapshot, .. } = parse_rclone_line(line) else {
             panic!("Transferred: text should parse as progress");
         };
 
@@ -1117,6 +1220,7 @@ mod tests {
 
         let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel(8);
         let progress = ProgressReporter::new("job-1", progress_tx);
+        let state = Arc::new(Mutex::new(RcloneRunState::default()));
         let (log_tx, mut log_rx) = tokio::sync::mpsc::channel::<JobLogEntry>(8);
         let dropped = Arc::new(AtomicUsize::new(0));
         let overlong = Arc::new(AtomicUsize::new(0));
@@ -1124,6 +1228,7 @@ mod tests {
         consume_rclone_stderr(
             input.as_slice(),
             progress,
+            state.clone(),
             log_tx,
             dropped.clone(),
             overlong.clone(),
@@ -1141,6 +1246,82 @@ mod tests {
 
         assert_eq!(overlong.load(Ordering::Relaxed), 1);
         assert_eq!(dropped.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn consume_rclone_stderr_surfaces_stats_error_transitions_and_fatal_flag() {
+        let stream = concat!(
+            r#"{"level":"notice","stats":{"bytes":100,"totalBytes":1000,"errors":0,"fatalError":false}}"#,
+            "\n",
+            r#"{"level":"notice","stats":{"bytes":100,"totalBytes":1000,"errors":1,"lastError":"googleapi: Error 403: rateLimitExceeded","fatalError":false}}"#,
+            "\n",
+            r#"{"level":"notice","stats":{"bytes":100,"totalBytes":1000,"errors":1,"lastError":"googleapi: Error 403: rateLimitExceeded","fatalError":false}}"#,
+            "\n",
+            r#"{"level":"notice","stats":{"bytes":100,"totalBytes":1000,"errors":2,"lastError":"googleapi: Error 403: rateLimitExceeded","fatalError":false}}"#,
+            "\n",
+            // Next pass starts directly at `errors: 1` with the same `lastError`
+            // (no intervening `errors: 0` tick observed); must still surface.
+            r#"{"level":"notice","stats":{"bytes":100,"totalBytes":1000,"errors":1,"lastError":"googleapi: Error 403: rateLimitExceeded","fatalError":false}}"#,
+            "\n",
+            // Next pass starts via an explicit `errors: 0` tick, then hits fatal.
+            r#"{"level":"notice","stats":{"bytes":0,"totalBytes":1000,"errors":0,"fatalError":false}}"#,
+            "\n",
+            r#"{"level":"notice","stats":{"bytes":100,"totalBytes":1000,"errors":1,"lastError":"googleapi: Error 403: userRateLimitExceeded","fatalError":true}}"#,
+            "\n",
+        );
+
+        let (progress_tx, _progress_rx) = tokio::sync::mpsc::channel(8);
+        let progress = ProgressReporter::new("job-2", progress_tx);
+        let state = Arc::new(Mutex::new(RcloneRunState::default()));
+        let (log_tx, mut log_rx) = tokio::sync::mpsc::channel::<JobLogEntry>(8);
+
+        consume_rclone_stderr(
+            stream.as_bytes(),
+            progress,
+            state.clone(),
+            log_tx,
+            Arc::default(),
+            Arc::default(),
+        )
+        .await
+        .expect("stream drains");
+
+        let mut logs = Vec::new();
+        while let Ok(entry) = log_rx.try_recv() {
+            logs.push((entry.level, entry.message));
+        }
+
+        assert_eq!(
+            logs,
+            vec![
+                (
+                    LogLevel::Warn,
+                    "rclone transfer error (#1): googleapi: Error 403: rateLimitExceeded"
+                        .to_string(),
+                ),
+                (
+                    LogLevel::Warn,
+                    "rclone transfer error (#2): googleapi: Error 403: rateLimitExceeded"
+                        .to_string(),
+                ),
+                (
+                    LogLevel::Warn,
+                    "rclone transfer error (#1): googleapi: Error 403: rateLimitExceeded"
+                        .to_string(),
+                ),
+                (
+                    LogLevel::Warn,
+                    "rclone transfer error (#1): googleapi: Error 403: userRateLimitExceeded"
+                        .to_string(),
+                ),
+            ]
+        );
+        let run_state = state.lock();
+        assert!(run_state.fatal_error);
+        assert_eq!(
+            run_state.last_stats_error.as_deref(),
+            Some("googleapi: Error 403: userRateLimitExceeded")
+        );
     }
 
     #[tokio::test]

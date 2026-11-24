@@ -19,26 +19,28 @@ function terminal(status: UploadTerminalStatus) {
 }
 
 describe('handleUploadTerminal', () => {
-  it('removes the live upload and invalidates only its durable records', async () => {
-    const queryClient = new QueryClient();
-    const targetKey = queryKeys.pipeline.jobs.uploads('job-1');
-    const otherKey = queryKeys.pipeline.jobs.uploads('job-2');
-    queryClient.setQueryData(targetKey, { items: [] });
-    queryClient.setQueryData(otherKey, { items: [] });
-    const removeUpload = vi.fn();
-    const failUpload = vi.fn();
+  it.each([UploadTerminalStatus.COMPLETED, UploadTerminalStatus.RETRYING])(
+    'removes the live upload and invalidates only its durable records for status %s',
+    async (status) => {
+      const queryClient = new QueryClient();
+      const targetKey = queryKeys.pipeline.jobs.uploads('job-1');
+      const otherKey = queryKeys.pipeline.jobs.uploads('job-2');
+      queryClient.setQueryData(targetKey, { items: [] });
+      queryClient.setQueryData(otherKey, { items: [] });
+      const removeUpload = vi.fn();
+      const failUpload = vi.fn();
 
-    await handleUploadTerminal(
-      queryClient,
-      terminal(UploadTerminalStatus.COMPLETED),
-      { removeUpload, failUpload },
-    );
+      await handleUploadTerminal(queryClient, terminal(status), {
+        removeUpload,
+        failUpload,
+      });
 
-    expect(removeUpload).toHaveBeenCalledExactlyOnceWith('job-1');
-    expect(failUpload).not.toHaveBeenCalled();
-    expect(queryClient.getQueryState(targetKey)?.isInvalidated).toBe(true);
-    expect(queryClient.getQueryState(otherKey)?.isInvalidated).toBe(false);
-  });
+      expect(removeUpload).toHaveBeenCalledExactlyOnceWith('job-1');
+      expect(failUpload).not.toHaveBeenCalled();
+      expect(queryClient.getQueryState(targetKey)?.isInvalidated).toBe(true);
+      expect(queryClient.getQueryState(otherKey)?.isInvalidated).toBe(false);
+    },
+  );
 
   it('keeps a failed upload, with its error, instead of removing it', async () => {
     const removeUpload = vi.fn();

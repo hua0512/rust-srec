@@ -15,6 +15,8 @@ struct MockBaiduPcsCommandRunner {
     attempts: Mutex<VecDeque<MockAttempt>>,
     commands: Mutex<Vec<Vec<String>>>,
     envs: Mutex<Vec<Vec<(String, String)>>>,
+    active_uids: Mutex<VecDeque<Option<u64>>>,
+    default_uid: Mutex<Option<u64>>,
 }
 
 impl MockBaiduPcsCommandRunner {
@@ -23,7 +25,19 @@ impl MockBaiduPcsCommandRunner {
             attempts: Mutex::new(attempts.into()),
             commands: Mutex::new(Vec::new()),
             envs: Mutex::new(Vec::new()),
+            active_uids: Mutex::new(VecDeque::new()),
+            default_uid: Mutex::new(Some(1)),
         }
+    }
+
+    fn with_active_uid(self, uid: Option<u64>) -> Self {
+        *self.default_uid.lock().unwrap() = uid;
+        self
+    }
+
+    fn with_active_uid_sequence(self, uids: Vec<Option<u64>>) -> Self {
+        *self.active_uids.lock().unwrap() = uids.into();
+        self
     }
 
     fn commands(&self) -> Vec<Vec<String>> {
@@ -87,7 +101,23 @@ impl BaiduPcsCommandRunner for MockBaiduPcsCommandRunner {
             status: test_exit_status(attempt.exit_ok),
             duration: 0.0,
             logs,
+            fatal_error: false,
+            last_stats_error: None,
         })
+    }
+
+    async fn active_account_uid(
+        &self,
+        _binary_path: &str,
+        _config_dir: Option<&str>,
+        _context: &ProcessorContext,
+        _config_lease: &ConfigLease,
+    ) -> Option<u64> {
+        if let Some(uid) = self.active_uids.lock().unwrap().pop_front() {
+            uid
+        } else {
+            *self.default_uid.lock().unwrap()
+        }
     }
 }
 
@@ -1014,6 +1044,7 @@ async fn permanent_failures_are_not_retried() {
     assert_eq!(output.succeeded_inputs, vec![flaky_str]);
     assert_eq!(output.uploads[0].status, UploadItemStatus::Failed);
     assert_eq!(output.uploads[1].status, UploadItemStatus::Completed);
+    assert!(output.non_retryable);
 
     // Only permanent failures: no retry runs at all, and the job fails.
     let runner = Arc::new(MockBaiduPcsCommandRunner::new(vec![MockAttempt {
@@ -1037,6 +1068,7 @@ async fn permanent_failures_are_not_retried() {
         .await
         .unwrap_err();
     assert_eq!(runner.commands().len(), 1);
+    assert!(matches!(error, crate::Error::NonRetryablePipeline(_)));
     assert!(error.to_string().contains("after 1 attempt(s)"), "{error}");
 }
 
@@ -1172,5 +1204,590 @@ async fn login_probe_output_stays_out_of_the_job_log() {
     assert!(
         logged.iter().any(|line| line.contains(&file_str)),
         "{logged:?}"
+    );
+}
+
+#[tokio::test]
+async fn step_retry_defers_baidupcs_retries_and_relogins_on_workflow_retry() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let file = temp_dir.path().join("a.flv");
+    tokio::fs::write(&file, b"video").await.unwrap();
+    let file_str = file.to_string_lossy().into_owned();
+    let input = ProcessorInput {
+        inputs: vec![file_str.clone()],
+        config: Some(r#"{"destination_root":"/rec","max_retries":3}"#.to_string()),
+        ..Default::default()
+    };
+
+    // First workflow attempt: `who` reports logged in, upload fails once and does not loop in-run.
+    let runner_first = Arc::new(MockBaiduPcsCommandRunner::new(vec![
+        MockAttempt {
+            exit_ok: true,
+            lines: vec![who_line(42)],
+        },
+        MockAttempt {
+            exit_ok: false,
+            lines: vec![queue_line(1, &file_str)],
+        },
+    ]));
+    let auth_first = MockAuthenticator::new(true, true);
+    let processor_first = MockBaiduPcsCommandRunner::processor(runner_first.clone())
+        .with_authenticator(auth_first.clone());
+    let err = processor_first
+        .process(
+            &input,
+            &ProcessorContext::noop("step-retry-1").with_step_retry(true),
+        )
+        .await
+        .unwrap_err();
+    assert!(!err.is_non_retryable_step_error());
+    assert_eq!(runner_first.commands().len(), 2); // who + 1 upload
+    assert_eq!(auth_first.relogin_calls(), 0);
+
+    // Workflow-scheduled retry (`is_retry = true`, `has_step_retry = true`): still refreshes the
+    // session via stored credentials before the single upload attempt.
+    let runner_retry = Arc::new(MockBaiduPcsCommandRunner::new(vec![MockAttempt {
+        exit_ok: true,
+        lines: vec![
+            queue_line(1, &file_str),
+            success_line(1, "/rec/a.flv"),
+            finished_line(),
+        ],
+    }]));
+    let auth_retry = MockAuthenticator::new(true, true);
+    let processor_retry = MockBaiduPcsCommandRunner::processor(runner_retry.clone())
+        .with_authenticator(auth_retry.clone());
+    let ctx_retry = ProcessorContext::noop("step-retry-2")
+        .with_retry(true)
+        .with_step_retry(true);
+    let output = processor_retry.process(&input, &ctx_retry).await.unwrap();
+    assert_eq!(auth_retry.relogin_calls(), 1);
+    assert_eq!(runner_retry.commands().len(), 1);
+    assert_eq!(output.succeeded_inputs, vec![file_str]);
+}
+
+#[tokio::test]
+async fn mixed_permanent_and_transient_failures_remain_retryable() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let ok_file = temp_dir.path().join("ok.flv");
+    let bad_file = temp_dir.path().join("bad.flv");
+    let transient_file = temp_dir.path().join("retry.flv");
+    tokio::fs::write(&ok_file, b"ok").await.unwrap();
+    tokio::fs::write(&bad_file, b"bad").await.unwrap();
+    tokio::fs::write(&transient_file, b"retry").await.unwrap();
+    let ok_str = ok_file.to_string_lossy().into_owned();
+    let bad_str = bad_file.to_string_lossy().into_owned();
+    let transient_str = transient_file.to_string_lossy().into_owned();
+
+    // Partial batch mixing permanent and transient failures must stay retryable
+    // so the workflow can still retry the transiently failed file.
+    let runner = Arc::new(MockBaiduPcsCommandRunner::new(vec![MockAttempt {
+        exit_ok: true,
+        lines: vec![
+            queue_line(1, &ok_str),
+            queue_line(2, &transient_str),
+            success_line(1, "/rec/ok.flv"),
+            format!("[0] {bad_str} 文件路径含有非法字符，已跳过!"),
+            "[2] 上传文件失败, 网络超时".to_string(),
+            finished_line(),
+        ],
+    }]));
+    let processor = MockBaiduPcsCommandRunner::processor(runner);
+    let output = processor
+        .process(
+            &ProcessorInput {
+                inputs: vec![ok_str, bad_str, transient_str],
+                config: Some(r#"{"destination_root":"/rec","max_retries":1}"#.to_string()),
+                ..Default::default()
+            },
+            &ProcessorContext::noop("partial-mixed"),
+        )
+        .await
+        .unwrap();
+    assert!(!output.non_retryable);
+    assert_eq!(output.failed_inputs.len(), 2);
+}
+
+#[tokio::test]
+async fn workflow_retry_carries_forward_only_matching_account_version_and_normalized_path() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let first = temp_dir.path().join("a.flv");
+    let second = temp_dir.path().join("b.flv");
+    tokio::fs::write(&first, b"video-a").await.unwrap();
+    tokio::fs::write(&second, b"video-b").await.unwrap();
+    let first_str = first.to_string_lossy().into_owned();
+    let second_str = second.to_string_lossy().into_owned();
+    // Uncleaned destination `/rec//daily /` must clean idempotently to `/rec/daily `
+    // (preserving the segment's trailing space) and match `/rec/daily /a.flv`.
+    let input = ProcessorInput {
+        inputs: vec![first_str.clone(), second_str.clone()],
+        config: Some(
+            r#"{"destination_root":"/rec//daily /","policy":"skip","remove_source_after_upload":true,"max_retries":3}"#
+                .to_string(),
+        ),
+        ..Default::default()
+    };
+
+    // Attempt 1 (account 1001) uploads `a.flv` and fails on `b.flv`; both local sources stay on disk.
+    let runner_1 = Arc::new(
+        MockBaiduPcsCommandRunner::new(vec![MockAttempt {
+            exit_ok: true,
+            lines: vec![
+                queue_line(1, &first_str),
+                queue_line(2, &second_str),
+                success_line(1, "/rec/daily /a.flv"),
+                "[2] 上传文件失败, 网络超时".to_string(),
+                finished_line(),
+            ],
+        }])
+        .with_active_uid(Some(1001)),
+    );
+    let attempt_1 = MockBaiduPcsCommandRunner::processor(runner_1)
+        .process(
+            &input,
+            &ProcessorContext::noop("baidupcs-carry-1").with_step_retry(true),
+        )
+        .await
+        .unwrap();
+    assert!(first.exists() && second.exists());
+    let confirmed_a = attempt_1
+        .confirmed_uploads
+        .get(&first_str)
+        .expect("a.flv confirmed on account 1001");
+    assert_eq!(confirmed_a.remote_path, "/rec/daily /a.flv");
+    assert_eq!(confirmed_a.account_uid, 1001);
+    assert_eq!(confirmed_a.fingerprint.size_bytes, 7);
+
+    // Attempt 2 after switching to account 2002 MUST NOT carry forward `a.flv` or delete it
+    // without uploading it to account 2002.
+    let runner_switched = Arc::new(
+        MockBaiduPcsCommandRunner::new(vec![MockAttempt {
+            exit_ok: true,
+            lines: vec![
+                queue_line(1, &first_str),
+                queue_line(2, &second_str),
+                "[1] 上传文件失败, 网络超时".to_string(),
+                success_line(2, "/rec/daily /b.flv"),
+                finished_line(),
+            ],
+        }])
+        .with_active_uid(Some(2002)),
+    );
+    let switched_attempt = MockBaiduPcsCommandRunner::processor(runner_switched.clone())
+        .process(
+            &input,
+            &ProcessorContext::noop("baidupcs-carry-1")
+                .with_retry(true)
+                .with_step_retry(true)
+                .with_prior_completed_uploads(attempt_1.confirmed_uploads.clone()),
+        )
+        .await
+        .unwrap();
+    let switched_cmds = runner_switched.commands();
+    assert_eq!(switched_cmds.len(), 1);
+    assert!(
+        switched_cmds[0].contains(&first_str),
+        "account switch must re-send a.flv"
+    );
+    assert!(switched_cmds[0].contains(&second_str));
+    assert!(
+        first.exists() && second.exists(),
+        "partial failure on switched account must keep local sources"
+    );
+    assert_eq!(
+        switched_attempt
+            .confirmed_uploads
+            .get(&second_str)
+            .map(|c| (c.account_uid, c.remote_path.as_str())),
+        Some((2002, "/rec/daily /b.flv"))
+    );
+    assert!(!switched_attempt.confirmed_uploads.contains_key(&first_str));
+
+    // Replacing `b.flv` on disk with the EXACT SAME SIZE and PRESERVED mtime
+    // invalidates its carry-forward confirmation even on the same account 2002,
+    // so the retry uploads the replacement instead of skipping & deleting it.
+    let original_mtime = std::fs::metadata(&second).unwrap().modified().unwrap();
+    let replacement_bytes = b"VIDEO-B"; // same 7-byte length as `b"video-b"`
+    assert_eq!(replacement_bytes.len(), b"video-b".len());
+    {
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&second)
+            .unwrap();
+        std::io::Write::write_all(&mut f, replacement_bytes).unwrap();
+        f.set_modified(original_mtime).unwrap();
+    }
+    assert_eq!(
+        std::fs::metadata(&second).unwrap().modified().unwrap(),
+        original_mtime
+    );
+    let runner_replaced = Arc::new(
+        MockBaiduPcsCommandRunner::new(vec![MockAttempt {
+            exit_ok: true,
+            lines: vec![
+                queue_line(1, &first_str),
+                queue_line(2, &second_str),
+                "[1] 上传文件失败, 网络超时".to_string(),
+                success_line(2, "/rec/daily /b.flv"),
+                finished_line(),
+            ],
+        }])
+        .with_active_uid(Some(2002)),
+    );
+    let replaced_attempt = MockBaiduPcsCommandRunner::processor(runner_replaced.clone())
+        .process(
+            &input,
+            &ProcessorContext::noop("baidupcs-carry-1")
+                .with_retry(true)
+                .with_step_retry(true)
+                .with_prior_completed_uploads(switched_attempt.confirmed_uploads.clone()),
+        )
+        .await
+        .unwrap();
+    let replaced_cmds = runner_replaced.commands();
+    assert_eq!(replaced_cmds.len(), 1);
+    assert!(
+        replaced_cmds[0].contains(&second_str),
+        "same-size preserved-mtime replacement must be re-uploaded instead of skipped"
+    );
+    assert!(
+        second.exists(),
+        "partial failure must preserve replaced b.flv"
+    );
+
+    // Attempt 4 still on account 2002 with unchanged `b.flv` carries forward `b.flv`
+    // (even with unnormalized prior path), uploads only `a.flv`, and deletes both files.
+    let mut unnormalized_prior = replaced_attempt.confirmed_uploads.clone();
+    unnormalized_prior.get_mut(&second_str).unwrap().remote_path =
+        "/rec//./daily /b.flv".to_string();
+    let runner_4 = Arc::new(
+        MockBaiduPcsCommandRunner::new(vec![MockAttempt {
+            exit_ok: true,
+            lines: vec![
+                queue_line(1, &first_str),
+                success_line(1, "/rec/daily /a.flv"),
+                finished_line(),
+            ],
+        }])
+        .with_active_uid(Some(2002)),
+    );
+    let attempt_4 = MockBaiduPcsCommandRunner::processor(runner_4.clone())
+        .process(
+            &input,
+            &ProcessorContext::noop("baidupcs-carry-1")
+                .with_retry(true)
+                .with_step_retry(true)
+                .with_prior_completed_uploads(unnormalized_prior),
+        )
+        .await
+        .unwrap();
+
+    let commands = runner_4.commands();
+    assert_eq!(commands.len(), 1);
+    assert!(commands[0].contains(&first_str));
+    assert!(!commands[0].contains(&second_str));
+    assert!(!first.exists(), "newly uploaded source must be removed");
+    assert!(
+        !second.exists(),
+        "carried-forward source matching account and fingerprint must be removed"
+    );
+    assert!(
+        attempt_4
+            .uploads
+            .iter()
+            .all(|item| item.status == UploadItemStatus::Completed),
+        "{:?}",
+        attempt_4.uploads
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn in_run_retry_requeues_skipped_and_completed_files_on_account_switch_or_failed_probe() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let first = temp_dir.path().join("a.flv");
+    let second = temp_dir.path().join("b.flv");
+    tokio::fs::write(&first, b"video-a").await.unwrap();
+    tokio::fs::write(&second, b"video-b").await.unwrap();
+    let first_str = first.to_string_lossy().into_owned();
+    let second_str = second.to_string_lossy().into_owned();
+    let input = ProcessorInput {
+        inputs: vec![first_str.clone(), second_str.clone()],
+        config: Some(r#"{"destination_root":"/rec","policy":"skip","max_retries":2}"#.to_string()),
+        ..Default::default()
+    };
+
+    // Attempt 1 on account 1001: `a.flv` skipped (already exists on 1001), `b.flv` fails.
+    // Attempt 2 switches to account 2002: `a.flv` must be re-sent alongside `b.flv`.
+    let runner_switch = Arc::new(
+        MockBaiduPcsCommandRunner::new(vec![
+            MockAttempt {
+                exit_ok: true,
+                lines: vec![
+                    queue_line(1, &first_str),
+                    queue_line(2, &second_str),
+                    "[1] 目标文件已存在, 跳过".to_string(),
+                    "[2] 上传文件失败, 网络超时".to_string(),
+                    finished_line(),
+                ],
+            },
+            MockAttempt {
+                exit_ok: true,
+                lines: vec![
+                    queue_line(1, &first_str),
+                    queue_line(2, &second_str),
+                    success_line(1, "/rec/a.flv"),
+                    success_line(2, "/rec/b.flv"),
+                    finished_line(),
+                ],
+            },
+        ])
+        .with_active_uid_sequence(vec![Some(1001), Some(2002)]),
+    );
+    MockBaiduPcsCommandRunner::processor(runner_switch.clone())
+        .process(&input, &ProcessorContext::noop("in-run-switch"))
+        .await
+        .unwrap();
+    let cmds = runner_switch.commands();
+    assert_eq!(cmds.len(), 2);
+    assert!(
+        cmds[1].contains(&first_str) && cmds[1].contains(&second_str),
+        "account switch during in-run retry must re-send previously skipped a.flv: {cmds:?}"
+    );
+
+    // Two unverified (`None`) probes must NOT be treated as matching accounts.
+    let runner_unverified = Arc::new(
+        MockBaiduPcsCommandRunner::new(vec![
+            MockAttempt {
+                exit_ok: true,
+                lines: vec![
+                    queue_line(1, &first_str),
+                    queue_line(2, &second_str),
+                    success_line(1, "/rec/a.flv"),
+                    "[2] 上传文件失败, 网络超时".to_string(),
+                    finished_line(),
+                ],
+            },
+            MockAttempt {
+                exit_ok: true,
+                lines: vec![
+                    queue_line(1, &first_str),
+                    queue_line(2, &second_str),
+                    success_line(1, "/rec/a.flv"),
+                    success_line(2, "/rec/b.flv"),
+                    finished_line(),
+                ],
+            },
+        ])
+        .with_active_uid_sequence(vec![None, None]),
+    );
+    MockBaiduPcsCommandRunner::processor(runner_unverified.clone())
+        .process(&input, &ProcessorContext::noop("in-run-unverified"))
+        .await
+        .unwrap();
+    let cmds = runner_unverified.commands();
+    assert_eq!(cmds.len(), 2);
+    assert!(
+        cmds[1].contains(&first_str) && cmds[1].contains(&second_str),
+        "failed account probes must fail closed and re-send a.flv: {cmds:?}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn mid_upload_or_pre_cleanup_file_modification_reuploads_and_never_deletes_replacement() {
+    type PostRunHook = Box<dyn FnOnce() + Send>;
+
+    struct MutatingRunner {
+        inner: MockBaiduPcsCommandRunner,
+        hooks: Mutex<VecDeque<Option<PostRunHook>>>,
+    }
+
+    #[async_trait]
+    impl BaiduPcsCommandRunner for MutatingRunner {
+        async fn run(
+            &self,
+            command: Command,
+            context: &ProcessorContext,
+            tracker: Option<Arc<UploadTracker>>,
+            config_lease: &ConfigLease,
+        ) -> Result<CommandOutput> {
+            let output = self
+                .inner
+                .run(command, context, tracker, config_lease)
+                .await?;
+            if let Some(Some(hook)) = self.hooks.lock().unwrap().pop_front() {
+                hook();
+            }
+            Ok(output)
+        }
+
+        async fn active_account_uid(
+            &self,
+            binary_path: &str,
+            config_dir: Option<&str>,
+            context: &ProcessorContext,
+            config_lease: &ConfigLease,
+        ) -> Option<u64> {
+            self.inner
+                .active_account_uid(binary_path, config_dir, context, config_lease)
+                .await
+        }
+    }
+
+    // 1. Mid-upload modification on the same account: attempt 1 must NOT retain
+    //    `a.flv` as completed; attempt 2 re-uploads both `a.flv` and `b.flv`.
+    let temp_dir = tempfile::tempdir().unwrap();
+    let first = temp_dir.path().join("a.flv");
+    let second = temp_dir.path().join("b.flv");
+    tokio::fs::write(&first, b"video-a").await.unwrap();
+    tokio::fs::write(&second, b"video-b").await.unwrap();
+    let first_str = first.to_string_lossy().into_owned();
+    let second_str = second.to_string_lossy().into_owned();
+    let first_for_hook = first.clone();
+
+    let runner = Arc::new(MutatingRunner {
+        inner: MockBaiduPcsCommandRunner::new(vec![
+            MockAttempt {
+                exit_ok: true,
+                lines: vec![
+                    queue_line(1, &first_str),
+                    queue_line(2, &second_str),
+                    success_line(1, "/rec/a.flv"),
+                    "[2] 上传文件失败, 网络超时".to_string(),
+                    finished_line(),
+                ],
+            },
+            MockAttempt {
+                exit_ok: true,
+                lines: vec![
+                    queue_line(1, &first_str),
+                    queue_line(2, &second_str),
+                    success_line(1, "/rec/a.flv"),
+                    success_line(2, "/rec/b.flv"),
+                    finished_line(),
+                ],
+            },
+        ])
+        .with_active_uid(Some(1001)),
+        hooks: Mutex::new(VecDeque::from([
+            Some(Box::new(move || {
+                let mtime = std::fs::metadata(&first_for_hook)
+                    .unwrap()
+                    .modified()
+                    .unwrap();
+                let mut f = std::fs::OpenOptions::new()
+                    .write(true)
+                    .truncate(true)
+                    .open(&first_for_hook)
+                    .unwrap();
+                std::io::Write::write_all(&mut f, b"VIDEO-A").unwrap();
+                f.set_modified(mtime).unwrap();
+            }) as Box<dyn FnOnce() + Send>),
+            None,
+        ])),
+    });
+    let processor = BaiduPcsProcessor::with_command_runner("BaiduPCS-Go", runner.clone());
+    processor
+        .process(
+            &ProcessorInput {
+                inputs: vec![first_str.clone(), second_str.clone()],
+                config: Some(
+                    r#"{"destination_root":"/rec","policy":"skip","remove_source_after_upload":true,"max_retries":2}"#
+                        .to_string(),
+                ),
+                ..Default::default()
+            },
+            &ProcessorContext::noop("mid-upload-edit"),
+        )
+        .await
+        .unwrap();
+    let cmds = runner.inner.commands();
+    assert_eq!(cmds.len(), 2);
+    assert!(
+        cmds[1].contains(&first_str) && cmds[1].contains(&second_str),
+        "mid-upload edit must prevent retaining a.flv across in-run retry: {cmds:?}"
+    );
+    assert!(
+        !first.exists() && !second.exists(),
+        "settled files uploaded on attempt 2 are removed"
+    );
+
+    // 2. Replacement of chunk 1's already-uploaded `a.flv` while chunk 2 uploads
+    //    `b.flv`: per-file revalidation at removal time preserves the replaced
+    //    `a.flv` and still removes the unchanged `b.flv`.
+    let first2 = temp_dir.path().join("c.flv");
+    let second2 = temp_dir.path().join("d.flv");
+    tokio::fs::write(&first2, b"video-c").await.unwrap();
+    tokio::fs::write(&second2, b"video-d").await.unwrap();
+    let first2_str = first2.to_string_lossy().into_owned();
+    let second2_str = second2.to_string_lossy().into_owned();
+    let first2_for_hook = first2.clone();
+    let budget = first2_str.len() + 1;
+
+    let chunked_runner = Arc::new(MutatingRunner {
+        inner: MockBaiduPcsCommandRunner::new(vec![
+            MockAttempt {
+                exit_ok: true,
+                lines: vec![
+                    queue_line(1, &first2_str),
+                    success_line(1, "/rec/c.flv"),
+                    finished_line(),
+                ],
+            },
+            MockAttempt {
+                exit_ok: true,
+                lines: vec![
+                    queue_line(1, &second2_str),
+                    success_line(1, "/rec/d.flv"),
+                    finished_line(),
+                ],
+            },
+        ])
+        .with_active_uid(Some(1001)),
+        hooks: Mutex::new(VecDeque::from([
+            None,
+            Some(Box::new(move || {
+                // Replace `c.flv` with same-size preserved-mtime bytes right
+                // before cleanup runs.
+                let mtime = std::fs::metadata(&first2_for_hook)
+                    .unwrap()
+                    .modified()
+                    .unwrap();
+                let mut f = std::fs::OpenOptions::new()
+                    .write(true)
+                    .truncate(true)
+                    .open(&first2_for_hook)
+                    .unwrap();
+                std::io::Write::write_all(&mut f, b"VIDEO-C").unwrap();
+                f.set_modified(mtime).unwrap();
+            }) as Box<dyn FnOnce() + Send>),
+        ])),
+    });
+    let chunked_processor = BaiduPcsProcessor::with_command_runner("BaiduPCS-Go", chunked_runner)
+        .with_upload_args_budget(budget);
+    let output = chunked_processor
+        .process(
+            &ProcessorInput {
+                inputs: vec![first2_str.clone(), second2_str],
+                config: Some(
+                    r#"{"destination_root":"/rec","policy":"skip","remove_source_after_upload":true,"max_retries":1}"#
+                        .to_string(),
+                ),
+                ..Default::default()
+            },
+            &ProcessorContext::noop("pre-cleanup-edit"),
+        )
+        .await
+        .unwrap();
+    assert!(
+        first2.exists(),
+        "replacement written before cleanup must NEVER be deleted"
+    );
+    assert_eq!(std::fs::read(&first2).unwrap(), b"VIDEO-C");
+    assert!(!second2.exists(), "unchanged d.flv should still be removed");
+    assert_eq!(
+        output.outputs,
+        vec![first2_str],
+        "kept file stays in outputs"
     );
 }

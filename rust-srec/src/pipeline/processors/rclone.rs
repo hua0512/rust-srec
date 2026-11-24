@@ -19,6 +19,7 @@ use super::traits::{
 };
 use super::utils::CommandOutput;
 use crate::Result;
+use crate::pipeline::job_queue::LogLevel;
 use crate::pipeline::progress::ProgressKind;
 use crate::proxies::{ProxyRoute, ProxyTarget};
 
@@ -233,12 +234,332 @@ const JSON_STATS_ARGS: [&str; 8] = [
     "--stats-one-line",
 ];
 
-/// Limits each transfer process to one pass. The processor's own loop, bounded
-/// by `max_retries`, retries failed transfers with backoff and reports each
-/// attempt; rclone's default of 3 internal passes would multiply that count
-/// unseen. Request-level retries (`--low-level-retries`) stay at rclone's
-/// default. Placed before `extra_args`, so a preset can still set `--retries`.
-const SINGLE_PASS_ARGS: [&str; 2] = ["--retries", "1"];
+/// Bounds rclone's internal retries per transfer process. `--retries 1` limits
+/// each process to a single pass so either the workflow step's retry policy or
+/// the processor's own `max_retries` loop owns transfer-level retries and every
+/// pass appears in job progress. `--low-level-retries 3` keeps enough
+/// request-level retries to absorb brief network or chunk hiccups without
+/// letting sustained rate limits stall an upload worker for an hour
+/// re-uploading data. Placed before `extra_args` so a preset can still
+/// override either flag.
+const TRANSFER_RETRY_ARGS: [&str; 4] = ["--retries", "1", "--low-level-retries", "3"];
+
+/// Retryability classification for a failed rclone invocation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RcloneFailureClass {
+    /// Network glitches, 5xx responses, or unknown errors worth retrying
+    /// within the processor's own retry loop.
+    Transient,
+    /// Remote rate limit or upload quota exhaustion. Retrying seconds later
+    /// inside the same job run burns quota and holds an upload worker, so skip
+    /// remaining in-run retries and let the workflow's longer backoff handle it.
+    RateLimited,
+    /// Configuration, authentication, CLI usage, or missing-path failures
+    /// that cannot succeed on retry without user intervention.
+    Permanent,
+}
+
+fn contains_ascii_ignore_case(haystack: &str, needle: &str) -> bool {
+    let haystack = haystack.as_bytes();
+    let needle = needle.as_bytes();
+    if needle.is_empty() {
+        return true;
+    }
+    if needle.len() > haystack.len() {
+        return false;
+    }
+    haystack
+        .windows(needle.len())
+        .any(|window| window.eq_ignore_ascii_case(needle))
+}
+
+/// Skip a Go double-quoted literal starting at `s`, returning the slice
+/// immediately after the closing `"`.
+fn skip_quoted(s: &str) -> Option<&str> {
+    let rest = s.strip_prefix('"')?;
+    let bytes = rest.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\\' => index += 2,
+            b'"' => return Some(&rest[index + 1..]),
+            _ => index += 1,
+        }
+    }
+    None
+}
+
+/// Strip a leading Go `log.LstdFlags` timestamp (`YYYY/MM/DD HH:MM:SS` with
+/// optional `.fractional` seconds followed by a single space), returning the
+/// remainder. Non-matching inputs are returned unchanged.
+fn strip_rclone_timestamp_prefix(s: &str) -> &str {
+    let bytes = s.as_bytes();
+    if bytes.len() < 20
+        || !bytes[0..4].iter().all(u8::is_ascii_digit)
+        || bytes[4] != b'/'
+        || !bytes[5..7].iter().all(u8::is_ascii_digit)
+        || bytes[7] != b'/'
+        || !bytes[8..10].iter().all(u8::is_ascii_digit)
+        || bytes[10] != b' '
+        || !bytes[11..13].iter().all(u8::is_ascii_digit)
+        || bytes[13] != b':'
+        || !bytes[14..16].iter().all(u8::is_ascii_digit)
+        || bytes[16] != b':'
+        || !bytes[17..19].iter().all(u8::is_ascii_digit)
+    {
+        return s;
+    }
+    let mut index = 19;
+    if bytes.get(index) == Some(&b'.') {
+        index += 1;
+        let frac_start = index;
+        while index < bytes.len() && bytes[index].is_ascii_digit() {
+            index += 1;
+        }
+        if index == frac_start {
+            return s;
+        }
+    }
+    if bytes.get(index) == Some(&b' ') {
+        &s[index + 1..]
+    } else {
+        s
+    }
+}
+
+fn strip_plain_rclone_log_prefix(s: &str) -> Option<&str> {
+    // Only strip an actual rclone plain-text log header at the start of the
+    // line (optionally preceded by a timestamp) so a quoted remote path such
+    // as `"webdav:/name ERROR : Permission Denied"` cannot split mid-quote.
+    let body = strip_rclone_timestamp_prefix(s);
+    for prefix in ["ERROR : ", "NOTICE : ", "WARNING : ", "CRITICAL: "] {
+        if let Some(rest) = body.strip_prefix(prefix) {
+            return Some(rest);
+        }
+    }
+    None
+}
+
+/// Find the first byte offset of `needle` in `s` outside any Go double-quoted
+/// literal (`"..."` with backslash escapes).
+fn find_unquoted(s: &str, needle: &str) -> Option<usize> {
+    let bytes = s.as_bytes();
+    let needle_bytes = needle.as_bytes();
+    if needle_bytes.is_empty() || needle_bytes.len() > bytes.len() {
+        return None;
+    }
+    let mut index = 0;
+    while index + needle_bytes.len() <= bytes.len() {
+        if bytes[index] == b'"' {
+            let after = skip_quoted(&s[index..])?;
+            index = s.len() - after.len();
+            continue;
+        }
+        if bytes[index..index + needle_bytes.len()] == *needle_bytes {
+            return Some(index);
+        }
+        index += 1;
+    }
+    None
+}
+
+fn strip_rclone_failed_to_prefix(s: &str) -> Option<&str> {
+    if let Some(pos) = find_unquoted(s, ": Failed to ") {
+        // Plain-text per-object error: `<object_path>: Failed to copy: <cause>`.
+        return Some(&s[pos + 2..]);
+    }
+    if !s.starts_with("Failed to ") {
+        return None;
+    }
+    if let Some(pos) = find_unquoted(s, ": last error was: ") {
+        return Some(&s[pos + ": last error was: ".len()..]);
+    }
+    let pos = find_unquoted(s, ": ")?;
+    let head = &s[..pos];
+    // Let the dedicated `Failed to create file system for "<spec>": ` branch
+    // strip quoted destinations rather than splitting early on colons inside
+    // the remote spec.
+    (!head.contains('"')).then_some(&s[pos + 2..])
+}
+
+/// Match a Go `net/url.Error` or `os.PathError` prefix (`<Op> "<target>": <cause>`)
+/// and return `<cause>`.
+fn strip_go_quoted_op_wrapper(s: &str) -> Option<&str> {
+    let (op, rest) = s.split_once(' ')?;
+    if op.is_empty()
+        || !op
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    {
+        return None;
+    }
+    skip_quoted(rest)?.strip_prefix(": ")
+}
+
+/// Strip rclone and Go wrappers that embed remote/local paths or URLs before
+/// the underlying diagnostic, so a directory or file name (for example
+/// `webdav:/Permission Denied`) cannot trigger permanent-error markers.
+fn unwrap_rclone_diagnostic(mut msg: &str) -> &str {
+    loop {
+        let trimmed = msg.trim();
+        let next = if let Some(rest) = trimmed.strip_prefix("rclone transfer error")
+            && let Some((_, inner)) = rest.split_once(": ")
+        {
+            inner
+        } else if let Some(rest) = strip_plain_rclone_log_prefix(trimmed) {
+            rest
+        } else if let Some(rest) = trimmed.strip_prefix("Failed to create file system for ")
+            && let Some(after_quote) = skip_quoted(rest)
+            && let Some(cause) = after_quote.strip_prefix(": ")
+        {
+            cause
+        } else if let Some(rest) = strip_go_quoted_op_wrapper(trimmed) {
+            rest
+        } else if let Some(rest) = strip_rclone_failed_to_prefix(trimmed) {
+            rest
+        } else {
+            return trimmed;
+        };
+        msg = next;
+    }
+}
+
+/// Match `marker` case-insensitively against `cause` while skipping any
+/// mid-string Go `<Op> "<url_or_path>": ` quoted target (for example
+/// `couldn't list directory: Propfind "http://.../Permission Denied": dial tcp ...`).
+/// JSON error payloads (`{"error":"invalid_grant"}`) are not preceded by
+/// `<Op> "` followed by `": "` and remain searchable.
+fn diagnostic_contains_marker(mut cause: &str, marker: &str) -> bool {
+    loop {
+        let Some(colon_pos) = cause.find(": ") else {
+            return contains_ascii_ignore_case(cause, marker);
+        };
+        let after_colon = &cause[colon_pos + 2..];
+        if let Some(after_wrapper) = strip_go_quoted_op_wrapper(after_colon) {
+            if contains_ascii_ignore_case(&cause[..colon_pos], marker) {
+                return true;
+            }
+            cause = after_wrapper;
+        } else {
+            if contains_ascii_ignore_case(&cause[..colon_pos + 2], marker) {
+                return true;
+            }
+            cause = after_colon;
+        }
+    }
+}
+
+fn classify_rclone_diagnostics<'a>(
+    exit_code: Option<i32>,
+    fatal_error: bool,
+    diagnostics: impl IntoIterator<Item = &'a str>,
+    made_move_progress: bool,
+) -> RcloneFailureClass {
+    // Quota and rate-limit errors take precedence even when rclone reports
+    // exit code 7 / fatalError (for example under `--drive-stop-on-upload-limit`):
+    // aborting immediately frees the worker, while still allowing a workflow
+    // step retry after a longer backoff.
+    const RATE_LIMIT_MARKERS: &[&str] = &[
+        "rate_limit_exceeded",
+        "ratelimitexceeded",
+        "userratelimitexceeded",
+        "uploadlimitexceeded",
+        "user rate limit exceeded",
+        "quota exceeded",
+        "daily limit",
+        "429 too many requests",
+        "too many requests",
+    ];
+    // Match only specific permanent causes — do not match the generic
+    // "failed to create file system" wrapper, because rclone uses it for
+    // transient DNS/TCP/TLS/5xx failures during remote initialization too.
+    const PERMANENT_MARKERS: &[&str] = &[
+        "didn't find section in config file",
+        "didn't find backend",
+        "invalid_grant",
+        "unknown flag",
+        "unknown command",
+        "directory not found",
+        "access denied",
+        "permission denied",
+        "account suspended",
+        "invalid credentials",
+        "token has been expired or revoked",
+    ];
+    const CUTOFF_MARKERS: &[&str] = &[
+        "max transfer limit reached",
+        "max transfer duration reached",
+        "max duration reached",
+        "cutoff",
+    ];
+
+    let mut saw_permanent = false;
+    let mut saw_cutoff = false;
+    for raw in diagnostics {
+        let cause = unwrap_rclone_diagnostic(raw);
+        if RATE_LIMIT_MARKERS
+            .iter()
+            .any(|marker| diagnostic_contains_marker(cause, marker))
+        {
+            return RcloneFailureClass::RateLimited;
+        }
+        if !saw_cutoff
+            && CUTOFF_MARKERS
+                .iter()
+                .any(|marker| diagnostic_contains_marker(cause, marker))
+        {
+            saw_cutoff = true;
+        }
+        if !saw_permanent
+            && PERMANENT_MARKERS
+                .iter()
+                .any(|marker| diagnostic_contains_marker(cause, marker))
+        {
+            saw_permanent = true;
+        }
+    }
+
+    // A batch `move` using `--max-transfer` (exit 8) or `--max-duration`
+    // (exit 10 / `fatalError`) that actually moved files in this pass is
+    // making forward progress; keep it retryable for the workflow step to
+    // transfer the remainder instead of failing the step permanently.
+    if made_move_progress && (matches!(exit_code, Some(8 | 10)) || (fatal_error && saw_cutoff)) {
+        return RcloneFailureClass::RateLimited;
+    }
+
+    // rclone documented exit codes:
+    // 2: Syntax or usage error
+    // 3: Directory not found
+    // 4: File not found
+    // 6: Less serious errors (NoRetryError)
+    // 7: Fatal error (e.g. invalid credentials, suspended account)
+    // 8: Transfer exceeded `--max-transfer` limit (when no progress was made)
+    // 10: Duration exceeded `--max-duration` limit (when no progress was made)
+    if matches!(exit_code, Some(2 | 3 | 4 | 6 | 7 | 8 | 10)) || fatal_error || saw_permanent {
+        return RcloneFailureClass::Permanent;
+    }
+
+    RcloneFailureClass::Transient
+}
+
+fn classify_rclone_output(output: &CommandOutput, made_move_progress: bool) -> RcloneFailureClass {
+    // Inspect both Error and Warn entries alongside `last_stats_error` in place
+    // without allocating an aggregate buffer so a rate-limit diagnostic captured
+    // from JSON stats is never masked by a generic Error line or dropped by log
+    // backpressure.
+    let diagnostics = output
+        .logs
+        .iter()
+        .filter(|entry| matches!(entry.level, LogLevel::Error | LogLevel::Warn))
+        .map(|entry| entry.message.as_str())
+        .chain(output.last_stats_error.as_deref());
+    classify_rclone_diagnostics(
+        output.status.code(),
+        output.fatal_error,
+        diagnostics,
+        made_move_progress,
+    )
+}
 
 /// Processor for interacting with Rclone.
 pub struct RcloneProcessor {
@@ -569,7 +890,10 @@ impl RcloneProcessor {
     ///
     /// A `mkdir` is retried like a transfer; one that keeps failing fails the
     /// job, because transferring anyway could race another job's `mkdir` of
-    /// the same directory. Retries keep the lock for the same reason.
+    /// the same directory. The per-remote lock is held while `rclone mkdir` is
+    /// running and released during in-run retry backoff so other jobs targeting
+    /// the remote can proceed; the ensured-directory cache is re-checked after
+    /// re-acquiring the lock.
     async fn ensure_remote_dirs(
         &self,
         targets: &[RemoteDir],
@@ -578,49 +902,74 @@ impl RcloneProcessor {
         for RemoteDir { remote, path } in targets {
             let loggable = Self::loggable_destination(path);
             let remote_dirs = self.dir_gate.remote(remote);
-            let mut ensured = tokio::time::timeout(DIR_LOCK_WAIT, remote_dirs.lock())
-                .await
-                .map_err(|_| {
-                    crate::Error::Other(format!(
-                        "Timed out waiting to create remote directory {loggable}"
-                    ))
-                })?;
-            ensured.retain(|_, ensured_at| ensured_at.elapsed() < ENSURED_DIR_TTL);
             let ensured_dir = EnsuredDir {
                 config_path: execution.config_path.map(str::to_owned),
                 extra_args: execution.extra_args.to_vec(),
                 path: path.clone(),
             };
-            if ensured.contains_key(&ensured_dir) {
-                execution.context.info(format!(
-                    "Remote directory {loggable} was created moments ago; skipping mkdir"
-                ));
-                continue;
-            }
 
             let mut attempt = 1;
-            while let Err(error) = self.run_mkdir(path, &loggable, execution).await {
-                let failure = format!(
-                    "rclone mkdir attempt {attempt} of {} failed: {error}",
-                    execution.attempts
-                );
-                if attempt >= execution.attempts {
-                    execution.context.warn(failure);
-                    return Err(error);
+            loop {
+                let mut ensured = tokio::time::timeout(DIR_LOCK_WAIT, remote_dirs.lock())
+                    .await
+                    .map_err(|_| {
+                        crate::Error::Other(format!(
+                            "Timed out waiting to create remote directory {loggable}"
+                        ))
+                    })?;
+                ensured.retain(|_, ensured_at| ensured_at.elapsed() < ENSURED_DIR_TTL);
+                if ensured.contains_key(&ensured_dir) {
+                    execution.context.info(format!(
+                        "Remote directory {loggable} was created moments ago; skipping mkdir"
+                    ));
+                    break;
                 }
-                super::utils::wait_out_retry(
-                    execution.context,
-                    ProgressKind::Rclone,
-                    attempt,
-                    &failure,
-                )
-                .await;
-                attempt += 1;
+
+                match self.run_mkdir(path, &loggable, execution).await {
+                    Ok(()) => {
+                        execution
+                            .context
+                            .info(format!("Ensured remote directory {loggable}"));
+                        ensured.insert(ensured_dir, tokio::time::Instant::now());
+                        break;
+                    }
+                    Err((class, error)) => {
+                        // Release the per-remote lock before sleeping or returning.
+                        drop(ensured);
+                        let failure = format!(
+                            "rclone mkdir attempt {attempt} of {} failed: {error}",
+                            execution.attempts
+                        );
+                        match class {
+                            RcloneFailureClass::Permanent => {
+                                execution.context.warn(format!(
+                                    "{failure}; error is non-retryable, aborting retries"
+                                ));
+                                return Err(error);
+                            }
+                            RcloneFailureClass::RateLimited => {
+                                execution.context.warn(format!(
+                                    "{failure}; remote rate or quota limit hit, skipping remaining in-run retries"
+                                ));
+                                return Err(error);
+                            }
+                            RcloneFailureClass::Transient => {}
+                        }
+                        if attempt >= execution.attempts {
+                            execution.context.warn(failure);
+                            return Err(error);
+                        }
+                        super::utils::wait_out_retry(
+                            execution.context,
+                            ProgressKind::Rclone,
+                            attempt,
+                            &failure,
+                        )
+                        .await;
+                        attempt += 1;
+                    }
+                }
             }
-            execution
-                .context
-                .info(format!("Ensured remote directory {loggable}"));
-            ensured.insert(ensured_dir, tokio::time::Instant::now());
         }
         Ok(())
     }
@@ -631,9 +980,18 @@ impl RcloneProcessor {
         target: &str,
         loggable: &str,
         execution: &RcloneExecution<'_>,
-    ) -> Result<()> {
-        let mut cmd = self.command(execution)?;
-        cmd.args(["--use-json-log", "--log-level", "NOTICE", "mkdir", target]);
+    ) -> std::result::Result<(), (RcloneFailureClass, crate::Error)> {
+        let mut cmd = self.command(execution).map_err(|error| {
+            let class = if error.is_non_retryable_step_error() {
+                RcloneFailureClass::Permanent
+            } else {
+                RcloneFailureClass::Transient
+            };
+            (class, error)
+        })?;
+        cmd.args(["--use-json-log", "--log-level", "NOTICE"]);
+        cmd.args(TRANSFER_RETRY_ARGS);
+        cmd.args(["mkdir", target]);
         // Extra args can carry backend flags (e.g. a root folder ID) that
         // change which directory the path names, so they apply here too.
         cmd.args(execution.throughput);
@@ -645,22 +1003,37 @@ impl RcloneProcessor {
         )
         .await
         .map_err(|_| {
-            crate::Error::Other(format!(
-                "rclone mkdir {loggable} timed out after {}s",
-                MKDIR_TIMEOUT.as_secs()
-            ))
+            (
+                RcloneFailureClass::Transient,
+                crate::Error::Other(format!(
+                    "rclone mkdir {loggable} timed out after {}s",
+                    MKDIR_TIMEOUT.as_secs()
+                )),
+            )
         })?
         .map_err(|e| {
-            crate::Error::Other(format!("Failed to execute rclone mkdir {loggable}: {e}"))
+            (
+                RcloneFailureClass::Transient,
+                crate::Error::Other(format!("Failed to execute rclone mkdir {loggable}: {e}")),
+            )
         })?;
         if !command_output.status.success() {
-            return Err(crate::Error::Other(format!(
+            let exit_code = command_output.status.code();
+            let class = classify_rclone_output(&command_output, false);
+            let message = format!(
                 "rclone mkdir {loggable} failed with exit code {}: {}",
-                command_output.status.code().unwrap_or(-1),
+                exit_code.unwrap_or(-1),
                 command_output
-                    .last_error_message()
+                    .effective_error_message()
                     .unwrap_or("Unknown error")
-            )));
+            );
+            let error = match class {
+                RcloneFailureClass::Permanent => crate::Error::NonRetryablePipeline(message),
+                RcloneFailureClass::Transient | RcloneFailureClass::RateLimited => {
+                    crate::Error::Other(message)
+                }
+            };
+            return Err((class, error));
         }
         Ok(())
     }
@@ -704,6 +1077,8 @@ impl RcloneProcessor {
 
         let input_size_bytes = tokio::fs::metadata(input_path).await.ok().map(|m| m.len());
         let mut last_error = None;
+        let mut permanent_failure = false;
+        let mut attempts_used = 0u32;
         let mut logs = Vec::new();
 
         let success_output = |logs| ProcessorOutput {
@@ -728,7 +1103,9 @@ impl RcloneProcessor {
                 status: UploadItemStatus::Completed,
                 error: None,
             }],
+            confirmed_uploads: HashMap::new(),
             logs,
+            non_retryable: false,
         };
 
         for attempt in 0..*attempts {
@@ -755,10 +1132,11 @@ impl RcloneProcessor {
                 )
                 .await;
             }
+            attempts_used = attempt + 1;
 
             let mut cmd = self.command(execution)?;
             cmd.args(JSON_STATS_ARGS);
-            cmd.args(SINGLE_PASS_ARGS);
+            cmd.args(TRANSFER_RETRY_ARGS);
             cmd.args([cmd_op, input_path, remote_destination]);
 
             // Throughput flags first, so any duplicates in `extra_args` win.
@@ -792,10 +1170,12 @@ impl RcloneProcessor {
                 logs.extend(command_output.logs);
                 return Ok(success_output(logs));
             } else {
+                let exit_code = command_output.status.code();
                 let error_msg = command_output
-                    .last_error_message()
+                    .effective_error_message()
                     .map(str::to_owned)
                     .unwrap_or_else(|| "Unknown error".to_string());
+                let class = classify_rclone_output(&command_output, false);
                 logs.extend(command_output.logs);
 
                 if matches!(*operation, RcloneOperation::Move)
@@ -811,16 +1191,38 @@ impl RcloneProcessor {
 
                 last_error = Some(format!(
                     "rclone failed with exit code {}: {}",
-                    command_output.status.code().unwrap_or(-1),
+                    exit_code.unwrap_or(-1),
                     error_msg
                 ));
+
+                match class {
+                    RcloneFailureClass::RateLimited => {
+                        if attempt + 1 < *attempts {
+                            context.warn(format!(
+                                "rclone {cmd_op} hit a remote rate or quota limit; skipping remaining in-run retries"
+                            ));
+                        }
+                        break;
+                    }
+                    RcloneFailureClass::Permanent => {
+                        permanent_failure = true;
+                        context.warn(format!(
+                            "rclone {cmd_op} encountered a non-retryable error; aborting retries"
+                        ));
+                        break;
+                    }
+                    RcloneFailureClass::Transient => {}
+                }
             }
         }
 
-        error!("Rclone {} failed after {} attempts", cmd_op, attempts);
-        Err(crate::Error::Other(
-            last_error.unwrap_or_else(|| "Rclone failed".to_string()),
-        ))
+        error!("Rclone {} failed after {} attempts", cmd_op, attempts_used);
+        let error = last_error.unwrap_or_else(|| "Rclone failed".to_string());
+        if permanent_failure {
+            Err(crate::Error::NonRetryablePipeline(error))
+        } else {
+            Err(crate::Error::Other(error))
+        }
     }
 
     /// Execute a batch rclone operation using --files-from.
@@ -900,7 +1302,9 @@ impl RcloneProcessor {
                     error: None,
                 })
                 .collect(),
+            confirmed_uploads: HashMap::new(),
             logs,
+            non_retryable: false,
         };
 
         if resumed_inputs > 0 {
@@ -934,6 +1338,8 @@ impl RcloneProcessor {
         );
 
         let mut last_error = None;
+        let mut permanent_failure = false;
+        let mut attempts_used = 0u32;
         let mut logs = Vec::new();
 
         for attempt in 0..*attempts {
@@ -949,6 +1355,7 @@ impl RcloneProcessor {
                 )
                 .await;
             }
+            attempts_used = attempt + 1;
 
             let files_from_path = Self::create_files_from_list(&pending_inputs, &base_dir)
                 .await
@@ -958,7 +1365,7 @@ impl RcloneProcessor {
             let files_from_path_str = files_from_path.to_string_lossy().to_string();
             let mut cmd = self.command(execution)?;
             cmd.args(JSON_STATS_ARGS);
-            cmd.args(SINGLE_PASS_ARGS);
+            cmd.args(TRANSFER_RETRY_ARGS);
             cmd.args([
                 "--files-from",
                 &files_from_path_str,
@@ -982,20 +1389,22 @@ impl RcloneProcessor {
                 );
             }
 
+            let mut moved_in_attempt = 0usize;
             if matches!(*operation, RcloneOperation::Move) {
                 let moved_inputs = Self::take_moved_inputs(&mut pending_inputs).await;
-                completed_inputs = completed_inputs.saturating_add(moved_inputs.len());
-                if !moved_inputs.is_empty() {
+                moved_in_attempt = moved_inputs.len();
+                completed_inputs = completed_inputs.saturating_add(moved_in_attempt);
+                if moved_in_attempt > 0 {
                     info!(
                         attempt = attempt + 1,
-                        moved_inputs = moved_inputs.len(),
+                        moved_inputs = moved_in_attempt,
                         pending_inputs = pending_inputs.len(),
                         "Reconciled successfully moved rclone inputs"
                     );
                     context.info(format!(
                         "Rclone move attempt {} completed {} input(s); {} remain pending",
                         attempt + 1,
-                        moved_inputs.len(),
+                        moved_in_attempt,
                         pending_inputs.len()
                     ));
                 }
@@ -1015,10 +1424,11 @@ impl RcloneProcessor {
                 }
                 Ok(command_output) => {
                     let error_msg = command_output
-                        .last_error_message()
+                        .effective_error_message()
                         .map(str::to_owned)
                         .unwrap_or_else(|| "Unknown error".to_string());
                     let exit_code = command_output.status.code().unwrap_or(-1);
+                    let class = classify_rclone_output(&command_output, moved_in_attempt > 0);
                     logs.extend(command_output.logs);
 
                     if matches!(*operation, RcloneOperation::Move) && pending_inputs.is_empty() {
@@ -1034,6 +1444,25 @@ impl RcloneProcessor {
                         "rclone batch failed with exit code {}: {}",
                         exit_code, error_msg
                     ));
+
+                    match class {
+                        RcloneFailureClass::RateLimited => {
+                            if attempt + 1 < *attempts {
+                                context.warn(format!(
+                                    "rclone {cmd_op} batch hit a remote rate or quota limit; skipping remaining in-run retries"
+                                ));
+                            }
+                            break;
+                        }
+                        RcloneFailureClass::Permanent => {
+                            permanent_failure = true;
+                            context.warn(format!(
+                                "rclone {cmd_op} batch encountered a non-retryable error; aborting retries"
+                            ));
+                            break;
+                        }
+                        RcloneFailureClass::Transient => {}
+                    }
                 }
                 Err(e) => {
                     if matches!(*operation, RcloneOperation::Move) && pending_inputs.is_empty() {
@@ -1052,7 +1481,10 @@ impl RcloneProcessor {
 
         error!(
             pending_inputs = pending_inputs.len(),
-            completed_inputs, attempts, "Rclone {} batch failed", cmd_op
+            completed_inputs,
+            attempts = attempts_used,
+            "Rclone {} batch failed",
+            cmd_op
         );
         let error = last_error.unwrap_or_else(|| "Rclone batch failed".to_string());
 
@@ -1075,7 +1507,7 @@ impl RcloneProcessor {
                         "batch_size": inputs.len(),
                         "base_dir": base_dir_str,
                         "operation": cmd_op,
-                        "attempts": attempts,
+                        "attempts": attempts_used,
                         "resumed_inputs": resumed_inputs,
                         "moved_inputs": moved.len(),
                         "failed_inputs": pending_inputs.len(),
@@ -1112,10 +1544,16 @@ impl RcloneProcessor {
                         }
                     })
                     .collect(),
+                confirmed_uploads: HashMap::new(),
                 logs,
+                non_retryable: permanent_failure,
             });
         }
-        Err(crate::Error::Other(error))
+        if permanent_failure {
+            Err(crate::Error::NonRetryablePipeline(error))
+        } else {
+            Err(crate::Error::Other(error))
+        }
     }
 
     /// Determine remote destination path with placeholder expansion.
@@ -1235,7 +1673,19 @@ impl Processor for RcloneProcessor {
             ));
         }
 
-        let attempts = config.max_retries.unwrap_or(DEFAULT_ATTEMPTS).max(1);
+        let configured_attempts = config.max_retries.unwrap_or(DEFAULT_ATTEMPTS).max(1);
+        let attempts = if ctx.has_step_retry {
+            if configured_attempts > 1 {
+                info!(
+                    job_id = %ctx.job_id,
+                    configured_attempts,
+                    "Workflow step retry policy is active; deferring rclone retries to the DAG scheduler"
+                );
+            }
+            1
+        } else {
+            configured_attempts
+        };
         let proxy =
             crate::proxies::upload_target(self.routes.as_ref(), &config.proxy_route).await?;
         let scrubber = crate::proxies::OutputScrubber::for_target(&proxy);

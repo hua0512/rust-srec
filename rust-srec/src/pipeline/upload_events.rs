@@ -27,14 +27,17 @@ use super::progress::JobProgressSnapshot;
 /// (sent on WS subscribe/unsubscribe) rather than reconciling drops.
 const BROADCAST_CAPACITY: usize = 256;
 
-/// Terminal outcome of an upload job as broadcast to WS clients. Distinct
-/// from the per-file `UploadItemStatus`: this is job-level, and includes
-/// `Cancelled` (which never produces `upload_records` rows).
+/// Terminal outcome of an upload job attempt as broadcast to WS clients.
+/// Distinct from the per-file `UploadItemStatus`: this is job-level, includes
+/// `Cancelled` (which never produces `upload_records` rows), and distinguishes
+/// `Retrying` (an attempt that failed with an automatic workflow retry planned)
+/// from a terminal `Failed` job.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UploadTerminalStatus {
     Completed,
     Failed,
     Cancelled,
+    Retrying,
 }
 
 /// One upload lifecycle transition, published by `JobQueue`.

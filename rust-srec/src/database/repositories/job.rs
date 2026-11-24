@@ -357,9 +357,10 @@ impl JobRepository for SqlxJobRepository {
         retry_on_sqlite_busy("reset_job_for_retry", || async {
             let now = crate::database::time::now_ms();
             let res = sqlx::query(
-                "UPDATE job SET status = ?, started_at = NULL, completed_at = NULL, error = NULL, retry_count = retry_count + 1, retry_after = NULL, updated_at = ? WHERE id = ? AND status IN (?, ?)",
+                "UPDATE job SET status = ?, started_at = NULL, completed_at = NULL, error = NULL, retry_count = retry_count + 1, retry_after = NULL, state = json_set(CASE WHEN json_valid(state) THEN CASE WHEN json_type(state) = 'object' THEN state ELSE '{}' END ELSE '{}' END, '$.enqueued_at_ms', ?), updated_at = ? WHERE id = ? AND status IN (?, ?)",
             )
             .bind(JobStatus::Pending.as_str())
+            .bind(now)
             .bind(now)
             .bind(id)
             .bind(JobStatus::Failed.as_str())
@@ -673,9 +674,10 @@ impl JobRepository for SqlxJobRepository {
             .execute(&mut *tx)
             .await?;
             let result = sqlx::query(
-                "UPDATE job SET status = ?, started_at = NULL, updated_at = ? WHERE status = ?",
+                "UPDATE job SET status = ?, started_at = NULL, state = json_set(CASE WHEN json_valid(state) THEN CASE WHEN json_type(state) = 'object' THEN state ELSE '{}' END ELSE '{}' END, '$.enqueued_at_ms', ?), updated_at = ? WHERE status = ?",
             )
             .bind(JobStatus::Pending.as_str())
+            .bind(now)
             .bind(now)
             .bind(JobStatus::Processing.as_str())
             .execute(&mut *tx)

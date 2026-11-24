@@ -1384,3 +1384,161 @@ async fn cancel_job_and_cancel_pipeline_serialize_with_in_flight_dequeue() {
         queue.stop_progress_aggregator().await;
     }
 }
+
+#[tokio::test]
+async fn upload_fail_broadcasts_retrying_when_scheduled_and_failed_when_terminal() {
+    let queue = JobQueue::with_repository(
+        JobQueueConfig::default(),
+        crate::database::test_support::job_repository().await,
+    );
+    let broadcaster =
+        UploadStatusBroadcaster::new(Arc::new(|_: &UploadStatusEvent| bytes::Bytes::new()));
+    queue.set_upload_broadcaster(broadcaster.clone());
+    let mut rx = broadcaster.subscribe();
+
+    let job_id = queue
+        .enqueue(Job::new("rclone", vec!["/a.mp4".into()], vec![], "s1", ""))
+        .await
+        .unwrap();
+    queue.dequeue(None).await.unwrap().unwrap();
+    queue
+        .fail_with_step_info(
+            &job_id,
+            "rate limited",
+            Some(Timestamp::now()),
+            Some("rclone"),
+            &[],
+        )
+        .await
+        .unwrap();
+
+    let retrying = std::iter::from_fn(|| rx.try_recv().ok())
+        .find_map(|env| match &*env.event {
+            UploadStatusEvent::Terminal { status, error, .. } => Some((*status, error.clone())),
+            _ => None,
+        })
+        .expect("retrying terminal event");
+    assert_eq!(retrying, (UploadTerminalStatus::Retrying, None));
+
+    queue.retry_job(&job_id).await.unwrap();
+    queue.dequeue(None).await.unwrap().unwrap();
+    queue
+        .fail_with_step_info(&job_id, "exhausted", None, Some("rclone"), &[])
+        .await
+        .unwrap();
+
+    let failed = std::iter::from_fn(|| rx.try_recv().ok())
+        .find_map(|env| match &*env.event {
+            UploadStatusEvent::Terminal { status, error, .. } => Some((*status, error.clone())),
+            _ => None,
+        })
+        .expect("failed terminal event");
+    assert_eq!(
+        failed,
+        (UploadTerminalStatus::Failed, Some("exhausted".to_string()))
+    );
+    queue.stop_progress_aggregator().await;
+}
+
+#[tokio::test]
+async fn retried_job_queue_wait_uses_reenqueue_timestamp_in_sqlite() {
+    use crate::database::repositories::{JobRepository, SqlxJobRepository};
+
+    let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+        .await
+        .unwrap();
+    crate::database::run_migrations(&pool).await.unwrap();
+    let repo = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
+    let queue = JobQueue::with_repository(JobQueueConfig::default(), repo.clone());
+
+    let mut job = Job::new("rclone", vec!["/a.mp4".into()], vec![], "s1", "");
+    job.has_step_retry = Some(true);
+    let job_id = queue.enqueue(job).await.unwrap();
+
+    // Backdate created_at by 1 hour so a regression falling back to created_at is unmistakable.
+    let one_hour_ago_ms = crate::database::time::now_ms() - 3_600_000;
+    sqlx::query("UPDATE job SET created_at = ? WHERE id = ?")
+        .bind(one_hour_ago_ms)
+        .bind(&job_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    queue.dequeue(None).await.unwrap().unwrap();
+    queue.fail(&job_id, "temporary error").await.unwrap();
+    queue.retry_job(&job_id).await.unwrap();
+
+    // Seed a known 12-second queue wait after re-enqueue so an implementation that
+    // always reports 0 fails just as cleanly as one that reports 3600s.
+    let twelve_secs_ago_ms = crate::database::time::now_ms() - 12_000;
+    sqlx::query("UPDATE job SET state = json_set(state, '$.enqueued_at_ms', ?) WHERE id = ?")
+        .bind(twelve_secs_ago_ms)
+        .bind(&job_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (retried, _attempt) = queue.dequeue(None).await.unwrap().unwrap();
+    assert_eq!(retried.has_step_retry, Some(true));
+    assert_eq!(retried.enqueued_at_ms, Some(twelve_secs_ago_ms));
+
+    queue
+        .complete(
+            &job_id,
+            JobResult {
+                outputs: vec![],
+                duration_secs: 1.0,
+                metadata: None,
+                uploads: vec![],
+                logs: vec![],
+                input_size_bytes: None,
+                output_size_bytes: None,
+            },
+        )
+        .await
+        .unwrap();
+    let stored = repo.get_job(&job_id).await.unwrap();
+    let queue_wait = stored.queue_wait_secs.expect("queue_wait_secs recorded");
+    assert!(
+        (10.0..60.0).contains(&queue_wait),
+        "queue_wait_secs should reflect the ~12s re-enqueue wait: {queue_wait}"
+    );
+
+    // Both startup recovery and retry reset normalize non-object JSON state (`null`)
+    // so `enqueued_at_ms` is recorded cleanly.
+    let null_state_job_id = queue
+        .enqueue(Job::new("rclone", vec!["/b.mp4".into()], vec![], "s1", ""))
+        .await
+        .unwrap();
+    queue.dequeue(None).await.unwrap().unwrap();
+    sqlx::query("UPDATE job SET created_at = ?, state = 'null' WHERE id = ?")
+        .bind(one_hour_ago_ms)
+        .bind(&null_state_job_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(repo.reset_processing_jobs().await.unwrap(), 1);
+    let recovered = repo.get_job(&null_state_job_id).await.unwrap();
+    assert!(
+        super::metadata::parse_job_enqueued_at_ms(&recovered.state)
+            .is_some_and(|ms| ms > one_hour_ago_ms),
+        "startup reset must normalize non-object JSON state and set enqueued_at_ms"
+    );
+
+    queue.dequeue(None).await.unwrap().unwrap();
+    queue.fail(&null_state_job_id, "temporary").await.unwrap();
+    sqlx::query("UPDATE job SET state = 'null' WHERE id = ?")
+        .bind(&null_state_job_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    queue.retry_job(&null_state_job_id).await.unwrap();
+    let (normalized, _) = queue.dequeue(None).await.unwrap().unwrap();
+    assert!(
+        normalized
+            .enqueued_at_ms
+            .is_some_and(|ms| ms > one_hour_ago_ms),
+        "retry reset must normalize non-object JSON state and set enqueued_at_ms"
+    );
+    queue.stop_progress_aggregator().await;
+}

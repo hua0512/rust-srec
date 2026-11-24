@@ -1,6 +1,6 @@
 //! Per-job execution runner, log collector, and failure persistence backoff.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -27,7 +27,8 @@ use crate::pipeline::job_queue::{
 };
 use crate::pipeline::manager::PipelineEvent;
 use crate::pipeline::processors::{
-    JobLogSink, Processor, ProcessorContext, ProcessorInput, ProcessorOutput, UploadResultItem,
+    ConfirmedUpload, JobLogSink, Processor, ProcessorContext, ProcessorInput, ProcessorOutput,
+    UploadResultItem,
 };
 
 /// Everything a worker task needs to run the jobs it claims.
@@ -196,7 +197,7 @@ impl JobRunner {
                 retry_count: job.retry_count,
                 attempt: attempt.clone(),
             };
-            self.finish_failed(&facts, &reason, StepFailureKind::NonBatchInput, &[])
+            self.finish_failed(&facts, &reason, StepFailureKind::NonBatchInput, &[], None)
                 .await;
 
             return true;
@@ -377,6 +378,30 @@ impl JobRunner {
             log_dropped,
         );
 
+        let has_step_retry = match (
+            job.has_step_retry,
+            facts.dag_step_execution_id.as_deref(),
+            &self.dag_scheduler,
+        ) {
+            (Some(value), _, _) => value,
+            // Legacy workflow rows persisted before `has_step_retry` existed
+            // fall back to the stored workflow definition once per attempt.
+            (None, Some(step_id), Some(scheduler)) => scheduler
+                .step_retry_state(step_id, &facts.id)
+                .await
+                .ok()
+                .and_then(|state| state.max_attempts)
+                .is_some_and(|max| max > 1),
+            _ => false,
+        };
+        let prior_completed_uploads = if is_retry && processor.carries_forward_completed_uploads() {
+            job.execution_info
+                .map(|info| info.confirmed_uploads)
+                .unwrap_or_default()
+        } else {
+            HashMap::new()
+        };
+
         let staged_outputs = self.job_queue.staged_output_recorder(&facts.id);
         let ctx = ProcessorContext::new(
             facts.id.clone(),
@@ -385,8 +410,10 @@ impl JobRunner {
             processor_token.clone(),
         )
         .with_retry(is_retry)
+        .with_step_retry(has_step_retry)
         .with_step_timeout(step_timeout)
-        .with_staged_outputs(staged_outputs.clone());
+        .with_staged_outputs(staged_outputs.clone())
+        .with_prior_completed_uploads(prior_completed_uploads);
 
         let outcome = self
             .execute(
@@ -421,7 +448,7 @@ impl JobRunner {
         if timeout_recorded {
             let progress = self.job_queue.get_job_progress(&facts.id);
             let reason = timeout_error(job_timeout, &facts, &input, progress.as_ref());
-            self.finish_failed(&facts, &reason, StepFailureKind::Timeout, &[])
+            self.finish_failed(&facts, &reason, StepFailureKind::Timeout, &[], None)
                 .await;
         }
 
@@ -457,7 +484,12 @@ impl JobRunner {
                 );
             }
             JobOutcome::Failed(e) => {
-                self.finish_failed(&facts, &e.to_string(), StepFailureKind::ProcessorError, &[])
+                let kind = if e.is_non_retryable_step_error() {
+                    StepFailureKind::NonRetryable
+                } else {
+                    StepFailureKind::ProcessorError
+                };
+                self.finish_failed(&facts, &e.to_string(), kind, &[], None)
                     .await;
             }
             JobOutcome::TimedOut if timeout_recorded => {}
@@ -614,11 +646,17 @@ impl JobRunner {
             {
                 warn!(job_id = %facts.id, error = %e, "Failed to record logs of a partially failed job");
             }
+            let kind = if output.non_retryable {
+                StepFailureKind::NonRetryable
+            } else {
+                StepFailureKind::ProcessorError
+            };
             self.finish_failed(
                 facts,
                 &error,
-                StepFailureKind::ProcessorError,
+                kind,
                 &output.uploads,
+                Some(&output.confirmed_uploads),
             )
             .await;
             return;
@@ -711,21 +749,39 @@ impl JobRunner {
     /// Record a failed or timed-out attempt. For a workflow step the scheduler
     /// decides whether the step gets another attempt or fails, and the job row
     /// is written with the retry it plans; the worker itself only persists and
-    /// announces. The row keeps the plain error, while the failure event says
-    /// when a planned retry runs. Processors own cleanup of their staged outputs;
-    /// persisted artifact paths may belong to earlier attempts. `uploads` are
-    /// the per-file results of a partially failed upload batch.
+    /// announces. The row keeps the plain error; a failure event is emitted
+    /// only when no further automatic retry is planned. Processors own cleanup
+    /// of their staged outputs; persisted artifact paths may belong to earlier
+    /// attempts. `uploads` are the per-file results of a partially failed
+    /// upload batch.
     pub(super) async fn finish_failed(
         &self,
         facts: &JobFacts,
         error: &str,
         kind: StepFailureKind,
         uploads: &[UploadResultItem],
+        confirmed_uploads: Option<&HashMap<String, ConfirmedUpload>>,
     ) {
         let persist = |planned: Option<PlannedRetry>| async move {
             let retry_after = planned.map(|planned| planned.retry_after);
+            // Emit the pipeline event inside `fail_attempt_with_step_info`
+            // while the queue still holds `attempt_gate`, so an immediate
+            // zero-backoff retry cannot emit `JobEnqueued` before this
+            // attempt's `JobRetryScheduled` (or `JobFailed`) reaches listeners.
+            let event = if planned.is_some() {
+                PipelineEvent::JobRetryScheduled {
+                    job_id: facts.id.clone(),
+                }
+            } else {
+                PipelineEvent::JobFailed {
+                    job_id: facts.id.clone(),
+                    job_type: facts.job_type.clone(),
+                    error: error.to_string(),
+                }
+            };
             let outcome = self
                 .persist_failure_with_retry(&facts.id, || {
+                    let event = &event;
                     self.job_queue.fail_attempt_with_step_info(
                         &facts.id,
                         &facts.attempt,
@@ -733,17 +789,13 @@ impl JobRunner {
                         retry_after,
                         Some(facts.processor_name),
                         uploads,
+                        confirmed_uploads,
+                        move || {
+                            self.emit(event.clone());
+                        },
                     )
                 })
                 .await?;
-            if outcome == JobFailureOutcome::Transitioned {
-                self.emit(PipelineEvent::JobFailed {
-                    job_id: facts.id.clone(),
-                    job_type: facts.job_type.clone(),
-                    error: planned
-                        .map_or_else(|| error.to_string(), |planned| planned.describe(error)),
-                });
-            }
             Ok(outcome)
         };
 
@@ -789,7 +841,8 @@ impl JobRunner {
                     ),
                     StepFailureKind::ProcessorError
                     | StepFailureKind::NonBatchInput
-                    | StepFailureKind::ExecutionStart => info!(
+                    | StepFailureKind::ExecutionStart
+                    | StepFailureKind::NonRetryable => info!(
                         "DAG step {} failed, cancelled {} jobs (fail-fast)",
                         dag_step_id, cancelled_count
                     ),

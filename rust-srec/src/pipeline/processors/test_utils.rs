@@ -3,17 +3,21 @@
 use jiff::Timestamp;
 
 #[cfg(unix)]
-pub(super) fn test_exit_status(succeeds: bool) -> std::process::ExitStatus {
+pub(super) fn test_exit_code(code: i32) -> std::process::ExitStatus {
     use std::os::unix::process::ExitStatusExt;
 
-    std::process::ExitStatus::from_raw(if succeeds { 0 } else { 1 << 8 })
+    std::process::ExitStatus::from_raw(code << 8)
 }
 
 #[cfg(windows)]
-pub(super) fn test_exit_status(succeeds: bool) -> std::process::ExitStatus {
+pub(super) fn test_exit_code(code: i32) -> std::process::ExitStatus {
     use std::os::windows::process::ExitStatusExt;
 
-    std::process::ExitStatus::from_raw(if succeeds { 0 } else { 1 })
+    std::process::ExitStatus::from_raw(code as u32)
+}
+
+pub(super) fn test_exit_status(succeeds: bool) -> std::process::ExitStatus {
+    test_exit_code(if succeeds { 0 } else { 1 })
 }
 
 /// Construct a fixed UTC instant from calendar components.

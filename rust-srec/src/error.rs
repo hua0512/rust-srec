@@ -82,6 +82,12 @@ pub enum Error {
     #[error("Pipeline error: {0}")]
     PipelineError(String),
 
+    /// A pipeline processor failure that retrying with the same inputs and
+    /// configuration cannot resolve (for example invalid remote credentials,
+    /// a missing remote directory, or files permanently rejected by the remote).
+    #[error("{0}")]
+    NonRetryablePipeline(String),
+
     #[error("API error: {0}")]
     ApiError(String),
 
@@ -146,5 +152,23 @@ impl Error {
             path: path.display().to_string(),
             source,
         }
+    }
+
+    /// Whether this error represents a permanent or invalid-input failure that
+    /// a workflow step's automatic retry policy should not re-run.
+    pub fn is_non_retryable_step_error(&self) -> bool {
+        matches!(
+            self,
+            Self::Validation(_)
+                | Self::Configuration(_)
+                | Self::InvalidStateTransition { .. }
+                | Self::NonRetryablePipeline(_)
+                | Self::Proxy(
+                    crate::proxies::ProxyError::Missing(_)
+                        | crate::proxies::ProxyError::Invalid(_)
+                        | crate::proxies::ProxyError::GlobalInherit
+                        | crate::proxies::ProxyError::ConfigReplaced
+                )
+        )
     }
 }

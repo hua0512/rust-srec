@@ -190,7 +190,10 @@ export function RcloneConfigForm({
             name={fieldPath('max_retries')}
             label={<Trans>Max Retries</Trans>}
             description={
-              <Trans>Number of attempts before failing the upload.</Trans>
+              <Trans>
+                Number of attempts per job run before failing the upload.
+                Ignored when the workflow step sets Attempts above 1.
+              </Trans>
             }
             min={1}
             step={1}

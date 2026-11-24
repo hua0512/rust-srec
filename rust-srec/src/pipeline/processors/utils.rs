@@ -235,6 +235,10 @@ pub struct CommandOutput {
     pub status: std::process::ExitStatus,
     pub duration: f64,
     pub logs: Vec<JobLogEntry>,
+    /// Set when rclone's `--use-json-log` stats reported `fatalError: true`.
+    pub fatal_error: bool,
+    /// Last non-empty `stats.lastError` reported by rclone's JSON stats stream.
+    pub last_stats_error: Option<String>,
 }
 
 impl CommandOutput {
@@ -255,6 +259,29 @@ impl CommandOutput {
             .iter()
             .rfind(|entry| entry.level == LogLevel::Error)
             .map(|entry| entry.message.as_str())
+    }
+
+    /// Last captured error line, falling back to rclone's JSON `stats.lastError`
+    /// when no `LogLevel::Error` line was emitted or when the last error line is
+    /// generic cancellation/fatal boilerplate (`context canceled` or
+    /// `Fatal error received - not attempting retries`) while stats carry the
+    /// underlying failure.
+    pub fn effective_error_message(&self) -> Option<&str> {
+        fn is_generic_rclone_summary(message: &str) -> bool {
+            let trimmed = message.trim();
+            trimmed.eq_ignore_ascii_case("context canceled")
+                || trimmed.eq_ignore_ascii_case("fatal error received - not attempting retries")
+        }
+
+        match (self.last_error_message(), self.last_stats_error.as_deref()) {
+            (Some(err), Some(stats_err))
+                if is_generic_rclone_summary(err) && !is_generic_rclone_summary(stats_err) =>
+            {
+                Some(stats_err)
+            }
+            (Some(err), _) => Some(err),
+            (None, stats_err) => stats_err,
+        }
     }
 }
 
@@ -430,6 +457,13 @@ fn push_overlong_summary(
     }
 }
 
+/// Diagnostics captured from rclone's JSON stats stream while the command runs.
+#[derive(Default)]
+pub(super) struct RcloneRunState {
+    pub(super) fatal_error: bool,
+    pub(super) last_stats_error: Option<String>,
+}
+
 #[derive(Clone)]
 pub(super) enum CommandMode {
     Plain,
@@ -438,7 +472,10 @@ pub(super) enum CommandMode {
         /// Shared by the run's stdout and stderr readers.
         state: Arc<Mutex<FfmpegProgressState>>,
     },
-    Rclone(ProgressReporter),
+    Rclone {
+        progress: ProgressReporter,
+        state: Arc<Mutex<RcloneRunState>>,
+    },
     /// Follows an `upload` invocation's progress when present.
     BaiduPcs(Option<Arc<UploadTracker>>),
 }
@@ -457,10 +494,11 @@ async fn consume_command_stream<R: AsyncRead + Unpin>(
     stdout: bool,
     context: ReaderContext,
 ) -> std::io::Result<()> {
-    if let CommandMode::Rclone(progress) = &context.mode {
+    if let CommandMode::Rclone { progress, state } = &context.mode {
         return consume_rclone_stderr(
             reader,
             progress.clone(),
+            state.clone(),
             context.tx,
             context.dropped_count,
             context.overlong_count,
@@ -548,8 +586,12 @@ pub(super) async fn run_logged_command_until(
     stop: Option<&tokio_util::sync::CancellationToken>,
 ) -> crate::Result<CommandOutput> {
     let start = std::time::Instant::now();
+    let rclone_state = match &mode {
+        CommandMode::Rclone { state, .. } => Some(state.clone()),
+        _ => None,
+    };
     command.stdin(Stdio::null());
-    command.stdout(if matches!(&mode, CommandMode::Rclone(_)) {
+    command.stdout(if matches!(&mode, CommandMode::Rclone { .. }) {
         Stdio::null()
     } else {
         Stdio::piped()
@@ -662,10 +704,19 @@ pub(super) async fn run_logged_command_until(
             &mut truncated_count,
         );
     }
+    let (fatal_error, last_stats_error) = match rclone_state {
+        Some(state) => {
+            let mut state = state.lock();
+            (state.fatal_error, state.last_stats_error.take())
+        }
+        None => (false, None),
+    };
     Ok(CommandOutput {
         status,
         duration: start.elapsed().as_secs_f64(),
         logs: logs.into_iter().collect(),
+        fatal_error,
+        last_stats_error,
     })
 }
 
@@ -926,6 +977,8 @@ mod tests {
             status: super::super::test_utils::test_exit_status(false),
             duration: 0.0,
             logs: vec![JobLogEntry::warn("warning only")],
+            fatal_error: false,
+            last_stats_error: None,
         };
         assert_eq!(output.last_error_message(), None);
         assert_eq!(output.diagnostic_text(), "warning only");
@@ -1149,7 +1202,10 @@ mod tests {
                 progress: ProgressReporter::noop("test"),
                 state: Arc::default(),
             },
-            CommandMode::Rclone(ProgressReporter::noop("test")),
+            CommandMode::Rclone {
+                progress: ProgressReporter::noop("test"),
+                state: Arc::default(),
+            },
             CommandMode::BaiduPcs(None),
         ]
     }

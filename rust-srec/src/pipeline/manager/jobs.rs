@@ -163,7 +163,7 @@ where
                 "This job belongs to a workflow; retry the workflow so its cancelled branches restart together".to_string(),
             ));
         }
-        self.retry_queued_job(id).await
+        self.retry_queued_job(&job_snapshot).await
     }
 
     /// Re-queue failed step jobs whose automatic retry is due. A retry whose
@@ -202,7 +202,7 @@ where
                 }
                 continue;
             }
-            match self.retry_queued_job(&job.id).await {
+            match self.retry_queued_job(&job).await {
                 Ok(retried) => {
                     info!(
                         job_id = %job.id,
@@ -219,15 +219,20 @@ where
         requeued
     }
 
-    async fn retry_queued_job(&self, id: &str) -> Result<Job> {
-        let job = self.job_queue.retry_job(id).await?;
-
-        // Emit event for the retried job
-        let _ = self.event_tx.send(PipelineEvent::JobEnqueued {
-            job_id: job.id.clone(),
-            job_type: job.job_type.clone(),
-            streamer_id: job.streamer_id.clone(),
-        });
+    async fn retry_queued_job(&self, queued: &Job) -> Result<Job> {
+        let job = self
+            .job_queue
+            .retry_job_with_hook(&queued.id, || {
+                // Emit before `retry_job_with_hook` drops `attempt_gate` and
+                // wakes workers so a fast retry cannot finish and evict
+                // notification lookup state before `JobEnqueued` is sent.
+                let _ = self.event_tx.send(PipelineEvent::JobEnqueued {
+                    job_id: queued.id.clone(),
+                    job_type: queued.job_type.clone(),
+                    streamer_id: queued.streamer_id.clone(),
+                });
+            })
+            .await?;
 
         // Check queue depth after retry
         self.check_queue_depth();

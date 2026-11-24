@@ -116,22 +116,6 @@ pub struct PlannedRetry {
     pub max_attempts: u32,
 }
 
-impl PlannedRetry {
-    /// `error` as announced in the failure notification of the attempt this
-    /// retry follows: a notification has no retry status beside it, so the
-    /// text says what comes next. The job row keeps the plain error, because
-    /// the retry may still be dropped and the job page shows it from the row's
-    /// `retry_after`.
-    pub fn describe(&self, error: &str) -> String {
-        format!(
-            "{error}; attempt {} of {} failed, retrying at {}",
-            self.next_attempt - 1,
-            self.max_attempts,
-            self.retry_after.strftime("%Y-%m-%dT%H:%M:%SZ")
-        )
-    }
-}
-
 /// A workflow step's retry budget and whether it still waits on a given job.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StepRetryState {
@@ -160,6 +144,10 @@ pub enum StepFailureKind {
     /// The fault lies with the database that refused the write, not with the
     /// job, so the failure is applied at once.
     ExecutionStart,
+    /// The processor rejected the job as permanently invalid or unrecoverable
+    /// (for example malformed configuration, missing initial input, invalid
+    /// credentials, or files permanently rejected by the destination).
+    NonRetryable,
 }
 
 impl StepFailureKind {

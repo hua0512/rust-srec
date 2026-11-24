@@ -746,6 +746,8 @@ pub enum UploadTerminalStatus {
     Completed = 1,
     Failed = 2,
     Cancelled = 3,
+    /// This attempt failed, and the workflow step scheduled an automatic retry.
+    Retrying = 4,
 }
 impl UploadTerminalStatus {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -758,6 +760,7 @@ impl UploadTerminalStatus {
             Self::Completed => "UPLOAD_TERMINAL_STATUS_COMPLETED",
             Self::Failed => "UPLOAD_TERMINAL_STATUS_FAILED",
             Self::Cancelled => "UPLOAD_TERMINAL_STATUS_CANCELLED",
+            Self::Retrying => "UPLOAD_TERMINAL_STATUS_RETRYING",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -767,6 +770,7 @@ impl UploadTerminalStatus {
             "UPLOAD_TERMINAL_STATUS_COMPLETED" => Some(Self::Completed),
             "UPLOAD_TERMINAL_STATUS_FAILED" => Some(Self::Failed),
             "UPLOAD_TERMINAL_STATUS_CANCELLED" => Some(Self::Cancelled),
+            "UPLOAD_TERMINAL_STATUS_RETRYING" => Some(Self::Retrying),
             _ => None,
         }
     }

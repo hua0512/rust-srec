@@ -2575,14 +2575,25 @@ async fn pipeline_failure_notices(app: &TestApp, token: &str, job_id: &str) -> V
 }
 
 /// A failed step with attempts left keeps its workflow running and is run
-/// again; once the attempts are spent the workflow fails. The job keeps its
-/// plain error; only the notification of a failure that will be retried says
-/// so.
+/// again without firing a failure notification; once the attempts are spent
+/// the workflow fails and a single failure notification is emitted.
 #[tokio::test]
 async fn a_step_with_a_retry_budget_runs_again_before_its_workflow_fails() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
     let input = app.write_output_file("budget/clip.flv", "clip");
+    let marker = app.output_dir().join("budget/attempt1.done");
+    let marker_str = marker.to_string_lossy().to_string();
+    // First attempt emits `first-attempt-boom` and creates `marker`; second emits `final-attempt-boom`.
+    let distinct_fail_cmd = if cfg!(windows) {
+        format!(
+            "if exist \"{marker_str}\" (echo [error] final-attempt-boom 1>&2 & exit /b 1) else (type nul > \"{marker_str}\" & echo [error] first-attempt-boom 1>&2 & exit /b 1)"
+        )
+    } else {
+        format!(
+            "if [ -f '{marker_str}' ]; then echo '[error] final-attempt-boom' >&2; exit 1; else touch '{marker_str}'; echo '[error] first-attempt-boom' >&2; exit 1; fi"
+        )
+    };
 
     let dag_id = start_pipeline(
         &app,
@@ -2591,7 +2602,7 @@ async fn a_step_with_a_retry_budget_runs_again_before_its_workflow_fails() {
         definition(
             "budget",
             vec![with(
-                execute("run", "exit 1", &[]),
+                execute("run", &distinct_fail_cmd, &[]),
                 "retry",
                 json!({ "max_attempts": 2, "backoff_secs": 2 }),
             )],
@@ -2604,6 +2615,7 @@ async fn a_step_with_a_retry_budget_runs_again_before_its_workflow_fails() {
     assert_eq!(first["max_attempts"], 2);
     assert!(first["retry_after"].is_string(), "{first}");
     let first_error = first["error_message"].as_str().expect("error_message");
+    assert!(first_error.contains("first-attempt-boom"), "{first}");
     assert!(!first_error.contains("retrying"), "{first}");
     let waiting = app.dag(&token, &dag_id).await;
     assert!(
@@ -2619,20 +2631,19 @@ async fn a_step_with_a_retry_budget_runs_again_before_its_workflow_fails() {
     .await;
     assert_eq!(spent["retry_after"], Value::Null, "{spent}");
     let spent_error = spent["error_message"].as_str().expect("error_message");
+    assert!(spent_error.contains("final-attempt-boom"), "{spent}");
     assert!(!spent_error.contains("retrying"), "{spent}");
     let failed = app.settled_dag(&token, &dag_id).await;
     assert_eq!(failed["status"], "FAILED");
     assert_eq!(step(&failed, "run")["status"], "FAILED");
-    let notices = eventually(WAIT, "both failures to be notified", || async {
+    let notices = eventually(WAIT, "terminal failure to be notified", || async {
         let notices = pipeline_failure_notices(&app, &token, &job_id).await;
-        (notices.len() == 2).then_some(notices)
+        (!notices.is_empty()).then_some(notices)
     })
     .await;
-    assert!(
-        notices[1].contains("; attempt 1 of 2 failed, retrying at "),
-        "{notices:?}"
-    );
-    assert!(!notices[0].contains("retrying"), "{notices:?}");
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    assert!(notices[0].contains("final-attempt-boom"), "{notices:?}");
+    assert!(!notices[0].contains("first-attempt-boom"), "{notices:?}");
 
     app.shutdown().await;
 }

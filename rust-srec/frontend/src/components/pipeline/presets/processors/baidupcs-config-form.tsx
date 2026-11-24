@@ -397,7 +397,8 @@ export function BaiduPcsConfigForm({
               description={
                 <Trans>
                   Upload attempts per job before failing. Retries only re-send
-                  files without a confirmed result.
+                  files without a confirmed result. Ignored when the workflow
+                  step sets Attempts above 1.
                 </Trans>
               }
               min={1}
