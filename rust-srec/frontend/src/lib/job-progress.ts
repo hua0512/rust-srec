@@ -7,17 +7,9 @@ import {
   resolveProcessorType,
 } from '@/components/pipeline/constants';
 import { formatLocalizedDuration } from '@/lib/datetime';
-import { formatSpeed } from '@/lib/format';
+import { formatSpeed, formatTimecode } from '@/lib/format';
 import { formatUploadBytes } from '@/lib/upload-format';
 import type { JobView, UploadProgressInput, UploadView } from '@/store/uploads';
-
-/** A media position in milliseconds as "01:02:03". */
-function formatTimecode(ms: number): string {
-  const secs = Math.max(0, Math.floor(ms / 1000));
-  return [Math.floor(secs / 3600), Math.floor(secs / 60) % 60, secs % 60]
-    .map((part) => String(part).padStart(2, '0'))
-    .join(':');
-}
 
 /** The job type's display name, as the job pages show it. */
 export function jobTypeLabel(jobType: string, i18n: I18n): string {
@@ -138,10 +130,14 @@ export function describeJobProgress(
   }
   const bytes = formatUploadBytes(progress);
   if (progress.outTimeMs != null) {
-    const done = formatTimecode(Number(progress.outTimeMs));
+    const done = formatTimecode(Number(progress.outTimeMs) / 1000, {
+      alwaysShowHours: true,
+    });
     details.push(
       progress.durationMs != null
-        ? `${done} / ${formatTimecode(Number(progress.durationMs))}`
+        ? `${done} / ${formatTimecode(Number(progress.durationMs) / 1000, {
+            alwaysShowHours: true,
+          })}`
         : done,
     );
     if (progress.speedX != null) details.push(`${progress.speedX.toFixed(1)}×`);

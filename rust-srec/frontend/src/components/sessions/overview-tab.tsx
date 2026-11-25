@@ -8,7 +8,7 @@ import { useLingui } from '@lingui/react';
 import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { STAT_GRID } from '@/lib/grid';
-import { formatBytes } from '@/lib/format';
+import { formatBytes, formatTimecode } from '@/lib/format';
 import {
   Monitor,
   Activity,
@@ -34,16 +34,6 @@ const DanmuStatsPanel = React.lazy(() =>
     default: module.DanmuStatsPanel,
   })),
 );
-
-/** Format a positive duration in seconds as "MM:SS" or "HH:MM:SS" for the preview badge. */
-function formatPreviewDuration(seconds: number): string {
-  const total = Math.max(0, Math.round(seconds));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const secs = total % 60;
-  const parts = hours > 0 ? [hours, minutes, secs] : [minutes, secs];
-  return parts.map((part) => String(part).padStart(2, '0')).join(':');
-}
 
 /**
  * The recorded length; a session still recording has no `duration_secs` yet,
@@ -244,7 +234,7 @@ export function OverviewTab({
                     )}
                     {previewDurationSecs != null && (
                       <div className="pointer-events-none absolute bottom-3.5 right-3.5 z-10 rounded-md bg-black/65 px-2 py-1 font-mono text-xs font-medium tabular-nums text-white/95 ring-1 ring-white/10 backdrop-blur-md">
-                        {formatPreviewDuration(previewDurationSecs)}
+                        {formatTimecode(previewDurationSecs)}
                       </div>
                     )}
                   </>
