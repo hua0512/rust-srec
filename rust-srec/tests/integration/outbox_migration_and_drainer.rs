@@ -21,18 +21,77 @@ use rust_srec::database::repositories::{
 };
 use rust_srec::domain::StreamerState;
 use rust_srec::domain::streamer::FatalErrorType;
-use rust_srec::monitor::MonitorEvent;
 use rust_srec::notification::{
     NotificationEvent, NotificationOutboxDrainer, NotificationService, NotificationServiceConfig,
     OutboxDrainReport,
 };
 use rust_srec::recorder::{OutboxEvent, StreamOnlineKind};
 use rust_srec::services::maintenance::{MaintenanceConfig, MaintenanceScheduler};
+use serde::Serialize;
 use serde_json::Value;
 use sqlx::SqlitePool;
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, Notify, oneshot};
 use tokio_util::sync::CancellationToken;
+
+/// Wire-format fixture matching pre-v2 `monitor_event_outbox` rows.
+#[derive(Serialize)]
+enum LegacyMonitorEvent {
+    StreamerLive {
+        streamer_id: String,
+        session_id: String,
+        streamer_name: String,
+        streamer_url: String,
+        title: String,
+        category: Option<String>,
+        streams: Vec<Value>,
+        media_headers: Option<Value>,
+        media_extras: Option<Value>,
+        timestamp: Timestamp,
+    },
+    StreamerOffline {
+        streamer_id: String,
+        streamer_name: String,
+        session_id: Option<String>,
+        timestamp: Timestamp,
+    },
+    FatalError {
+        streamer_id: String,
+        streamer_name: String,
+        error_type: FatalErrorType,
+        message: String,
+        new_state: StreamerState,
+        timestamp: Timestamp,
+    },
+    TransientError {
+        streamer_id: String,
+        streamer_name: String,
+        error_message: String,
+        consecutive_errors: i32,
+        timestamp: Timestamp,
+    },
+    ChecksFailing {
+        streamer_id: String,
+        streamer_name: String,
+        platform: String,
+        last_error: String,
+        consecutive_errors: i32,
+        timestamp: Timestamp,
+    },
+    ChecksRestored {
+        streamer_id: String,
+        streamer_name: String,
+        timestamp: Timestamp,
+    },
+    StateChanged {
+        streamer_id: String,
+        streamer_name: String,
+        old_state: StreamerState,
+        new_state: StreamerState,
+        reason: Option<String>,
+        timestamp: Timestamp,
+    },
+}
 
 const OUTBOX_SET_NULL_MIGRATION_SQL: &str =
     include_str!("../../migrations/20261124120000_monitor_event_outbox_set_null.sql");
@@ -83,16 +142,16 @@ async fn insert_streamer(pool: &SqlitePool, id: &str, name: &str) {
 async fn enqueue_legacy_event(
     tx: &mut sqlx::SqliteConnection,
     streamer_id: &str,
-    event: &MonitorEvent,
+    event: &LegacyMonitorEvent,
 ) {
     let event_type = match event {
-        MonitorEvent::StreamerLive { .. } => "StreamerLive",
-        MonitorEvent::StreamerOffline { .. } => "StreamerOffline",
-        MonitorEvent::FatalError { .. } => "FatalError",
-        MonitorEvent::TransientError { .. } => "TransientError",
-        MonitorEvent::ChecksFailing { .. } => "ChecksFailing",
-        MonitorEvent::ChecksRestored { .. } => "ChecksRestored",
-        MonitorEvent::StateChanged { .. } => "StateChanged",
+        LegacyMonitorEvent::StreamerLive { .. } => "StreamerLive",
+        LegacyMonitorEvent::StreamerOffline { .. } => "StreamerOffline",
+        LegacyMonitorEvent::FatalError { .. } => "FatalError",
+        LegacyMonitorEvent::TransientError { .. } => "TransientError",
+        LegacyMonitorEvent::ChecksFailing { .. } => "ChecksFailing",
+        LegacyMonitorEvent::ChecksRestored { .. } => "ChecksRestored",
+        LegacyMonitorEvent::StateChanged { .. } => "StateChanged",
     };
     let payload = serde_json::to_string(event).unwrap();
     MonitorOutboxTxOps::enqueue_raw(
@@ -224,7 +283,7 @@ async fn migration_rebuilds_outbox_with_set_null_and_preserves_rows_and_retentio
         let old_delivered_ms = now_ms - 48 * 60 * 60 * 1000;
         let recent_delivered_ms = now_ms - 60 * 60 * 1000;
 
-        let reap_fatal_payload = serde_json::to_string(&MonitorEvent::FatalError {
+        let reap_fatal_payload = serde_json::to_string(&LegacyMonitorEvent::FatalError {
             streamer_id: "s-reap".into(),
             streamer_name: "Reaped Streamer".into(),
             error_type: FatalErrorType::NotFound,
@@ -233,7 +292,7 @@ async fn migration_rebuilds_outbox_with_set_null_and_preserves_rows_and_retentio
             timestamp: Timestamp::from_millisecond(now_ms).unwrap(),
         })
         .unwrap();
-        let keep_failing_payload = serde_json::to_string(&MonitorEvent::ChecksFailing {
+        let keep_failing_payload = serde_json::to_string(&LegacyMonitorEvent::ChecksFailing {
             streamer_id: "s-keep".into(),
             streamer_name: "Kept Streamer".into(),
             platform: "twitch".into(),
@@ -501,9 +560,7 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
         enqueue_legacy_event(
             &mut tx,
             "s-active",
-            &MonitorEvent::StreamerLive {
-                runtime_instance: None,
-                credential_binding: None,
+            &LegacyMonitorEvent::StreamerLive {
                 streamer_id: "s-active".into(),
                 session_id: "legacy-sess".into(),
                 streamer_name: "Active Streamer".into(),
@@ -522,7 +579,7 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
         enqueue_legacy_event(
             &mut tx,
             "s-active",
-            &MonitorEvent::FatalError {
+            &LegacyMonitorEvent::FatalError {
                 streamer_id: "s-active".into(),
                 streamer_name: "Active Streamer".into(),
                 error_type: FatalErrorType::Banned,
@@ -554,7 +611,7 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
         enqueue_legacy_event(
             &mut tx,
             "s-active",
-            &MonitorEvent::StateChanged {
+            &LegacyMonitorEvent::StateChanged {
                 streamer_id: "s-active".into(),
                 streamer_name: "Active Streamer".into(),
                 old_state: StreamerState::NotLive,
@@ -567,7 +624,7 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
         enqueue_legacy_event(
             &mut tx,
             "s-active",
-            &MonitorEvent::StreamerOffline {
+            &LegacyMonitorEvent::StreamerOffline {
                 streamer_id: "s-active".into(),
                 streamer_name: "Active Streamer".into(),
                 session_id: Some("legacy-sess".into()),
@@ -578,7 +635,7 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
         enqueue_legacy_event(
             &mut tx,
             "s-active",
-            &MonitorEvent::TransientError {
+            &LegacyMonitorEvent::TransientError {
                 streamer_id: "s-active".into(),
                 streamer_name: "Active Streamer".into(),
                 error_message: "blip".into(),
@@ -602,7 +659,7 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
         enqueue_legacy_event(
             &mut tx,
             "s-deleted",
-            &MonitorEvent::ChecksFailing {
+            &LegacyMonitorEvent::ChecksFailing {
                 streamer_id: "s-deleted".into(),
                 streamer_name: "Deleted Streamer".into(),
                 platform: "twitch".into(),
@@ -677,7 +734,7 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
         enqueue_legacy_event(
             &mut tx,
             "s-active",
-            &MonitorEvent::ChecksRestored {
+            &LegacyMonitorEvent::ChecksRestored {
                 streamer_id: "s-active".into(),
                 streamer_name: "Active Streamer".into(),
                 timestamp: Timestamp::from_millisecond(base_ms + 13).unwrap(),

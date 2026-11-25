@@ -149,10 +149,11 @@ impl From<Error> for ApiError {
                 };
                 ApiError::new(StatusCode::CONFLICT, code, error.to_string())
             }
-            Error::SchedulerFeedbackBusy { .. } => ApiError::new(
+            Error::RecorderFeedbackBusy { .. } => ApiError::new(
                 StatusCode::SERVICE_UNAVAILABLE,
+                // Wire error code retained for compatibility with API clients.
                 "SCHEDULER_FEEDBACK_BUSY",
-                "Scheduler feedback capacity is busy; retry recording admission",
+                "Recorder feedback capacity is busy; retry recording admission",
             ),
             Error::Serialization(error) => ApiError::from(error),
             Error::NotFound { entity_type, id } => {

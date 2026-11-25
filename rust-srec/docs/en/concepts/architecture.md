@@ -63,7 +63,7 @@ This section is now in [Runtime architecture](../development/architecture.md#cor
 
 <div id="runtimecoordinator-recording-startup-and-cancellation" class="legacy-section">
 
-This section is now in [Runtime architecture](../development/architecture.md#runtimecoordinator-recording-startup-and-cancellation).
+This section is now in [Runtime architecture](../development/architecture.md#recording-startup-and-cancellation).
 
 </div>
 
@@ -81,19 +81,19 @@ This section is now in [Runtime architecture](../development/architecture.md#str
 
 <div id="scheduler-actor-model-orchestration" class="legacy-section">
 
-This section is now in [Runtime architecture](../development/architecture.md#scheduler-actor-model-orchestration).
+This section is now in [Runtime architecture](../development/architecture.md#recorder-control-plane).
 
 </div>
 
 <div id="streammonitor-detect-filter-outbox" class="legacy-section">
 
-This section is now in [Runtime architecture](../development/architecture.md#streammonitor-detect-filter-outbox).
+This section is now in [Runtime architecture](../development/architecture.md#recorder-prober-and-store).
 
 </div>
 
 <div id="sessionlifecycle-single-owner-of-session-state" class="legacy-section">
 
-This section is now in [Runtime architecture](../development/architecture.md#sessionlifecycle-single-owner-of-session-state).
+This section is now in [Runtime architecture](../development/architecture.md#streamerfsm-state-machine).
 
 </div>
 

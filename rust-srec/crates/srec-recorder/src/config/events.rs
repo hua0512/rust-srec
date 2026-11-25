@@ -22,7 +22,7 @@ use tokio::sync::broadcast;
 ///
 /// - **`StreamerStateSyncedFromDb`**: Emitted by committed streamer publication (or explicit reconciliation) after
 ///   transactional database updates (e.g., monitor detecting errors, session state changes).
-///   This is for system-initiated state synchronization. The scheduler uses this to spawn/remove
+///   This is for system-initiated state synchronization. `ActorRegistry` uses this to spawn/remove
 ///   actors without routing config updates.
 ///
 /// They should NOT overlap in normal operation:
@@ -59,7 +59,7 @@ pub enum ConfigUpdateEvent {
     ///
     /// Emitted by: committed streamer publication after transactional DB updates.
     ///
-    /// This event is used by the scheduler to spawn/remove actors based on state changes
+    /// This event is used by `ActorRegistry` to spawn/remove actors based on state changes
     /// that occurred via transactional operations (e.g., monitor error handling).
     /// Unlike `StreamerMetadataUpdated`, this does NOT trigger config routing to actors.
     ///
@@ -81,7 +81,7 @@ pub enum ConfigUpdateEvent {
     ///
     /// Emitted by `StreamerManager::clear_error_state`. The backoff lives in the
     /// row, but a running actor has already scheduled its next check at the old
-    /// `disabled_until`; the scheduler turns this into an immediate check.
+    /// `disabled_until`; `ActorRegistry` turns this into an immediate check.
     StreamerErrorCleared { streamer_id: String },
 }
 

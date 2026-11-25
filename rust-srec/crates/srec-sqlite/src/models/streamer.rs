@@ -45,7 +45,7 @@ pub struct StreamerDbModel {
     /// transaction). While it is set the row still exists but
     /// `StreamerMetadata::is_active` is false, so no runtime owner starts new
     /// work for it; `StreamerManager::reap_deleted` issues the physical
-    /// `DELETE` once `RuntimeCoordinator::retire_streamer` reports the owners
+    /// `DELETE` once `ActorRegistry::retire_streamer` reports the owners
     /// have stopped.
     pub deleted_at: Option<i64>,
 }

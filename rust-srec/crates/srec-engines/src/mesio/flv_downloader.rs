@@ -176,8 +176,8 @@ impl FlvDownloader {
                 output_dir: &config.output_dir,
                 // FLV streams end on a TCP close. That's "we got disconnected"
                 // — could be EOF, could be the streamer's network blipping.
-                // SessionLifecycle treats this as ambiguous and enters
-                // hysteresis to absorb a possible reconnect.
+                // The recorder FSM treats this as ambiguous and enters
+                // its quiet period to absorb a possible reconnect.
                 engine_signal: EngineEndSignal::CleanDisconnect,
             },
         )

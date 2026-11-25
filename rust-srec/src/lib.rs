@@ -132,8 +132,8 @@ impl From<srec_recorder::RecorderError> for Error {
     fn from(error: srec_recorder::RecorderError) -> Self {
         match error {
             srec_recorder::RecorderError::ManualSplit(e) => Self::ManualSplit(e),
-            srec_recorder::RecorderError::SchedulerFeedbackBusy { streamer_id } => {
-                Self::SchedulerFeedbackBusy { streamer_id }
+            srec_recorder::RecorderError::RecorderFeedbackBusy { streamer_id } => {
+                Self::RecorderFeedbackBusy { streamer_id }
             }
             srec_recorder::RecorderError::DatabaseSqlx(e) => Self::DatabaseSqlx(e),
             srec_recorder::RecorderError::FilterSnapshot(e) => Self::FilterSnapshot(e),
@@ -172,8 +172,8 @@ impl From<srec_api::ServerError> for Error {
     fn from(error: srec_api::ServerError) -> Self {
         match error {
             srec_api::ServerError::ManualSplit(e) => Self::ManualSplit(e),
-            srec_api::ServerError::SchedulerFeedbackBusy { streamer_id } => {
-                Self::SchedulerFeedbackBusy { streamer_id }
+            srec_api::ServerError::RecorderFeedbackBusy { streamer_id } => {
+                Self::RecorderFeedbackBusy { streamer_id }
             }
             srec_api::ServerError::DatabaseSqlx(e) => Self::DatabaseSqlx(e),
             srec_api::ServerError::FilterSnapshot(e) => Self::FilterSnapshot(e),
@@ -226,8 +226,8 @@ impl From<Error> for srec_api::ServerError {
     fn from(error: Error) -> Self {
         match error {
             Error::ManualSplit(e) => Self::ManualSplit(e),
-            Error::SchedulerFeedbackBusy { streamer_id } => {
-                Self::SchedulerFeedbackBusy { streamer_id }
+            Error::RecorderFeedbackBusy { streamer_id } => {
+                Self::RecorderFeedbackBusy { streamer_id }
             }
             Error::DatabaseSqlx(e) => Self::DatabaseSqlx(e),
             Error::FilterSnapshot(e) => Self::FilterSnapshot(e),

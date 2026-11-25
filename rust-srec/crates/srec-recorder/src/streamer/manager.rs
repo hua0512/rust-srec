@@ -52,8 +52,8 @@ pub enum ReloadPublish {
     /// consumer routes on, and for pure cache resyncs after a transaction.
     StateOnly,
     /// Additionally publish `ConfigUpdateEvent::StreamerMetadataUpdated`, which
-    /// is what makes `Scheduler::handle_config_event` re-derive the actor's
-    /// `StreamerConfig` and `ConfigEventHandler` re-resolve the streamer's
+    /// makes `ActorRegistry::handle_config_event` re-resolve the actor's
+    /// `ResolvedActorConfig` and `ConfigEventHandler` refresh the streamer's
     /// `offline_check_*` values. For callers that wrote the `streamers` row
     /// outside this manager.
     MetadataUpdated,
@@ -106,7 +106,7 @@ where
     /// hysteresis would suppress `Live → Live` transitions and no download would start.
     ///
     /// Rows carrying a `deleted_at` marker are hydrated too, so
-    /// [`StreamerMetadata::is_active`] keeps the scheduler from spawning an actor
+    /// [`StreamerMetadata::is_active`] keeps `ActorRegistry` from spawning an actor
     /// for a streamer whose retirement the reaper still has to finish; the query
     /// helpers below skip them.
     pub async fn hydrate(&self) -> Result<usize> {
@@ -345,7 +345,7 @@ where
     ///
     /// # Events
     /// Emits `ConfigUpdateEvent::StreamerErrorCleared` once the cache holds the
-    /// cleared row, so the scheduler checks the streamer now rather than at the
+    /// cleared row, so `ActorRegistry` triggers an immediate check rather than waiting for the
     /// backoff deadline its actor already scheduled.
     pub async fn clear_error_state(&self, id: &str) -> Result<()> {
         debug!("Clearing error state for streamer {}", id);
@@ -419,7 +419,7 @@ where
     /// Reload streamer metadata from the repository into the in-memory cache.
     ///
     /// This is useful when another component performs transactional DB updates
-    /// (e.g., StreamMonitor session/state transactions) and we need to bring
+    /// (e.g., `RecorderStore` session/state transactions) and we need to bring
     /// the in-memory cache back in sync.
     ///
     /// # Transactional Update Pattern
@@ -602,10 +602,9 @@ where
     ///
     /// Writes `streamers.deleted_at` and reloads the row, which turns
     /// [`StreamerMetadata::is_active`] false and publishes
-    /// `StreamerStateSyncedFromDb { is_active: false }`. That is what retires
-    /// the scheduler actor and runs `RuntimeCoordinator::handle_streamer_disabled`.
-    /// The physical delete belongs to [`Self::reap_deleted`], which
-    /// `RuntimeCoordinator::retire_streamer` gates on the owners having stopped.
+    /// `StreamerStateSyncedFromDb { is_active: false }`. Stopping the actor
+    /// and physical owners belongs to `ActorRegistry::retire_streamer`, which
+    /// gates [`Self::reap_deleted`] on all owners having settled.
     ///
     /// Returns the marked metadata, or `None` when the row is missing or was
     /// already marked by an earlier caller that owns its retirement.
@@ -626,7 +625,7 @@ where
     ///
     /// Refuses rows without a `deleted_at` marker, so the only way to remove a
     /// streamer is [`Self::mark_deleting`] followed by a retirement that
-    /// acknowledged. Broadcasts `StreamerDeleted` so the scheduler drops any
+    /// acknowledged. Broadcasts `StreamerDeleted` so `ActorRegistry` drops any
     /// actor that outlived the mark and `ConfigService` evicts its cache entry.
     ///
     /// `Ok(false)` when the row was already reaped.
@@ -671,9 +670,9 @@ where
     /// from a freshly resolved [`crate::config::MergedConfig`].
     /// No-op if the streamer is not currently registered.
     ///
-    /// Called from the scheduler's config-update fan-out so per-streamer
-    /// overrides flow into both the StreamerActor's `StreamerConfig` and the
-    /// SessionLifecycle's hysteresis backstop without an extra DB hit.
+    /// Called from `ActorRegistry`'s config resolution and `ConfigEventHandler`
+    /// so per-streamer overrides stay current in cached metadata and
+    /// `StreamerFsm`'s quiet-period backstop without an extra DB hit.
     pub fn apply_resolved_config(&self, streamer_id: &str, merged: &crate::config::MergedConfig) {
         let _publication = self.cache.publication.write();
         if let Some(mut entry) = self.metadata.get_mut(streamer_id) {

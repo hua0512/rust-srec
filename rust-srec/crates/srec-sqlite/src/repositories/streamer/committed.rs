@@ -31,7 +31,7 @@ pub(super) async fn write(
 ) -> Result<Option<StreamerDbModel>> {
     let publication = match mutation {
         // Clearing errors can make a fatally stopped streamer active again,
-        // which only a state publication tells the scheduler.
+        // which only a state publication reports to `ActorRegistry`.
         Mutation::MarkDeleted(_) | Mutation::ClearErrors => StatePublication::StateOnly,
         Mutation::Priority(_) => StatePublication::Metadata,
         Mutation::DeleteMarked => StatePublication::Deleted,

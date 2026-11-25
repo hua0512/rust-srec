@@ -1272,7 +1272,7 @@ mod tests {
             playback: Arc::new(crate::api::playback_context::PlaybackContextService::default()),
             execution,
             admission: Arc::new(crate::credentials::PlatformAdmission::from_config(
-                &crate::monitor::StreamMonitorConfig::default(),
+                &crate::monitor::MonitorConfig::default(),
             )),
             config_service: Arc::new(ConfigService::new(
                 Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone())),

@@ -551,7 +551,7 @@ pub enum DownloadFailureKind {
     Configuration,
     /// The engine refused to start because the stream uses a feature it does
     /// not record, such as DRM. Starting again during the same broadcast
-    /// cannot succeed, so the scheduler waits for the broadcast to end.
+    /// cannot succeed, so the recorder waits for the broadcast to end.
     UnsupportedStream,
     /// External process exited abnormally (FFmpeg, Streamlink).
     ProcessExit { code: Option<i32> },
@@ -765,7 +765,7 @@ pub enum SegmentEvent {
     Progress(DownloadProgress),
     /// Download completed.
     ///
-    /// `engine_signal` tells `SessionLifecycle` what *kind*
+    /// `engine_signal` tells the recorder FSM what *kind*
     /// of end this was — important because a clean TCP close (mesio FLV) is
     /// not authoritative the way an HLS `#EXT-X-ENDLIST` (mesio HLS) is.
     /// Engines populate this on emission; the manager forwards it into

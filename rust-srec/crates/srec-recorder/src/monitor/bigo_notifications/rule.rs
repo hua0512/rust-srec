@@ -53,7 +53,7 @@ pub(super) enum Subscription {
 pub(super) struct Pending {
     /// Until then, polls are real checks.
     until: Instant,
-    /// Times at which the scheduler is asked for a check, earliest first.
+    /// Times at which `ActorRegistry` is asked for a check, earliest first.
     checks: VecDeque<Instant>,
 }
 

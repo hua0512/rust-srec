@@ -40,7 +40,7 @@ impl CredentialProviderRegistry {
     pub fn new() -> Self {
         Self {
             admission: Arc::new(PlatformAdmission::from_config(
-                &crate::monitor::StreamMonitorConfig::default(),
+                &crate::monitor::MonitorConfig::default(),
             )),
             platform_providers: false,
             #[cfg(any(test, feature = "test-support"))]

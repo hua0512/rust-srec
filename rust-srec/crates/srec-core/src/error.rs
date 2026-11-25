@@ -12,8 +12,8 @@ pub enum CoreError {
     #[error(transparent)]
     ManualSplit(#[from] pipeline_common::ManualSplitError),
 
-    #[error("Scheduler feedback capacity is busy for {streamer_id}; retry startup")]
-    SchedulerFeedbackBusy { streamer_id: String },
+    #[error("Recorder feedback capacity is busy for {streamer_id}; retry startup")]
+    RecorderFeedbackBusy { streamer_id: String },
 
     #[error("Database error: {0}")]
     Database(String),

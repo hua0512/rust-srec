@@ -63,8 +63,8 @@ pub struct MergedConfig {
     /// Whether to automatically generate thumbnails for new sessions
     pub auto_thumbnail: bool,
 
-    // Offline-confirmation cadence (used by both the StreamerActor and the
-    // SessionLifecycle hysteresis backstop). Always populated — global is
+    // Offline-confirmation cadence (used by `StreamerFsm` for offline checks
+    // and the quiet-period backstop). Always populated — global is
     // the authoritative base; platform/template/streamer can override.
     pub offline_check_count: u32,
     pub offline_check_delay_ms: u64,

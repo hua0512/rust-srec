@@ -589,8 +589,8 @@ pub enum AttemptStartFailure {
     CredentialsChanged,
     /// No eligible account is currently available; park in `WaitingCredentials`.
     CredentialsUnavailable,
-    /// Scheduler feedback admission capacity is full; wait for `RetryAdmission`.
-    SchedulerFeedbackBusy,
+    /// Recorder feedback admission capacity is full; wait for `RetryAdmission`.
+    RecorderFeedbackBusy,
     /// Freshness recheck showed streamer is no longer live or has no streams.
     NotLiveAfterQueue,
     /// Engine circuit breaker rejected the start.

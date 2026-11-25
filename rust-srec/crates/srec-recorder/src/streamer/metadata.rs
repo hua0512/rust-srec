@@ -89,7 +89,7 @@ pub struct StreamerMetadata {
     pub updated_at: Timestamp,
     /// When the streamer was deleted, mirroring `streamers.deleted_at`.
     ///
-    /// Set while `RuntimeCoordinator::retire_streamer` stands the streamer's
+    /// Set while `ActorRegistry::retire_streamer` stands the streamer's
     /// runtime owners down and cleared only by the row leaving the database.
     /// [`Self::is_active`] reads it, which is the single point every owner
     /// consults.
@@ -138,7 +138,7 @@ impl StreamerMetadata {
 
     /// Refresh the cached offline-check values from a freshly resolved
     /// [`crate::config::MergedConfig`]. Called at registration
-    /// and from the scheduler's `ConfigUpdate` fan-out path.
+    /// and from `ActorRegistry`'s config-reconciliation path.
     pub fn apply_resolved_config(&mut self, merged: &crate::config::MergedConfig) {
         self.offline_check_count = merged.offline_check_count;
         self.offline_check_delay_ms = merged.offline_check_delay_ms;
@@ -154,7 +154,7 @@ impl StreamerMetadata {
     /// Whether the streamer has been deleted and is waiting to be reaped.
     ///
     /// The row still exists — `StreamerManager::reap_deleted` removes it once
-    /// `RuntimeCoordinator::retire_streamer` reports the runtime owners have
+    /// `ActorRegistry::retire_streamer` reports the runtime owners have
     /// stopped — but nothing may treat it as a streamer the user still has.
     pub fn is_deleted(&self) -> bool {
         self.deleted_at.is_some()
@@ -163,10 +163,9 @@ impl StreamerMetadata {
     /// Check if the streamer is in an active state (can be checked/recorded).
     ///
     /// False for a deleted streamer whatever its `state`, which is what makes
-    /// `Scheduler::ensure_streamer_actor_state` retire its actor,
-    /// `run_live_download_pipeline` refuse to start a recording, and
-    /// `ConfigEventHandler` call `RuntimeCoordinator::handle_streamer_disabled`
-    /// — the whole runtime stands down off this one predicate.
+    /// `ActorRegistry` stop spawning/running new work for it and `startup_task`
+    /// refuse new downloads — the whole runtime stands down off this one
+    /// predicate.
     pub fn is_active(&self) -> bool {
         !self.is_deleted()
             && matches!(

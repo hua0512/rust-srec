@@ -128,7 +128,7 @@ async fn feedback_overload_rejects_before_start_and_retry_succeeds_after_capacit
         .await;
         assert!(matches!(
             result,
-            Err(crate::Error::SchedulerFeedbackBusy { .. })
+            Err(crate::Error::RecorderFeedbackBusy { .. })
         ));
         assert_eq!(manager.active_count(), 0);
         assert!(matches!(
@@ -142,7 +142,7 @@ async fn feedback_overload_rejects_before_start_and_retry_succeeds_after_capacit
                     DownloadRejectedKind::CircuitBreaker
                 )
                 .await,
-            Err(crate::Error::SchedulerFeedbackBusy { .. })
+            Err(crate::Error::RecorderFeedbackBusy { .. })
         ));
         assert!(
             observer.try_recv().is_err(),

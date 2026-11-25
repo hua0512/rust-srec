@@ -111,7 +111,7 @@ where
 
     /// Create a new ConfigService with custom cache settings and a shared broadcaster.
     ///
-    /// This should be used by the runtime `ServiceContainer` so the scheduler and other
+    /// This should be used by the runtime `ServiceContainer` so `ActorRegistry` and other
     /// services see config update events from the API (global/platform/template/engine).
     pub fn with_cache_and_broadcaster(
         config_repo: Arc<C>,

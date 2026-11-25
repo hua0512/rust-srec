@@ -680,7 +680,7 @@ impl StreamDetector {
                 }
 
                 // If the filter is time-based and currently matches, compute the end boundary
-                // so the scheduler can perform a boundary wake while Live.
+                // so `StreamerFsm` can perform a boundary wake while Live.
                 if (filter.filter_type() == FilterType::TimeBased
                     || filter.filter_type() == FilterType::Cron)
                     && let Some(end_at) = filter.next_unmatch_time(now)

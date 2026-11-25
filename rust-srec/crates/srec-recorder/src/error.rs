@@ -13,8 +13,8 @@ pub enum RecorderError {
     #[error(transparent)]
     ManualSplit(#[from] pipeline_common::ManualSplitError),
 
-    #[error("Scheduler feedback capacity is busy for {streamer_id}; retry startup")]
-    SchedulerFeedbackBusy { streamer_id: String },
+    #[error("Recorder feedback capacity is busy for {streamer_id}; retry startup")]
+    RecorderFeedbackBusy { streamer_id: String },
 
     #[error("Database error: {0}")]
     DatabaseSqlx(#[from] sqlx::Error),
@@ -64,7 +64,7 @@ pub enum RecorderError {
     Monitor(String),
 
     /// Retain provider evidence for credential handling without displaying
-    /// upstream bodies or signed URLs in scheduler and API diagnostics.
+    /// upstream bodies or signed URLs in recorder and API diagnostics.
     #[error("Extraction failed ({})", .0.category())]
     Extractor(#[from] platforms_parser::extractor::error::ExtractorError),
 
@@ -152,8 +152,8 @@ impl From<srec_core::CoreError> for RecorderError {
     fn from(error: srec_core::CoreError) -> Self {
         match error {
             srec_core::CoreError::ManualSplit(e) => Self::ManualSplit(e),
-            srec_core::CoreError::SchedulerFeedbackBusy { streamer_id } => {
-                Self::SchedulerFeedbackBusy { streamer_id }
+            srec_core::CoreError::RecorderFeedbackBusy { streamer_id } => {
+                Self::RecorderFeedbackBusy { streamer_id }
             }
             srec_core::CoreError::Database(msg) => Self::Database(msg),
             srec_core::CoreError::Serialization(e) => Self::Serialization(e),

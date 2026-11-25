@@ -443,12 +443,12 @@ async fn run_startup_task(
                 .await
             {
                 Ok(()) => return,
-                Err(crate::Error::SchedulerFeedbackBusy { .. }) => {
+                Err(crate::Error::RecorderFeedbackBusy { .. }) => {
                     send_start_failed(
                         &actor_tx,
                         attempt_id,
                         session_id,
-                        AttemptStartFailure::SchedulerFeedbackBusy,
+                        AttemptStartFailure::RecorderFeedbackBusy,
                     );
                     return;
                 }
@@ -615,7 +615,7 @@ async fn run_startup_task(
                 &actor_tx,
                 attempt_id,
                 session_id,
-                AttemptStartFailure::SchedulerFeedbackBusy,
+                AttemptStartFailure::RecorderFeedbackBusy,
             );
             return;
         }
@@ -960,7 +960,7 @@ async fn run_startup_task(
                     &actor_tx,
                     attempt_id,
                     session_id,
-                    AttemptStartFailure::SchedulerFeedbackBusy,
+                    AttemptStartFailure::RecorderFeedbackBusy,
                 );
                 return;
             }
@@ -1120,13 +1120,13 @@ async fn run_startup_task(
             );
             return;
         }
-        Err(crate::Error::SchedulerFeedbackBusy { .. }) => {
+        Err(crate::Error::RecorderFeedbackBusy { .. }) => {
             info!(%streamer_id, "Recording admission deferred until feedback capacity recovers");
             send_start_failed(
                 &actor_tx,
                 attempt_id,
                 session_id,
-                AttemptStartFailure::SchedulerFeedbackBusy,
+                AttemptStartFailure::RecorderFeedbackBusy,
             );
             return;
         }

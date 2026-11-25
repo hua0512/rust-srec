@@ -281,7 +281,7 @@ impl StreamerFsm {
                     open.attempt = AttemptPhase::WaitingCredentials;
                 }
             }
-            AttemptStartFailure::SchedulerFeedbackBusy => {
+            AttemptStartFailure::RecorderFeedbackBusy => {
                 if let SessionSlot::Open(open) = &mut self.session {
                     open.attempt = AttemptPhase::Idle;
                 }

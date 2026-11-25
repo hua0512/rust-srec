@@ -217,7 +217,7 @@ impl ServiceContainer {
         ));
 
         // Shared platform extractor runner and admission budget.
-        let monitor_config = crate::monitor::StreamMonitorConfig::default();
+        let monitor_config = crate::monitor::MonitorConfig::default();
         let monitor_request_timeout = monitor_config.request_timeout;
         let extractor_runner = Arc::new(crate::recorder::PlatformExtractorRunner::new(
             monitor_config.request_timeout,

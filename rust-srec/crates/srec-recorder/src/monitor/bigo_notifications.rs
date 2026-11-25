@@ -9,7 +9,7 @@
 //! monitored Bigo streamer whose numeric account id (uid) an individual check
 //! has stored. Then:
 //!
-//! - a push makes the scheduler check the streamer at once, and again at the
+//! - a push makes `ActorRegistry` check the streamer at once, and again at the
 //!   [`RECHECKS`] offsets while the profile API may still read it offline;
 //! - the monitor's batch gate answers a routine offline poll without a request
 //!   ([`BigoNotifications::answers_offline`]) while the streamer is subscribed
@@ -559,7 +559,7 @@ impl BigoNotifications {
         });
     }
 
-    /// Keeps the streamer set and settings current, asks the scheduler for
+    /// Keeps the streamer set and settings current, asks `ActorRegistry` for
     /// the checks pushes are due, and publishes status changes.
     async fn housekeeping(
         &self,

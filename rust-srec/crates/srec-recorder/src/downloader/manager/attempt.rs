@@ -996,7 +996,7 @@ impl DownloadManager {
                 if let Some(feedback) = self.events.feedback.get() {
                     feedback.request_recheck(&config.streamer_id);
                 }
-                crate::Error::SchedulerFeedbackBusy {
+                crate::Error::RecorderFeedbackBusy {
                     streamer_id: config.streamer_id.clone(),
                 }
             })?;

@@ -453,7 +453,7 @@ mod tests {
         srec_sqlite::run_migrations(&pool).await.unwrap();
         let repository = Arc::new(CredentialProfileRepository::new(pool.clone(), pool.clone()));
         let admission = Arc::new(super::super::PlatformAdmission::from_config(
-            &crate::monitor::StreamMonitorConfig::default(),
+            &crate::monitor::MonitorConfig::default(),
         ));
         let service =
             CredentialLoginSessions::new(repository.clone(), pool.clone(), pool.clone(), admission);

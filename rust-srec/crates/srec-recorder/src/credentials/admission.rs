@@ -7,7 +7,7 @@ use std::time::Duration;
 use platforms_parser::extractor::error::ExtractorError;
 use tokio::time::Instant;
 
-use crate::monitor::{RateLimiterConfig, RateLimiterManager, StreamMonitorConfig};
+use crate::monitor::{MonitorConfig, RateLimiterConfig, RateLimiterManager};
 use srec_core::domain::notification::{RuntimeAlert, RuntimeAlertSink};
 
 use crate::proxies::{ResolvedRoute, RouteKey};
@@ -78,7 +78,7 @@ impl PlatformAdmission {
         }
     }
 
-    pub fn from_config(config: &StreamMonitorConfig) -> Self {
+    pub fn from_config(config: &MonitorConfig) -> Self {
         let default =
             RateLimiterConfig::with_rps(config.default_rate_limit).unwrap_or_else(|error| {
                 tracing::warn!(%error, "Invalid platform admission rate; using default");

@@ -893,9 +893,8 @@ async fn shutdown_rejects_queued_start_before_active_slot_is_released() {
     assert_eq!(started_count, 1, "the queued engine must never start");
 }
 
-/// `clear_session_segment_index` can fire mid-drain (the dedicated
-/// `SessionTransition::Ended` subscriber in `services/container.rs` runs
-/// as soon as `SessionLifecycle` writes `end_time`, independent of the
+/// `clear_session_segment_index` can fire mid-drain (`SessionEnded` cleanup runs
+/// as soon as `RecorderStore` commits `end_time`, independent of the
 /// download's spawn loop). The trailing `SegmentCompleted` that follows
 /// must still report the same session_index as its matching
 /// `SegmentStarted`. The spawn loop's local `engine_to_session` map is

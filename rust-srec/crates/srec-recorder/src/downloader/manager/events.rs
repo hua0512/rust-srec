@@ -13,7 +13,7 @@ use crate::downloader::engine::{
 /// Used to disambiguate user cancellation from internal orchestration stops.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DownloadStopCause {
-    /// User cancelled the current recording; the scheduler checks status again.
+    /// User cancelled the current recording; the recorder actor checks status again.
     User,
     /// Stream was determined to be offline (end-of-stream).
     StreamerOffline,
@@ -75,7 +75,7 @@ impl DownloadStopCause {
 ///   not mark a session as finished.
 /// - [`DownloadTerminalEvent`]: the download has stopped and no further events
 ///   for the same `(download_id, session_id)` pair will be emitted.
-///   `SessionLifecycle` maps it to a [`TerminalCause`], whose
+///   `StreamerFsm` maps it to a [`TerminalCause`], whose
 ///   `should_run_session_complete_pipeline` decides whether to fire the
 ///   post-recording pipeline.
 ///
@@ -120,8 +120,8 @@ pub enum DownloadProgressEvent {
     /// freshness/state re-check, etc.).
     /// Not emitted for the fast-path acquire (which never emitted
     /// `DownloadQueued`). Frontend clears the streamer's "queued"
-    /// badge on receipt; no scheduler action is taken — the
-    /// streamer's actual state machine is driven elsewhere.
+    /// badge on receipt; the actor updates its attempt phase without forcing
+    /// a session state change.
     DownloadDequeued {
         streamer_id: String,
         streamer_name: String,
@@ -179,7 +179,7 @@ pub enum DownloadProgressEvent {
 ///
 /// Consumers that need to react to "session ended" (notifications, pipeline
 /// scheduling, DB status updates, …) should centralise on this enum and the
-/// [`TerminalCause`] `SessionLifecycle` derives from it, whose
+/// [`TerminalCause`] `StreamerFsm` derives from it, whose
 /// `should_run_session_complete_pipeline` holds the post-processing policy,
 /// rather than re-deriving it per site.
 ///
@@ -211,7 +211,7 @@ pub enum DownloadTerminalEvent {
         /// External stop request that preceded the engine's clean completion.
         ///
         /// Completion describes the finalized recording output; this cause
-        /// preserves the control-plane intent for scheduler state handling.
+        /// preserves the control-plane intent for recorder FSM state handling.
         stop_cause: Option<DownloadStopCause>,
     },
     /// Download failed — the engine gave up. Whatever output is on disk is
@@ -376,7 +376,7 @@ impl DownloadTerminalEvent {
 
 /// Reason a [`DownloadTerminalEvent::Rejected`] event was emitted.
 ///
-/// Distinct from the free-form `reason` string because the scheduler needs
+/// Distinct from the free-form `reason` string because `StreamerFsm` needs
 /// structured data to decide which state to transition the streamer into —
 /// circuit-breaker blocks go to `TemporalDisabled`, gate blocks go to
 /// `OutOfSpace`.
@@ -385,16 +385,15 @@ pub enum DownloadRejectedKind {
     /// Engine circuit breaker is open for the resolved engine.
     CircuitBreaker,
     /// Output-root write gate has the target filesystem in the Degraded state.
-    /// The payload mirrors the gate's `GateBlocked` so the scheduler can
+    /// The payload mirrors the gate's `GateBlocked` so `StreamerFsm` can
     /// construct an [`crate::monitor::InfraBlockReason::OutputRootUnavailable`].
     OutputRootUnavailable {
         path: std::path::PathBuf,
         io_kind: IoErrorKindSer,
     },
-    /// The streamer is inside its error-backoff window (`disabled_until` set
-    /// by `MonitorService::handle_error`). Emitted by the container's
-    /// download-start gate rather than `preflight` — the backoff itself is
-    /// already persisted, so the scheduler only reschedules the actor after
+    /// The streamer is inside its persisted error-backoff window (`disabled_until`).
+    /// Emitted by startup gating rather than `preflight` — the backoff itself is
+    /// already persisted, so `StreamerFsm` only reschedules the actor after
     /// `retry_after_secs`; no `InfraBlockReason` write is needed.
     StreamerBackoff,
 }

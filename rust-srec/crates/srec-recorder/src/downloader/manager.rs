@@ -318,7 +318,7 @@ impl DownloadManager {
                 .await
             {
                 Ok(()) => return Err(PreflightFailure::RejectedEmitted),
-                Err(crate::Error::SchedulerFeedbackBusy { .. }) => {
+                Err(crate::Error::RecorderFeedbackBusy { .. }) => {
                     return Err(PreflightFailure::FeedbackBusy);
                 }
                 Err(error) => return Err(PreflightFailure::Other(error.to_string())),
@@ -349,7 +349,7 @@ impl DownloadManager {
                 .await
             {
                 Ok(()) => return Err(PreflightFailure::RejectedEmitted),
-                Err(crate::Error::SchedulerFeedbackBusy { .. }) => {
+                Err(crate::Error::RecorderFeedbackBusy { .. }) => {
                     return Err(PreflightFailure::FeedbackBusy);
                 }
                 Err(error) => return Err(PreflightFailure::Other(error.to_string())),
@@ -379,7 +379,7 @@ impl DownloadManager {
                     .await
                 {
                     Ok(()) => Err(PreflightFailure::RejectedEmitted),
-                    Err(crate::Error::SchedulerFeedbackBusy { .. }) => {
+                    Err(crate::Error::RecorderFeedbackBusy { .. }) => {
                         Err(PreflightFailure::FeedbackBusy)
                     }
                     Err(error) => Err(PreflightFailure::Other(error.to_string())),
@@ -559,7 +559,7 @@ impl DownloadManager {
     /// Convenience wrapper that runs the split download startup pipeline
     /// (`preflight` → `acquire_slot` → `start_with_slot`) sequentially
     /// with no cancellation hook and no step-level visibility. Used by
-    /// tests, the scheduler, and anything that does not need to react
+    /// tests and callers that do not need to react
     /// to "queued waiting for slot" or post-acquire freshness checks.
     /// New per-streamer pipelines should call the three methods
     /// directly so they can interleave freshness, cancellation, and
@@ -687,7 +687,7 @@ impl DownloadManager {
                 req.streamer_id, engine_err
             );
             // For OutputRootUnavailable also emit DownloadRejected so
-            // the scheduler can route to OutputRootBlocked.
+            // `StreamerFsm` can route to `OutputRootCooldown`.
             if let DownloadFailureKind::OutputRootUnavailable { io_kind } = engine_err.kind {
                 let path = self
                     .output_root_gate
@@ -1234,13 +1234,12 @@ impl DownloadManager {
     /// Emit [`DownloadTerminalEvent::Rejected`] — the single construction
     /// point for rejection events. [`Self::preflight`] routes its circuit-
     /// breaker and output-root rejections through here, and callers that
-    /// refuse a download before `preflight` runs (the container's
-    /// temporarily-disabled gate) use it too, so every rejection consumer
-    /// sees one shape: the session lifecycle ends the just-created/resumed
-    /// session (`TerminalCause::Rejected` is an authoritative end), and the
-    /// scheduler reschedules the streamer actor after `retry_after_secs`
-    /// instead of leaving it parked in Live with no download and no
-    /// `DownloadEnded` ever arriving.
+    /// refuse a download before `preflight` runs use it too, so every
+    /// rejection consumer sees one shape: `StreamerFsm` ends the
+    /// just-created/resumed session (`TerminalCause::Rejected` is an
+    /// authoritative end) and reschedules the streamer actor after
+    /// `retry_after_secs` instead of leaving it parked in Live with no
+    /// download and no `DownloadEnded` ever arriving.
     ///
     /// Parameter order mirrors the [`DownloadTerminalEvent::Rejected`]
     /// field order.
@@ -1289,7 +1288,7 @@ impl DownloadManager {
             .await
             .map_err(|error| match error {
                 coordination::PublicationError::FeedbackBusy => {
-                    crate::Error::SchedulerFeedbackBusy {
+                    crate::Error::RecorderFeedbackBusy {
                         streamer_id: feedback_streamer_id,
                     }
                 }

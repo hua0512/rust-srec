@@ -7,7 +7,7 @@ use srec_core::domain::StreamerState;
 /// Default rate-limit and HTTP pooling configuration shared by platform admission
 /// and [`crate::recorder::PlatformExtractorRunner`].
 #[derive(Debug, Clone)]
-pub struct StreamMonitorConfig {
+pub struct MonitorConfig {
     /// Default rate limit (requests per second).
     pub default_rate_limit: f64,
     /// Platform-specific rate limits.
@@ -18,7 +18,7 @@ pub struct StreamMonitorConfig {
     pub max_concurrent_requests: usize,
 }
 
-impl Default for StreamMonitorConfig {
+impl Default for MonitorConfig {
     fn default() -> Self {
         Self {
             default_rate_limit: 1.0,
