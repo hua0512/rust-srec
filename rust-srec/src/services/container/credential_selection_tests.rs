@@ -64,7 +64,7 @@ async fn fixture() -> Fixture {
         credential_login_sessions: container.credential_login_sessions.clone(),
         configuration_import_service: container.configuration_import_service.clone(),
         configuration_export_service: container.configuration_export_service.clone(),
-        runtime_coordinator: container.runtime_coordinator.clone(),
+        actor_registry: container.actor_registry.clone(),
     });
     Fixture {
         _directory: directory,

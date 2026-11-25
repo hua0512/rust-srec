@@ -55,7 +55,6 @@ async fn public_import_preserves_warm_caches_until_commit_and_publishes_only_aft
         assert_eq!(merged.output_folder, config.global_config.output_folder);
         assert!(!Arc::ptr_eq(&cached_filters, &filter_store.get(&streamer.id).await.unwrap()), "committed import invalidates filters before notification");
         assert_eq!(state.streamer_repository.get_streamer(&streamer.id).await.unwrap().id, streamer.id);
-        container.stream_monitor.stop();
         container.notification_service.stop().await;
         container.pipeline_manager.stop().await;
         container.cancellation_token.cancel();
@@ -165,7 +164,6 @@ async fn cancelled_import_commit_finishes_filter_invalidation_and_runtime_public
                 .await
                 .unwrap();
         assert_eq!(filter_count, 0);
-        container.stream_monitor.stop();
         container.notification_service.stop().await;
         container.pipeline_manager.stop().await;
         container.cancellation_token.cancel();
@@ -257,7 +255,6 @@ async fn committed_reaping_invalidates_filters_only_after_delete_succeeds() {
             .get_streamer_by_url(&streamer.url)
             .is_none()
     );
-    container.stream_monitor.stop();
     container.notification_service.stop().await;
     container.pipeline_manager.stop().await;
     container.cancellation_token.cancel();
@@ -273,7 +270,6 @@ async fn committed_reaping_invalidates_filters_only_after_delete_succeeds() {
 async fn actor_runtime_import_reconciles_streamers_after_commit_without_deadlock() {
     use crate::database::committed_writer::{CommitPhase, CommitTestGate};
     use crate::domain::StreamerState;
-    use crate::recorder::RecorderRuntime;
 
     for phase in [CommitPhase::BeforeCommit, CommitPhase::AfterCommit] {
         let directory = tempfile::tempdir().unwrap();
@@ -281,20 +277,14 @@ async fn actor_runtime_import_reconciles_streamers_after_commit_without_deadlock
             .await
             .unwrap();
         crate::database::run_migrations(&pool).await.unwrap();
-        let container = ServiceContainer::with_config_and_runtime(
-            pool.clone(),
-            pool.clone(),
-            super::super::DEFAULT_CACHE_TTL,
-            super::super::DEFAULT_EVENT_CAPACITY,
-            RecorderRuntime::Actor,
-        )
-        .await
-        .unwrap();
+        let container = ServiceContainer::new(pool.clone(), pool.clone())
+            .await
+            .unwrap();
         let (logging, _layer) =
             crate::logging::LoggingConfig::for_route_tests(directory.path().to_owned());
         assert!(container.logging_config.set(Arc::new(logging)).is_ok());
         let state = container.build_api_state(None).unwrap();
-        let registry = container.actor_registry().unwrap().clone();
+        let registry = container.actor_registry.clone();
         registry.start();
 
         let mut streamer = StreamerDbModel::new(
@@ -367,7 +357,6 @@ async fn actor_runtime_import_reconciles_streamers_after_commit_without_deadlock
         registry
             .shutdown_until(tokio::time::Instant::now() + Duration::from_secs(2))
             .await;
-        container.stream_monitor.stop();
         container.notification_service.stop().await;
         container.pipeline_manager.stop().await;
         container.cancellation_token.cancel();

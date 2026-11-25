@@ -137,6 +137,7 @@ where
         self
     }
 
+    #[cfg(test)]
     pub(crate) fn filter_store_for(
         &self,
         repository: Arc<dyn crate::database::repositories::FilterRepository>,
@@ -679,21 +680,6 @@ where
         Err(crate::Error::Configuration(format!(
             "Failed to resolve config for streamer {streamer_id} after retry"
         )))
-    }
-
-    /// Read current configuration layers without waiting for another subscriber's
-    /// invalidation, or cancelling an unrelated cached resolution in flight.
-    pub(crate) async fn get_fresh_config_for_streamer(
-        &self,
-        streamer_id: &str,
-    ) -> Result<Arc<MergedConfig>> {
-        tokio::time::timeout(
-            CONFIG_RESOLVE_HARD_TIMEOUT,
-            self.resolve_config_for_streamer(streamer_id),
-        )
-        .await
-        .map_err(|_| crate::Error::config("Fresh streamer configuration resolution timed out"))?
-        .map(Arc::new)
     }
 
     /// Resolve the merged configuration for a streamer without caching.

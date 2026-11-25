@@ -8,11 +8,11 @@ mod events;
 #[cfg(test)]
 mod tests;
 
+use coordination::DownloadEventPublisher;
 pub(crate) use coordination::{
     DownloadCoordinationReceiver, DownloadCoordinationSender, RecorderDownloadFeedback,
     RecorderFeedbackPermit, download_coordination_channel,
 };
-use coordination::{DownloadEventPublisher, LifecycleFeedback};
 pub use events::{
     DownloadManagerEvent, DownloadProgressEvent, DownloadRejectedKind, DownloadShutdownReport,
     DownloadStopCause, DownloadTerminalEvent, EngineEndSignal,
@@ -184,13 +184,6 @@ impl AttemptPhase {
     }
 }
 
-type CredentialDiagnostic = Arc<
-    dyn Fn(
-            DownloadTerminalEvent,
-        ) -> futures::future::BoxFuture<'static, Option<DownloadFailureKind>>
-        + Send
-        + Sync,
->;
 type CredentialStartValidator = Arc<
     dyn Fn(
             String,
@@ -204,7 +197,6 @@ type CredentialStartValidator = Arc<
 /// The Download Manager service.
 pub struct DownloadManager {
     credential_start_validator: OnceLock<CredentialStartValidator>,
-    credential_diagnostic: OnceLock<CredentialDiagnostic>,
     /// Configuration.
     config: RwLock<DownloadManagerConfig>,
     /// Serializes configured-limit updates and temporary throttle changes through queue publication.
@@ -225,9 +217,7 @@ pub struct DownloadManager {
     /// The per-download `engine_segment_index -> session_segment_index`
     /// mapping is held as a local variable in the spawn loop in
     /// `start_with_slot`, so this map carries only the monotonic counter.
-    /// Cleared by `clear_session_segment_index` on
-    /// `SessionTransition::Ended` (the only surface that's actually shared
-    /// across download attempts within a session).
+    /// Cleared by `clear_session_segment_index` when a session ends.
     session_segment_indices: Arc<DashMap<String, u32>>,
     /// Engine registry.
     engines: RwLock<HashMap<EngineType, Arc<dyn DownloadEngine>>>,
@@ -428,9 +418,6 @@ impl DownloadManager {
     pub(crate) fn set_credential_start_validator(&self, validator: CredentialStartValidator) {
         self.credential_start_validator.get_or_init(|| validator);
     }
-    pub(crate) fn set_credential_diagnostic(&self, diagnostic: CredentialDiagnostic) {
-        self.credential_diagnostic.get_or_init(|| diagnostic);
-    }
     /// Create a new Download Manager.
     pub fn new() -> Self {
         Self::with_config(DownloadManagerConfig::default())
@@ -456,7 +443,6 @@ impl DownloadManager {
 
         let manager = Self {
             credential_start_validator: OnceLock::new(),
-            credential_diagnostic: OnceLock::new(),
             config: RwLock::new(config),
             throttle_factor: Mutex::new(None),
             queue,
@@ -494,17 +480,6 @@ impl DownloadManager {
         manager
     }
 
-    pub(crate) fn set_scheduler_feedback(
-        &self,
-        feedback: Arc<crate::scheduler::feedback::SchedulerFeedback>,
-    ) -> Result<()> {
-        feedback.ensure_attempt_capacity(self.total_concurrent_slots());
-        self.events
-            .feedback
-            .set(LifecycleFeedback::Legacy(feedback))
-            .map_err(|_| crate::Error::Other("scheduler feedback is already configured".to_owned()))
-    }
-
     pub(crate) fn set_recorder_feedback(
         &self,
         feedback: Arc<dyn RecorderDownloadFeedback>,
@@ -512,7 +487,7 @@ impl DownloadManager {
         feedback.ensure_attempt_capacity(self.total_concurrent_slots());
         self.events
             .feedback
-            .set(LifecycleFeedback::Recorder(feedback))
+            .set(feedback)
             .map_err(|_| crate::Error::Other("recorder feedback is already configured".to_owned()))
     }
 
@@ -1473,7 +1448,7 @@ impl DownloadManager {
             };
 
         if let Some(feedback) = self.events.feedback.get() {
-            feedback.shutdown().await;
+            feedback.stop_monitoring();
         }
 
         DownloadShutdownReport {
@@ -1500,7 +1475,7 @@ impl DownloadManager {
         self.queue.shutdown();
         let downloads = self.attempts.abort_running(deadline).await;
         if let Some(feedback) = self.events.feedback.get() {
-            feedback.abort(deadline).await;
+            feedback.stop_monitoring();
         }
         downloads
     }

@@ -2,7 +2,7 @@
 
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use tokio::sync::{broadcast, mpsc};
@@ -39,8 +39,7 @@ use crate::database::models::job::{
     DagExecutionStatus, DagPipelineDefinition, DagStep, PipelineStep,
 };
 use crate::database::models::{
-    DagSegmentSource, JobFilters, MediaFileType, MediaOutputDbModel, Pagination, SessionFilters,
-    SessionSegmentLifecycle, SessionSegmentSplitReason, TitleEntry,
+    DagSegmentSource, JobFilters, MediaFileType, Pagination, SessionFilters, TitleEntry,
 };
 use crate::database::repositories::config::{ConfigRepository, SqlxConfigRepository};
 use crate::database::repositories::streamer::{SqlxStreamerRepository, StreamerRepository};
@@ -48,7 +47,6 @@ use crate::database::repositories::{
     DagRepository, JobPresetRepository, JobRepository, PipelinePresetRepository, SessionRepository,
     StagedOutputRepository, UploadRecordRepository,
 };
-use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent};
 
 mod dag;
 mod drain;
@@ -120,49 +118,6 @@ fn retry_sweep_interval() -> std::time::Duration {
     RETRY_SWEEP_INTERVAL_OVERRIDE
         .read()
         .unwrap_or(RETRY_SWEEP_INTERVAL)
-}
-
-fn parse_trailing_u32(value: &str) -> Option<u32> {
-    let bytes = value.as_bytes();
-    let end = bytes.len();
-    let mut start = end;
-
-    while start > 0 && bytes[start - 1].is_ascii_digit() {
-        start -= 1;
-    }
-
-    if start == end {
-        return None;
-    }
-
-    // Safe: the slice only spans ASCII digits, which are always valid UTF-8 boundaries.
-    value.get(start..end)?.parse::<u32>().ok()
-}
-
-fn parse_segment_index_from_segment_id(segment_id: &str) -> Option<u32> {
-    if let Some(value) = parse_trailing_u32(segment_id) {
-        return Some(value);
-    }
-
-    let stem = Path::new(segment_id)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or(segment_id);
-    parse_trailing_u32(stem)
-}
-
-fn parse_segment_index_from_danmu(segment_id: &str, output_path: &Path) -> Option<u32> {
-    if let Ok(idx) = segment_id.parse::<u32>() {
-        return Some(idx);
-    }
-
-    if let Some(stem) = output_path.file_stem().and_then(|s| s.to_str())
-        && let Some(idx) = parse_trailing_u32(stem)
-    {
-        return Some(idx);
-    }
-
-    parse_segment_index_from_segment_id(segment_id)
 }
 
 /// Configuration for the Pipeline Manager.

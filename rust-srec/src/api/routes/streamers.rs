@@ -41,7 +41,7 @@ pub struct StreamerRouteState {
     >,
     streamer_check_history_repository:
         std::sync::Arc<dyn crate::database::repositories::StreamerCheckHistoryRepository>,
-    runtime_coordinator: std::sync::Arc<crate::services::runtime_coordinator::RuntimeCoordinator>,
+    actor_registry: std::sync::Arc<crate::recorder::ActorRegistry>,
     credential_blocks: std::sync::Arc<crate::credentials::CredentialBlocks>,
 }
 
@@ -51,7 +51,7 @@ impl FromRef<AppState> for StreamerRouteState {
             config_service: state.config_service.clone(),
             streamer_manager: state.streamer_manager.clone(),
             streamer_check_history_repository: state.streamer_check_history_repository.clone(),
-            runtime_coordinator: state.services.runtime_coordinator.clone(),
+            actor_registry: state.services.actor_registry.clone(),
             credential_blocks: state.services.credential_blocks.clone(),
         }
     }
@@ -60,7 +60,7 @@ impl FromRef<AppState> for StreamerRouteState {
 /// Metadata for a streamer the caller may still act on.
 ///
 /// A row carrying `deleted_at` is gone as far as the API is concerned:
-/// `RuntimeCoordinator::retire_streamer` is standing its runtime down and the
+/// `ActorRegistry::retire_streamer` is standing its runtime down and the
 /// reaper removes the row once that finishes. `StreamerManager::get_streamer`
 /// keeps returning it because the runtime decides on
 /// `StreamerMetadata::is_active`, so every route has to reject it here.
@@ -661,11 +661,8 @@ pub async fn batch_streamers(
                     // Everything still in flight keeps its `deleted_at` marker
                     // and `ServiceContainer::spawn_streamer_reaper` removes it.
                     if !state
-                        .runtime_coordinator
-                        .delete_streamer(
-                            &id,
-                            crate::services::runtime_coordinator::OBSERVE_RETIREMENT,
-                        )
+                        .actor_registry
+                        .delete_streamer(&id, crate::recorder::OBSERVE_RETIREMENT)
                         .await?
                     {
                         return Err(crate::Error::not_found("Streamer", &id));
@@ -879,7 +876,7 @@ pub async fn delete_streamer(
 /// The one deletion path behind `DELETE /api/streamers/{id}`,
 /// `BatchStreamerAction::Delete` and the MCP `streamer_delete` tool.
 ///
-/// `RuntimeCoordinator::delete_streamer` commits the `streamers.deleted_at`
+/// `ActorRegistry::delete_streamer` commits the `streamers.deleted_at`
 /// marker before it waits on anything, so the streamer is gone from every list
 /// the moment this returns whether or not its last recording's post-processing
 /// has finished; `ServiceContainer::spawn_streamer_reaper` removes the row when
@@ -887,11 +884,8 @@ pub async fn delete_streamer(
 /// [`live_streamer`] can only be a concurrent delete of the same streamer.
 async fn delete_streamer_through_runtime(state: &StreamerRouteState, id: &str) -> ApiResult<bool> {
     state
-        .runtime_coordinator
-        .delete_streamer(
-            id,
-            crate::services::runtime_coordinator::INTERACTIVE_RETIREMENT,
-        )
+        .actor_registry
+        .delete_streamer(id, crate::recorder::INTERACTIVE_RETIREMENT)
         .await
         .map_err(ApiError::from)
 }

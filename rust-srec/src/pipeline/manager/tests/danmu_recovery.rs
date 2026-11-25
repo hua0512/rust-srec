@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use super::*;
 
 const SESSION: &str = "danmu-recovery";

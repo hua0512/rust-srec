@@ -117,7 +117,7 @@ impl ServiceContainer {
             credential_login_sessions: self.credential_login_sessions.clone(),
             configuration_import_service: self.configuration_import_service.clone(),
             configuration_export_service: self.configuration_export_service.clone(),
-            runtime_coordinator: self.runtime_coordinator.clone(),
+            actor_registry: self.actor_registry.clone(),
         };
 
         let mut state = AppState::new(services);

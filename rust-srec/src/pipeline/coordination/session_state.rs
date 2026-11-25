@@ -65,7 +65,7 @@ pub struct SessionPipelineState {
     ///
     /// An entry is only ever cleared by the command it was inserted for reaching
     /// `PipelineManager::execute_pipeline_commands`, so every emitter has to hand
-    /// its commands on: `handle_download_event` and `recover_sessions` both do.
+    /// its commands on: `handle_recorder_notification` and `recover_sessions` both do.
     /// A command emitted and then dropped leaves the session reported as busy for
     /// the length of a caller's `drain_for_session` bound.
     pub(super) pending_segment_starts: HashSet<(SourceType, u32)>,

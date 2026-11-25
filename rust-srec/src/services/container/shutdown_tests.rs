@@ -19,29 +19,17 @@ async fn fixture() -> (
     AppState,
     StreamerDbModel,
 ) {
-    fixture_with_runtime(crate::recorder::RecorderRuntime::Legacy).await
-}
-
-async fn fixture_with_runtime(
-    runtime: crate::recorder::RecorderRuntime,
-) -> (
-    tempfile::TempDir,
-    Arc<ServiceContainer>,
-    AppState,
-    StreamerDbModel,
-) {
     let directory = tempfile::tempdir().unwrap();
     let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
         .await
         .unwrap();
     crate::database::run_migrations(&pool).await.unwrap();
     let container = Arc::new(
-        ServiceContainer::with_config_and_runtime(
+        ServiceContainer::with_config(
             pool.clone(),
             pool,
             super::DEFAULT_CACHE_TTL,
             super::DEFAULT_EVENT_CAPACITY,
-            runtime,
         )
         .await
         .unwrap(),
@@ -81,7 +69,7 @@ async fn fixture_with_runtime(
         credential_login_sessions: container.credential_login_sessions.clone(),
         configuration_import_service: container.configuration_import_service.clone(),
         configuration_export_service: container.configuration_export_service.clone(),
-        runtime_coordinator: container.runtime_coordinator.clone(),
+        actor_registry: container.actor_registry.clone(),
     });
     let mut row = StreamerDbModel::new(
         "Before shutdown",
@@ -483,13 +471,11 @@ async fn retained_drain_allows_only_its_own_nested_completion_after_a_hard_timeo
 #[tokio::test]
 async fn actor_runtime_hard_cap_retains_recorder_store_commit_across_force_shutdown() {
     use crate::domain::StreamerState;
-    use crate::recorder::{DbCommitOp, RecorderRuntime, RecorderStorePort};
+    use crate::recorder::{DbCommitOp, RecorderStorePort};
 
     for phase in [CommitPhase::BeforeCommit, CommitPhase::AfterCommit] {
-        let (_directory, container, state, row) =
-            fixture_with_runtime(RecorderRuntime::Actor).await;
-        let registry = container.actor_registry().unwrap().clone();
-        let store = registry.store().clone();
+        let (_directory, container, state, row) = fixture().await;
+        let store = container.actor_registry.store().clone();
         let owner = container.streamer_manager.committed_state().unwrap();
         let gate = Arc::new(CommitTestGate::default());
         owner.writer.set_commit_gate(phase, Some(gate.clone()));

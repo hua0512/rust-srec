@@ -83,11 +83,6 @@ impl CollectionHandle {
             })
     }
 
-    /// End the current segment file (finalize XML and publish completion).
-    pub async fn end_segment(&self, segment_id: &str) -> Result<()> {
-        self.close_segment(segment_id, false).await
-    }
-
     /// Close the current segment file and wait for the runner's acknowledgement.
     ///
     /// When `discard` is `true`, the runner closes and deletes the `.xml` file

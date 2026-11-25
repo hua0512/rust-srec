@@ -295,8 +295,8 @@ fn map_global_config_to_response(
 }
 
 /// Validate the optional offline-check overrides on a request payload.
-/// Mirrors the server-side floors enforced in
-/// [`crate::session::HysteresisConfig::from_scheduler`].
+/// Mirrors the server-side floors enforced by the recorder actor's hysteresis
+/// configuration.
 fn validate_offline_check_overrides(
     count: Option<i64>,
     delay_ms: Option<i64>,

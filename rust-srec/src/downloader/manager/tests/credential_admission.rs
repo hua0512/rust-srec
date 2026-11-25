@@ -17,54 +17,6 @@ fn binding() -> crate::credentials::CredentialBinding {
 }
 
 #[tokio::test]
-async fn user_stop_cancels_in_progress_diagnostic_before_terminal_choice() {
-    tokio::time::timeout(Duration::from_secs(5), async {
-        let directory = tempfile::tempdir().unwrap();
-        let manager = DownloadManager::new();
-        let entered = Arc::new(tokio::sync::Notify::new());
-        let gate = entered.clone();
-        manager.set_credential_diagnostic(Arc::new(move |_| {
-            let gate = gate.clone();
-            Box::pin(async move {
-                gate.notify_one();
-                std::future::pending().await
-            })
-        }));
-        let mut events = manager.subscribe();
-        let mut config = test_download_config(directory.path().to_path_buf(), "diagnostic-cancel");
-        config.managed_credentials = true;
-        config.credential_binding = Some(binding());
-        let download = start_scripted_download(
-            &manager,
-            config,
-            vec![SegmentEvent::DownloadFailed {
-                kind: DownloadFailureKind::ProcessExit { code: Some(1) },
-                message: "process failed".into(),
-            }],
-        )
-        .await
-        .unwrap();
-        entered.notified().await;
-        manager.stop_download(&download).await.unwrap();
-        assert_eq!(manager.active_count(), 0);
-        let terminal = loop {
-            if let DownloadManagerEvent::Terminal(terminal) = events.recv().await.unwrap() {
-                break terminal;
-            }
-        };
-        assert!(matches!(
-            terminal,
-            DownloadTerminalEvent::Cancelled {
-                cause: DownloadStopCause::User,
-                ..
-            }
-        ));
-    })
-    .await
-    .unwrap();
-}
-
-#[tokio::test]
 async fn binding_is_revalidated_after_maintenance_admission_wait() {
     let directory = tempfile::tempdir().unwrap();
     let manager = DownloadManager::new();

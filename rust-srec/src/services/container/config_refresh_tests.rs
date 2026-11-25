@@ -87,7 +87,7 @@ async fn startup_and_scoped_config_refreshes_preserve_merged_values_and_best_eff
     container.streamer_manager.hydrate().await.unwrap();
     // The startup caller uses this exact batch path after hydration.
     container
-        .runtime_coordinator
+        .actor_registry
         .refresh_metadata_offline_checks(
             container
                 .streamer_manager

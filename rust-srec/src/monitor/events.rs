@@ -1,13 +1,13 @@
-//! Monitor events for notification system.
+//! Legacy monitor outbox wire-format schema.
 //!
-//! This module defines events that are emitted by the Stream Monitor
-//! for consumption by the notification system.
+//! Kept solely so [`crate::notification::NotificationOutboxDrainer`] can decode
+//! undelivered `monitor_event_outbox` rows written before migration to
+//! [`crate::recorder::OutboxEvent`].
 
 use std::collections::HashMap;
 
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{broadcast, oneshot};
 
 use crate::domain::StreamerState;
 use crate::domain::streamer::FatalErrorType;
@@ -15,7 +15,7 @@ use crate::domain::streamer::FatalErrorType;
 /// Re-export StreamInfo from platforms_parser for convenience.
 pub use platforms_parser::media::StreamInfo;
 
-/// Events emitted by the Stream Monitor.
+/// Legacy `monitor_event_outbox` event wire format retained for upgrade decoding.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MonitorEvent {
     /// Streamer went live.
@@ -31,14 +31,8 @@ pub enum MonitorEvent {
         streamer_url: String,
         title: String,
         category: Option<String>,
-        /// Available streams for download from platform parser.
-        /// Note: Some platforms require calling get_url() to resolve the final URL.
-        /// The StreamInfo contains headers in extras if is_headers_needed is true.
         streams: Vec<StreamInfo>,
-        /// HTTP headers extracted from MediaInfo.extras (user-agent, referer, etc.).
-        /// These should be merged with StreamInfo headers and passed to download engines.
         media_headers: Option<HashMap<String, String>>,
-        /// Additional platform-specific metadata extracted from MediaInfo.extras.
         media_extras: Option<Box<HashMap<String, String>>>,
         timestamp: Timestamp,
     },
@@ -46,7 +40,6 @@ pub enum MonitorEvent {
     StreamerOffline {
         streamer_id: String,
         streamer_name: String,
-        /// Session ID if a session was active.
         session_id: Option<String>,
         timestamp: Timestamp,
     },
@@ -68,8 +61,6 @@ pub enum MonitorEvent {
         timestamp: Timestamp,
     },
     /// Checks for a streamer failed often enough to start the error backoff.
-    /// Emitted once per run of failures, by the failure that reaches the
-    /// backoff threshold.
     ChecksFailing {
         streamer_id: String,
         streamer_name: String,
@@ -91,134 +82,8 @@ pub enum MonitorEvent {
         streamer_name: String,
         old_state: StreamerState,
         new_state: StreamerState,
-        /// Optional reason for the state change.
-        ///
-        /// This is primarily used for non-terminal state transitions like
-        /// `Live -> OutOfSchedule`, where consumers may want to take action
-        /// (e.g., stop an active download) without conflating it with Offline.
         #[serde(default)]
         reason: Option<String>,
         timestamp: Timestamp,
     },
-}
-
-pub(crate) fn runtime_instance_id() -> &'static str {
-    static INSTANCE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    INSTANCE.get_or_init(|| uuid::Uuid::new_v4().to_string())
-}
-
-/// A durable monitor event awaiting acknowledgement from the required runtime consumer.
-pub(crate) struct MonitorEventDelivery {
-    pub(crate) event: MonitorEvent,
-    pub(crate) acknowledgement: oneshot::Sender<()>,
-}
-
-impl MonitorEventDelivery {
-    pub(crate) fn new(event: MonitorEvent) -> (Self, oneshot::Receiver<()>) {
-        let (acknowledgement, receiver) = oneshot::channel();
-        (
-            Self {
-                event,
-                acknowledgement,
-            },
-            receiver,
-        )
-    }
-}
-
-impl MonitorEvent {
-    /// Get a human-readable description of the event.
-    pub fn description(&self) -> String {
-        match self {
-            MonitorEvent::StreamerLive {
-                streamer_name,
-                title,
-                ..
-            } => {
-                format!("{} is now live: {}", streamer_name, title)
-            }
-            MonitorEvent::StreamerOffline { streamer_name, .. } => {
-                format!("{} went offline", streamer_name)
-            }
-            MonitorEvent::FatalError {
-                streamer_name,
-                error_type,
-                message,
-                ..
-            } => {
-                format!("{}: {:?} - {}", streamer_name, error_type, message)
-            }
-            MonitorEvent::TransientError {
-                streamer_name,
-                error_message,
-                consecutive_errors,
-                ..
-            } => {
-                format!(
-                    "{}: {} (attempt {})",
-                    streamer_name, error_message, consecutive_errors
-                )
-            }
-            MonitorEvent::ChecksFailing {
-                streamer_name,
-                last_error,
-                consecutive_errors,
-                ..
-            } => {
-                format!(
-                    "{}: checks keep failing after {} attempts: {}",
-                    streamer_name, consecutive_errors, last_error
-                )
-            }
-            MonitorEvent::ChecksRestored { streamer_name, .. } => {
-                format!("{}: checks work again", streamer_name)
-            }
-            MonitorEvent::StateChanged {
-                streamer_name,
-                old_state,
-                new_state,
-                ..
-            } => {
-                format!("{}: {} -> {}", streamer_name, old_state, new_state)
-            }
-        }
-    }
-}
-
-/// Broadcaster for monitor events.
-#[derive(Clone)]
-pub struct MonitorEventBroadcaster {
-    sender: broadcast::Sender<MonitorEvent>,
-}
-
-impl MonitorEventBroadcaster {
-    /// Create a new broadcaster with default capacity (256).
-    pub fn new() -> Self {
-        Self::with_capacity(256)
-    }
-
-    /// Create a new broadcaster with specified capacity.
-    pub fn with_capacity(capacity: usize) -> Self {
-        let (sender, _) = broadcast::channel(capacity);
-        Self { sender }
-    }
-
-    /// Subscribe to monitor events.
-    pub fn subscribe(&self) -> broadcast::Receiver<MonitorEvent> {
-        self.sender.subscribe()
-    }
-
-    /// Publish a monitor event.
-    pub fn publish(
-        &self,
-        event: MonitorEvent,
-    ) -> Result<usize, Box<broadcast::error::SendError<MonitorEvent>>> {
-        self.sender.send(event).map_err(Box::new)
-    }
-}
-
-impl Default for MonitorEventBroadcaster {
-    fn default() -> Self {
-        Self::new()
-    }
 }

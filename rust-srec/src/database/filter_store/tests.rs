@@ -175,8 +175,11 @@ async fn cancelled_and_failed_leaders_release_waiters_and_allow_retry() {
                 ));
             }
             assert!(
-                crate::scheduler::actor::CheckError::from(follower_error).transient,
-                "the monitor adapter keeps repository/cancellation failures transient"
+                matches!(
+                    crate::recorder::prober::map_probe_failure(follower_error),
+                    crate::recorder::ProbeFailure::Transient { .. }
+                ),
+                "the recorder prober keeps repository/cancellation failures transient"
             );
             assert_eq!(repository.active.load(Ordering::SeqCst), 0);
             assert!(repository.cache.inner.state.lock().loads.is_empty());
@@ -206,7 +209,10 @@ async fn hung_repository_is_bounded_and_cached_out_of_band_staleness_expires_at_
         &error,
         Error::FilterSnapshot(FilterSnapshotError::TimedOut)
     ));
-    assert!(crate::scheduler::actor::CheckError::from(error).transient);
+    assert!(matches!(
+        crate::recorder::prober::map_probe_failure(error),
+        crate::recorder::ProbeFailure::Transient { .. }
+    ));
     *repository.gate.lock() = None;
     repository.set("one", "before");
     let original = store.get("one").await.unwrap();

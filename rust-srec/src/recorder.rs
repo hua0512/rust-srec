@@ -11,21 +11,6 @@ pub mod prober;
 pub mod registry;
 pub mod store;
 
-/// Selects which recording control plane runs inside
-/// [`crate::services::ServiceContainer`].
-///
-/// Production builds default to [`Self::Legacy`]. [`Self::Actor`] enables the
-/// single-owner per-streamer actor runtime and durable
-/// [`crate::notification::NotificationOutboxDrainer`] for parity validation.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum RecorderRuntime {
-    /// Existing scheduler / monitor / session-lifecycle / runtime-coordinator path.
-    #[default]
-    Legacy,
-    /// Per-streamer `StreamerActor` + [`RecorderStore`] + [`crate::notification::NotificationOutboxDrainer`].
-    Actor,
-}
-
 pub use actor::startup_task::StartupLeaseRegistry;
 pub use fsm::{
     AttemptPhase, BlockedKind, DanmuSessionState, ErrorTracker, FilteredKind, FsmEffect, FsmInput,
@@ -40,8 +25,8 @@ pub use ports::{
     OBSERVE_RETIREMENT, OutboxEvent, PipelineNotification, ProbeFailure, ProbePurpose,
     ProbeRequest, ProbeStatus, RecorderDanmuPort, RecorderDownloadPort, RecorderPipelinePort,
     RecorderProberPort, RecorderRuntimeSink, RecorderStorePort, ResolvedActorConfig,
-    RetirementBounds, SessionStartDisposition, StreamOnlineKind, StreamerRuntimeView,
-    VideoSegmentRecord, should_spawn_actor,
+    RetirementBounds, SessionStartDisposition, StreamOnlineKind, StreamerRetirement,
+    StreamerRuntimeView, VideoSegmentRecord, should_spawn_actor,
 };
 pub use prober::{PlatformExtractorRunner, RecorderProber, RecorderProberDependencies};
 pub use registry::{ActorRegistry, ActorRegistryDependencies};

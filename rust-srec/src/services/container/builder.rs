@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use dashmap::DashMap;
 use sqlx::SqlitePool;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -25,12 +24,9 @@ use crate::downloader::{
     DEFAULT_GATE_COOLDOWN_SECS, DownloadManager, OutputRootGate, download_coordination_channel,
 };
 use crate::metrics::{HealthChecker, MetricsCollector};
-use crate::monitor::StreamMonitor;
 use crate::notification::web_push::WebPushService;
 use crate::notification::{NotificationService, NotificationServiceConfig};
 use crate::pipeline::PipelineManager;
-use crate::scheduler::Scheduler;
-use crate::services::session_cancels::SessionCancelTokens;
 use crate::streamer::StreamerManager;
 use crate::utils::task_supervisor::TaskSupervisor;
 
@@ -61,29 +57,11 @@ impl ServiceContainer {
         cache_ttl: Duration,
         event_capacity: usize,
     ) -> Result<Self> {
-        Self::with_config_and_runtime(
-            pool,
-            write_pool,
-            cache_ttl,
-            event_capacity,
-            crate::recorder::RecorderRuntime::Legacy,
-        )
-        .await
-    }
-
-    /// Create a new service container with custom cache, event capacity, and recorder runtime.
-    pub(crate) async fn with_config_and_runtime(
-        pool: SqlitePool,
-        write_pool: SqlitePool,
-        cache_ttl: Duration,
-        event_capacity: usize,
-        recorder_runtime: crate::recorder::RecorderRuntime,
-    ) -> Result<Self> {
         Self::build(
             pool,
             write_pool,
             ServiceContainerConfig::standard(cache_ttl, event_capacity)?,
-            recorder_runtime,
+            None,
         )
         .await
     }
@@ -101,35 +79,24 @@ impl ServiceContainer {
         write_pool: SqlitePool,
         config: ServiceContainerConfig,
     ) -> Result<Self> {
-        Self::with_full_config_and_runtime(
-            pool,
-            write_pool,
-            config,
-            crate::recorder::RecorderRuntime::Legacy,
-        )
-        .await
+        Self::build(pool, write_pool, config, None).await
     }
 
-    /// Create a service container with custom subsystem configs and an explicit
-    /// internal [`crate::recorder::RecorderRuntime`] selection.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the persisted global configuration cannot be loaded or initialized.
-    pub async fn with_full_config_and_runtime(
+    #[cfg(test)]
+    pub(super) async fn with_full_config_and_danmu_providers(
         pool: SqlitePool,
         write_pool: SqlitePool,
         config: ServiceContainerConfig,
-        recorder_runtime: crate::recorder::RecorderRuntime,
+        danmu_providers: crate::danmu::ProviderRegistry,
     ) -> Result<Self> {
-        Self::build(pool, write_pool, config, recorder_runtime).await
+        Self::build(pool, write_pool, config, Some(danmu_providers)).await
     }
 
     async fn build(
         pool: SqlitePool,
         write_pool: SqlitePool,
         options: ServiceContainerConfig,
-        recorder_runtime: crate::recorder::RecorderRuntime,
+        danmu_providers: Option<crate::danmu::ProviderRegistry>,
     ) -> Result<Self> {
         let ServiceContainerConfig {
             cache_ttl,
@@ -162,7 +129,7 @@ impl ServiceContainer {
             event_broadcaster.clone(),
         ));
 
-        // Create repositories
+        // Create repositories.
         let config_repo = Arc::new(
             SqlxConfigRepository::new(pool.clone(), write_pool.clone())
                 .with_committed_writer(committed_writer.clone()),
@@ -172,12 +139,11 @@ impl ServiceContainer {
                 .with_committed_state(committed_streamers.clone()),
         );
 
-        // Load global config early for initial runtime knobs (worker pools, scheduler timing, etc.).
+        // Load global config early for initial runtime knobs (worker pools, polling cadence, etc.).
         let global_config_start = Instant::now();
         let global_config = config_repo.get_global_config().await?;
         let global_config_ms = global_config_start.elapsed().as_millis();
 
-        // Create additional repositories for StreamMonitor
         let filter_repo = Arc::new(
             SqlxFilterRepository::new(pool.clone(), write_pool.clone())
                 .with_committed_writer(committed_writer.clone()),
@@ -186,8 +152,15 @@ impl ServiceContainer {
             filter_repo.clone(),
         ));
         let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone(), write_pool.clone()));
+        let session_event_repo: Arc<dyn crate::database::repositories::SessionEventRepository> =
+            Arc::new(
+                crate::database::repositories::SqlxSessionEventRepository::new(
+                    pool.clone(),
+                    write_pool.clone(),
+                ),
+            );
 
-        // Create config service with custom cache
+        // Create config service with custom cache.
         let cache = ConfigCache::with_ttl(cache_ttl);
         let config_service = Arc::new(
             ConfigService::with_cache_and_broadcaster(
@@ -240,66 +213,13 @@ impl ServiceContainer {
             }
         }));
 
-        // Create streamer manager
+        // Create streamer manager.
         let streamer_manager = Arc::new(StreamerManager::new(
             streamer_repo.clone(),
             event_broadcaster.clone(),
         ));
 
-        // Construct the single-owner session lifecycle service up-front so
-        // the stream monitor can delegate its atomic session+streamer+outbox
-        // writes to it.
-        //
-        // The hysteresis backstop window is derived from the same scheduler
-        // tunables the actor uses for offline confirmation — single source
-        // of truth, no parallel tunable.
-        let hysteresis_config = crate::session::HysteresisConfig::from_scheduler(
-            global_config.offline_check_count as u32,
-            global_config.offline_check_delay_ms as u64,
-        );
-        let sm_for_resolver = streamer_manager.clone();
-        let hysteresis_resolver: crate::session::HysteresisWindowFn =
-            std::sync::Arc::new(move |streamer_id: &str| {
-                sm_for_resolver.get_streamer(streamer_id).map(|m| {
-                    crate::session::HysteresisConfig::from_scheduler(
-                        m.offline_check_count,
-                        m.offline_check_delay_ms,
-                    )
-                })
-            });
-        let session_event_repo: Arc<dyn crate::database::repositories::SessionEventRepository> =
-            Arc::new(
-                crate::database::repositories::SqlxSessionEventRepository::new(
-                    pool.clone(),
-                    write_pool.clone(),
-                ),
-            );
-        // Classifier window/threshold derived from the same scheduler
-        // tunables so monitor and engine failures share the offline policy.
-        let offline_classifier = Arc::new(crate::session::OfflineClassifier::from_scheduler(
-            global_config.offline_check_count as u32,
-            global_config.offline_check_delay_ms as u64,
-        ));
-        let (required_transition_sender, required_transition_receiver) =
-            crate::session::session_transition_channel();
-        let session_lifecycle = Arc::new(
-            crate::session::SessionLifecycle::with_config(
-                Arc::new(
-                    crate::database::repositories::SessionLifecycleRepository::new(
-                        write_pool.clone(),
-                    )
-                    .with_committed_state(committed_streamers.clone()),
-                ),
-                offline_classifier,
-                crate::session::DEFAULT_TRANSITION_CHANNEL_CAPACITY,
-                hysteresis_config,
-            )
-            .with_required_transition_sender(required_transition_sender.clone())
-            .with_hysteresis_resolver(hysteresis_resolver)
-            .with_event_repo(session_event_repo.clone()),
-        );
-
-        // Create stream monitor for real status detection
+        // Shared platform extractor runner and admission budget.
         let monitor_config = crate::monitor::StreamMonitorConfig::default();
         let monitor_request_timeout = monitor_config.request_timeout;
         let extractor_runner = Arc::new(crate::recorder::PlatformExtractorRunner::new(
@@ -312,26 +232,8 @@ impl ServiceContainer {
             platform_admission.register_platform_name(&platform.id, &platform.platform_name);
         }
         let platform_admission = Arc::new(platform_admission);
-        let (required_monitor_event_sender, required_monitor_event_receiver) =
-            tokio::sync::mpsc::channel(256);
-        let stream_monitor = StreamMonitor::with_runtime(
-            streamer_manager.clone(),
-            filter_repo.clone(),
-            session_repo.clone(),
-            config_service.clone(),
-            write_pool.clone(),
-            session_lifecycle.clone(),
-            crate::monitor::StreamMonitorRuntimeConfig {
-                monitor: monitor_config,
-                admission: Some(platform_admission.clone()),
-                required_event_sender: Some(required_monitor_event_sender),
-                task_supervisor: task_supervisor.clone(),
-                spawn_outbox_publisher: recorder_runtime
-                    == crate::recorder::RecorderRuntime::Legacy,
-            },
-        )?;
 
-        // Build credential refresh service (shared between StreamMonitor + API).
+        // Build credential refresh service (shared between recorder prober + API).
         let credential_service = CredentialProviderRegistry::new()
             .with_admission(platform_admission.clone())
             .with_platform_providers();
@@ -359,10 +261,7 @@ impl ServiceContainer {
             )
             .with_supervisor(committed_write_supervisor.clone()),
         );
-        stream_monitor.set_execution_service(credential_execution.clone());
         let bigo_notifications = Arc::new(crate::monitor::BigoNotifications::default());
-        stream_monitor.set_bigo_notifications(bigo_notifications.clone());
-        let stream_monitor = Arc::new(stream_monitor);
 
         // Create download manager with custom config, overridden by global config for concurrency.
         let download_manager_start = Instant::now();
@@ -380,23 +279,16 @@ impl ServiceContainer {
             .set_queue_freshness_threshold_ms(global_config.queue_freshness_threshold_ms);
         let download_manager_ms = download_manager_start.elapsed().as_millis();
 
-        // Create job repository for pipeline persistence
+        // Create job and preset repositories for pipeline persistence.
         let job_repo = Arc::new(SqlxJobRepository::new(pool.clone(), write_pool.clone()));
-
-        // Create job preset repository
         let preset_repo = Arc::new(SqliteJobPresetRepository::new(
             pool.clone().into(),
             write_pool.clone().into(),
         ));
-
-        // Create pipeline preset repository (for workflow expansion)
         let pipeline_preset_repo = Arc::new(SqlitePipelinePresetRepository::new(
             pool.clone().into(),
             write_pool.clone().into(),
         ));
-
-        // Upload records: durable per-file upload results written by
-        // JobQueue::persist_upload_records at terminal job transitions.
         let upload_record_repo: Arc<dyn crate::database::repositories::UploadRecordRepository> =
             Arc::new(
                 crate::database::repositories::SqlxUploadRecordRepository::new(
@@ -405,9 +297,7 @@ impl ServiceContainer {
                 ),
             );
 
-        // Live upload-status fan-out for the downloads WS route. Same
-        // encode-once layering as wire_check_history_pipeline: the encoder
-        // lives here so the pipeline module never depends on crate::api.
+        // Live upload-status fan-out for the downloads WS route.
         let upload_status_broadcaster = {
             use prost::Message;
             let streamer_avatar =
@@ -423,7 +313,6 @@ impl ServiceContainer {
         };
 
         // Create pipeline manager with job repository for database persistence.
-        // Wire global-config concurrency knobs into CPU/IO/upload worker pool sizes.
         let mut effective_pipeline_config = pipeline_config;
         effective_pipeline_config.cpu_pool.max_workers =
             autoscale_concurrency_limit(global_config.max_concurrent_cpu_jobs);
@@ -431,8 +320,6 @@ impl ServiceContainer {
             autoscale_concurrency_limit(global_config.max_concurrent_io_jobs);
         effective_pipeline_config.max_concurrent_uploads =
             autoscale_concurrency_limit(global_config.max_concurrent_uploads);
-
-        // Apply global-config pipeline timeouts (startup-only).
         effective_pipeline_config.cpu_pool.job_timeout_secs =
             global_config.pipeline_cpu_job_timeout_secs.max(1) as u64;
         effective_pipeline_config.io_pool.job_timeout_secs =
@@ -462,18 +349,19 @@ impl ServiceContainer {
             },
         ));
 
-        // Get monitor event broadcaster
-        let monitor_event_broadcaster = stream_monitor.event_broadcaster().clone();
-
-        // Create danmu service
+        // Create danmu service.
         let (danmu_coordination_sender, danmu_coordination_receiver) = danmu_coordination_channel();
+        let base_danmu_service = match danmu_providers {
+            Some(providers) => DanmuService::with_providers(providers),
+            None => DanmuService::new(),
+        };
         let danmu_service = Arc::new(
-            DanmuService::new()
+            base_danmu_service
                 .with_session_repository(session_repo.clone())
                 .with_coordination_sender(danmu_coordination_sender.clone()),
         );
 
-        // Create notification service with default config
+        // Create notification service with default config.
         let notification_repository = Arc::new(SqlxNotificationRepository::new(
             pool.clone(),
             write_pool.clone(),
@@ -502,8 +390,6 @@ impl ServiceContainer {
         // Stored Baidu Netdisk login material, installed process-wide so the
         // /api/tools/baidupcs routes and BaiduPcsProcessor's automatic
         // re-login share one store (crate::baidupcs::authenticator).
-        // Placed after NotificationService exists so rejected re-logins can
-        // emit `baidupcs_relogin_failed` events.
         crate::baidupcs::set_authenticator(Arc::new(
             crate::baidupcs::StoredLoginAuthenticator::new(Arc::new(
                 crate::database::repositories::SqlxToolCredentialRepository::new(
@@ -516,10 +402,7 @@ impl ServiceContainer {
         let web_push_enabled = web_push_service.is_some();
 
         // Build the output-root write gate AFTER both StreamerManager
-        // and NotificationService are available. Late-bind into the already
-        // Arc-wrapped download manager via `set_output_root_gate`, which
-        // uses a OnceLock internally so subsequent reads on the hot path
-        // stay lock-free.
+        // and NotificationService are available.
         let output_root_gate = OutputRootGate::new(
             Arc::downgrade(&notification_service),
             build_output_root_gate_recovery_hook(streamer_manager.clone(), task_supervisor.clone()),
@@ -528,14 +411,13 @@ impl ServiceContainer {
         );
         download_manager.set_output_root_gate(output_root_gate.clone());
 
-        // Create metrics collector. Its only consumer is
-        // `WebPushService::set_metrics_collector` delivery accounting.
+        // Create metrics collector for WebPushService delivery accounting.
         let metrics_collector = Arc::new(MetricsCollector::new());
         if let Some(web_push) = web_push_service.as_ref() {
             web_push.set_metrics_collector(metrics_collector);
         }
 
-        // Create health checker
+        // Create health checker.
         let health_checker = Arc::new(HealthChecker::new());
 
         // Retention values are loaded from global_config on every sweep.
@@ -546,161 +428,68 @@ impl ServiceContainer {
                 .with_output_files_gate(pipeline_manager.output_files_gate()),
         );
 
-        let scheduler_config = crate::scheduler::SchedulerConfig {
-            check_interval_ms: global_config.streamer_check_delay_ms as u64,
-            offline_check_interval_ms: global_config.offline_check_delay_ms as u64,
-            offline_check_count: global_config.offline_check_count as u32,
-            supervisor_config: crate::scheduler::actor::SupervisorConfig::default(),
-        };
-
-        // Wire the streamer-check-history pipeline (writer feeds the
-        // monitor-side polling path; broadcaster feeds the WS route loop).
+        // Wire the streamer-check-history pipeline (writer feeds the prober;
+        // broadcaster feeds the WS route loop).
         let (check_history_writer, check_history_broadcaster, streamer_check_history_repository) =
             wire_check_history_pipeline(&pool, &write_pool, &cancellation_token, &task_supervisor);
 
-        let (scheduler_check_history, prober_check_history) = match recorder_runtime {
-            crate::recorder::RecorderRuntime::Legacy => (Some(check_history_writer), None),
-            crate::recorder::RecorderRuntime::Actor => (None, Some(check_history_writer)),
-        };
-
-        // Create scheduler (started only in Legacy mode).
-        let mut scheduler = Scheduler::with_monitor_history_and_config(
-            streamer_manager.clone(),
-            event_broadcaster.clone(),
-            stream_monitor.clone(),
-            scheduler_check_history,
-            scheduler_config,
+        // Build the recorder control plane (ActorRegistry + RecorderStore +
+        // RecorderProber + durable NotificationOutboxDrainer).
+        let outbox_drainer = Arc::new(crate::notification::NotificationOutboxDrainer::new(
+            write_pool.clone(),
+            notification_service.clone(),
             cancellation_token.child_token(),
-        )
-        .with_config_repo(config_repo.clone());
-
-        let (actor_registry, outbox_drainer) = match recorder_runtime {
-            crate::recorder::RecorderRuntime::Legacy => {
-                scheduler.connect_download_manager(&download_manager)?;
-                let weak_monitor = Arc::downgrade(&stream_monitor);
-                download_manager.set_credential_start_validator(Arc::new(
-                    move |session_id, streamer_id, binding| {
-                        let monitor = weak_monitor.upgrade();
-                        Box::pin(async move {
-                            let monitor =
-                                monitor.ok_or(crate::credentials::ProfileError::SourceChanged)?;
-                            monitor
-                                .validate_download_binding(&session_id, &streamer_id, &binding)
-                                .await
-                        })
-                    },
-                ));
-                (None, None)
-            }
-            crate::recorder::RecorderRuntime::Actor => {
-                let drainer = Arc::new(crate::notification::NotificationOutboxDrainer::new(
-                    write_pool.clone(),
-                    notification_service.clone(),
-                    cancellation_token.child_token(),
-                ));
-                let recorder_store = Arc::new(
-                    crate::recorder::RecorderStore::with_committed_state_and_supervisor(
-                        pool.clone(),
-                        write_pool.clone(),
-                        committed_streamers.clone(),
-                        committed_write_supervisor.clone(),
-                    )?
-                    .with_outbox_notify(drainer.notifier()),
-                );
-                let recorder_prober = Arc::new(crate::recorder::RecorderProber::new(
-                    crate::recorder::RecorderProberDependencies {
-                        extractor_runner: extractor_runner.clone(),
-                        streamer_manager: streamer_manager.clone(),
-                        config_service: config_service.clone(),
-                        filter_store: filter_store.clone(),
-                        store: recorder_store.clone(),
-                        admission: platform_admission.clone(),
-                        execution_service: credential_execution.clone(),
-                        bigo_notifications: bigo_notifications.clone(),
-                        check_history_writer: prober_check_history,
-                        request_timeout: monitor_request_timeout,
-                    },
-                ));
-                let weak_prober = Arc::downgrade(&recorder_prober);
-                download_manager.set_credential_start_validator(Arc::new(
-                    move |session_id, streamer_id, binding| {
-                        let prober = weak_prober.upgrade();
-                        Box::pin(async move {
-                            let prober =
-                                prober.ok_or(crate::credentials::ProfileError::SourceChanged)?;
-                            prober
-                                .validate_download_binding(&session_id, &streamer_id, &binding)
-                                .await
-                        })
-                    },
-                ));
-                let registry = crate::recorder::ActorRegistry::new(
-                    crate::recorder::ActorRegistryDependencies {
-                        store: recorder_store.clone(),
-                        prober: recorder_prober,
-                        download_manager: download_manager.clone(),
-                        danmu_service: danmu_service.clone(),
-                        pipeline_manager: pipeline_manager.clone(),
-                        streamer_manager: streamer_manager.clone(),
-                        config_service: config_service.clone(),
-                        check_interval_ms: global_config.streamer_check_delay_ms as u64,
-                        root_cancel: cancellation_token.child_token(),
-                    },
-                );
-                download_manager.set_recorder_feedback(registry.download_feedback())?;
-                recorder_store.set_post_publication_listener(registry.clone());
-                committed_streamers.add_post_publication_listener(registry.clone());
-                (Some(registry), Some(drainer))
-            }
-        };
-
-        let scheduler_handle = scheduler.handle();
-        let scheduler_feedback = scheduler.reliable_feedback();
-        let scheduler = parking_lot::Mutex::new(Some(scheduler));
-
-        let session_cancels = Arc::new(SessionCancelTokens::new());
-        let pending_pipelines = Arc::new(DashMap::new());
-        let runtime_coordinator = Arc::new(
-            crate::services::runtime_coordinator::RuntimeCoordinator::new(
-                crate::services::runtime_coordinator::RuntimeCoordinatorDependencies {
-                    download_manager: download_manager.clone(),
-                    streamer_manager: streamer_manager.clone(),
-                    config_service: config_service.clone(),
-                    danmu_service: danmu_service.clone(),
-                    stream_monitor: stream_monitor.clone(),
-                    session_repository: session_repo.clone(),
-                    session_cancels,
-                    pending_pipelines,
-                    pipeline_manager: pipeline_manager.clone(),
-                    session_lifecycle: session_lifecycle.clone(),
-                    task_supervisor: task_supervisor.clone(),
-                    scheduler_handle: scheduler_handle.clone(),
-                    actor_registry: actor_registry.clone(),
-                },
-            ),
+        ));
+        let recorder_store = Arc::new(
+            crate::recorder::RecorderStore::with_committed_state_and_supervisor(
+                pool.clone(),
+                write_pool.clone(),
+                committed_streamers.clone(),
+                committed_write_supervisor.clone(),
+            )?
+            .with_outbox_notify(outbox_drainer.notifier()),
         );
-
-        if recorder_runtime == crate::recorder::RecorderRuntime::Legacy {
-            let weak_runtime = Arc::downgrade(&runtime_coordinator);
-            stream_monitor.set_pending_credential_recovery(Arc::new(move |streamer_id| {
-                let runtime = weak_runtime.upgrade();
+        let recorder_prober = Arc::new(crate::recorder::RecorderProber::new(
+            crate::recorder::RecorderProberDependencies {
+                extractor_runner: extractor_runner.clone(),
+                streamer_manager: streamer_manager.clone(),
+                config_service: config_service.clone(),
+                filter_store: filter_store.clone(),
+                store: recorder_store.clone(),
+                admission: platform_admission.clone(),
+                execution_service: credential_execution.clone(),
+                bigo_notifications: bigo_notifications.clone(),
+                check_history_writer: Some(check_history_writer),
+                request_timeout: monitor_request_timeout,
+            },
+        ));
+        let weak_prober = Arc::downgrade(&recorder_prober);
+        download_manager.set_credential_start_validator(Arc::new(
+            move |session_id, streamer_id, binding| {
+                let prober = weak_prober.upgrade();
                 Box::pin(async move {
-                    if let Some(runtime) = runtime {
-                        runtime.resume_pending_credentials(&streamer_id).await;
-                    }
+                    let prober = prober.ok_or(crate::credentials::ProfileError::SourceChanged)?;
+                    prober
+                        .validate_download_binding(&session_id, &streamer_id, &binding)
+                        .await
                 })
-            }));
-            let weak_runtime = Arc::downgrade(&runtime_coordinator);
-            download_manager.set_credential_diagnostic(Arc::new(move |event| {
-                let runtime = weak_runtime.upgrade();
-                Box::pin(async move {
-                    match runtime {
-                        Some(runtime) => runtime.diagnose_credential_attempt(event).await,
-                        None => None,
-                    }
-                })
-            }));
-        }
+            },
+        ));
+        let actor_registry =
+            crate::recorder::ActorRegistry::new(crate::recorder::ActorRegistryDependencies {
+                store: recorder_store.clone(),
+                prober: recorder_prober,
+                download_manager: download_manager.clone(),
+                danmu_service: danmu_service.clone(),
+                pipeline_manager: pipeline_manager.clone(),
+                streamer_manager: streamer_manager.clone(),
+                config_service: config_service.clone(),
+                check_interval_ms: global_config.streamer_check_delay_ms as u64,
+                root_cancel: cancellation_token.child_token(),
+            });
+        download_manager.set_recorder_feedback(actor_registry.download_feedback())?;
+        recorder_store.set_post_publication_listener(actor_registry.clone());
+        committed_streamers.add_post_publication_listener(actor_registry.clone());
 
         let configuration_import_service = Arc::new(
             crate::services::config_import::ConfigurationImportService::new(
@@ -708,7 +497,7 @@ impl ServiceContainer {
                 config_service.clone(),
                 streamer_manager.clone(),
                 notification_service.clone(),
-                runtime_coordinator.clone(),
+                actor_registry.clone(),
                 platform_admission.clone(),
             ),
         );
@@ -733,7 +522,7 @@ impl ServiceContainer {
             "Startup: service container build summary"
         );
 
-        info!("Service container initialized with real status checking");
+        info!("Service container initialized with recorder actor control plane");
 
         Ok(Self {
             pool,
@@ -754,17 +543,9 @@ impl ServiceContainer {
             output_root_gate,
             gpu_health_monitor: std::sync::OnceLock::new(),
             pipeline_manager,
-            monitor_event_broadcaster,
-            monitor_event_receiver: parking_lot::Mutex::new(Some(required_monitor_event_receiver)),
             download_coordination_receiver: parking_lot::Mutex::new(Some(
                 download_coordination_receiver,
             )),
-            session_lifecycle,
-            session_transition_sender: required_transition_sender,
-            session_transition_receiver: parking_lot::Mutex::new(Some(
-                required_transition_receiver,
-            )),
-            runtime_coordinator,
             danmu_service,
             danmu_coordination_sender,
             danmu_coordination_receiver: parking_lot::Mutex::new(Some(danmu_coordination_receiver)),
@@ -773,10 +554,6 @@ impl ServiceContainer {
             web_push_service,
             health_checker,
             maintenance_scheduler,
-            scheduler,
-            scheduler_handle,
-            scheduler_feedback,
-            stream_monitor,
             bigo_notifications,
             platform_admission,
             credential_profiles,
@@ -798,12 +575,9 @@ impl ServiceContainer {
             auth_service: std::sync::OnceLock::new(),
             local_desktop_mode,
             startup_recovery_complete: std::sync::atomic::AtomicBool::new(false),
-            discarded_segment_keys: Arc::new(DashMap::new()),
-            recorder_runtime,
             extractor_runner,
             actor_registry,
-            outbox_drainer: parking_lot::Mutex::new(outbox_drainer),
-            danmu_link_down: Arc::new(DashMap::new()),
+            outbox_drainer: parking_lot::Mutex::new(Some(outbox_drainer)),
         })
     }
 }

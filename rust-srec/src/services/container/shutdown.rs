@@ -141,7 +141,6 @@ impl ServiceContainer {
         let (
             aborted_downloads,
             aborted_collections,
-            aborted_timers,
             aborted_pipeline_tasks,
             aborted_background_tasks,
             aborted_recorder_tasks,
@@ -149,16 +148,9 @@ impl ServiceContainer {
         ) = tokio::join!(
             self.download_manager.abort_attempts(schedule.hard_deadline),
             self.danmu_service.abort_collections(schedule.hard_deadline),
-            self.session_lifecycle.abort_timers(schedule.hard_deadline),
             self.pipeline_manager.abort(schedule.hard_deadline),
             self.task_supervisor.abort_all(schedule.hard_deadline),
-            async {
-                if let Some(registry) = &self.actor_registry {
-                    registry.abort_all(schedule.hard_deadline).await
-                } else {
-                    0
-                }
-            },
+            self.actor_registry.abort_all(schedule.hard_deadline),
             async {
                 // A timed-out retained drain leaves its tasks owned in place.
                 // Never abort COMMIT or postcommit publication.
@@ -178,7 +170,6 @@ impl ServiceContainer {
         warn!(
             downloads = ?aborted_downloads,
             collections = ?aborted_collections,
-            hysteresis_timers = aborted_timers,
             pipeline_tasks = aborted_pipeline_tasks,
             background_tasks = aborted_background_tasks,
             recorder_tasks = aborted_recorder_tasks,
@@ -192,7 +183,7 @@ impl ServiceContainer {
             "unfinished committed writes remain supervised"
         };
         Err(crate::Error::Other(format!(
-            "service shutdown exceeded its force deadline: aborted {} recording attempt(s) {aborted_downloads:?}, {} danmu collection(s) {aborted_collections:?}, {aborted_timers} hysteresis timer(s), {aborted_pipeline_tasks} pipeline task(s) and {aborted_background_tasks} background task(s) by the hard deadline; {committed_status}; database pools were left open",
+            "service shutdown exceeded its force deadline: aborted {} recording attempt(s) {aborted_downloads:?}, {} danmu collection(s) {aborted_collections:?}, {aborted_recorder_tasks} recorder task(s), {aborted_pipeline_tasks} pipeline task(s) and {aborted_background_tasks} background task(s) by the hard deadline; {committed_status}; database pools were left open",
             aborted_downloads.len(),
             aborted_collections.len()
         )))
@@ -226,7 +217,6 @@ impl ServiceContainer {
         // Fence producers before cancellation. Required coordination consumers
         // are marker-driven, so they remain alive long enough to persist every
         // final segment and terminal fact after auxiliary loops stop.
-        self.stream_monitor.stop();
         self.download_manager.shutdown_queue();
         self.cancellation_token.cancel();
 
@@ -313,9 +303,7 @@ impl ServiceContainer {
             debug!("Danmu coordination handler was not started; skipping its shutdown barrier");
         }
 
-        if let Some(registry) = &self.actor_registry
-            && !registry.shutdown_until(deadline).await
-        {
+        if !self.actor_registry.shutdown_until(deadline).await {
             overruns.push("recorder actor registry exceeded the graceful deadline".into());
         }
 
@@ -328,47 +316,6 @@ impl ServiceContainer {
             .await
         {
             overruns.push("committed database writes exceeded the graceful deadline".into());
-        }
-
-        let lifecycle_report = self.session_lifecycle.shutdown_until(deadline).await;
-        if lifecycle_report.forced_timer_count > 0 {
-            warn!(
-                count = lifecycle_report.forced_timer_count,
-                "Session hysteresis timers exceeded the graceful deadline and were drained"
-            );
-        }
-        overruns.extend(
-            lifecycle_report
-                .overruns
-                .into_iter()
-                .map(|overrun| format!("session lifecycle: {overrun}")),
-        );
-        failures.extend(
-            lifecycle_report
-                .failures
-                .into_iter()
-                .map(|failure| format!("session lifecycle task failed: {failure}")),
-        );
-
-        if self.session_transition_receiver.lock().is_none() {
-            match tokio::time::timeout_at(deadline, self.session_transition_sender.shutdown()).await
-            {
-                Ok(Ok(())) => {}
-                Ok(Err(error)) => {
-                    let message = format!("failed to drain session transitions: {error}");
-                    warn!(%message);
-                    failures.push(message);
-                    coordination_drained = false;
-                }
-                Err(_) => {
-                    let message = "session transition drain deadline exceeded".to_string();
-                    warn!(%message);
-                    failures.push(message);
-                    coordination_drained = false;
-                }
-            }
-        } else {
-            debug!("Session transition coordinator was not started; skipping its shutdown barrier");
         }
 
         // Every producer above joins past `deadline` rather than abandoning

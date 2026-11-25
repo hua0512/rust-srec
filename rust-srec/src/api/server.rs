@@ -167,10 +167,10 @@ pub struct ApiServices {
     /// Assembles the complete configuration backup.
     pub(crate) configuration_export_service:
         Arc<crate::services::config_export::ConfigurationExportService>,
-    /// Runtime side-effect policy. Routes reach it for streamer deletion, which
-    /// has to stand the scheduler actor, download and session down before the
-    /// `streamers` row can go.
-    pub(crate) runtime_coordinator: Arc<crate::services::runtime_coordinator::RuntimeCoordinator>,
+    /// Recording control-plane registry. Routes reach it for streamer deletion,
+    /// which stands down the streamer actor, download, danmu, and pipeline
+    /// owners before the `streamers` row can be removed.
+    pub(crate) actor_registry: Arc<crate::recorder::ActorRegistry>,
 }
 
 /// Shared application state.

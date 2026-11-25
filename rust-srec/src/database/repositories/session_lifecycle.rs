@@ -43,12 +43,9 @@ impl SessionLifecycleRepository {
         }
     }
 
-    pub(crate) fn bind_committed_state(&self, state: Arc<CommittedStreamerState>) {
-        self.committed_state.get_or_init(|| state);
-    }
-
+    #[cfg(test)]
     pub(crate) fn with_committed_state(self, state: Arc<CommittedStreamerState>) -> Self {
-        self.bind_committed_state(state);
+        self.committed_state.get_or_init(|| state);
         self
     }
 

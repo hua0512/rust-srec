@@ -70,10 +70,7 @@ impl SessionEventKind {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SessionEventPayload {
-    /// A new session began. Emitted from
-    /// [`crate::session::SessionLifecycle::on_live_detected`] on the
-    /// `Created` outcome of `start_or_resume`. `from_hysteresis` is `true`
-    /// only on the resume path (`Hysteresis → Recording`).
+    /// A new session began. `from_hysteresis` is `true` only on the resume path.
     SessionStarted {
         from_hysteresis: bool,
         title: Option<String>,

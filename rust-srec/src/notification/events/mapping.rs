@@ -6,7 +6,6 @@ use super::NotificationEvent;
 use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent, DownloadTerminalEvent};
 use crate::monitor::MonitorEvent;
 use crate::pipeline::PipelineEvent;
-use crate::session::SessionTransition;
 
 pub(crate) fn monitor_notification(event: MonitorEvent) -> Option<NotificationEvent> {
     match event {
@@ -49,64 +48,6 @@ pub(crate) fn monitor_notification(event: MonitorEvent) -> Option<NotificationEv
             timestamp,
         }),
         _ => None,
-    }
-}
-
-pub(crate) fn session_notification(transition: SessionTransition) -> Option<NotificationEvent> {
-    match transition {
-        crate::session::SessionTransition::Started {
-            streamer_id,
-            streamer_name,
-            title,
-            category,
-            started_at,
-            ..
-        } => Some(NotificationEvent::StreamOnline {
-            streamer_id,
-            streamer_name,
-            title,
-            category,
-            timestamp: started_at,
-        }),
-        crate::session::SessionTransition::Ended {
-            cause: crate::session::TerminalCause::UserDisabled,
-            ..
-        } => {
-            // User explicitly disabled / deleted the streamer.
-            // They know — no need to ping their notification
-            // channels with a synthetic offline event.
-            None
-        }
-        crate::session::SessionTransition::Ended {
-            cause: crate::session::TerminalCause::OutOfSchedule,
-            ..
-        } => {
-            // The recording schedule closed while the stream may
-            // still be live; don't report this as platform offline.
-            None
-        }
-        crate::session::SessionTransition::Ended {
-            streamer_id,
-            streamer_name,
-            started_at,
-            ended_at,
-            ..
-        } => Some(NotificationEvent::StreamOffline {
-            streamer_id,
-            streamer_name,
-            duration_secs: started_at.map(|started_at| {
-                ended_at.duration_since(started_at).as_millis().max(0) as f64 / 1000.0
-            }),
-            timestamp: ended_at,
-        }),
-        // Hysteresis quiet-period transitions are
-        // intentionally ignored here. Only the final
-        // `Ended` produces a StreamOffline notification.
-        // `Resumed` similarly yields no user-facing
-        // notification — the original Started already
-        // fired and remains valid.
-        crate::session::SessionTransition::Ending { .. }
-        | crate::session::SessionTransition::Resumed { .. } => None,
     }
 }
 

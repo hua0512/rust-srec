@@ -10,12 +10,12 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use dashmap::DashMap;
-use futures::FutureExt;
+use futures::{FutureExt, StreamExt};
 use jiff::Timestamp;
 use parking_lot::Mutex;
 use tokio::sync::{Semaphore, broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::config::{ConfigService, ConfigUpdateEvent};
 use crate::credentials::CredentialOwner;
@@ -42,12 +42,11 @@ use crate::recorder::fsm::segment::{
 use crate::recorder::ports::{
     ActorStopReason, DanmuCloseSegmentSpec, DanmuSegmentRecord, DanmuStopResult, DbCommitOp,
     DbCommitOutcome, InitialStreamerSnapshot, PipelineNotification, RecorderStorePort,
-    ResolvedActorConfig, RetirementBounds as RecorderRetirementBounds, StreamerRuntimeView,
+    ResolvedActorConfig, RetirementBounds, StreamerRetirement, StreamerRuntimeView,
     VideoSegmentRecord, should_spawn_actor,
 };
 use crate::recorder::prober::RecorderProber;
 use crate::recorder::store::{PostPublicationChangeSet, PostPublicationListener, RecorderStore};
-use crate::services::runtime_coordinator::{RetirementBounds, StreamerRetirement};
 use crate::session::TerminalCause;
 use crate::streamer::{StreamerManager, StreamerMetadata};
 use crate::utils::failure_samples::FailureSamples;
@@ -478,17 +477,10 @@ impl ActorRegistry {
         bounds: RetirementBounds,
     ) -> StreamerRetirement {
         let mut outstanding = Vec::new();
-        let recorder_bounds = RecorderRetirementBounds {
-            actor: bounds.actor,
-            download: bounds.download,
-            pipeline: bounds.pipeline,
-        };
 
         // 1. Tell the resident actor to retire and wait up to `bounds.actor`.
         if let Some(mut exit_rx) = self.actors.get(streamer_id).map(|entry| {
-            let _ = entry.handle.send_input(FsmInput::Retire {
-                bounds: recorder_bounds,
-            });
+            let _ = entry.handle.send_input(FsmInput::Retire { bounds });
             entry.exit_rx.clone()
         }) && !*exit_rx.borrow()
             && !bounds.actor.is_zero()
@@ -666,6 +658,113 @@ impl ActorRegistry {
         }
 
         StreamerRetirement { outstanding }
+    }
+
+    /// Mark, retire, and reap `streamer_id` in one call.
+    ///
+    /// Commits `streamers.deleted_at` before waiting on any runtime owner. If
+    /// retirement does not settle within `bounds`, the marker remains for the
+    /// periodic streamer reaper sweep. Returns `Ok(false)` when no row was
+    /// marked (unknown streamer or concurrent delete).
+    pub(crate) async fn delete_streamer(
+        &self,
+        streamer_id: &str,
+        bounds: RetirementBounds,
+    ) -> crate::Result<bool> {
+        let Some(marked) = self
+            .deps
+            .streamer_manager
+            .mark_deleting(streamer_id)
+            .await?
+        else {
+            return Ok(false);
+        };
+
+        self.retire_and_reap(streamer_id, &marked.name, bounds)
+            .await?;
+        Ok(true)
+    }
+
+    /// Retire a streamer already carrying `deleted_at` and reap its row once
+    /// every physical owner is quiescent.
+    pub(crate) async fn retire_and_reap(
+        &self,
+        streamer_id: &str,
+        streamer_name: &str,
+        bounds: RetirementBounds,
+    ) -> crate::Result<bool> {
+        let retirement = self
+            .retire_streamer(streamer_id, streamer_name, bounds)
+            .await;
+
+        if !retirement.is_quiescent() {
+            info!(
+                streamer_id,
+                outstanding = %retirement.outstanding.join("; "),
+                "Streamer stays marked deleted until its remaining work finishes"
+            );
+            return Ok(false);
+        }
+
+        self.deps.streamer_manager.reap_deleted(streamer_id).await
+    }
+
+    /// Retire and reap every streamer row carrying a `deleted_at` marker.
+    ///
+    /// Reports how many rows were physically removed.
+    pub(crate) async fn reap_marked_streamers(&self, bounds: RetirementBounds) -> usize {
+        let mut reaped = 0;
+        for metadata in self.deps.streamer_manager.get_pending_deletion() {
+            match self
+                .retire_and_reap(&metadata.id, &metadata.name, bounds)
+                .await
+            {
+                Ok(true) => reaped += 1,
+                Ok(false) => {}
+                Err(error) => warn!(
+                    streamer_id = %metadata.id,
+                    error = %error,
+                    "Failed to reap a deleted streamer"
+                ),
+            }
+        }
+        reaped
+    }
+
+    /// Refresh resolved `offline_check_*` fields on cached streamer metadata
+    /// with bounded concurrency.
+    pub(crate) async fn refresh_metadata_offline_checks(
+        &self,
+        streamer_ids: impl IntoIterator<Item = String>,
+    ) {
+        const MAX_CONCURRENT_CONFIG_REFRESHES: usize = 16;
+        futures::stream::iter(streamer_ids)
+            .map(|id| async move {
+                self.refresh_metadata_offline_check(&id).await;
+            })
+            .buffer_unordered(MAX_CONCURRENT_CONFIG_REFRESHES)
+            .for_each(|()| async {})
+            .await;
+    }
+
+    /// Refresh resolved `offline_check_*` fields for a single streamer's cached metadata.
+    pub(crate) async fn refresh_metadata_offline_check(&self, streamer_id: &str) {
+        match self
+            .deps
+            .config_service
+            .get_config_for_streamer(streamer_id)
+            .await
+        {
+            Ok(merged) => self
+                .deps
+                .streamer_manager
+                .apply_resolved_config(streamer_id, &merged),
+            Err(error) => debug!(
+                streamer_id,
+                error = %error,
+                "Skipping resolved configuration refresh"
+            ),
+        }
     }
 
     /// Settle an active session bound to a retiring credential profile before
@@ -2058,6 +2157,82 @@ impl ActorRegistry {
             return None;
         }
         done_rx.await.ok()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn spawn_dormant_actor_for_test(
+        self: &Arc<Self>,
+        streamer_id: &str,
+        streamer_name: &str,
+        streamer_url: &str,
+    ) {
+        let generation = self.generation_counter.fetch_add(1, Ordering::AcqRel);
+        let snapshot = InitialStreamerSnapshot {
+            streamer_id: streamer_id.to_owned(),
+            state: StreamerState::TemporalDisabled,
+            deleted: false,
+            consecutive_error_count: 1,
+            disabled_until: Timestamp::now()
+                .checked_add(jiff::SignedDuration::from_hours(1))
+                .ok(),
+            last_error: None,
+            config: ResolvedActorConfig {
+                streamer_name: streamer_name.to_owned(),
+                streamer_url: streamer_url.to_owned(),
+                platform: "huya".to_owned(),
+                check_interval_ms: 600_000,
+                offline_check_interval_ms: 600_000,
+                offline_check_count: 1,
+                ..ResolvedActorConfig::default()
+            },
+            config_revision: 1,
+        };
+        let (actor, handle) = StreamerActor::new(generation, snapshot, self.deps.clone());
+        let (exit_tx, exit_rx) = watch::channel(false);
+        self.actors.insert(
+            streamer_id.to_owned(),
+            ActorEntry {
+                generation,
+                handle,
+                exit_rx,
+            },
+        );
+        let registry = self.clone();
+        let task_streamer_id = streamer_id.to_owned();
+        let task_exit_tx = exit_tx.clone();
+        let spawned = self
+            .actor_tasks
+            .spawn("recorder test streamer actor", async move {
+                let outcome = AssertUnwindSafe(actor.run()).catch_unwind().await;
+                registry.on_actor_exit(&task_streamer_id, generation, outcome, task_exit_tx);
+            });
+        if !spawned {
+            self.actors
+                .remove_if(streamer_id, |_, entry| entry.generation == generation);
+            let _ = exit_tx.send(true);
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn reconcile_streamer_for_test(
+        self: &Arc<Self>,
+        streamer_id: &str,
+        reconfigured: bool,
+    ) {
+        self.reconcile_streamer(streamer_id, reconfigured).await;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn startup_task_deps_for_test(&self) -> super::actor::startup_task::StartupTaskDeps {
+        super::actor::startup_task::StartupTaskDeps {
+            download_manager: self.deps.download_manager.clone(),
+            danmu_service: self.deps.danmu_service.clone(),
+            streamer_manager: self.deps.streamer_manager.clone(),
+            config_service: self.deps.config_service.clone(),
+            store: self.deps.store.clone(),
+            prober: self.deps.prober.clone(),
+            leases: self.deps.leases.clone(),
+        }
     }
 }
 

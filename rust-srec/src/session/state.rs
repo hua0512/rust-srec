@@ -1,205 +1,59 @@
-//! Session FSM types — `SessionState`, `TerminalCause`, `OfflineSignal`.
-//!
-//! `SessionState` is a three-variant FSM:
-//!
-//! - **`Recording`** — actively capturing bytes. DB `end_time IS NULL`.
-//! - **`Hysteresis`** — the engine has reported a non-authoritative terminal
-//!   event (mesio FLV clean disconnect, ffmpeg subprocess exit, network
-//!   failure, …). The session is held in a quiet-period to absorb a possible
-//!   resume; DB `end_time` is *not* yet written. A `LiveDetected` for the
-//!   same streamer inside the window cancels the hysteresis timer and
-//!   transitions back to `Recording`. The window expiring without a resume
-//!   transitions to `Ended`. An authoritative end signal (danmu close,
-//!   consecutive Mesio network failures) arriving during hysteresis cancels
-//!   the timer and transitions directly to `Ended`.
-//! - **`Ended`** — the recording is finished. DB `end_time` is set; the
-//!   session-complete pipeline DAG fires (gated on the cause's
-//!   [`TerminalCause::should_run_session_complete_pipeline`] policy).
-//!
-//! Only `Ended` writes `end_time`. The DB column means "this recording is
-//! over" — never "tentatively over, might come back." That contract is what
-//! makes API `is_live = end_time.is_none()` correct without flicker.
-//!
-//! See `rust-srec/src/session/hysteresis.rs` for the timer implementation
-//! and `rust-srec/src/session/lifecycle.rs` for the FSM driver.
+//! Session domain types — [`EngineKind`], [`TerminalCause`], and [`OfflineSignal`].
 
-use crate::downloader::{DownloadFailureKind, DownloadStopCause};
-use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
-use std::time::Instant;
 
-// Note: `TerminalCause` carries `DownloadFailureKind` and `DownloadStopCause`
-// which are not (yet) Serialize/Deserialize. `TerminalCause` is therefore an
-// in-process type only — it is broadcast on a tokio channel to consumers in
-// the same process. Persistence to the monitor outbox uses the existing
-// `MonitorEvent::StreamerOffline` shape, which carries only the
-// session_id / streamer_id / timestamp fields. If a future requirement needs
-// to persist the cause across a restart, the cleanest fix is to mirror the
-// shape into a serialisable record at the persistence boundary, not to plumb
-// serde derives through the engine traits.
+use crate::downloader::engine::EngineType;
+use crate::downloader::{DownloadFailureKind, DownloadProtocol, DownloadStopCause};
 
-/// In-memory snapshot of a single recording session.
+/// Which download engine and protocol produced a download outcome.
 ///
-/// Three states; transitions documented on the module doc and on
-/// `SessionLifecycle`. The discriminator is the variant; payload differs.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SessionState {
-    /// Actively capturing bytes.
-    Recording {
-        streamer_id: String,
-        session_id: String,
-        started_at: Timestamp,
-    },
-    /// Engine reported a non-authoritative end. Holding the session for a
-    /// quiet-period before committing.
-    Hysteresis {
-        streamer_id: String,
-        session_id: String,
-        started_at: Timestamp,
-        /// When the terminal event arrived.
-        observed_at: Timestamp,
-        /// What caused us to enter hysteresis.
-        cause: TerminalCause,
-        /// Monotonic deadline; the timer task wakes at this point. If still
-        /// in `Hysteresis`, transitions to `Ended`.
-        deadline: Instant,
-    },
-    /// Recording finished. `end_time` is set in DB.
-    Ended {
-        streamer_id: String,
-        session_id: String,
-        started_at: Timestamp,
-        ended_at: Timestamp,
-        cause: TerminalCause,
-    },
+/// Distinguishing engines matters because Mesio consecutive network failures
+/// can indicate a definitive stream end, whereas external subprocess errors
+/// (`ffmpeg` / `streamlink`) are deferred to status probing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EngineKind {
+    MesioHls,
+    MesioFlv,
+    MesioDash,
+    MesioUnknown,
+    Ffmpeg,
+    Streamlink,
 }
 
-impl SessionState {
-    /// Construct a freshly-recording session.
-    pub fn recording(
-        streamer_id: impl Into<String>,
-        session_id: impl Into<String>,
-        started_at: Timestamp,
-    ) -> Self {
-        Self::Recording {
-            streamer_id: streamer_id.into(),
-            session_id: session_id.into(),
-            started_at,
-        }
+impl EngineKind {
+    pub fn is_mesio(&self) -> bool {
+        matches!(
+            self,
+            Self::MesioHls | Self::MesioFlv | Self::MesioDash | Self::MesioUnknown
+        )
     }
 
-    /// Build a session in `Hysteresis` state. The deadline must be a
-    /// monotonic instant (use `Instant::now() + window`).
-    pub fn hysteresis(
-        streamer_id: impl Into<String>,
-        session_id: impl Into<String>,
-        started_at: Timestamp,
-        observed_at: Timestamp,
-        cause: TerminalCause,
-        deadline: Instant,
-    ) -> Self {
-        Self::Hysteresis {
-            streamer_id: streamer_id.into(),
-            session_id: session_id.into(),
-            started_at,
-            observed_at,
-            cause,
-            deadline,
-        }
-    }
-
-    /// Build an `Ended` session.
-    pub fn ended(
-        streamer_id: impl Into<String>,
-        session_id: impl Into<String>,
-        started_at: Timestamp,
-        ended_at: Timestamp,
-        cause: TerminalCause,
-    ) -> Self {
-        Self::Ended {
-            streamer_id: streamer_id.into(),
-            session_id: session_id.into(),
-            started_at,
-            ended_at,
-            cause,
-        }
-    }
-
-    /// Streamer id, present on every variant.
-    pub fn streamer_id(&self) -> &str {
-        match self {
-            Self::Recording { streamer_id, .. }
-            | Self::Hysteresis { streamer_id, .. }
-            | Self::Ended { streamer_id, .. } => streamer_id,
-        }
-    }
-
-    /// Session id, present on every variant.
-    pub fn session_id(&self) -> &str {
-        match self {
-            Self::Recording { session_id, .. }
-            | Self::Hysteresis { session_id, .. }
-            | Self::Ended { session_id, .. } => session_id,
-        }
-    }
-
-    /// When the recording started, present on every variant.
-    pub fn started_at(&self) -> Timestamp {
-        match self {
-            Self::Recording { started_at, .. }
-            | Self::Hysteresis { started_at, .. }
-            | Self::Ended { started_at, .. } => *started_at,
-        }
-    }
-
-    /// `true` if state is `Recording` (actively capturing). Used by the API's
-    /// `is_session_active` query path.
-    pub fn is_recording(&self) -> bool {
-        matches!(self, Self::Recording { .. })
-    }
-
-    /// `true` if state is `Hysteresis` (tentative end, in quiet-period).
-    pub fn is_hysteresis(&self) -> bool {
-        matches!(self, Self::Hysteresis { .. })
-    }
-
-    /// `true` if state is `Ended` (recording finished, `end_time` written).
-    pub fn is_ended(&self) -> bool {
-        matches!(self, Self::Ended { .. })
-    }
-
-    /// `true` for `Recording` OR `Hysteresis` — i.e. "the session has not
-    /// committed to being over yet". This is the right semantic for
-    /// API-level `is_live`-style queries: during hysteresis we still hope
-    /// to absorb a resume, so the session is presented as active.
-    pub fn is_active(&self) -> bool {
-        !self.is_ended()
-    }
-
-    /// Short, stable string for logging / metrics labels.
-    pub fn kind_str(&self) -> &'static str {
-        match self {
-            Self::Recording { .. } => "recording",
-            Self::Hysteresis { .. } => "hysteresis",
-            Self::Ended { .. } => "ended",
+    pub fn from_engine_and_protocol(engine_type: EngineType, protocol: DownloadProtocol) -> Self {
+        match engine_type {
+            EngineType::Ffmpeg => Self::Ffmpeg,
+            EngineType::Streamlink => Self::Streamlink,
+            EngineType::Mesio => match protocol {
+                DownloadProtocol::Hls => Self::MesioHls,
+                DownloadProtocol::Flv => Self::MesioFlv,
+                DownloadProtocol::Dash => Self::MesioDash,
+                DownloadProtocol::Unknown => Self::MesioUnknown,
+            },
         }
     }
 }
 
 /// Why a recording session ended.
 ///
-/// Each variant has a distinct policy on whether the session-complete pipeline
-/// should fire. The policy is centralised in
-/// [`Self::should_run_session_complete_pipeline`] so consumers do not re-derive
-/// it per call site.
+/// Each variant carries a centralized policy on whether the session-complete
+/// pipeline should fire ([`Self::should_run_session_complete_pipeline`]) and
+/// whether the end is authoritative enough to bypass hysteresis
+/// ([`Self::is_authoritative_end_with_signal`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TerminalCause {
     /// Engine reached a clean end of stream (e.g. EOF on FLV, `#EXT-X-ENDLIST` on HLS).
     ///
-    /// Whether this counts as authoritative for the hysteresis decision
-    /// depends on the engine signal; see
-    /// [`Self::is_authoritative_end_with_signal`] which takes the
-    /// [`crate::downloader::EngineEndSignal`] hint.
+    /// Whether this counts as authoritative for hysteresis depends on the
+    /// engine end signal; prefer [`Self::is_authoritative_end_with_signal`].
     Completed,
     /// Engine gave up due to error. Whatever output is on disk is final.
     Failed { kind: DownloadFailureKind },
@@ -208,44 +62,27 @@ pub enum TerminalCause {
     Cancelled { cause: DownloadStopCause },
     /// Download never started (circuit breaker, output-root unavailable, etc.).
     Rejected { reason: String },
-    /// Monitor authoritatively determined the streamer went offline.
+    /// Status probing authoritatively confirmed the streamer went offline.
     StreamerOffline,
-    /// A definitive offline signal observed at the engine boundary
+    /// A definitive offline signal observed at the engine or danmu boundary
     /// (e.g. danmu stream closed, repeated Mesio network failures).
-    /// Bypasses backoff for the session-end write.
     DefinitiveOffline { signal: OfflineSignal },
     /// User explicitly disabled (or deleted) the streamer.
     ///
-    /// Authoritative tear-down: bypasses hysteresis (we know the user's
-    /// intent), runs the session-complete pipeline (captured bytes deserve
-    /// processing), and suppresses the user-facing `StreamOffline`
-    /// notification (the user knows they disabled it).
+    /// Authoritative tear-down: bypasses hysteresis, runs the session-complete
+    /// pipeline for captured outputs, and suppresses `StreamOffline`.
     UserDisabled,
     /// Recording stopped because the stream is still live but outside the
     /// configured recording schedule.
     ///
-    /// Authoritative tear-down: bypasses hysteresis, runs the
-    /// session-complete pipeline for captured bytes, and suppresses the
-    /// user-facing `StreamOffline` notification because the platform did
-    /// not report the stream offline.
+    /// Authoritative tear-down: bypasses hysteresis, runs the session-complete
+    /// pipeline for captured outputs, and suppresses `StreamOffline`.
     OutOfSchedule,
 }
 
 impl TerminalCause {
     /// Whether this terminal cause should trigger the per-streamer
     /// `session_complete_pipeline` DAG.
-    ///
-    /// - [`Self::Completed`]: yes — normal end, outputs finalised.
-    /// - [`Self::Failed`]: yes — engine gave up; whatever's on disk is final.
-    /// - [`Self::Cancelled`]: **no** — clean finalization was not confirmed;
-    ///   the control-plane stop owner applies the authoritative session and
-    ///   pipeline policy.
-    /// - [`Self::Rejected`]: no — never started, no outputs to process.
-    /// - [`Self::StreamerOffline`]: yes — monitor said the streamer went offline.
-    /// - [`Self::DefinitiveOffline`]: yes — engine boundary saw a definitive
-    ///   offline signal.
-    /// - [`Self::UserDisabled`]: yes — user-initiated tear-down, outputs final.
-    /// - [`Self::OutOfSchedule`]: yes — policy tear-down, outputs final.
     pub fn should_run_session_complete_pipeline(&self) -> bool {
         matches!(
             self,
@@ -258,54 +95,27 @@ impl TerminalCause {
         )
     }
 
-    /// Whether this cause should bypass the hysteresis quiet-period and end
-    /// the session immediately.
-    ///
-    /// Authoritative signals come from sources that can confidently say "the
-    /// stream is over": the platform's own websocket (`DanmuStreamClosed` →
-    /// `Cancelled` plumbed via the danmu observer's `on_offline_detected`
-    /// call), the platform's status API (`StreamerOffline`), the
-    /// classifier-derived `DefinitiveOffline { ConsecutiveFailures }`, or an
-    /// engine boundary observation that constitutes platform-asserted end
-    /// (HLS `#EXT-X-ENDLIST` or the end of a DASH presentation → `Completed`
-    /// with an [authoritative](crate::downloader::EngineEndSignal::is_authoritative)
-    /// engine signal).
-    ///
-    /// `Completed` itself is ambiguous (mesio HLS-with-endlist and DASH
-    /// presentation end are authoritative; mesio FLV clean disconnect is not). Callers that have
-    /// access to the engine-side signal should prefer
-    /// [`Self::is_authoritative_end_with_signal`].
-    ///
-    /// `Rejected`, and `Failed` with [`DownloadFailureKind::UnsupportedStream`],
-    /// are treated as authoritative for the *direct* path because no
-    /// recording happened — there's nothing to absorb a resume for.
+    /// Whether this cause bypasses the hysteresis quiet period without an
+    /// accompanying engine end signal.
     pub fn is_authoritative_end(&self) -> bool {
         match self {
             Self::DefinitiveOffline { .. } => true,
             Self::StreamerOffline => true,
             Self::Rejected { .. } => true,
-            // User-initiated tear-down. Always authoritative — the user said
-            // stop, so we don't wait for hysteresis.
             Self::UserDisabled => true,
-            // Policy-initiated tear-down. The schedule window closed, so the
-            // recording must stop even if the upstream stream is still live.
             Self::OutOfSchedule => true,
-            // The scheduler does not start this broadcast again.
             Self::Failed {
                 kind: DownloadFailureKind::UnsupportedStream,
             } => true,
-            // Default: not authoritative without an engine signal.
             Self::Completed => false,
             Self::Failed { .. } => false,
-            // Cancelled is intercepted as a no-op upstream of this check.
             Self::Cancelled { .. } => false,
         }
     }
 
-    /// Authority decision when the engine's end signal is known. This is the
-    /// preferred form for `on_download_terminal`: mesio HLS with EXT-X-ENDLIST
-    /// and the end of a DASH presentation are authoritative, mesio FLV clean
-    /// disconnect is not.
+    /// Authority decision when the engine's end signal is known: Mesio HLS with
+    /// `#EXT-X-ENDLIST` and DASH presentation end are authoritative, while FLV
+    /// clean disconnect and subprocess exit 0 wait out hysteresis.
     pub fn is_authoritative_end_with_signal(
         &self,
         signal: Option<crate::downloader::EngineEndSignal>,
@@ -316,7 +126,7 @@ impl TerminalCause {
         matches!(self, Self::Completed) && signal.is_some_and(|signal| signal.is_authoritative())
     }
 
-    /// Short, stable string for logging / metrics labels.
+    /// Short, stable string for logging and metrics labels.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Completed => "completed",
@@ -331,25 +141,19 @@ impl TerminalCause {
     }
 }
 
-/// A signal observed at the engine boundary that proves (with high confidence)
-/// the upstream stream has truly ended — bypasses the slower hysteresis path.
-///
-/// Today the variants cover only signals strong enough to skip the
-/// monitor-side re-check loop. Lower-confidence signals stay in the existing
-/// hysteresis machinery on `StreamerActor`.
+/// A high-confidence offline signal observed at the engine or danmu boundary
+/// that bypasses the hysteresis quiet period.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "type", content = "count", rename_all = "snake_case")]
 pub enum OfflineSignal {
     /// Danmu websocket sent an explicit stream-closed control frame.
     DanmuStreamClosed,
-    /// `n` consecutive engine failures of a kind that indicates "no more
-    /// bytes are arriving" (network timeout, source unavailable) within the
-    /// classifier's window. Engine-agnostic stall detection.
+    /// `n` consecutive network failures inside the sliding failure window.
     ConsecutiveFailures(u32),
 }
 
 impl OfflineSignal {
-    /// Short, stable string for logging / metrics labels.
+    /// Short, stable string for logging and metrics labels.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::DanmuStreamClosed => "danmu_stream_closed",

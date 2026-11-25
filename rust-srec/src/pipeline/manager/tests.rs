@@ -2,7 +2,8 @@ use super::*;
 use crate::database::models::{
     DagExecutionDbModel, DagExecutionListSummary, DagStepExecutionDbModel, DagStepWithJob,
     DanmuStatisticsDbModel, JobDbModel, JobExecutionLogDbModel, LiveSessionDbModel,
-    MediaOutputTypeSummary, OutputFilters, ReadyStep, SessionFilters, SessionSegmentDbModel,
+    MediaOutputDbModel, MediaOutputTypeSummary, OutputFilters, ReadyStep, SessionFilters,
+    SessionSegmentDbModel, SessionSegmentLifecycle, SessionSegmentSplitReason,
 };
 use async_trait::async_trait;
 use std::cmp::Reverse;
@@ -3431,15 +3432,13 @@ async fn manager_with_failing_config() -> (
 fn session_ended(
     session_id: &str,
     cause: crate::session::TerminalCause,
-) -> crate::session::SessionTransition {
-    crate::session::SessionTransition::Ended {
+) -> crate::recorder::PipelineNotification {
+    let should_run_session_complete = cause.should_run_session_complete_pipeline();
+    crate::recorder::PipelineNotification::SessionEnded {
         streamer_id: "streamer".to_string(),
-        streamer_name: "Streamer".to_string(),
         session_id: session_id.to_string(),
-        started_at: Some(jiff::Timestamp::now()),
-        ended_at: jiff::Timestamp::now(),
         cause,
-        via_hysteresis: false,
+        should_run_session_complete,
     }
 }
 
@@ -3448,13 +3447,14 @@ async fn non_completing_session_end_settles_without_a_config_lookup() {
     let (manager, _dags, sessions) = manager_with_failing_config().await;
 
     manager
-        .handle_session_transition(session_ended(
+        .handle_recorder_notification(session_ended(
             "session",
             crate::session::TerminalCause::Rejected {
                 reason: "circuit breaker".to_string(),
             },
         ))
-        .await;
+        .await
+        .unwrap();
 
     assert!(
         sessions
@@ -3494,11 +3494,12 @@ async fn session_end_uses_the_captured_configuration_when_the_config_lookup_fail
         });
 
     manager
-        .handle_session_transition(session_ended(
+        .handle_recorder_notification(session_ended(
             "session",
             crate::session::TerminalCause::StreamerOffline,
         ))
-        .await;
+        .await
+        .unwrap();
 
     let created_dags = dags.list_dags(None, Some("session"), 10, 0).await.unwrap();
     assert_eq!(created_dags.len(), 1);
@@ -3517,33 +3518,26 @@ async fn session_end_uses_the_captured_configuration_when_the_config_lookup_fail
 async fn session_end_stays_unsettled_when_no_configuration_was_ever_resolved() {
     let (manager, _dags, sessions) = manager_with_failing_config().await;
     manager
-        .handle_download_event(DownloadManagerEvent::Progress(
-            DownloadProgressEvent::SegmentCompleted {
-                download_id: "download".to_string(),
+        .handle_recorder_notification(
+            crate::recorder::PipelineNotification::VideoSegmentCompleted {
                 streamer_id: "streamer".to_string(),
-                streamer_name: "Streamer".to_string(),
                 session_id: "session".to_string(),
-                segment_path: "/recordings/seg1.flv".to_string(),
+                path: PathBuf::from("/recordings/seg1.flv"),
                 // Segment 0 would also start the automatic thumbnail DAG.
                 segment_index: 1,
-                started_at: None,
-                completed_at: jiff::Timestamp::now(),
-                duration_secs: 1.0,
-                size_bytes: 1,
-                split_reason_code: None,
-                split_reason_details_json: None,
-                split_by_format_change: false,
+                auto_thumbnail_candidate: false,
             },
-        ))
+        )
         .await
         .unwrap();
 
     manager
-        .handle_session_transition(session_ended(
+        .handle_recorder_notification(session_ended(
             "session",
             crate::session::TerminalCause::StreamerOffline,
         ))
-        .await;
+        .await
+        .unwrap();
 
     assert!(
         !sessions

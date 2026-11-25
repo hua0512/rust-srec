@@ -32,7 +32,6 @@ use crate::database::models::NotificationChannelDbModel;
 use crate::database::models::NotificationEventLogDbModel;
 use crate::database::repositories::NotificationRepository;
 use crate::downloader::DownloadManagerEvent;
-use crate::monitor::MonitorEvent;
 use crate::pipeline::PipelineEvent;
 use crate::utils::task_supervisor::TaskSupervisor;
 
@@ -816,24 +815,12 @@ impl NotificationService {
         }
     }
 
-    /// Start listening for system events.
+    /// Start listening for non-outbox download and pipeline notification events.
+    ///
+    /// Streamer and session lifecycle notifications (`StreamOnline`,
+    /// `StreamOffline`, `FatalError`, `ChecksFailing`, `ChecksRestored`) are
+    /// delivered durably via [`crate::notification::NotificationOutboxDrainer`].
     pub fn start_event_listeners(
-        self: &Arc<Self>,
-        monitor_rx: broadcast::Receiver<MonitorEvent>,
-        download_rx: broadcast::Receiver<DownloadManagerEvent>,
-        pipeline_rx: broadcast::Receiver<PipelineEvent>,
-        session_rx: broadcast::Receiver<crate::session::SessionTransition>,
-    ) {
-        self.listen_for_monitor_events(monitor_rx);
-        self.listen_for_download_events(download_rx);
-        self.listen_for_pipeline_events(pipeline_rx);
-        self.listen_for_session_transitions(session_rx);
-    }
-
-    /// Start non-outbox listeners for the recorder actor runtime, where
-    /// `StreamOnline`, `StreamOffline`, `FatalError`, `ChecksFailing`, and
-    /// `ChecksRestored` are delivered durably via [`crate::notification::NotificationOutboxDrainer`].
-    pub(crate) fn start_actor_mode_event_listeners(
         self: &Arc<Self>,
         download_rx: broadcast::Receiver<DownloadManagerEvent>,
         pipeline_rx: broadcast::Receiver<PipelineEvent>,

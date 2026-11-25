@@ -14,7 +14,7 @@ use crate::downloader::engine::{
 /// stream is *actually* over vs. whether we just got disconnected and the
 /// streamer will reappear with a fresh URL.
 ///
-/// Consumers (today: [`crate::session::SessionLifecycle`]) use this to choose
+/// Consumers ([`crate::recorder::StreamerFsm`]) use this to choose
 /// between firing the session-complete pipeline immediately and entering a
 /// hysteresis quiet-period that absorbs reconnects.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -249,7 +249,7 @@ pub enum DownloadTerminalEvent {
     /// proof that the upstream stream is over. A clean TCP close or a
     /// subprocess exiting with status 0 can mean either "EOF" or "we
     /// reconnected." Engines pass an [`EngineEndSignal`] hint with the
-    /// event so [`crate::session::SessionLifecycle`] can tell HLS
+    /// event so [`crate::recorder::StreamerFsm`] can tell HLS
     /// `#EXT-X-ENDLIST` (definitively over) apart from FLV clean
     /// disconnect (might be a reconnect-friendly drop).
     Completed {
@@ -310,10 +310,9 @@ pub enum DownloadTerminalEvent {
         /// How long to wait before retrying (cooldown of whichever subsystem
         /// rejected the download).
         retry_after_secs: Option<u64>,
-        /// Why the download was rejected. Carries the payload the scheduler
-        /// needs to route this to the correct
-        /// [`DownloadEndPolicy`](crate::scheduler::actor::DownloadEndPolicy) variant
-        /// and, ultimately, the correct [`crate::monitor::InfraBlockReason`].
+        /// Why the download was rejected. Carries the payload the recorder FSM
+        /// needs to route this to the corresponding
+        /// [`crate::monitor::InfraBlockReason`].
         kind: DownloadRejectedKind,
     },
 }

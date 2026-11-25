@@ -325,7 +325,7 @@ pub struct SessionCoordinationOutstanding {
     ///
     /// Deliberately wider than `SessionPipelineState::pending_session_complete_start`,
     /// which only covers the span after `is_ready` holds.
-    /// `PipelineManager::handle_session_transition` applies `ConfigureSession`,
+    /// `PipelineManager::handle_recorder_notification` applies `ConfigureSession`,
     /// `SessionEnded` and `SessionEndPersisted` as three separate reducer calls
     /// with a `get_config_for_streamer` database read in front of them, and
     /// `is_ready` requires the last of the three, so a narrower flag would read

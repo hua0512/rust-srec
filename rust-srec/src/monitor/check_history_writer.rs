@@ -2,7 +2,7 @@
 //!
 //! The streamer details page renders an "uptime-bar" check-history strip
 //! showing one bar per monitor poll. The data behind it flows here:
-//! every call to [`MonitorStatusChecker::check_status`] hands a
+//! every call to [`RecorderProber::probe_with_hint`] hands a
 //! [`CheckRecord`] to a bounded MPSC channel, and a single background task
 //! drains the channel into SQLite via [`StreamerCheckHistoryRepository`],
 //! then broadcasts the same `CheckRecord` to subscribed WebSocket clients.
@@ -20,7 +20,7 @@
 //!    trim (see [`super::super::database::repositories::KEEP_PER_STREAMER`]),
 //!    so the writer doesn't need a separate maintenance pass.
 //!
-//! [`MonitorStatusChecker::check_status`]: crate::scheduler::actor::MonitorStatusChecker
+//! [`RecorderProber::probe_with_hint`]: crate::recorder::RecorderProber::probe_with_hint
 
 use std::sync::Arc;
 
@@ -126,10 +126,10 @@ impl CheckHistoryBroadcaster {
     }
 }
 
-/// Handle that the [`MonitorStatusChecker`] uses to enqueue check records.
+/// Handle that [`RecorderProber`] uses to enqueue check records.
 /// Cheap to clone — wraps an [`mpsc::Sender`].
 ///
-/// [`MonitorStatusChecker`]: crate::scheduler::actor::MonitorStatusChecker
+/// [`RecorderProber`]: crate::recorder::RecorderProber
 #[derive(Clone)]
 pub struct CheckHistoryWriter {
     tx: mpsc::Sender<Arc<CheckRecord>>,

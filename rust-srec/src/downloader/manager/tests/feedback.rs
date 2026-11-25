@@ -1,13 +1,117 @@
 use super::*;
 
-use crate::scheduler::feedback::SchedulerFeedback;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
+
+use dashmap::DashMap;
+use tokio::sync::Semaphore;
+
+use crate::downloader::manager::{RecorderDownloadFeedback, RecorderFeedbackPermit};
+
+/// Bounded test sink mirroring `RecorderFeedbackSink` capacity and permit
+/// semantics so `DownloadManager`'s admission, release-ordering, and resizing
+/// invariants are verified directly against `RecorderDownloadFeedback`.
+struct TestRecorderFeedback {
+    global: Arc<Semaphore>,
+    global_capacity: AtomicUsize,
+    per_streamer: DashMap<String, Arc<Semaphore>>,
+    per_streamer_capacity: usize,
+    stopped: AtomicBool,
+    published: tokio::sync::mpsc::UnboundedSender<(DownloadManagerEvent, RecorderFeedbackPermit)>,
+    rechecks: Mutex<Vec<String>>,
+}
+
+impl TestRecorderFeedback {
+    fn new(
+        per_streamer_capacity: usize,
+    ) -> (
+        Arc<Self>,
+        tokio::sync::mpsc::UnboundedReceiver<(DownloadManagerEvent, RecorderFeedbackPermit)>,
+    ) {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let initial_global = 32;
+        let sink = Arc::new(Self {
+            global: Arc::new(Semaphore::new(initial_global)),
+            global_capacity: AtomicUsize::new(initial_global),
+            per_streamer: DashMap::new(),
+            per_streamer_capacity,
+            stopped: AtomicBool::new(false),
+            published: tx,
+            rechecks: Mutex::new(Vec::new()),
+        });
+        (sink, rx)
+    }
+
+    fn streamer_semaphore(&self, streamer_id: &str) -> Arc<Semaphore> {
+        self.per_streamer
+            .entry(streamer_id.to_owned())
+            .or_insert_with(|| Arc::new(Semaphore::new(self.per_streamer_capacity)))
+            .clone()
+    }
+}
+
+impl RecorderDownloadFeedback for TestRecorderFeedback {
+    fn ensure_attempt_capacity(&self, attempts: usize) {
+        let target = attempts.saturating_mul(2).max(32);
+        let current = self.global_capacity.load(Ordering::Acquire);
+        if target > current
+            && self
+                .global_capacity
+                .compare_exchange(current, target, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+        {
+            self.global.add_permits(target - current);
+        }
+    }
+
+    fn monitoring_stopped(&self) -> bool {
+        self.stopped.load(Ordering::Acquire)
+    }
+
+    fn reserve(&self, streamer_id: &str) -> std::result::Result<RecorderFeedbackPermit, String> {
+        let global = self
+            .global
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| "global feedback capacity full".to_owned())?;
+        let streamer = self
+            .streamer_semaphore(streamer_id)
+            .try_acquire_owned()
+            .map_err(|_| "streamer feedback capacity full".to_owned())?;
+        Ok(RecorderFeedbackPermit::new(
+            streamer_id.to_owned(),
+            global,
+            streamer,
+        ))
+    }
+
+    fn reserve_attempt(
+        &self,
+        streamer_id: &str,
+    ) -> std::result::Result<(RecorderFeedbackPermit, RecorderFeedbackPermit), String> {
+        let first = self.reserve(streamer_id)?;
+        let second = self.reserve(streamer_id)?;
+        Ok((first, second))
+    }
+
+    fn publish_reserved(&self, event: &DownloadManagerEvent, permit: RecorderFeedbackPermit) {
+        let _ = self.published.send((event.clone(), permit));
+    }
+
+    fn request_recheck(&self, streamer_id: &str) {
+        self.rechecks.lock().push(streamer_id.to_owned());
+    }
+
+    fn stop_monitoring(&self) {
+        self.stopped.store(true, Ordering::Release);
+    }
+}
 
 #[tokio::test]
 async fn feedback_overload_rejects_before_start_and_retry_succeeds_after_capacity_release() {
     tokio::time::timeout(Duration::from_secs(5), async {
         let manager = DownloadManager::new();
-        let feedback = SchedulerFeedback::new();
-        manager.set_scheduler_feedback(feedback.clone()).unwrap();
+        let (feedback, _rx) = TestRecorderFeedback::new(4);
+        manager.set_recorder_feedback(feedback.clone()).unwrap();
         let directory = tempfile::tempdir().unwrap();
         let config = test_download_config(directory.path().to_owned(), "capacity-session");
         let mut held = Vec::new();
@@ -44,6 +148,7 @@ async fn feedback_overload_rejects_before_start_and_retry_succeeds_after_capacit
             observer.try_recv().is_err(),
             "overload must not fabricate Started or Rejected"
         );
+        assert_eq!(feedback.rechecks.lock().len(), 2);
         drop(held);
         let id = start_scripted_download_with_engine(
             &manager,
@@ -53,8 +158,8 @@ async fn feedback_overload_rejects_before_start_and_retry_succeeds_after_capacit
         .await
         .unwrap();
         assert_eq!(manager.active_count(), 1);
-        // No actor can acknowledge application. Producer startup and terminal
-        // containment must nevertheless finish, using their reserved envelopes.
+        // No receiver drains `_rx`, yet producer startup and terminal
+        // containment finish using their reserved permits.
         manager.stop_download(&id).await.unwrap();
         assert_eq!(manager.active_count(), 0);
         let events: Vec<_> = std::iter::from_fn(|| observer.try_recv().ok()).collect();
@@ -68,7 +173,6 @@ async fn feedback_overload_rejects_before_start_and_retry_succeeds_after_capacit
             events.last(),
             Some(DownloadManagerEvent::Terminal(_))
         ));
-        feedback.shutdown().await;
     })
     .await
     .expect("producer admission must never wait for actor application");
@@ -78,8 +182,8 @@ async fn feedback_overload_rejects_before_start_and_retry_succeeds_after_capacit
 async fn cancelled_attempt_admission_releases_both_feedback_reservations() {
     tokio::time::timeout(Duration::from_secs(5), async {
         let manager = DownloadManager::new();
-        let feedback = SchedulerFeedback::new();
-        manager.set_scheduler_feedback(feedback.clone()).unwrap();
+        let (feedback, _rx) = TestRecorderFeedback::new(4);
+        manager.set_recorder_feedback(feedback.clone()).unwrap();
         let directory = tempfile::tempdir().unwrap();
         let config = test_download_config(directory.path().to_owned(), "cancelled-start");
         let mut held = Vec::new();
@@ -104,8 +208,6 @@ async fn cancelled_attempt_admission_releases_both_feedback_reservations() {
             remaining.push(permit);
         }
         assert_eq!(remaining.len(), capacity);
-        drop(remaining);
-        feedback.shutdown().await;
     })
     .await
     .unwrap();
@@ -115,39 +217,20 @@ async fn cancelled_attempt_admission_releases_both_feedback_reservations() {
 async fn feedback_terminal_application_observes_the_slot_already_released() {
     tokio::time::timeout(Duration::from_secs(5), async {
         let manager = Arc::new(DownloadManager::new());
-        let feedback = SchedulerFeedback::new();
-        manager.set_scheduler_feedback(feedback.clone()).unwrap();
-        let (sender, mut mailbox) = tokio::sync::mpsc::channel(1);
-        let (priority_sender, _priority_mailbox) = tokio::sync::mpsc::channel(1);
-        let token = CancellationToken::new();
-        let mut actor = crate::scheduler::actor::ActorHandle::with_priority(
-            sender,
-            priority_sender,
-            token.clone(),
-            crate::scheduler::actor::ActorMetadata::streamer("test-streamer-id"),
-        );
-        actor.set_generation(1);
-        feedback.update_targets(&std::collections::HashMap::from([(
-            "test-streamer-id".to_owned(),
-            actor,
-        )]));
+        let (feedback, mut rx) = TestRecorderFeedback::new(4);
+        manager.set_recorder_feedback(feedback.clone()).unwrap();
         let observed_manager = manager.clone();
         let receiver = tokio::spawn(async move {
             let mut seen = 0;
-            while let Some(message) = mailbox.recv().await {
-                if let crate::scheduler::actor::StreamerMessage::LifecycleFeedback(envelope) =
-                    message
-                {
-                    if matches!(envelope.event.as_ref(), DownloadManagerEvent::Terminal(_)) {
-                        assert_eq!(observed_manager.active_count(), 0);
-                    }
-                    let _ = envelope
-                        .applied
-                        .send(Ok(crate::scheduler::feedback::FeedbackDisposition::Applied));
-                    seen += 1;
-                    if seen == 2 {
-                        break;
-                    }
+            while let Some((event, permit)) = rx.recv().await {
+                assert_eq!(permit.streamer_id(), "test-streamer-id");
+                if matches!(event, DownloadManagerEvent::Terminal(_)) {
+                    assert_eq!(observed_manager.active_count(), 0);
+                }
+                drop(permit);
+                seen += 1;
+                if seen == 2 {
+                    break;
                 }
             }
             seen
@@ -163,7 +246,6 @@ async fn feedback_terminal_application_observes_the_slot_already_released() {
         .unwrap();
         manager.stop_download(&id).await.unwrap();
         assert_eq!(receiver.await.unwrap(), 2);
-        feedback.shutdown().await;
     })
     .await
     .expect("terminal application ordering must settle");
@@ -177,8 +259,8 @@ async fn feedback_capacity_tracks_live_concurrency_and_extra_slots_without_revok
             high_priority_extra_slots: 5,
             ..Default::default()
         });
-        let feedback = SchedulerFeedback::new();
-        manager.set_scheduler_feedback(feedback.clone()).unwrap();
+        let (feedback, _rx) = TestRecorderFeedback::new(8);
+        manager.set_recorder_feedback(feedback.clone()).unwrap();
         let directory = tempfile::tempdir().unwrap();
         let config = test_download_config(directory.path().to_owned(), "old-reservations");
         let id = start_scripted_download_with_engine(
@@ -189,9 +271,9 @@ async fn feedback_capacity_tracks_live_concurrency_and_extra_slots_without_revok
         .await
         .unwrap();
         manager.stop_download(&id).await.unwrap();
-        // Old terminal/application capacity is still held: no actor has polled it.
+        // Old terminal/application capacity is still held in `_rx`.
         assert_eq!(manager.set_max_concurrent_downloads(700), 700);
-        let reservations: Vec<_> = (0..705)
+        let reservations: Vec<_> = (0..703)
             .map(|n| {
                 feedback
                     .reserve_attempt(&format!("concurrent-{n}"))
@@ -213,143 +295,59 @@ async fn feedback_capacity_tracks_live_concurrency_and_extra_slots_without_revok
         );
         drop(reservations);
         manager.stop_download(&id).await.unwrap();
-        feedback.shutdown().await;
     })
     .await
     .expect("concurrency resizing must preserve admission ownership");
 }
 
-struct StartupFromChecker {
-    manager: Arc<DownloadManager>,
-    config: std::sync::Mutex<Option<DownloadConfig>>,
-    started: std::sync::Mutex<Option<tokio::sync::oneshot::Sender<String>>>,
-    release: tokio::sync::Notify,
-}
-
-#[async_trait]
-impl crate::scheduler::actor::StatusChecker for StartupFromChecker {
-    async fn check_status(
-        &self,
-        _streamer: &crate::streamer::StreamerMetadata,
-    ) -> std::result::Result<
-        (
-            crate::scheduler::actor::CheckResult,
-            crate::monitor::LiveStatus,
-        ),
-        crate::scheduler::actor::CheckError,
-    > {
-        let config = self.config.lock().unwrap().take();
-        if let Some(config) = config {
-            let id = start_scripted_download_with_engine(
-                &self.manager,
-                config,
-                ScriptedSegmentEngine::with_shutdown_tail(vec![], vec![]),
-            )
-            .await
-            .map_err(|error| crate::scheduler::actor::CheckError::transient(error.to_string()))?;
-            if let Some(started) = self.started.lock().unwrap().take() {
-                let _ = started.send(id);
-            }
-            self.release.notified().await;
-        }
-        Ok((
-            crate::scheduler::actor::CheckResult::success(crate::domain::StreamerState::NotLive),
-            crate::monitor::LiveStatus::Offline,
-        ))
-    }
-    async fn process_status(
-        &self,
-        _streamer: &crate::streamer::StreamerMetadata,
-        _status: crate::monitor::LiveStatus,
-    ) -> std::result::Result<crate::monitor::ProcessStatusResult, crate::scheduler::actor::CheckError>
-    {
-        Ok(crate::monitor::ProcessStatusResult::Applied)
-    }
-    async fn handle_error(
-        &self,
-        _streamer: &crate::streamer::StreamerMetadata,
-        _error: &str,
-    ) -> std::result::Result<(), crate::scheduler::actor::CheckError> {
-        Ok(())
-    }
-    async fn set_infra_blocked(
-        &self,
-        _streamer: &crate::streamer::StreamerMetadata,
-        _reason: crate::monitor::InfraBlockReason,
-    ) -> std::result::Result<(), crate::scheduler::actor::CheckError> {
-        Ok(())
-    }
-}
-
 #[tokio::test]
-async fn actor_waiting_for_startup_cannot_deadlock_on_started_application() {
-    tokio::time::timeout(Duration::from_secs(6), async {
-        let manager = Arc::new(DownloadManager::new());
-        let feedback = SchedulerFeedback::new();
-        manager.set_scheduler_feedback(feedback.clone()).unwrap();
+async fn slot_acquisition_cancels_before_queue_admission_after_preflight() {
+    tokio::time::timeout(Duration::from_secs(5), async {
         let directory = tempfile::tempdir().unwrap();
-        let config = test_download_config(directory.path().to_owned(), "checker-startup");
-        let store = Arc::new(dashmap::DashMap::new());
-        let mut row = crate::database::models::StreamerDbModel::new(
-            "test",
-            "https://example.com/live",
-            "platform",
-        );
-        row.id = config.streamer_id.clone();
-        store.insert(
-            row.id.clone(),
-            Arc::new(crate::streamer::StreamerMetadata::from_db_model(&row)),
-        );
-        let (started, receive_started) = tokio::sync::oneshot::channel();
-        let checker = Arc::new(StartupFromChecker {
-            manager: manager.clone(),
-            config: std::sync::Mutex::new(Some(config.clone())),
-            started: std::sync::Mutex::new(Some(started)),
-            release: tokio::sync::Notify::new(),
-        });
-        let cancel = CancellationToken::new();
-        let (actor, mut handle) = crate::scheduler::actor::StreamerActor::new(
-            config.streamer_id.clone(),
-            store,
-            crate::scheduler::actor::StreamerConfig::default(),
-            cancel.clone(),
-            checker.clone(),
-        );
-        handle.set_generation(1);
-        handle
-            .try_send(crate::scheduler::actor::StreamerMessage::CheckStatus)
-            .unwrap();
-        feedback.update_targets(&std::collections::HashMap::from([(
-            config.streamer_id.clone(),
-            handle.clone(),
-        )]));
-        let task = tokio_util::task::AbortOnDropHandle::new(tokio::spawn(actor.run()));
-        let id = receive_started
+        let manager = DownloadManager::new();
+        manager.register_engine(Arc::new(ScriptedSegmentEngine::with_shutdown_tail(
+            vec![],
+            vec![],
+        )));
+        manager
+            .preflight(PreflightRequest {
+                streamer_id: "streamer".into(),
+                streamer_name: "Streamer".into(),
+                session_id: "session".into(),
+                output_dir: directory.path().to_owned(),
+                engine_id: Some("ffmpeg".into()),
+                engines_override: None,
+            })
             .await
-            .expect("checker must return from producer admission");
-        for _ in 0..300 {
-            manager.events.publish(DownloadManagerEvent::Progress(
-                DownloadProgressEvent::Progress {
-                    download_id: id.clone(),
-                    streamer_id: config.streamer_id.clone(),
-                    streamer_name: config.streamer_name.clone(),
-                    session_id: config.session_id.clone(),
-                    status: DownloadStatus::Downloading,
-                    progress: DownloadProgress::default(),
-                },
-            ));
-        }
-        manager.stop_download(&id).await.unwrap();
-        let (reply, state) = tokio::sync::oneshot::channel();
-        handle
-            .try_send(crate::scheduler::actor::StreamerMessage::GetState(reply))
             .unwrap();
-        checker.release.notify_one();
-        state.await.unwrap();
-        feedback.shutdown().await;
+        let maintenance = manager.try_admit_maintenance(0).unwrap();
+        let cancel = CancellationToken::new();
+        let mut events = manager.subscribe();
+        let mut acquire = Box::pin(manager.acquire_slot(
+            AcquireRequest {
+                streamer_id: "streamer".into(),
+                streamer_name: "Streamer".into(),
+                session_id: "session".into(),
+                engine_type: EngineType::Ffmpeg,
+                priority: Priority::Normal,
+            },
+            cancel.clone(),
+        ));
+        assert!(futures::poll!(acquire.as_mut()).is_pending());
+        assert_eq!(manager.pending_count(), 0);
         cancel.cancel();
-        task.await.unwrap().unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_secs(1), acquire)
+                .await
+                .unwrap()
+                .is_err()
+        );
+        assert!(
+            events.try_recv().is_err(),
+            "a never-queued request has no queued/dequeued pair"
+        );
+        drop(maintenance);
     })
     .await
-    .expect("actor/startup/application receipt cycle must not exist");
+    .expect("maintenance must not strand an acquire cancelled before queue insertion");
 }

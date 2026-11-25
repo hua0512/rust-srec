@@ -55,7 +55,6 @@ use crate::database::repositories::config::SqlxConfigRepository;
 use crate::database::repositories::streamer::SqlxStreamerRepository;
 use crate::notification::{BigoNotificationProblem, NotificationEvent, NotificationService};
 use crate::proxies::ResolvedRoute;
-use crate::scheduler::feedback::SchedulerFeedback;
 use crate::streamer::StreamerManager;
 use crate::streamer::platform_metadata::StoredPlatformMetadata;
 use crate::utils::task_supervisor::TaskSupervisor;
@@ -323,12 +322,6 @@ enum Settings {
 /// streamer when a live push arrives.
 pub(crate) trait BigoCheckTrigger: Send + Sync {
     fn request_check(&self, streamer_id: &str);
-}
-
-impl BigoCheckTrigger for Arc<SchedulerFeedback> {
-    fn request_check(&self, streamer_id: &str) {
-        SchedulerFeedback::request_check(self, streamer_id);
-    }
 }
 
 /// What the listener needs from the rest of the backend.
@@ -701,9 +694,7 @@ impl BigoNotifications {
                     .await
                 {
                     Ok(config)
-                        if !super::service::batch_detection_enabled(
-                            config.platform_extras.as_ref(),
-                        ) =>
+                        if !super::batch_detection_enabled(config.platform_extras.as_ref()) =>
                     {
                         Some(PollingReason::BatchDetectionOff)
                     }
@@ -1139,7 +1130,7 @@ fn notification_settings(platform_specific_config: Option<&str>) -> (bool, Optio
     else {
         return (false, None);
     };
-    let enabled = super::service::batch_detection_enabled(Some(&options));
+    let enabled = super::batch_detection_enabled(Some(&options));
     let account = options
         .get("notification_account")
         .and_then(serde_json::Value::as_str)

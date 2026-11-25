@@ -29,11 +29,10 @@ use crate::downloader::resilience::{CircuitBreaker, EngineKey};
 use crate::utils::failure_samples::FailureSamples;
 use crate::utils::task_supervisor::{DrainedTasks, panic_payload_message};
 
-use super::coordination::{DownloadEventPublisher, ReservedPermit};
+use super::coordination::{DownloadEventPublisher, RecorderFeedbackPermit};
 use super::{
-    ActiveDownload, AttemptPhase, CredentialDiagnostic, DownloadManager, DownloadManagerEvent,
-    DownloadProgressEvent, DownloadStopCause, DownloadTerminalEvent, EngineEndSignal,
-    resolve_segment_path,
+    ActiveDownload, AttemptPhase, DownloadManager, DownloadManagerEvent, DownloadProgressEvent,
+    DownloadStopCause, DownloadTerminalEvent, EngineEndSignal, resolve_segment_path,
 };
 
 /// Completion signal shared by stop callers and the attempt finalizer.
@@ -445,7 +444,6 @@ struct SegmentTranslator {
     /// segment row still surfaces without ending the recording that produced it.
     lifecycle_errors: Arc<Mutex<FailureSamples>>,
     managed_credentials: bool,
-    may_diagnose: bool,
     /// Completions publish immediately so the cut result precedes the next
     /// segment event; the watch branch then sees the same revision. Revisions
     /// only grow, so anything not newer was already sent.
@@ -560,15 +558,7 @@ impl SegmentTranslator {
             );
         }
 
-        if self.may_diagnose
-            && matches!(&natural_terminal, DownloadTerminalEvent::Failed { kind, engine_type, .. } if kind.requests_credential_diagnostic(*engine_type))
-        {
-            // Keep stop requests effective during the bounded diagnostic.
-            // The finalizer chooses the terminal after diagnostic work settles.
-            natural_terminal
-        } else {
-            choose_attempt_terminal(&self.phase, natural_terminal, &self.id)
-        }
+        choose_attempt_terminal(&self.phase, natural_terminal, &self.id)
     }
 
     fn publish_split(&mut self, state: pipeline_common::ManualSplitSnapshot) {
@@ -869,8 +859,7 @@ struct AttemptTask {
     events: DownloadEventPublisher,
     finalizer: AttemptFinalizer,
     lifecycle_errors: Arc<Mutex<FailureSamples>>,
-    credential_diagnostic: Option<CredentialDiagnostic>,
-    terminal_feedback: Option<ReservedPermit>,
+    terminal_feedback: Option<RecorderFeedbackPermit>,
     managed_credentials: bool,
 }
 
@@ -887,7 +876,6 @@ impl AttemptTask {
             events,
             mut finalizer,
             lifecycle_errors,
-            credential_diagnostic,
             terminal_feedback,
             managed_credentials,
         } = self;
@@ -943,7 +931,7 @@ impl AttemptTask {
             lifecycle_errors.push(format!("engine task failed: {error}"));
         }
 
-        let mut terminal = match translator_result {
+        let terminal = match translator_result {
             Ok(terminal) => terminal,
             Err(payload) => {
                 let error = panic_message(
@@ -966,37 +954,6 @@ impl AttemptTask {
             }
         };
 
-        if let DownloadTerminalEvent::Failed {
-            kind, engine_type, ..
-        } = &terminal
-            && kind.requests_credential_diagnostic(*engine_type)
-            && !matches!(*phase.lock(), AttemptPhase::TerminalChosen)
-            && let Some(diagnostic) = credential_diagnostic
-        {
-            let replacement = tokio::select! {
-                biased;
-                _ = handle.cancellation_token.cancelled() => None,
-                result = diagnostic(terminal.clone()) => result,
-            };
-            if let Some(replacement) = replacement
-                && let DownloadTerminalEvent::Failed {
-                    kind,
-                    recoverable,
-                    error,
-                    ..
-                } = &mut terminal
-            {
-                *kind = replacement;
-                *recoverable = true;
-                *error = if replacement == DownloadFailureKind::CredentialUnavailable {
-                    "Recording awaits available credentials"
-                } else {
-                    "Bound media renewed after engine failure"
-                }
-                .to_string();
-            }
-            terminal = choose_attempt_terminal(&phase, terminal, &id);
-        }
         let terminal_event = DownloadManagerEvent::Terminal(terminal);
         if let Err(delivery_error) = events.coordinate_and_wait(&terminal_event).await {
             error!(
@@ -1084,7 +1041,6 @@ impl DownloadManager {
             protocol: config.protocol,
         });
         let cdn_host = crate::utils::url::extract_host(&config.url).unwrap_or_default();
-        let credential_diagnostic = self.credential_diagnostic.get().cloned();
         let managed_credentials = config.managed_credentials;
         let lifecycle_errors = Arc::new(Mutex::new(FailureSamples::default()));
 
@@ -1100,7 +1056,6 @@ impl DownloadManager {
             circuit_breaker: self.circuit_breakers.get(&engine_key),
             lifecycle_errors: lifecycle_errors.clone(),
             managed_credentials,
-            may_diagnose: credential_diagnostic.is_some() && managed_credentials,
             published_split_revision: 0,
             pending_cut_completion: None,
             last_started_sequence: None,
@@ -1126,7 +1081,6 @@ impl DownloadManager {
                 active_released: false,
             },
             lifecycle_errors,
-            credential_diagnostic,
             terminal_feedback,
             managed_credentials,
         };

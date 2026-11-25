@@ -68,7 +68,6 @@ async fn public_timezone_import_rolls_back_or_invalidates_filter_snapshots_after
         assert!(!Arc::ptr_eq(&local,&utc));
         assert!(matches!(&utc[0],Filter::TimeBased(filter) if filter.timezone.is_none()));
         assert_eq!(export(state.clone()).await.streamers[0].filters[0].config["timezone"],"UTC");
-        container.stream_monitor.stop();
         container.notification_service.stop().await;
         container.pipeline_manager.stop().await;
         container.cancellation_token.cancel();

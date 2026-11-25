@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use super::super::*;
 
 use crate::credentials::UnavailableReason;
@@ -28,7 +30,7 @@ async fn fixture() -> ServiceContainer {
 }
 
 fn block(container: &ServiceContainer) {
-    container.stream_monitor.credential_blocks().block(
+    container.credential_blocks().block(
         STREAMER,
         "platform-twitch",
         UnavailableReason::LoginRequired,
@@ -36,11 +38,7 @@ fn block(container: &ServiceContainer) {
 }
 
 fn blocked(container: &ServiceContainer) -> bool {
-    container
-        .stream_monitor
-        .credential_blocks()
-        .get(STREAMER)
-        .is_some()
+    container.credential_blocks().get(STREAMER).is_some()
 }
 
 #[tokio::test]
@@ -75,7 +73,6 @@ async fn streamers_that_stop_being_monitored_lose_their_credential_block() {
             .await;
         assert!(!blocked(&container));
 
-        container.stream_monitor.stop();
         container.notification_service.stop().await;
         container.cancellation_token.cancel();
         container

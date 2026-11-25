@@ -35,7 +35,7 @@ use std::time::{Duration, UNIX_EPOCH};
 use futures::StreamExt;
 use reqwest::header::{AsHeaderName, HeaderMap};
 use reqwest::{Method, StatusCode};
-use rust_srec::backend::{self, DownloadManagerConfig, RecorderRuntime, ServiceContainer};
+use rust_srec::backend::{self, DownloadManagerConfig, ServiceContainer};
 use rust_srec::logging::LoggingConfig;
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -253,7 +253,6 @@ pub struct TestApp {
     /// The proxy every route but the fake platform's ends at, for apps
     /// started with [`TestApp::start_with`].
     dead_end: Option<ConnectRecorder>,
-    recorder_runtime: RecorderRuntime,
     _data_dir: TempDir,
 }
 
@@ -342,14 +341,7 @@ impl TestApp {
     /// migration seeds: [`SEEDED_ADMIN_PASSWORD`], with a forced password
     /// change pending. [`Self::admin`] does not work in this app.
     pub async fn start_with_seeded_admin() -> Self {
-        Self::boot(
-            "",
-            None,
-            false,
-            DownloadManagerConfig::default(),
-            launch::runtime_from_env(),
-        )
-        .await
+        Self::boot("", None, false, DownloadManagerConfig::default()).await
     }
 
     /// Start a backend after running `seed_sql` on the migrated database.
@@ -360,14 +352,7 @@ impl TestApp {
     /// database on each request can be inserted after start with
     /// [`Self::run_sql`] or [`Self::database`] instead.
     pub async fn start_seeded(seed_sql: &str) -> Self {
-        Self::boot(
-            seed_sql,
-            None,
-            true,
-            DownloadManagerConfig::default(),
-            launch::runtime_from_env(),
-        )
-        .await
+        Self::boot(seed_sql, None, true, DownloadManagerConfig::default()).await
     }
 
     /// Start a backend that monitors streamers, seeded with `seed` (see
@@ -375,14 +360,7 @@ impl TestApp {
     pub async fn start_with(seed: Seed) -> Self {
         let dead_end = ConnectRecorder::start().await;
         let sql = seed.sql(&dead_end);
-        Self::boot(
-            &sql,
-            Some(dead_end),
-            true,
-            DownloadManagerConfig::default(),
-            launch::runtime_from_env(),
-        )
-        .await
+        Self::boot(&sql, Some(dead_end), true, DownloadManagerConfig::default()).await
     }
 
     async fn boot(
@@ -390,7 +368,6 @@ impl TestApp {
         dead_end: Option<ConnectRecorder>,
         change_admin_password: bool,
         downloads: DownloadManagerConfig,
-        recorder_runtime: RecorderRuntime,
     ) -> Self {
         assert_default_environment();
         backend::install_rustls_provider();
@@ -421,8 +398,7 @@ impl TestApp {
                 .expect("run the seed SQL");
         }
         migration_pool.close().await;
-        let (container, address) =
-            launch::serve(&database_url, &output_dir, downloads, recorder_runtime).await;
+        let (container, address) = launch::serve(&database_url, &output_dir, downloads).await;
 
         let client = reqwest::Client::builder()
             .no_proxy()
@@ -438,7 +414,6 @@ impl TestApp {
             admin: OnceCell::new(),
             output_dir,
             dead_end,
-            recorder_runtime,
             _data_dir: data_dir,
         }
     }

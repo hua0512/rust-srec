@@ -69,6 +69,25 @@ pub struct RetirementBounds {
     pub pipeline: Duration,
 }
 
+/// What one retirement attempt observed, per physical resource owner.
+///
+/// [`Self::is_quiescent`] is the precondition for physically reaping a deleted
+/// streamer row: `false` means at least one owner may still write for the
+/// streamer, so the row stays marked until a later reaper pass observes full
+/// quiescence.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct StreamerRetirement {
+    /// Owners that had not settled when their bound expired.
+    pub outstanding: Vec<String>,
+}
+
+impl StreamerRetirement {
+    /// Whether every physical owner settled, allowing the caller to reap the row.
+    pub fn is_quiescent(&self) -> bool {
+        self.outstanding.is_empty()
+    }
+}
+
 /// Resolved configuration snapshot consumed by [`crate::recorder::StreamerFsm`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedActorConfig {

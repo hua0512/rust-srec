@@ -12,7 +12,6 @@ use crate::database::repositories::streamer::StreamerRepository;
 use crate::downloader::{
     DownloadManagerEvent, DownloadProgressEvent, DownloadTerminalEvent, EngineEndSignal,
 };
-use crate::recorder::RecorderRuntime;
 use crate::recorder::ports::{LiveProbePayload, ProbeStatus, SessionStartDisposition};
 use crate::services::ServiceContainer;
 
@@ -35,19 +34,15 @@ impl ActorHarness {
         crate::database::run_migrations(&pool)
             .await
             .expect("run migrations");
-        let container = ServiceContainer::with_config_and_runtime(
+        let container = ServiceContainer::with_config(
             pool.clone(),
             write_pool.clone(),
             Duration::from_secs(60),
             64,
-            RecorderRuntime::Actor,
         )
         .await
         .expect("build actor container");
-        let registry = container
-            .actor_registry()
-            .expect("actor registry installed")
-            .clone();
+        let registry = container.actor_registry.clone();
         Self {
             container,
             pool,
@@ -81,7 +76,6 @@ impl ActorHarness {
         self.registry
             .shutdown_until(tokio::time::Instant::now() + Duration::from_secs(3))
             .await;
-        self.container.stream_monitor.stop();
         self.container.notification_service.stop().await;
         self.container.pipeline_manager.stop().await;
         self.container.cancellation_token().cancel();

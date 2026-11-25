@@ -53,92 +53,9 @@ pub(crate) trait RecorderDownloadFeedback: Send + Sync {
     fn stop_monitoring(&self);
 }
 
-#[derive(Clone)]
-pub(super) enum LifecycleFeedback {
-    Legacy(Arc<crate::scheduler::feedback::SchedulerFeedback>),
-    Recorder(Arc<dyn RecorderDownloadFeedback>),
-}
-
-pub(super) enum ReservedPermit {
-    Legacy(crate::scheduler::feedback::FeedbackPermit),
-    Recorder(RecorderFeedbackPermit),
-}
-
-impl LifecycleFeedback {
-    pub(super) fn ensure_attempt_capacity(&self, attempts: usize) {
-        match self {
-            Self::Legacy(feedback) => feedback.ensure_attempt_capacity(attempts),
-            Self::Recorder(feedback) => feedback.ensure_attempt_capacity(attempts),
-        }
-    }
-
-    pub(super) fn monitoring_stopped(&self) -> bool {
-        match self {
-            Self::Legacy(feedback) => feedback.monitoring_stopped(),
-            Self::Recorder(feedback) => feedback.monitoring_stopped(),
-        }
-    }
-
-    pub(super) fn reserve(&self, streamer_id: &str) -> std::result::Result<ReservedPermit, String> {
-        match self {
-            Self::Legacy(feedback) => feedback.reserve(streamer_id).map(ReservedPermit::Legacy),
-            Self::Recorder(feedback) => feedback.reserve(streamer_id).map(ReservedPermit::Recorder),
-        }
-    }
-
-    pub(super) fn reserve_attempt(
-        &self,
-        streamer_id: &str,
-    ) -> std::result::Result<(ReservedPermit, ReservedPermit), String> {
-        match self {
-            Self::Legacy(feedback) => feedback
-                .reserve_attempt(streamer_id)
-                .map(|(a, b)| (ReservedPermit::Legacy(a), ReservedPermit::Legacy(b))),
-            Self::Recorder(feedback) => feedback
-                .reserve_attempt(streamer_id)
-                .map(|(a, b)| (ReservedPermit::Recorder(a), ReservedPermit::Recorder(b))),
-        }
-    }
-
-    pub(super) fn publish_reserved(&self, event: &DownloadManagerEvent, permit: ReservedPermit) {
-        match (self, permit) {
-            (Self::Legacy(feedback), ReservedPermit::Legacy(permit)) => {
-                drop(feedback.publish_reserved(event, permit));
-            }
-            (Self::Recorder(feedback), ReservedPermit::Recorder(permit)) => {
-                feedback.publish_reserved(event, permit);
-            }
-            _ => {
-                tracing::error!("Mismatched lifecycle feedback permit kind");
-            }
-        }
-    }
-
-    pub(super) fn request_recheck(&self, streamer_id: &str) {
-        match self {
-            Self::Legacy(feedback) => feedback.request_recheck(streamer_id),
-            Self::Recorder(feedback) => feedback.request_recheck(streamer_id),
-        }
-    }
-
-    pub(super) async fn shutdown(&self) {
-        match self {
-            Self::Legacy(feedback) => feedback.shutdown().await,
-            Self::Recorder(feedback) => feedback.stop_monitoring(),
-        }
-    }
-
-    pub(super) async fn abort(&self, deadline: tokio::time::Instant) {
-        match self {
-            Self::Legacy(feedback) => feedback.abort(deadline).await,
-            Self::Recorder(feedback) => feedback.stop_monitoring(),
-        }
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 pub(super) enum PublicationError {
-    #[error("scheduler feedback capacity is full; retry admission")]
+    #[error("recorder feedback capacity is full; retry admission")]
     FeedbackBusy,
     #[error("{0}")]
     Coordination(String),
@@ -148,7 +65,7 @@ pub(super) enum PublicationError {
 pub(super) struct DownloadEventPublisher {
     observer_tx: broadcast::Sender<DownloadManagerEvent>,
     shared_tx: Arc<SharedEventSender<DownloadManagerEvent>>,
-    pub(super) feedback: Arc<OnceLock<LifecycleFeedback>>,
+    pub(super) feedback: Arc<OnceLock<Arc<dyn RecorderDownloadFeedback>>>,
     pub(super) coordination_tx: Option<DownloadCoordinationSender>,
 }
 
@@ -217,7 +134,13 @@ impl DownloadEventPublisher {
     pub(super) fn reserve_feedback(
         &self,
         id: &str,
-    ) -> Result<(Option<ReservedPermit>, Option<ReservedPermit>), String> {
+    ) -> Result<
+        (
+            Option<RecorderFeedbackPermit>,
+            Option<RecorderFeedbackPermit>,
+        ),
+        String,
+    > {
         match self.feedback.get() {
             Some(feedback) if !feedback.monitoring_stopped() => feedback
                 .reserve_attempt(id)
@@ -229,11 +152,9 @@ impl DownloadEventPublisher {
     pub(super) fn observe_reserved(
         &self,
         event: DownloadManagerEvent,
-        permit: Option<ReservedPermit>,
+        permit: Option<RecorderFeedbackPermit>,
     ) -> bool {
         if let (Some(feedback), Some(permit)) = (self.feedback.get(), permit) {
-            // Application stays owned by the dispatcher even if this optional
-            // observation receipt is dropped by the producer.
             feedback.publish_reserved(&event, permit);
         }
         self.observe(event)
@@ -283,19 +204,6 @@ impl DownloadCoordinationSender {
 
     pub(super) async fn shutdown(&self) -> std::result::Result<(), RequiredChannelError> {
         self.0.shutdown().await
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn publish_and_wait_for_test(
-        &self,
-        event: DownloadManagerEvent,
-    ) -> std::result::Result<(), String> {
-        self.publish(event).wait().await
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn shutdown_for_test(&self) -> std::result::Result<(), RequiredChannelError> {
-        self.shutdown().await
     }
 }
 

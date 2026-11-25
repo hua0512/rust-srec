@@ -1,9 +1,8 @@
 //! Deleting a streamer as mark -> retire -> reap.
 //!
 //! Every test here drives a real `ServiceContainer`, because the property under
-//! test is the interaction between `StreamerManager`, `RuntimeCoordinator`,
-//! `SessionLifecycle`, `Scheduler` and `PipelineManager` rather than any one of
-//! them.
+//! test is the interaction between `StreamerManager`, `ActorRegistry`,
+//! `RecorderStore`, and `PipelineManager` rather than any one of them.
 
 use std::time::Duration;
 
@@ -14,7 +13,8 @@ use crate::database::repositories::job::JobRepository;
 use crate::database::repositories::session::SessionRepository;
 use crate::database::repositories::streamer::StreamerRepository;
 use crate::domain::StreamerState;
-use crate::services::runtime_coordinator::{INTERACTIVE_RETIREMENT, OBSERVE_RETIREMENT};
+use crate::recorder::{DbCommitOp, INTERACTIVE_RETIREMENT, OBSERVE_RETIREMENT, RecorderStorePort};
+use crate::session::TerminalCause;
 
 const STREAMER_ID: &str = "streamer-retire";
 const STREAMER_NAME: &str = "Retiring streamer";
@@ -32,11 +32,10 @@ impl Harness {
     /// A container on a migrated file-backed database with no streamers yet.
     ///
     /// Seeding is a separate step because ordering against
-    /// [`Self::start_scheduler`] matters: `Scheduler::spawn_initial_actors` runs
-    /// once at the top of `Scheduler::run` over `get_all_active`, and an actor
-    /// spawned there polls the platform for real and writes streamer state.
-    /// Tests that only need the scheduler's command loop start it first and seed
-    /// afterwards.
+    /// [`Self::start_registry`] matters: `ActorRegistry::start` reconciles
+    /// `get_all` on boot, and an actor spawned for a live streamer polls its
+    /// platform. Tests that only need the reconciler loop running start it
+    /// first and seed afterwards.
     async fn new() -> Self {
         let temp_dir = tempfile::tempdir().expect("test directory should initialize");
         let database_url = format!(
@@ -123,28 +122,8 @@ impl Harness {
         )
     }
 
-    /// Starts the scheduler and waits for its event loop to be the one holding
-    /// the command receiver: `SchedulerHandle::remove_streamer_awaitable`
-    /// answers `None` until then, which a retirement reads as "the actor stop
-    /// was not observed".
-    async fn start_scheduler(&self) {
-        self.container
-            .start_scheduler()
-            .expect("scheduler should start");
-
-        for _ in 0..200 {
-            if self
-                .container
-                .scheduler_handle()
-                .remove_streamer_awaitable("scheduler-loop-probe")
-                .await
-                .is_some()
-            {
-                return;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        panic!("the scheduler event loop should start answering commands");
+    fn start_registry(&self) {
+        self.container.actor_registry.start();
     }
 
     async fn streamer_row(&self) -> Option<StreamerDbModel> {
@@ -166,16 +145,19 @@ impl Harness {
     }
 }
 
-/// The `StreamerStateSyncedFromDb` that `StreamerManager::mark_deleting`
-/// publishes must not make `ConfigEventHandler` run its own
-/// `handle_streamer_disabled`. That stop does not wait on `AttemptCompletion`,
-/// so it would end the session before `RuntimeCoordinator::retire_streamer`
-/// gets there, and every delete would run two concurrent stops.
+/// Reconciliation triggered by `StreamerManager::mark_deleting` must leave
+/// stopping a marked streamer to `ActorRegistry::retire_streamer`, whereas a
+/// merely disabled streamer still receives `FsmInput::Disable` and closes its
+/// active session.
 #[tokio::test]
-async fn the_config_event_handler_leaves_a_marked_streamers_stop_to_the_retirement() {
+async fn reconciliation_leaves_a_marked_streamers_stop_to_the_retirement() {
     let harness = Harness::new().await;
     harness.seed_streamer().await;
     harness.seed_active_session().await;
+    harness
+        .container
+        .actor_registry
+        .spawn_dormant_actor_for_test(STREAMER_ID, STREAMER_NAME, STREAMER_URL);
 
     harness
         .container
@@ -187,14 +169,14 @@ async fn the_config_event_handler_leaves_a_marked_streamers_stop_to_the_retireme
 
     harness
         .container
-        .apply_config_event_for_test(
-            crate::config::ConfigUpdateEvent::StreamerStateSyncedFromDb {
-                streamer_id: STREAMER_ID.to_string(),
-                is_active: false,
-            },
-        )
+        .actor_registry
+        .reconcile_streamer_for_test(STREAMER_ID, false)
         .await;
 
+    assert!(
+        harness.container.actor_registry.has_actor(STREAMER_ID),
+        "marked streamer actor must stay owned by retirement"
+    );
     assert_eq!(
         harness.session_ended_events().await,
         0,
@@ -211,6 +193,10 @@ async fn the_config_event_handler_leaves_a_marked_streamers_stop_to_the_retireme
     let disabled = Harness::new().await;
     disabled.seed_streamer().await;
     disabled.seed_active_session().await;
+    disabled
+        .container
+        .actor_registry
+        .spawn_dormant_actor_for_test(STREAMER_ID, STREAMER_NAME, STREAMER_URL);
     sqlx::query("UPDATE streamers SET state = 'DISABLED' WHERE id = ?")
         .bind(STREAMER_ID)
         .execute(&disabled.write_pool)
@@ -219,41 +205,56 @@ async fn the_config_event_handler_leaves_a_marked_streamers_stop_to_the_retireme
     disabled.hydrate().await;
     disabled
         .container
-        .apply_config_event_for_test(
-            crate::config::ConfigUpdateEvent::StreamerStateSyncedFromDb {
-                streamer_id: STREAMER_ID.to_string(),
-                is_active: false,
-            },
-        )
+        .actor_registry
+        .reconcile_streamer_for_test(STREAMER_ID, false)
         .await;
+
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while disabled.container.actor_registry.has_actor(STREAMER_ID) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("disabled streamer actor must close its session and exit");
     assert_eq!(disabled.session_ended_events().await, 1);
 }
 
-/// The deferral has to hold whoever ended the session, not just when the
-/// retirement ended it: a download attempt's terminal outcome reaching
-/// `SessionLifecycle` during `stop_download_with_reason` ends it just as well,
-/// and `PipelineCoordinator` is no more likely to have seen that end.
+/// Even when another task closed the SQLite session row before retirement ran,
+/// an unsettled session (`session_complete_dispatched = 0`) still defers the
+/// reap until pipeline settlement observes it.
 #[tokio::test]
 async fn a_session_ended_by_another_task_still_defers_the_reap() {
     let harness = Harness::new().await;
-    harness.start_scheduler().await;
+    harness.start_registry();
     harness.seed_streamer().await;
     harness.seed_active_session().await;
 
-    // Stands in for whatever ends the session first; what matters to the
-    // retirement is that `SessionLifecycle` still holds the ended session.
+    // Close the DB row without notifying `PipelineManager`, leaving the ended
+    // session unsettled.
     harness
         .container
-        .session_lifecycle
-        .end_for_disable(STREAMER_ID, STREAMER_NAME)
+        .actor_registry
+        .store()
+        .commit(DbCommitOp::EndSession {
+            streamer_id: STREAMER_ID.to_string(),
+            streamer_name: STREAMER_NAME.to_string(),
+            session_id: Some(SESSION_ID.to_string()),
+            cause: TerminalCause::UserDisabled,
+            via_hysteresis: false,
+            update_streamer_state: None,
+            clear_errors: false,
+            checks_restored_threshold: None,
+            infra_block: None,
+            suppress_offline_notification: true,
+            now: jiff::Timestamp::now(),
+        })
         .await
-        .expect("the session should end")
-        .expect("a session should have been ended");
+        .expect("the session should end");
 
     assert!(
         harness
             .container
-            .runtime_coordinator
+            .actor_registry
             .delete_streamer(STREAMER_ID, INTERACTIVE_RETIREMENT)
             .await
             .expect("delete should succeed")
@@ -263,24 +264,32 @@ async fn a_session_ended_by_another_task_still_defers_the_reap() {
             .streamer_row()
             .await
             .is_some_and(|row| row.deleted_at.is_some()),
-        "a session end this pass could not have observed must defer the reap"
+        "an unsettled session end must defer the reap"
     );
 }
 
-/// The reap is gated on the retirement acknowledging. With the scheduler's event
-/// loop not running, `SchedulerHandle::remove_streamer_awaitable` answers
-/// `None` — nothing observed the actor stop — so the row keeps its marker and
-/// the streamer stands down without being removed.
+/// When a physical owner has not settled within the retirement bound, the row
+/// keeps its `deleted_at` marker while disappearing from active views; once
+/// the owner releases, the next reaper sweep removes the row.
 #[tokio::test]
-async fn an_unobserved_actor_removal_leaves_the_row_marked() {
+async fn an_unsettled_owner_leaves_the_row_marked_until_reaped() {
     let harness = Harness::new().await;
     harness.seed_streamer().await;
+
+    // Hold a startup lease so `retire_streamer` deterministically observes a
+    // live physical owner regardless of thread scheduling.
+    let (actor_tx, _actor_rx) = tokio::sync::mpsc::unbounded_channel();
+    let lease = harness
+        .container
+        .actor_registry
+        .startup_leases()
+        .register_lease(STREAMER_ID.to_string(), SESSION_ID.to_string(), 1, actor_tx);
 
     assert!(
         harness
             .container
-            .runtime_coordinator
-            .delete_streamer(STREAMER_ID, INTERACTIVE_RETIREMENT)
+            .actor_registry
+            .delete_streamer(STREAMER_ID, OBSERVE_RETIREMENT)
             .await
             .expect("delete should succeed")
     );
@@ -301,12 +310,12 @@ async fn an_unobserved_actor_removal_leaves_the_row_marked() {
     assert!(!metadata.is_active());
     assert!(harness.container.streamer_manager.get_all().is_empty());
 
-    // Once the loop runs, the same retirement acknowledges and the sweep reaps.
-    harness.start_scheduler().await;
+    // Once the remaining physical owner releases, the sweep reaps the row.
+    drop(lease);
     assert_eq!(
         harness
             .container
-            .runtime_coordinator
+            .actor_registry
             .reap_marked_streamers(OBSERVE_RETIREMENT)
             .await,
         1
@@ -328,7 +337,7 @@ async fn a_row_left_marked_by_a_crash_is_reaped_at_startup() {
         .expect("marker should persist");
 
     // Re-hydrating is what a restart does; the marked row must come back as
-    // inactive metadata rather than as a streamer the scheduler picks up.
+    // inactive metadata rather than as a streamer the registry spawns an actor for.
     harness.hydrate().await;
     assert!(
         harness
@@ -338,11 +347,11 @@ async fn a_row_left_marked_by_a_crash_is_reaped_at_startup() {
             .is_empty()
     );
 
-    harness.start_scheduler().await;
+    harness.start_registry();
     assert_eq!(
         harness
             .container
-            .runtime_coordinator
+            .actor_registry
             .reap_marked_streamers(OBSERVE_RETIREMENT)
             .await,
         1
@@ -356,11 +365,9 @@ async fn a_row_left_marked_by_a_crash_is_reaped_at_startup() {
 #[tokio::test]
 async fn an_older_sessions_pipeline_work_defers_the_reap() {
     let harness = Harness::new().await;
-    harness.start_scheduler().await;
+    harness.start_registry();
     harness.seed_streamer().await;
     harness.seed_active_session().await;
-    // Ended before the delete, so `SessionLifecycle::end_for_disable` has
-    // nothing to move and the only reason left to defer is the job below.
     harness
         .session_repository()
         .end_session(SESSION_ID, crate::database::time::now_ms())
@@ -389,7 +396,7 @@ async fn an_older_sessions_pipeline_work_defers_the_reap() {
     assert!(
         harness
             .container
-            .runtime_coordinator
+            .actor_registry
             .delete_streamer(STREAMER_ID, INTERACTIVE_RETIREMENT)
             .await
             .expect("delete should succeed")
@@ -411,7 +418,7 @@ async fn an_older_sessions_pipeline_work_defers_the_reap() {
     assert_eq!(
         harness
             .container
-            .runtime_coordinator
+            .actor_registry
             .reap_marked_streamers(OBSERVE_RETIREMENT)
             .await,
         1
@@ -426,7 +433,7 @@ async fn failed_final_dispatch_stays_recoverable_until_its_preset_is_restored() 
     };
 
     let harness = Harness::new().await;
-    harness.start_scheduler().await;
+    harness.start_registry();
     harness.seed_streamer().await;
     harness.seed_active_session().await;
     harness
@@ -480,7 +487,7 @@ async fn failed_final_dispatch_stays_recoverable_until_its_preset_is_restored() 
     assert_eq!(
         harness
             .container
-            .runtime_coordinator
+            .actor_registry
             .reap_marked_streamers(OBSERVE_RETIREMENT)
             .await,
         0
@@ -512,7 +519,7 @@ async fn failed_final_dispatch_stays_recoverable_until_its_preset_is_restored() 
     assert_eq!(
         harness
             .container
-            .runtime_coordinator
+            .actor_registry
             .reap_marked_streamers(OBSERVE_RETIREMENT)
             .await,
         0

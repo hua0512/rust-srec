@@ -30,7 +30,7 @@ use crate::database::repositories::config::{
 use crate::database::repositories::proxies::RouteOwner;
 use crate::database::repositories::streamer::SqlxStreamerRepository;
 use crate::notification::NotificationService;
-use crate::services::runtime_coordinator::{OBSERVE_RETIREMENT, RuntimeCoordinator};
+use crate::recorder::{ActorRegistry, OBSERVE_RETIREMENT};
 use crate::streamer::StreamerManager;
 use crate::streamer::state_store::{StateChange, StatePublication};
 
@@ -79,7 +79,7 @@ pub(crate) struct ConfigurationImportService {
     config_service: Arc<RuntimeConfigService>,
     streamer_manager: Arc<RuntimeStreamerManager>,
     notification_service: Arc<NotificationService>,
-    runtime_coordinator: Arc<RuntimeCoordinator>,
+    actor_registry: Arc<ActorRegistry>,
     /// Platform throttles, kept per route; an imported proxy that reaches
     /// another exit drops the old exit's.
     admission_backoff: Arc<crate::credentials::PlatformAdmission>,
@@ -91,7 +91,7 @@ impl ConfigurationImportService {
         config_service: Arc<RuntimeConfigService>,
         streamer_manager: Arc<RuntimeStreamerManager>,
         notification_service: Arc<NotificationService>,
-        runtime_coordinator: Arc<RuntimeCoordinator>,
+        actor_registry: Arc<ActorRegistry>,
         admission_backoff: Arc<crate::credentials::PlatformAdmission>,
     ) -> Self {
         Self {
@@ -100,7 +100,7 @@ impl ConfigurationImportService {
             config_service,
             streamer_manager,
             notification_service,
-            runtime_coordinator,
+            actor_registry,
             admission_backoff,
         }
     }
@@ -255,7 +255,7 @@ impl ConfigurationImportService {
         }
 
         for streamer_id in credential_retirement_streamers {
-            self.runtime_coordinator
+            self.actor_registry
                 .settle_credential_retirement(&streamer_id)
                 .await;
         }
@@ -279,7 +279,7 @@ impl ConfigurationImportService {
                 .map(|metadata| metadata.name)
                 .unwrap_or_default();
             if let Err(error) = self
-                .runtime_coordinator
+                .actor_registry
                 .retire_and_reap(streamer_id, &name, OBSERVE_RETIREMENT)
                 .await
             {
