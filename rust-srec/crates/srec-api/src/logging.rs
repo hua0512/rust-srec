@@ -56,10 +56,31 @@ const LEGACY_MODULE_ALIASES: &[(&str, &[&str])] = &[
         "rust_srec::pipeline::processors",
         &["srec_processors::processors"],
     ),
+    (
+        "rust_srec::database::repositories::dag",
+        &["srec_pipeline::repositories::dag"],
+    ),
+    (
+        "rust_srec::database::repositories::job",
+        &["srec_pipeline::repositories::job"],
+    ),
+    (
+        "rust_srec::database::repositories::staged_output",
+        &["srec_pipeline::repositories::staged_output"],
+    ),
+    (
+        "rust_srec::database::repositories::upload_record",
+        &["srec_pipeline::repositories::upload_record"],
+    ),
     ("rust_srec::downloader::engine", &["srec_engines"]),
     ("rust_srec::domain", &["srec_core::domain"]),
     ("rust_srec::utils", &["srec_core::utils"]),
-    ("rust_srec::database", &["srec_sqlite"]),
+    (
+        "rust_srec::database",
+        &["srec_sqlite", "srec_pipeline::repositories"],
+    ),
+    ("rust_srec::baidupcs", &["srec_processors::baidupcs"]),
+    ("rust_srec::i18n", &["srec_notify::i18n"]),
     ("rust_srec::pipeline", &["srec_pipeline", "srec_processors"]),
     ("rust_srec::notification", &["srec_notify"]),
     ("rust_srec::config", &["srec_recorder::config"]),

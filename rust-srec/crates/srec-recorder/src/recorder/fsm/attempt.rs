@@ -201,6 +201,7 @@ impl StreamerFsm {
             open.attempt = AttemptPhase::Running {
                 attempt_id,
                 download_id,
+                started_at: ctx.wall_now,
                 engine_kind,
                 engine_type,
                 protocol,

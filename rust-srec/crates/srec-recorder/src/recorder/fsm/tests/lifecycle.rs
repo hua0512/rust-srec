@@ -806,3 +806,65 @@ fn fatal_probe_stops_active_session_terminates_and_cold_start_disable_closes_db_
         }
     ));
 }
+
+#[test]
+fn runtime_view_reports_attempt_started_at_only_while_running() {
+    let mut clock = TestClock::new();
+    let mut fsm = StreamerFsm::new(
+        base_snapshot(StreamerState::NotLive, base_config()),
+        clock.now,
+        clock.wall,
+    );
+    let p = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
+        .unwrap()
+        .probe_id;
+    let (start_op, _) = find_db_commit(&fsm.step(
+        clock.ctx(),
+        FsmInput::ProbeCompleted {
+            probe_id: p,
+            result: Ok(ProbeStatus::Live(live_payload("Live"))),
+        },
+    ))
+    .unwrap();
+    let session_start_wall = clock.wall;
+    let attempt_id = find_start_attempt(&fsm.step(
+        clock.ctx(),
+        FsmInput::DbCommitted {
+            op_id: start_op,
+            result: Ok(DbCommitOutcome::SessionStarted {
+                session_id: "sess-view".into(),
+                started_at: session_start_wall,
+                disposition: SessionStartDisposition::Created,
+                credential_binding: None,
+            }),
+        },
+    ))
+    .unwrap()
+    .attempt_id;
+
+    let starting_view = fsm.runtime_view();
+    assert!(!starting_view.attempt_active);
+    assert_eq!(starting_view.recording_started_at, None);
+
+    clock.advance(Duration::from_secs(90));
+    fsm.step(
+        clock.ctx(),
+        FsmInput::AttemptStarted {
+            attempt_id,
+            session_id: "sess-view".into(),
+            download_id: "dl-view".into(),
+            engine_type: EngineType::Mesio,
+            protocol: DownloadProtocol::Hls,
+        },
+    );
+    let running_view = fsm.runtime_view();
+    assert!(running_view.attempt_active);
+    assert_eq!(running_view.recording_started_at, Some(clock.wall));
+    assert_ne!(running_view.recording_started_at, Some(session_start_wall));
+
+    // StoppingAttempt / Idle clear `attempt_active` and `recording_started_at`.
+    fsm.step(clock.ctx(), FsmInput::Disable);
+    let stopping_view = fsm.runtime_view();
+    assert!(!stopping_view.attempt_active);
+    assert_eq!(stopping_view.recording_started_at, None);
+}

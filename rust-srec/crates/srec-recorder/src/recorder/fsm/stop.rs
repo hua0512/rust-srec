@@ -111,7 +111,18 @@ impl StreamerFsm {
         };
 
         let deadline = match &kind {
-            StopKind::Retire { bounds } => ctx.now.checked_add(bounds.download).unwrap_or(ctx.now),
+            StopKind::Retire { bounds } => {
+                // `OBSERVE_RETIREMENT` sets `bounds.download = 0` so the *caller*
+                // returns without blocking; the background actor still waits up
+                // to `STOP_DEADLINE_DURATION` for the stop it requested so the
+                // engine can flush its final segment before `EndSession` commits.
+                let wait = if bounds.download.is_zero() {
+                    schedule::STOP_DEADLINE_DURATION
+                } else {
+                    bounds.download
+                };
+                ctx.now.checked_add(wait).unwrap_or(ctx.now)
+            }
             StopKind::Disable
             | StopKind::OutOfSchedule { .. }
             | StopKind::CredentialRetire { .. }
@@ -252,6 +263,22 @@ impl StreamerFsm {
                     ctx,
                 );
             }
+            return;
+        }
+
+        // For Retire: if the stop deadline elapses while download or danmu are
+        // still active (including zero-wait `OBSERVE_RETIREMENT`), exit as
+        // non-quiescent WITHOUT prematurely committing `EndSession` /
+        // `PipelineNotification::SessionEnded`. The reaper will close the open
+        // session once physical owners actually settle.
+        if matches!(stopping.kind, StopKind::Retire { .. })
+            && stopping.deadline_expired
+            && !stopping.physical_confirmed()
+        {
+            self.monitor = MonitorPhase::Terminated;
+            effects.push(FsmEffect::ActorStopped {
+                reason: ActorStopReason::Retired { quiescent: false },
+            });
             return;
         }
 

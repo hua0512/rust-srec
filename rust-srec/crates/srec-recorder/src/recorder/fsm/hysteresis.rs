@@ -165,12 +165,17 @@ pub enum BackstopExpiryAction {
 
 /// Decide whether an elapsed `backstop_deadline` should immediately commit the
 /// quiet-period cause or freeze a bounded number of checks for in-flight probing.
+///
+/// When the monitor is parked in `Blocked` (e.g. `TemporalDisabled` backoff up to
+/// 1 hour) and no probe is currently in flight, do not freeze the backstop timer
+/// indefinitely — commit the quiet-period end now.
 pub fn evaluate_backstop_expiry(
     offline_confirmation: &OfflineConfirmation,
     has_in_flight_probe: bool,
+    monitor_blocked: bool,
     offline_check_count: u32,
 ) -> BackstopExpiryAction {
-    if offline_confirmation.has_active_sequence(offline_check_count) {
+    if !monitor_blocked && offline_confirmation.has_active_sequence(offline_check_count) {
         let remaining = offline_confirmation
             .remaining_checks(offline_check_count)
             .max(1);
@@ -354,9 +359,12 @@ impl StreamerFsm {
         }
 
         if grace.is_none() && ctx.now >= backstop {
+            let monitor_blocked =
+                matches!(self.monitor, super::state::MonitorPhase::Blocked { .. });
             match evaluate_backstop_expiry(
                 &self.offline_confirmation,
                 self.in_flight_probe.is_some(),
+                monitor_blocked,
                 self.config.offline_check_count,
             ) {
                 BackstopExpiryAction::FreezeBoundedGrace { remaining_checks } => {

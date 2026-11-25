@@ -168,11 +168,7 @@ impl NotificationService {
             id,
             channels,
             pending_queue,
-            dead_letters,
-            dead_letter_cleanup_ts,
-            notification_repo,
             config,
-            next_dead_letter_id,
             ..
         } = &*ctx;
         let id = *id;
@@ -261,6 +257,34 @@ impl NotificationService {
                 _ = ctx.cancellation_token.cancelled(), if ctx.durable_settled.is_some() => None,
                 next = deliveries.next() => next,
             } {
+                if blocked && ctx.durable_settled.is_some() {
+                    // Fail fast to durable dead-letter when a channel's circuit
+                    // breaker is already open so one broken endpoint cannot stall
+                    // the outbox across 300s cooldown loops. Do not record another
+                    // breaker failure so the existing cooldown still expires for
+                    // half-open recovery.
+                    let now = jiff::Timestamp::now();
+                    let channel_key = channel.key.as_str();
+                    let mut attempts = 0;
+                    if let Some(mut pending) = pending_queue.get_mut(&id)
+                        && let Some(state) = pending.channel_state.get_mut(channel_key)
+                    {
+                        state.last_attempt = Some(now);
+                        state.last_error = Some("circuit breaker open".to_owned());
+                        state.status = DeliveryStatus::DeadLettered;
+                        attempts = state.attempts;
+                    }
+                    Self::record_dead_letter_detached(
+                        &ctx,
+                        &pending_snapshot,
+                        &channel,
+                        attempts,
+                        "circuit breaker open",
+                        now,
+                    )
+                    .await;
+                    continue;
+                }
                 circuit_blocked |= blocked;
                 let Some(result) = result else {
                     continue;
@@ -279,11 +303,12 @@ impl NotificationService {
                         debug!(notification_id = id, channel = %channel.channel_type, "Notification delivered");
                     }
                     Err(error) => {
-                        {
+                        let breaker_opened = {
                             let mut breaker = channel.breaker.lock();
                             breaker.record_failure(config.circuit_breaker_threshold);
-                            circuit_blocked |= breaker.is_open;
-                        }
+                            breaker.is_open
+                        };
+                        circuit_blocked |= breaker_opened;
 
                         let now = jiff::Timestamp::now();
                         let mut attempts = 0;
@@ -295,84 +320,24 @@ impl NotificationService {
                             state.last_attempt = Some(now);
                             state.last_error = Some(error.to_string());
                             attempts = state.attempts;
-                            if state.attempts >= config.max_retries {
+                            if state.attempts >= config.max_retries
+                                || (breaker_opened && ctx.durable_settled.is_some())
+                            {
                                 state.status = DeliveryStatus::DeadLettered;
                                 dead_lettered = true;
                             }
                         }
 
                         if dead_lettered {
-                            let dead_letter_id = next_dead_letter_id.fetch_add(1, Ordering::SeqCst);
-                            dead_letters.insert(
-                                dead_letter_id,
-                                DeadLetterEntry {
-                                    id: dead_letter_id,
-                                    notification_id: id,
-                                    event: pending_snapshot.event.clone(),
-                                    channel_key: Some(channel_key.to_string()),
-                                    channel_id: channel.db_channel_id.clone(),
-                                    channel_type: channel.channel_type.clone(),
-                                    attempts,
-                                    error: error.to_string(),
-                                    created_at: pending_snapshot.created_at,
-                                    dead_lettered_at: now,
-                                },
-                            );
-                            Self::maybe_cleanup_dead_letters_detached(
-                                dead_letters,
-                                config.dead_letter_retention_days,
-                                dead_letter_cleanup_ts,
+                            Self::record_dead_letter_detached(
+                                &ctx,
+                                &pending_snapshot,
+                                &channel,
+                                attempts,
+                                &error.to_string(),
                                 now,
-                            );
-                            warn!(
-                                notification_id = id,
-                                channel = %channel.channel_type,
-                                attempts = config.max_retries,
-                                "Notification dead-lettered"
-                            );
-
-                            if let (Some(repo), Some(db_channel_id)) =
-                                (notification_repo.as_ref(), channel.db_channel_id.as_ref())
-                            {
-                                match serde_json::to_string(&pending_snapshot.event) {
-                                    Ok(payload) => {
-                                        let entry = NotificationDeadLetterDbModel::new(
-                                            db_channel_id.clone(),
-                                            pending_snapshot.event.event_type(),
-                                            payload,
-                                            error.to_string(),
-                                            attempts as i32,
-                                            pending_snapshot.created_at.as_millisecond(),
-                                        );
-                                        if let Err(persist_error) =
-                                            repo.add_to_dead_letter(&entry).await
-                                        {
-                                            warn!(
-                                                channel_id = %db_channel_id,
-                                                error = %persist_error,
-                                                "Failed to persist dead letter entry"
-                                            );
-                                            if let Some(settlement) = &ctx.durable_settled {
-                                                settlement.record_dead_letter_error(format!(
-                                                    "failed to persist dead letter entry: {persist_error}"
-                                                ));
-                                            }
-                                        }
-                                    }
-                                    Err(serialize_error) => {
-                                        warn!(
-                                            channel_id = %db_channel_id,
-                                            error = %serialize_error,
-                                            "Failed to serialize dead letter entry"
-                                        );
-                                        if let Some(settlement) = &ctx.durable_settled {
-                                            settlement.record_dead_letter_error(format!(
-                                                "failed to serialize dead letter entry: {serialize_error}"
-                                            ));
-                                        }
-                                    }
-                                }
-                            }
+                            )
+                            .await;
                         }
                     }
                 }
@@ -435,6 +400,87 @@ impl NotificationService {
         };
 
         Self::spawn_retry_detached(delay, expected_generation, ctx);
+    }
+
+    async fn record_dead_letter_detached(
+        ctx: &DeliveryContext,
+        pending_snapshot: &PendingNotification,
+        channel: &RuntimeChannel,
+        attempts: u32,
+        error_message: &str,
+        now: jiff::Timestamp,
+    ) {
+        let dead_letter_id = ctx.next_dead_letter_id.fetch_add(1, Ordering::SeqCst);
+        ctx.dead_letters.insert(
+            dead_letter_id,
+            DeadLetterEntry {
+                id: dead_letter_id,
+                notification_id: ctx.id,
+                event: pending_snapshot.event.clone(),
+                channel_key: Some(channel.key.clone()),
+                channel_id: channel.db_channel_id.clone(),
+                channel_type: channel.channel_type.clone(),
+                attempts,
+                error: error_message.to_owned(),
+                created_at: pending_snapshot.created_at,
+                dead_lettered_at: now,
+            },
+        );
+        Self::maybe_cleanup_dead_letters_detached(
+            &ctx.dead_letters,
+            ctx.config.dead_letter_retention_days,
+            &ctx.dead_letter_cleanup_ts,
+            now,
+        );
+        warn!(
+            notification_id = ctx.id,
+            channel = %channel.channel_type,
+            attempts,
+            error = error_message,
+            "Notification dead-lettered"
+        );
+
+        if let (Some(repo), Some(db_channel_id)) = (
+            ctx.notification_repo.as_ref(),
+            channel.db_channel_id.as_ref(),
+        ) {
+            match serde_json::to_string(&pending_snapshot.event) {
+                Ok(payload) => {
+                    let entry = NotificationDeadLetterDbModel::new(
+                        db_channel_id.clone(),
+                        pending_snapshot.event.event_type(),
+                        payload,
+                        error_message.to_owned(),
+                        attempts as i32,
+                        pending_snapshot.created_at.as_millisecond(),
+                    );
+                    if let Err(persist_error) = repo.add_to_dead_letter(&entry).await {
+                        warn!(
+                            channel_id = %db_channel_id,
+                            error = %persist_error,
+                            "Failed to persist dead letter entry"
+                        );
+                        if let Some(settlement) = &ctx.durable_settled {
+                            settlement.record_dead_letter_error(format!(
+                                "failed to persist dead letter entry: {persist_error}"
+                            ));
+                        }
+                    }
+                }
+                Err(serialize_error) => {
+                    warn!(
+                        channel_id = %db_channel_id,
+                        error = %serialize_error,
+                        "Failed to serialize dead letter entry"
+                    );
+                    if let Some(settlement) = &ctx.durable_settled {
+                        settlement.record_dead_letter_error(format!(
+                            "failed to serialize dead letter entry: {serialize_error}"
+                        ));
+                    }
+                }
+            }
+        }
     }
 }
 

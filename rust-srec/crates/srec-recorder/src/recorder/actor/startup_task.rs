@@ -14,7 +14,7 @@ use std::time::Duration;
 use dashmap::DashMap;
 use pipeline_common::expand_path_template;
 use platforms_parser::extractor::platforms::bigo::native::stream::NativeRoom;
-use tokio::sync::mpsc;
+use tokio::sync::{Notify, mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
@@ -54,6 +54,7 @@ pub struct StartupLeaseRegistry {
     leases: DashMap<String, Vec<Arc<ActiveStartupLease>>>,
     attempt_by_download: DashMap<String, (u64, DownloadProtocol)>,
     session_attempts: DashMap<(String, String), u64>,
+    lease_cleared: Notify,
     tasks: TaskSupervisor,
     root_cancel: CancellationToken,
 }
@@ -65,6 +66,7 @@ impl StartupLeaseRegistry {
             leases: DashMap::new(),
             attempt_by_download: DashMap::new(),
             session_attempts: DashMap::new(),
+            lease_cleared: Notify::new(),
             tasks: TaskSupervisor::with_cancellation(root_cancel.clone()),
             root_cancel,
         }
@@ -226,6 +228,35 @@ impl StartupLeaseRegistry {
         }
     }
 
+    /// Returns `true` while any startup lease is registered for `session_id`.
+    pub(crate) fn has_in_flight_for_session(&self, session_id: &str) -> bool {
+        self.leases
+            .iter()
+            .any(|entry| entry.value().iter().any(|l| l.session_id == session_id))
+    }
+
+    /// Wait until all startup leases for `session_id` have unregistered or `timeout` elapses.
+    pub(crate) async fn wait_for_session_cleared(
+        &self,
+        session_id: &str,
+        timeout: Duration,
+    ) -> bool {
+        if !self.has_in_flight_for_session(session_id) {
+            return true;
+        }
+        tokio::time::timeout(timeout, async {
+            loop {
+                let notified = self.lease_cleared.notified();
+                if !self.has_in_flight_for_session(session_id) {
+                    return;
+                }
+                notified.await;
+            }
+        })
+        .await
+        .is_ok()
+    }
+
     /// Returns `true` while any startup lease is registered for `streamer_id`.
     pub(crate) fn has_in_flight_for_streamer(&self, streamer_id: &str) -> bool {
         self.leases
@@ -258,6 +289,7 @@ impl StartupLeaseRegistry {
             entries.retain(|existing| !Arc::ptr_eq(existing, entry));
             entries.is_empty()
         });
+        self.lease_cleared.notify_waiters();
     }
 }
 
@@ -1166,6 +1198,17 @@ async fn run_startup_task(
 
     // 7. Danmu collection start or authentication update (keeping existing collector & DanmuTaps).
     if !merged_config.record_danmu || cancel.is_cancelled() {
+        // `on_attempt_started` may have already transitioned `open.danmu` into
+        // `DanmuSessionState::Starting` based on the actor's cached `record_danmu`;
+        // report `NotRegistered` whenever no collector is actually running so
+        // `danmu_collecting` and `segment_guard.danmu_stopped` do not stay stuck.
+        if !deps.danmu_service.is_collecting(&session_id) {
+            let _ = actor_tx.send(ActorMessage::Input(FsmInput::DanmuCollectionStopped {
+                session_id,
+                total_count: 0,
+                result: DanmuStopResult::NotRegistered,
+            }));
+        }
         return;
     }
 

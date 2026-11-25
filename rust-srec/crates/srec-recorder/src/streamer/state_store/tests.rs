@@ -112,7 +112,14 @@ async fn writer_lease_orders_publication_and_preserves_current_runtime_configura
     let mut merged = crate::config::MergedConfig::builder().build();
     merged.offline_check_count = 17;
     merged.offline_check_delay_ms = 1234;
-    f.manager.apply_resolved_config("state-test", &merged);
+    f.manager
+        .apply_resolved_config_versioned("state-test", 2, &merged);
+    // A slower, older revision must not overwrite newer resolved settings.
+    let mut stale = crate::config::MergedConfig::builder().build();
+    stale.offline_check_count = 99;
+    stale.offline_check_delay_ms = 9999;
+    f.manager
+        .apply_resolved_config_versioned("state-test", 1, &stale);
     f.writer.set_commit_gate(CommitPhase::AfterCommit, None);
     let second = tokio::spawn(change_state(f.store.clone(), "OUT_OF_SCHEDULE"));
     gate.release.notify_one();

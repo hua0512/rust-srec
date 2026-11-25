@@ -234,9 +234,13 @@ impl StreamerFsm {
             .is_some_and(|guard| !guard.danmu_stopped);
 
         if discard {
+            let mut guard_present = false;
             let reverse_cleanup_danmu = self
                 .segment_guard_if_present_mut(&input.session_id)
-                .and_then(|guard| guard.mark_video_discarded(input.segment_index));
+                .and_then(|guard| {
+                    guard_present = true;
+                    guard.mark_video_discarded(input.segment_index)
+                });
 
             if danmu_open_for_session {
                 effects.push(FsmEffect::CloseDanmuSegment(DanmuCloseSegmentSpec {
@@ -255,10 +259,18 @@ impl StreamerFsm {
                 danmu_path: Some(danmu_path.clone()),
             });
 
+            // When the segment guard was already evicted (or this is a late
+            // discard after actor replacement), issue an idempotent DB removal
+            // for the paired danmu path so an XML-first row is never orphaned.
             if let Some(persisted_danmu) = reverse_cleanup_danmu {
                 effects.push(FsmEffect::RemoveDanmuSegmentOutput {
                     session_id: input.session_id,
                     danmu_path: persisted_danmu,
+                });
+            } else if !guard_present {
+                effects.push(FsmEffect::RemoveDanmuSegmentOutput {
+                    session_id: input.session_id,
+                    danmu_path,
                 });
             }
             return;
@@ -638,8 +650,20 @@ impl StreamerFsm {
     }
 
     fn schedule_clear_errors_live(&mut self, ctx: StepContext, effects: &mut Vec<FsmEffect>) {
+        // Deduplicate against an already pending/queued `ClearErrors` instead of
+        // clearing `self.errors` optimistically before SQLite commits; `commit.rs`
+        // clears `self.errors` once `DbCommitOp::ClearErrors` succeeds.
+        let already_scheduled = matches!(
+            self.pending_db.as_ref().map(|p| &p.kind),
+            Some(PendingDbKind::ClearErrors { .. })
+        ) || self
+            .queued_db
+            .iter()
+            .any(|q| matches!(q.kind, PendingDbKind::ClearErrors { .. }));
+        if already_scheduled {
+            return;
+        }
         let threshold = download_failure_threshold(self.config.offline_check_count);
-        self.errors.clear_all(self.config.offline_check_count);
         self.enqueue_or_dispatch_db(
             PendingDbKind::ClearErrors {
                 target_state: Some(StreamerState::Live),

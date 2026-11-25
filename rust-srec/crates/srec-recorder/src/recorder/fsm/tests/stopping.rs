@@ -330,7 +330,7 @@ fn credential_retire_requires_exact_match_and_never_commits_on_unconfirmed_or_ti
 
 #[test]
 fn retire_quiescence_distinguishes_clean_drain_from_deadline_expiry_and_db_failure() {
-    let clock = TestClock::new();
+    let mut clock = TestClock::new();
     let mut cfg = base_config();
     cfg.record_danmu = true;
 
@@ -388,7 +388,8 @@ fn retire_quiescence_distinguishes_clean_drain_from_deadline_expiry_and_db_failu
         }
     )));
 
-    // 2. OBSERVE_RETIREMENT (zero wait) while download is still running -> Retired { quiescent: false }.
+    // 2. OBSERVE_RETIREMENT while download hangs past the actor stop deadline ->
+    //    Retired { quiescent: false } WITHOUT prematurely committing EndSession / SessionEnded.
     let (mut fsm_obs, _attempt2) = open_running_session(&clock, base_config(), "sess-r2", None);
     fsm_obs.step(
         clock.ctx(),
@@ -396,22 +397,21 @@ fn retire_quiescence_distinguishes_clean_drain_from_deadline_expiry_and_db_failu
             bounds: OBSERVE_RETIREMENT,
         },
     );
+    // Zero-wait caller budget must not expire the background actor immediately.
+    let early = fsm_obs.step(clock.ctx(), FsmInput::TimerFired);
+    assert!(early.is_empty());
+    clock.advance(STOP_DEADLINE_DURATION);
     let effects = fsm_obs.step(clock.ctx(), FsmInput::TimerFired);
-    let (end_op2, op2) = find_db_commit(&effects).unwrap();
-    assert!(matches!(
-        op2,
-        DbCommitOp::EndSession {
-            cause: TerminalCause::UserDisabled,
-            suppress_offline_notification: true,
-            ..
-        }
-    ));
-    let effects = fsm_obs.step(
-        clock.ctx(),
-        FsmInput::DbCommitted {
-            op_id: end_op2,
-            result: Ok(session_ended_outcome(Some("sess-r2"), clock.wall, true)),
-        },
+    assert!(
+        find_db_commit(&effects).is_none(),
+        "zero-wait Retire must not commit EndSession while download is still running"
+    );
+    assert!(
+        !effects.iter().any(|e| matches!(
+            e,
+            FsmEffect::NotifyPipeline(PipelineNotification::SessionEnded { .. })
+        )),
+        "zero-wait Retire must not notify pipeline SessionEnded while download is still running"
     );
     assert!(!fsm_obs.is_physically_quiescent());
     assert!(effects.iter().any(|e| matches!(
@@ -631,4 +631,59 @@ fn startup_events_racing_with_stopping_immediately_stop_or_confirm_download() {
             ..
         } if sid == "sess-race-start"
     ));
+}
+
+#[test]
+fn credential_retire_clears_open_session_when_registry_committed_first() {
+    let clock = TestClock::new();
+    let binding = sample_binding("prof-race", 2);
+    let (mut fsm, attempt_id) = open_running_session(
+        &clock,
+        base_config(),
+        "sess-cred-race",
+        Some(binding.clone()),
+    );
+
+    fsm.step(
+        clock.ctx(),
+        FsmInput::CredentialRetire {
+            session_id: "sess-cred-race".into(),
+            binding: binding.clone(),
+        },
+    );
+    let effects = fsm.step(
+        clock.ctx(),
+        FsmInput::DownloadEnded {
+            attempt_id,
+            event: cancelled_event("sess-cred-race", DownloadStopCause::StreamerDisabled),
+        },
+    );
+    let (op_id, op) = find_db_commit(&effects).unwrap();
+    assert!(matches!(
+        op,
+        DbCommitOp::EndForCredentialRetirement { session_id, .. } if session_id == "sess-cred-race"
+    ));
+
+    // Simulate `ActorRegistry::settle_credential_retirement` winning the DB end first.
+    let effects = fsm.step(
+        clock.ctx(),
+        FsmInput::DbCommitted {
+            op_id,
+            result: Ok(DbCommitOutcome::CredentialRetirementEnded {
+                session_id: "sess-cred-race".into(),
+                ended: false,
+            }),
+        },
+    );
+    assert!(
+        matches!(fsm.session, SessionSlot::None),
+        "FSM must clear the ended SessionSlot::Open even when registry won the commit"
+    );
+    assert!(
+        !effects.iter().any(|e| matches!(
+            e,
+            FsmEffect::NotifyPipeline(PipelineNotification::SessionEnded { .. })
+        )),
+        "losing committer must not emit a duplicate SessionEnded pipeline notification"
+    );
 }

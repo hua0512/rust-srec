@@ -276,7 +276,11 @@ impl StreamerFsm {
         let refused_broadcast_ended = matches!(self.monitor, MonitorPhase::RefusedBroadcast { .. });
         let was_filtered_or_blocked = matches!(
             self.monitor,
-            MonitorPhase::Filtered { .. } | MonitorPhase::Blocked { .. }
+            MonitorPhase::Filtered { .. }
+                | MonitorPhase::Blocked {
+                    kind: BlockedKind::TemporalDisabled,
+                    ..
+                }
         );
 
         let decision = self

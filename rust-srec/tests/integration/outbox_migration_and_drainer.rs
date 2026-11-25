@@ -1101,3 +1101,256 @@ async fn drainer_preserves_head_of_line_on_shutdown_cancellation_and_dead_letter
     .await
     .expect("head-of-line shutdown and dead-letter integration test must finish");
 }
+
+#[tokio::test]
+async fn drainer_fast_fails_circuit_open_channel_without_blocking_healthy_channel() {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let pool = rust_srec::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        rust_srec::database::run_migrations(&pool).await.unwrap();
+        insert_streamer(&pool, "s1", "Alice").await;
+
+        let (bad_url, bad_state, bad_handle) = spawn_webhook_server(HookMode::Fail).await;
+        let (good_url, good_state, good_handle) = spawn_webhook_server(HookMode::Ok).await;
+        let repo = Arc::new(SqlxNotificationRepository::new(pool.clone(), pool.clone()));
+        let bad_channel_id = register_webhook_channel(&repo, &bad_url, &["stream_online"]).await;
+        let _good_channel_id = register_webhook_channel(&repo, &good_url, &["stream_online"]).await;
+
+        // Long 300s circuit-breaker cooldown with max_retries (3) > threshold (2):
+        // event 0 exercises fast-fail when the breaker opens mid-retry on attempt 2,
+        // and events 1..2 exercise fast-fail while the breaker is already open.
+        let service = Arc::new(NotificationService::with_repository(
+            NotificationServiceConfig {
+                max_retries: 3,
+                initial_retry_delay_ms: 5,
+                max_retry_delay_ms: 10,
+                circuit_breaker_threshold: 2,
+                circuit_breaker_cooldown_secs: 300,
+                ..Default::default()
+            },
+            repo.clone(),
+        ));
+        service.reload_from_db().await.unwrap();
+
+        let base_ms = 1_735_300_000_000i64;
+        let mut tx = rust_srec::database::begin_immediate(&pool).await.unwrap();
+        for idx in 0..3 {
+            enqueue_outbox_event(
+                &mut tx,
+                Some("s1"),
+                &OutboxEvent::StreamOnline {
+                    streamer_id: "s1".into(),
+                    streamer_name: "Alice".into(),
+                    session_id: format!("sess-cb-{idx}"),
+                    title: format!("Event {idx}"),
+                    category: None,
+                    started_at_ms: base_ms + idx * 1000,
+                    kind: StreamOnlineKind::Created,
+                },
+                base_ms + idx * 1000,
+            )
+            .await;
+        }
+        tx.commit().await.unwrap();
+
+        let drainer =
+            NotificationOutboxDrainer::new(pool.clone(), service.clone(), CancellationToken::new());
+        let report = drainer.drain_until_wait().await.unwrap();
+        assert_eq!(report.delivered, 3);
+        assert_eq!(report.failed, 0);
+
+        // Healthy channel received all 3 events promptly; broken channel opened
+        // after 2 failures on event 0 and fast-failed events 1 & 2 straight to
+        // durable dead-letter without making extra HTTP calls or sleeping 300s.
+        assert_eq!(good_state.received.lock().await.len(), 3);
+        assert_eq!(bad_state.attempts.load(Ordering::SeqCst), 2);
+        let dead_letters = repo
+            .list_dead_letters(Some(&bad_channel_id), 10)
+            .await
+            .unwrap();
+        assert_eq!(dead_letters.len(), 3);
+        assert!(
+            dead_letters
+                .iter()
+                .filter(|d| d.error_message.contains("circuit breaker open"))
+                .count()
+                == 2
+        );
+
+        service.stop().await;
+        bad_handle.abort();
+        good_handle.abort();
+    })
+    .await
+    .expect("circuit-open fast-fail test must finish promptly without 300s stall");
+}
+
+#[tokio::test]
+async fn drainer_retains_outbox_rows_until_db_channels_load_succeeds() {
+    use std::sync::atomic::AtomicBool;
+
+    use async_trait::async_trait;
+    use rust_srec::database::models::{NotificationDeadLetterDbModel, NotificationEventLogDbModel};
+    use rust_srec::database::repositories::ChannelPatch;
+
+    struct ToggleFailLoadRepo {
+        inner: Arc<SqlxNotificationRepository>,
+        fail_list_channels: Arc<AtomicBool>,
+    }
+
+    #[async_trait]
+    impl NotificationRepository for ToggleFailLoadRepo {
+        async fn get_channel(
+            &self,
+            id: &str,
+        ) -> rust_srec::database::DbResult<NotificationChannelDbModel> {
+            self.inner.get_channel(id).await
+        }
+        async fn list_channels(
+            &self,
+        ) -> rust_srec::database::DbResult<Vec<NotificationChannelDbModel>> {
+            if self.fail_list_channels.load(Ordering::Acquire) {
+                return Err(rust_srec::database::DbError::Other(
+                    "simulated sqlite busy during channel load".into(),
+                ));
+            }
+            self.inner.list_channels().await
+        }
+        async fn create_channel(
+            &self,
+            channel: &NotificationChannelDbModel,
+        ) -> rust_srec::database::DbResult<()> {
+            self.inner.create_channel(channel).await
+        }
+        async fn update_channel(
+            &self,
+            channel: &NotificationChannelDbModel,
+        ) -> rust_srec::database::DbResult<()> {
+            self.inner.update_channel(channel).await
+        }
+        async fn patch_channel(
+            &self,
+            id: &str,
+            patch: ChannelPatch,
+        ) -> rust_srec::database::DbResult<NotificationChannelDbModel> {
+            self.inner.patch_channel(id, patch).await
+        }
+        async fn delete_channel(&self, id: &str) -> rust_srec::database::DbResult<()> {
+            self.inner.delete_channel(id).await
+        }
+        async fn get_subscriptions_for_channel(
+            &self,
+            channel_id: &str,
+        ) -> rust_srec::database::DbResult<Vec<String>> {
+            self.inner.get_subscriptions_for_channel(channel_id).await
+        }
+        async fn subscribe(
+            &self,
+            channel_id: &str,
+            event_name: &str,
+        ) -> rust_srec::database::DbResult<()> {
+            self.inner.subscribe(channel_id, event_name).await
+        }
+        async fn unsubscribe(
+            &self,
+            channel_id: &str,
+            event_name: &str,
+        ) -> rust_srec::database::DbResult<()> {
+            self.inner.unsubscribe(channel_id, event_name).await
+        }
+        async fn add_to_dead_letter(
+            &self,
+            entry: &NotificationDeadLetterDbModel,
+        ) -> rust_srec::database::DbResult<()> {
+            self.inner.add_to_dead_letter(entry).await
+        }
+        async fn list_dead_letters(
+            &self,
+            channel_id: Option<&str>,
+            limit: i32,
+        ) -> rust_srec::database::DbResult<Vec<NotificationDeadLetterDbModel>> {
+            self.inner.list_dead_letters(channel_id, limit).await
+        }
+        async fn add_event_log(
+            &self,
+            entry: &NotificationEventLogDbModel,
+        ) -> rust_srec::database::DbResult<()> {
+            self.inner.add_event_log(entry).await
+        }
+    }
+
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let pool = rust_srec::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        rust_srec::database::run_migrations(&pool).await.unwrap();
+        insert_streamer(&pool, "s1", "Alice").await;
+
+        let (url, server_state, server_handle) = spawn_webhook_server(HookMode::Ok).await;
+        let inner_repo = Arc::new(SqlxNotificationRepository::new(pool.clone(), pool.clone()));
+        register_webhook_channel(&inner_repo, &url, &["fatal_error"]).await;
+
+        let mut tx = rust_srec::database::begin_immediate(&pool).await.unwrap();
+        enqueue_outbox_event(
+            &mut tx,
+            Some("s1"),
+            &OutboxEvent::FatalError {
+                streamer_id: "s1".into(),
+                streamer_name: "Alice".into(),
+                error_type: FatalErrorType::NotFound,
+                message: "queued before reload".into(),
+                new_state: StreamerState::NotFound,
+                occurred_at_ms: 1_735_400_000_000,
+            },
+            1_735_400_000_000,
+        )
+        .await;
+        tx.commit().await.unwrap();
+
+        let fail_load = Arc::new(AtomicBool::new(true));
+        let wrapped_repo = Arc::new(ToggleFailLoadRepo {
+            inner: inner_repo,
+            fail_list_channels: fail_load.clone(),
+        });
+        let service = Arc::new(NotificationService::with_repository(
+            NotificationServiceConfig {
+                max_retries: 2,
+                initial_retry_delay_ms: 5,
+                max_retry_delay_ms: 10,
+                ..Default::default()
+            },
+            wrapped_repo,
+        ));
+        let drainer =
+            NotificationOutboxDrainer::new(pool.clone(), service.clone(), CancellationToken::new());
+
+        // 1. While DB channel loading fails, drain must retain the outbox row
+        //    undelivered rather than discarding it against an empty registry.
+        let failed_report = drainer.drain_until_wait().await.unwrap();
+        assert_eq!(failed_report.delivered, 0);
+        assert_eq!(failed_report.failed, 1);
+        assert!(failed_report.needs_wait);
+        assert!(server_state.received.lock().await.is_empty());
+        let (delivered_at, attempts): (Option<i64>, i64) = sqlx::query_as(
+            "SELECT delivered_at, attempts FROM monitor_event_outbox ORDER BY id LIMIT 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(delivered_at, None);
+        assert_eq!(attempts, 1);
+
+        // 2. Once DB recovers, the next drain auto-loads DB channels and delivers.
+        fail_load.store(false, Ordering::Release);
+        let recovered_report = drainer.drain_until_wait().await.unwrap();
+        assert_eq!(recovered_report.delivered, 1);
+        assert_eq!(recovered_report.failed, 0);
+        assert_eq!(server_state.received.lock().await.len(), 1);
+
+        service.stop().await;
+        server_handle.abort();
+    })
+    .await
+    .expect("unloaded DB channel failure-retention and recovery test must finish");
+}

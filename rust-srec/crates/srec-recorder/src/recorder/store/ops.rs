@@ -327,11 +327,13 @@ async fn start_suppression(
     let remaining_backoff = disabled_until
         .filter(|&until_ms| until_ms > now_ms)
         .map(|until_ms| Duration::from_millis(u64::try_from(until_ms - now_ms).unwrap_or(0)));
-    if state == StreamerState::OutOfSpace {
-        return Ok(Some((StreamerState::OutOfSpace, remaining_backoff)));
-    }
     if let Some(remaining) = remaining_backoff {
-        return Ok(Some((StreamerState::TemporalDisabled, Some(remaining))));
+        let suppressed_state = if state == StreamerState::OutOfSpace {
+            StreamerState::OutOfSpace
+        } else {
+            StreamerState::TemporalDisabled
+        };
+        return Ok(Some((suppressed_state, Some(remaining))));
     }
     Ok(None)
 }
@@ -748,6 +750,7 @@ async fn end_session(
 
     if let Some(target_state) = params.update_streamer_state
         && is_active
+        && !(target_state == StreamerState::NotLive && state == Some(StreamerState::OutOfSpace))
     {
         committed_row = if target_state == StreamerState::NotLive {
             StreamerTxOps::set_offline_row(&mut *tx, &params.streamer_id).await?

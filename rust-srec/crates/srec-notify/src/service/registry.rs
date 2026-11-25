@@ -193,6 +193,8 @@ impl NotificationService {
             *current = next;
             counts
         };
+        self.db_loaded
+            .store(true, std::sync::atomic::Ordering::Release);
 
         // Migration is best-effort and starts only after all discovery reads succeeded.
         // Never remove the legacy subscription unless its canonical replacement was stored.

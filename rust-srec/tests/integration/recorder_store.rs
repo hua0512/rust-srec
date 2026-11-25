@@ -575,7 +575,7 @@ async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
         insert_streamer(&pool, "s-oos", "OOS", StreamerState::OutOfSpace).await;
         insert_streamer(&pool, "s-backoff", "Backoff", StreamerState::TemporalDisabled).await;
         let t_now = Timestamp::from_millisecond(1_735_002_000_000).unwrap();
-        sqlx::query("UPDATE streamers SET disabled_until = ? WHERE id = 's-backoff'")
+        sqlx::query("UPDATE streamers SET disabled_until = ? WHERE id IN ('s-oos', 's-backoff')")
             .bind(t_now.as_millisecond() + 45_000)
             .execute(&pool)
             .await
@@ -584,7 +584,7 @@ async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
         for (sid, expected_state, expect_retry) in [
             ("s-disabled", StreamerState::Disabled, false),
             ("s-deleted", StreamerState::Disabled, false),
-            ("s-oos", StreamerState::OutOfSpace, false),
+            ("s-oos", StreamerState::OutOfSpace, true),
             ("s-backoff", StreamerState::TemporalDisabled, true),
         ] {
             let res = store
@@ -1548,4 +1548,104 @@ async fn per_streamer_lease_handles_pre_commit_cancellation_and_listener_runs_lo
     })
     .await
     .expect("lease cancellation and post-publication listener test must finish");
+}
+
+#[tokio::test]
+async fn out_of_space_cooldown_allows_recovery_after_expiry_and_offline_preserves_state() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let (pool, store, committed_state, _outbox_notify) = setup_store().await;
+        insert_streamer(&pool, "s1", "OosStreamer", StreamerState::NotLive).await;
+
+        let t0 = Timestamp::from_millisecond(1_735_040_000_000).unwrap();
+        let infra_outcome = store
+            .commit(DbCommitOp::SetInfraBlocked {
+                streamer_id: "s1".into(),
+                reason: InfraBlockReason::OutputRootUnavailable {
+                    path: std::path::PathBuf::from("/rec"),
+                    io_kind: IoErrorKindSer::StorageFull,
+                    retry_after_secs: 30,
+                },
+                now: t0,
+            })
+            .await
+            .unwrap();
+        assert!(matches!(
+            infra_outcome,
+            DbCommitOutcome::InfraBlockedRecorded {
+                state: StreamerState::OutOfSpace,
+                ..
+            }
+        ));
+
+        // 1. Inside cooldown (t0 + 10s): StartOrResumeSession is suppressed with OutOfSpace.
+        let t_during = Timestamp::from_millisecond(1_735_040_010_000).unwrap();
+        let suppressed = store
+            .commit(DbCommitOp::StartOrResumeSession {
+                streamer_id: "s1".into(),
+                streamer_name: "OosStreamer".into(),
+                title: "During Cooldown".into(),
+                category: None,
+                current_avatar: None,
+                new_avatar: None,
+                credential_binding: None,
+                now: t_during,
+            })
+            .await
+            .unwrap();
+        assert!(matches!(
+            suppressed,
+            DbCommitOutcome::SessionStartSuppressed {
+                state: StreamerState::OutOfSpace,
+                retry_after: Some(d),
+            } if d == Duration::from_secs(20)
+        ));
+
+        // 2. An offline EndSession must NOT overwrite OutOfSpace back to NotLive.
+        store
+            .commit(DbCommitOp::EndSession {
+                streamer_id: "s1".into(),
+                streamer_name: "OosStreamer".into(),
+                session_id: None,
+                cause: TerminalCause::StreamerOffline,
+                via_hysteresis: false,
+                update_streamer_state: Some(StreamerState::NotLive),
+                clear_errors: false,
+                checks_restored_threshold: None,
+                infra_block: None,
+                suppress_offline_notification: false,
+                now: t_during,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            committed_state.get_streamer("s1").unwrap().state,
+            StreamerState::OutOfSpace
+        );
+
+        // 3. After cooldown expires (t0 + 35s): StartOrResumeSession is permitted so
+        //    the startup path can probe `ensure_output_dir` and trigger gate recovery.
+        let t_after = Timestamp::from_millisecond(1_735_040_035_000).unwrap();
+        let recovered = store
+            .commit(DbCommitOp::StartOrResumeSession {
+                streamer_id: "s1".into(),
+                streamer_name: "OosStreamer".into(),
+                title: "After Cooldown".into(),
+                category: None,
+                current_avatar: None,
+                new_avatar: None,
+                credential_binding: None,
+                now: t_after,
+            })
+            .await
+            .unwrap();
+        assert!(matches!(
+            recovered,
+            DbCommitOutcome::SessionStarted {
+                disposition: SessionStartDisposition::Created,
+                ..
+            }
+        ));
+    })
+    .await
+    .expect("out-of-space cooldown recovery integration test must finish");
 }

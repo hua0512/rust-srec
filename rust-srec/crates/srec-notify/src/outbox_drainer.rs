@@ -294,7 +294,7 @@ impl NotificationOutboxDrainer {
             fetched: entries.len(),
             ..Default::default()
         };
-        let mut delivered_ids = Vec::with_capacity(entries.len());
+        let mut pending_skipped_ids = Vec::new();
         let mut failed_entries: Vec<(i64, String)> = Vec::new();
 
         for entry in entries {
@@ -314,7 +314,7 @@ impl NotificationOutboxDrainer {
                         %error,
                         "Unparseable notification outbox payload; marking delivered to unblock head of line"
                     );
-                    delivered_ids.push(entry.id);
+                    pending_skipped_ids.push(entry.id);
                     report.skipped += 1;
                     continue;
                 }
@@ -326,7 +326,7 @@ impl NotificationOutboxDrainer {
                     event_type = %entry.event_type,
                     "Marking non-notifying legacy outbox record delivered"
                 );
-                delivered_ids.push(entry.id);
+                pending_skipped_ids.push(entry.id);
                 report.skipped += 1;
                 continue;
             };
@@ -344,7 +344,13 @@ impl NotificationOutboxDrainer {
 
             match delivery {
                 Ok(()) => {
-                    delivered_ids.push(entry.id);
+                    // Persist `delivered_at` per settled alertable row (along with
+                    // any preceding skipped rows) so a hard crash or forced abort
+                    // during a later row never replays already-delivered alerts.
+                    pending_skipped_ids.push(entry.id);
+                    MonitorOutboxOps::mark_delivered_batch(&self.write_pool, &pending_skipped_ids)
+                        .await?;
+                    pending_skipped_ids.clear();
                     report.delivered += 1;
                 }
                 Err(DurableDeliveryError::TransientShuttingDown) => {
@@ -372,10 +378,13 @@ impl NotificationOutboxDrainer {
             }
         }
 
-        // Flush rows that already settled before returning so they are not
-        // replayed on restart; any failed or interrupted row is never included.
-        MonitorOutboxOps::mark_delivered_batch(&self.write_pool, &delivered_ids).await?;
-        MonitorOutboxOps::record_failure_batch(&self.write_pool, &failed_entries).await?;
+        // Flush any trailing skipped rows and failure records.
+        if !pending_skipped_ids.is_empty() {
+            MonitorOutboxOps::mark_delivered_batch(&self.write_pool, &pending_skipped_ids).await?;
+        }
+        if !failed_entries.is_empty() {
+            MonitorOutboxOps::record_failure_batch(&self.write_pool, &failed_entries).await?;
+        }
 
         Ok(report)
     }

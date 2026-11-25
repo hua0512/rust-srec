@@ -68,12 +68,21 @@ impl StreamerFsm {
             }
             PendingDbKind::EndForCredentialRetirement { session_id } => {
                 if let Ok(DbCommitOutcome::CredentialRetirementEnded { ended, .. }) = result {
-                    if ended {
-                        if let SessionSlot::Open(open) =
+                    // Always clear the matching OpenSession slot even when `ended == false`
+                    // (e.g. `ActorRegistry::settle_credential_retirement` committed the DB
+                    // end first), while gating `SessionEnded` pipeline notification on
+                    // `ended == true` so only the winning committer emits it once.
+                    let matches_open = matches!(
+                        &self.session,
+                        SessionSlot::Open(open) if open.session_id == session_id
+                    );
+                    if matches_open
+                        && let SessionSlot::Open(open) =
                             std::mem::replace(&mut self.session, SessionSlot::None)
-                        {
-                            self.park_segment_guard_if_draining(open.segment_guard);
-                        }
+                    {
+                        self.park_segment_guard_if_draining(open.segment_guard);
+                    }
+                    if ended {
                         self.emit_session_ended_pipeline(
                             session_id,
                             TerminalCause::UserDisabled,
@@ -429,6 +438,11 @@ impl StreamerFsm {
         if state == StreamerState::TemporalDisabled {
             self.monitor = MonitorPhase::Blocked {
                 kind: BlockedKind::TemporalDisabled,
+                retry_at,
+            };
+        } else if state == StreamerState::OutOfSpace {
+            self.monitor = MonitorPhase::Blocked {
+                kind: BlockedKind::OutputRootCooldown,
                 retry_at,
             };
         } else {

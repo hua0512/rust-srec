@@ -880,6 +880,9 @@ impl DownloadManager {
                 }
             }
         }
+        if cancel.is_cancelled() {
+            return Ok(None);
+        }
         let result = self
             .start_download_with_engine_and_slot_tracked(
                 config,

@@ -344,6 +344,10 @@ pub struct NotificationService {
     web_push_worker_started: AtomicBool,
     web_push_dropped: AtomicU64,
     registry: RwLock<ChannelRegistry>,
+    /// Tracks whether DB-backed channels & subscriptions have loaded at least once.
+    /// Services without a DB repository start `true`; DB-backed services start
+    /// `false` so durable outbox draining never discards rows against an unloaded registry.
+    db_loaded: AtomicBool,
     reload_gate: tokio::sync::Mutex<()>,
     pending_queue: Arc<DashMap<u64, PendingNotification>>,
     queue_admission: parking_lot::Mutex<()>,
@@ -404,6 +408,7 @@ impl NotificationService {
     ) -> Self {
         let mut service = Self::with_config(config);
         service.notification_repo = Some(notification_repo);
+        service.db_loaded.store(false, Ordering::Release);
         service
     }
 
@@ -440,6 +445,7 @@ impl NotificationService {
             web_push_worker_started: AtomicBool::new(false),
             web_push_dropped: AtomicU64::new(0),
             registry: RwLock::new(ChannelRegistry::default()),
+            db_loaded: AtomicBool::new(true),
             reload_gate: tokio::sync::Mutex::new(()),
             pending_queue: Arc::new(DashMap::new()),
             queue_admission: parking_lot::Mutex::new(()),
@@ -625,6 +631,22 @@ impl NotificationService {
             return Ok(());
         }
 
+        // Ensure DB channels/subscriptions have loaded at least once before
+        // deciding target channels; otherwise a transient startup DB failure
+        // would leave the registry empty and silently discard queued alerts.
+        if !self.db_loaded.load(Ordering::Acquire) {
+            if let Err(error) = self.reload_from_db().await {
+                return Err(DurableDeliveryError::Transient(format!(
+                    "notification channels not yet loaded from database: {error}"
+                )));
+            }
+            if self.cancellation_token.is_cancelled() {
+                return Err(DurableDeliveryError::TransientShuttingDown);
+            }
+        }
+
+        let target_channels = self.subscribed_targets_for(&event);
+
         let _ = self.event_tx.send(event.clone());
 
         let event_log_id = Uuid::new_v4().to_string();
@@ -638,6 +660,11 @@ impl NotificationService {
                 created_at: event.timestamp().as_millisecond(),
             };
             if let Err(e) = repo.add_event_log(&entry).await {
+                if target_channels.is_empty() {
+                    return Err(DurableDeliveryError::Transient(format!(
+                        "failed to persist notification event log: {e}"
+                    )));
+                }
                 warn!(error = %e, "Failed to persist notification event log (non-fatal)");
             }
         }
@@ -654,7 +681,6 @@ impl NotificationService {
             self.enqueue_web_push(queued);
         }
 
-        let target_channels = self.subscribed_targets_for(&event);
         if target_channels.is_empty() {
             if self.cancellation_token.is_cancelled() {
                 return Err(DurableDeliveryError::TransientShuttingDown);

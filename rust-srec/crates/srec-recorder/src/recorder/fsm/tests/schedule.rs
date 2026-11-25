@@ -787,7 +787,7 @@ fn error_tracker_backoff_cap_threshold_floor_and_download_recovery_rules() {
             }),
         },
     );
-    let (_, clear_op) = find_db_commit(&effects).unwrap();
+    let (clear_op_id, clear_op) = find_db_commit(&effects).unwrap();
     assert!(matches!(
         clear_op,
         DbCommitOp::ClearErrors {
@@ -796,5 +796,115 @@ fn error_tracker_backoff_cap_threshold_floor_and_download_recovery_rules() {
             ..
         }
     ));
+    assert_eq!(fsm.errors.consecutive_error_count, 2);
+
+    // A second recovery signal while `ClearErrors` is still in flight is deduplicated.
+    let dup_effects = fsm.step(
+        clock.ctx(),
+        FsmInput::DownloadHeartbeat {
+            session_id: "sess-err".into(),
+            download_id: "dl-1".into(),
+            progress: Some(DownloadProgress {
+                bytes_downloaded: RECOVERY_PROGRESS_MIN_BYTES * 2,
+                speed_bytes_per_sec: 500_000,
+                ..DownloadProgress::default()
+            }),
+        },
+    );
+    assert!(find_db_commit(&dup_effects).is_none());
+
+    // A transient commit failure keeps error state intact so a later recovery retries.
+    fsm.step(
+        clock.ctx(),
+        FsmInput::DbCommitted {
+            op_id: clear_op_id,
+            result: Err(crate::recorder::ports::DbCommitFailure::Transient {
+                message: "sqlite busy".into(),
+            }),
+        },
+    );
+    assert_eq!(fsm.errors.consecutive_error_count, 2);
+
+    let retry_effects = fsm.step(
+        clock.ctx(),
+        FsmInput::DownloadHeartbeat {
+            session_id: "sess-err".into(),
+            download_id: "dl-1".into(),
+            progress: Some(DownloadProgress {
+                bytes_downloaded: RECOVERY_PROGRESS_MIN_BYTES * 3,
+                speed_bytes_per_sec: 500_000,
+                ..DownloadProgress::default()
+            }),
+        },
+    );
+    let (retry_op_id, retry_op) = find_db_commit(&retry_effects).unwrap();
+    assert!(matches!(retry_op, DbCommitOp::ClearErrors { .. }));
+
+    fsm.step(
+        clock.ctx(),
+        FsmInput::DbCommitted {
+            op_id: retry_op_id,
+            result: Ok(DbCommitOutcome::ErrorsCleared {
+                checks_restored_emitted: false,
+            }),
+        },
+    );
     assert_eq!(fsm.errors.consecutive_error_count, 0);
+}
+
+#[test]
+fn out_of_space_suppression_preserves_cooldown_and_offline_does_not_overwrite() {
+    let mut clock = TestClock::new();
+    let mut fsm = StreamerFsm::new(
+        base_snapshot(StreamerState::NotLive, base_config()),
+        clock.now,
+        clock.wall,
+    );
+    let p = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
+        .unwrap()
+        .probe_id;
+    let (start_op, _) = find_db_commit(&fsm.step(
+        clock.ctx(),
+        FsmInput::ProbeCompleted {
+            probe_id: p,
+            result: Ok(ProbeStatus::Live(live_payload("Live"))),
+        },
+    ))
+    .unwrap();
+    fsm.step(
+        clock.ctx(),
+        FsmInput::DbCommitted {
+            op_id: start_op,
+            result: Ok(DbCommitOutcome::SessionStartSuppressed {
+                state: StreamerState::OutOfSpace,
+                retry_after: Some(Duration::from_secs(30)),
+            }),
+        },
+    );
+    assert_eq!(
+        fsm.monitor,
+        MonitorPhase::Blocked {
+            kind: BlockedKind::OutputRootCooldown,
+            retry_at: clock.now + Duration::from_secs(30),
+        }
+    );
+
+    // When cooldown expires and the streamer is now offline (with initial reconcile
+    // already cleared), an offline probe must not dispatch `EndSession` to overwrite
+    // `OutOfSpace` with `NotLive`.
+    fsm.initial_reconcile_pending = false;
+    clock.advance(Duration::from_secs(30));
+    let p2 = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
+        .unwrap()
+        .probe_id;
+    let effects = fsm.step(
+        clock.ctx(),
+        FsmInput::ProbeCompleted {
+            probe_id: p2,
+            result: Ok(ProbeStatus::Offline {
+                batch_live_hint_armed: false,
+            }),
+        },
+    );
+    assert!(find_db_commit(&effects).is_none());
 }

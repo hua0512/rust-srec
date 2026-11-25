@@ -57,11 +57,17 @@ type BoxedProbeFuture = Pin<Box<dyn Future<Output = ProbeFutureOutput> + Send>>;
 pub enum ActorMessage {
     /// Standard FSM input with no caller receipt.
     Input(FsmInput),
-    /// Reserved-capacity download lifecycle delivery (`AttemptStarted` / `DownloadEnded`),
-    /// holding its bounded permit until applied to the FSM.
+    /// Reserved-capacity download lifecycle delivery (`AttemptStarted` / `DownloadEnded` /
+    /// `PhysicalLeaseReleased`), holding its bounded permit until applied to the FSM.
     ReservedDownload {
         input: FsmInput,
         _permit: RecorderFeedbackPermit,
+    },
+    /// Required `DownloadEnded` terminal event applied synchronously to the FSM
+    /// before active download ownership is released.
+    DownloadEnded {
+        input: FsmInput,
+        ack: oneshot::Sender<std::result::Result<(), String>>,
     },
     /// Required `SegmentStarted` event carrying its acknowledgement channel.
     SegmentStarted {
@@ -264,7 +270,10 @@ impl StreamerActor {
         while let Some(msg) = self.rx.recv().await {
             match msg {
                 ActorMessage::SegmentStarted { ack, .. } => {
-                    let _ = ack.send(Err("recorder actor stopped before segment start".into()));
+                    drop(ack);
+                }
+                ActorMessage::DownloadEnded { ack, .. } => {
+                    drop(ack);
                 }
                 ActorMessage::SegmentCompleted { ack, .. } => {
                     drop(ack);
@@ -304,6 +313,11 @@ impl StreamerActor {
             ActorMessage::ReservedDownload { input, _permit } => {
                 let stopped = self.step_and_dispatch(input);
                 drop(_permit);
+                stopped
+            }
+            ActorMessage::DownloadEnded { input, ack } => {
+                let stopped = self.step_and_dispatch(input);
+                let _ = ack.send(Ok(()));
                 stopped
             }
             ActorMessage::SegmentStarted { input, ack } => {
@@ -418,7 +432,10 @@ async fn wait_batch_live_hint(slot: &mut Option<watch::Receiver<bool>>) -> bool 
     let Some(rx) = slot.as_mut() else {
         std::future::pending().await
     };
-    if *rx.borrow_and_update() {
+    // Respect `mark_unchanged()` set after an individual offline probe disagreed
+    // with a still-true batch value, while still waking immediately if a peer
+    // batch check flipped the hint to `true` before this wait was polled.
+    if rx.has_changed().unwrap_or(false) && *rx.borrow_and_update() {
         return true;
     }
     loop {
@@ -437,5 +454,41 @@ async fn sleep_until_deadline(deadline: Option<tokio::time::Instant>) {
     match deadline {
         Some(deadline) => tokio::time::sleep_until(deadline).await,
         None => std::future::pending().await,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[tokio::test(start_paused = true)]
+    async fn wait_batch_live_hint_respects_mark_unchanged_and_wakes_on_new_update() {
+        let (tx, mut rx) = watch::channel(true);
+        // Simulate `RecorderProber` calling `mark_unchanged()` when an individual
+        // probe observes `Offline` while the batch cache still reads `true`.
+        rx.mark_unchanged();
+        let mut slot = Some(rx);
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(30), wait_batch_live_hint(&mut slot))
+                .await
+                .is_err(),
+            "marked-unchanged true watch must stay pending instead of spin-looping"
+        );
+
+        tx.send_replace(true);
+        let woke = tokio::time::timeout(Duration::from_secs(1), wait_batch_live_hint(&mut slot))
+            .await
+            .expect("new batch live hint must wake wait_batch_live_hint");
+        assert!(woke);
+
+        // Consuming the update must mark it seen so a second wait does not spin.
+        assert!(
+            tokio::time::timeout(Duration::from_millis(30), wait_batch_live_hint(&mut slot))
+                .await
+                .is_err(),
+            "subsequent wait must stay pending until another update arrives"
+        );
     }
 }

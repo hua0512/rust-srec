@@ -1,7 +1,5 @@
 use std::time::Duration;
 
-use jiff::SignedDuration;
-
 use crate::downloader::engine::{DownloadProtocol, EngineType};
 use crate::downloader::{DownloadFailureKind, DownloadStopCause, EngineEndSignal};
 use crate::recorder::fsm::hysteresis::{
@@ -315,39 +313,39 @@ fn quiet_period_backstop_freezes_bounded_grace_for_in_flight_probe_and_confirmat
             result: Ok(DbCommitOutcome::HysteresisEnteredRecorded),
         },
     );
-    // 3 transient probe failures at T+20s, T+40s, T+60s enter Blocked(T+120s) while preserving
-    // offline_confirmation.consecutive_offline == 1 (active confirmation sequence 1 of 3).
-    for (step_idx, err_count) in [(1, 1), (2, 2), (3, 3)] {
-        clock_b.advance(Duration::from_secs(20));
-        let p = find_probe(&fsm_b.step(clock_b.ctx(), FsmInput::TimerFired))
-            .unwrap()
-            .probe_id;
-        let effects = fsm_b.step(
-            clock_b.ctx(),
-            FsmInput::ProbeCompleted {
-                probe_id: p,
-                result: Err(ProbeFailure::Transient {
-                    message: format!("err-{step_idx}"),
-                }),
-            },
-        );
-        let (err_op, _) = find_db_commit(&effects).unwrap();
-        let disabled_until = (err_count >= 3).then(|| clock_b.wall + SignedDuration::from_secs(60));
-        fsm_b.step(
-            clock_b.ctx(),
-            FsmInput::DbCommitted {
-                op_id: err_op,
-                result: Ok(DbCommitOutcome::TransientErrorRecorded {
-                    consecutive_error_count: err_count,
-                    disabled_until,
-                    checks_failing_emitted: err_count == 3,
-                }),
-            },
-        );
-    }
-
-    // At T+80s, backstop fires -> freezes 2 remaining checks (3 - 1 = 2).
+    // A slow probe launched at T+20s finishes transiently at T+65s (`err_count = 1`,
+    // monitor stays `Idle` scheduled for T+85s rather than entering `Blocked`),
+    // leaving an active confirmation sequence (1 of 3) when backstop fires at T+80s.
     clock_b.advance(Duration::from_secs(20));
+    let p = find_probe(&fsm_b.step(clock_b.ctx(), FsmInput::TimerFired))
+        .unwrap()
+        .probe_id;
+    clock_b.advance(Duration::from_secs(45));
+    let effects = fsm_b.step(
+        clock_b.ctx(),
+        FsmInput::ProbeCompleted {
+            probe_id: p,
+            result: Err(ProbeFailure::Transient {
+                message: "slow-err-1".into(),
+            }),
+        },
+    );
+    let (err_op, _) = find_db_commit(&effects).unwrap();
+    fsm_b.step(
+        clock_b.ctx(),
+        FsmInput::DbCommitted {
+            op_id: err_op,
+            result: Ok(DbCommitOutcome::TransientErrorRecorded {
+                consecutive_error_count: 1,
+                disabled_until: None,
+                checks_failing_emitted: false,
+            }),
+        },
+    );
+
+    // At T+80s, backstop fires while monitor is `Idle` (next check T+85s) ->
+    // freezes 2 remaining checks (3 - 1 = 2).
+    clock_b.advance(Duration::from_secs(15));
     let effects = fsm_b.step(clock_b.ctx(), FsmInput::TimerFired);
     assert!(find_db_commit(&effects).is_none());
     match &fsm_b.session {
@@ -360,8 +358,8 @@ fn quiet_period_backstop_freezes_bounded_grace_for_in_flight_probe_and_confirmat
         other => panic!("expected Open, got {other:?}"),
     }
 
-    // Wake Blocked via ErrorCleared and fail the probe transiently -> commits original Completed immediately.
-    fsm_b.step(clock_b.ctx(), FsmInput::ErrorCleared);
+    // At T+85s, the scheduled confirmation probe fails transiently -> commits original Completed immediately.
+    clock_b.advance(Duration::from_secs(5));
     let probe_b = find_probe(&fsm_b.step(clock_b.ctx(), FsmInput::TimerFired))
         .unwrap()
         .probe_id;
@@ -377,6 +375,66 @@ fn quiet_period_backstop_freezes_bounded_grace_for_in_flight_probe_and_confirmat
     let (_, end_op_b) = find_db_commit(&effects).unwrap();
     assert!(matches!(
         end_op_b,
+        DbCommitOp::EndSession {
+            cause: TerminalCause::Completed,
+            via_hysteresis: true,
+            ..
+        }
+    ));
+
+    // Case C: When monitor entered `Blocked(TemporalDisabled)` with no in-flight probe,
+    // backstop expiry must commit immediately rather than freezing until backoff clears.
+    let mut clock_c = TestClock::new();
+    let (mut fsm_c, attempt_c) = open_running_session(&clock_c, base_config(), "sess-c", None);
+    let effects = fsm_c.step(
+        clock_c.ctx(),
+        FsmInput::DownloadEnded {
+            attempt_id: attempt_c,
+            event: completed_event("sess-c", EngineEndSignal::CleanDisconnect),
+        },
+    );
+    let (hyst_c, _) = find_db_commit(&effects).unwrap();
+    fsm_c.step(
+        clock_c.ctx(),
+        FsmInput::DbCommitted {
+            op_id: hyst_c,
+            result: Ok(DbCommitOutcome::HysteresisEnteredRecorded),
+        },
+    );
+    for (step_idx, err_count) in [(1, 1), (2, 2), (3, 3)] {
+        clock_c.advance(Duration::from_secs(20));
+        let p = find_probe(&fsm_c.step(clock_c.ctx(), FsmInput::TimerFired))
+            .unwrap()
+            .probe_id;
+        let effects = fsm_c.step(
+            clock_c.ctx(),
+            FsmInput::ProbeCompleted {
+                probe_id: p,
+                result: Err(ProbeFailure::Transient {
+                    message: format!("err-{step_idx}"),
+                }),
+            },
+        );
+        let (err_op, _) = find_db_commit(&effects).unwrap();
+        let disabled_until =
+            (err_count >= 3).then(|| clock_c.wall + jiff::SignedDuration::from_secs(3600));
+        fsm_c.step(
+            clock_c.ctx(),
+            FsmInput::DbCommitted {
+                op_id: err_op,
+                result: Ok(DbCommitOutcome::TransientErrorRecorded {
+                    consecutive_error_count: err_count,
+                    disabled_until,
+                    checks_failing_emitted: err_count == 3,
+                }),
+            },
+        );
+    }
+    clock_c.advance(Duration::from_secs(20));
+    let effects = fsm_c.step(clock_c.ctx(), FsmInput::TimerFired);
+    let (_, end_op_c) = find_db_commit(&effects).unwrap();
+    assert!(matches!(
+        end_op_c,
         DbCommitOp::EndSession {
             cause: TerminalCause::Completed,
             via_hysteresis: true,

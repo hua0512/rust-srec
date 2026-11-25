@@ -307,6 +307,7 @@ pub enum AttemptPhase {
     Running {
         attempt_id: u64,
         download_id: String,
+        started_at: Timestamp,
         engine_kind: EngineKind,
         engine_type: EngineType,
         protocol: DownloadProtocol,

@@ -439,14 +439,13 @@ impl StreamerFsm {
             danmu_link_down_since,
         ) = match &self.session {
             SessionSlot::Open(open) => {
-                let (active, queued) = match &open.attempt {
-                    AttemptPhase::Starting { queued, .. } => (true, *queued),
-                    AttemptPhase::Running { .. } | AttemptPhase::StoppingAttempt { .. } => {
-                        (true, false)
-                    }
-                    AttemptPhase::Idle
+                let (active, queued, attempt_started_at) = match &open.attempt {
+                    AttemptPhase::Starting { queued, .. } => (false, *queued, None),
+                    AttemptPhase::Running { started_at, .. } => (true, false, Some(*started_at)),
+                    AttemptPhase::StoppingAttempt { .. }
+                    | AttemptPhase::Idle
                     | AttemptPhase::WaitingCredentials
-                    | AttemptPhase::DiagnosingCredentials { .. } => (false, false),
+                    | AttemptPhase::DiagnosingCredentials { .. } => (false, false, None),
                 };
                 let (collecting, link_down) = match open.danmu {
                     DanmuSessionState::Running { link_down_since } => (true, link_down_since),
@@ -455,7 +454,7 @@ impl StreamerFsm {
                 };
                 (
                     Some(open.session_id.clone()),
-                    Some(open.started_at),
+                    attempt_started_at,
                     open.quiet_period.is_some(),
                     active,
                     queued,

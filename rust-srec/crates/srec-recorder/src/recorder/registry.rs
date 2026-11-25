@@ -232,6 +232,7 @@ pub struct ActorRegistry {
     reconcile_rx: Mutex<Option<mpsc::UnboundedReceiver<ReconcileCommand>>>,
     root_cancel: CancellationToken,
     started: AtomicBool,
+    download_coordination_active: AtomicBool,
     shutting_down: AtomicBool,
 }
 
@@ -270,6 +271,7 @@ impl ActorRegistry {
             reconcile_rx: Mutex::new(Some(reconcile_rx)),
             root_cancel: deps.root_cancel,
             started: AtomicBool::new(false),
+            download_coordination_active: AtomicBool::new(false),
             shutting_down: AtomicBool::new(false),
         });
         feedback.bind_registry(&registry);
@@ -341,6 +343,8 @@ impl ActorRegistry {
         coordination_rx: DownloadCoordinationReceiver,
         supervisor: &TaskSupervisor,
     ) {
+        self.download_coordination_active
+            .store(true, Ordering::Release);
         let observer_rx = self.deps.download_manager.subscribe();
         let registry_obs = self.clone();
         let cancel_obs = self.root_cancel.child_token();
@@ -705,7 +709,11 @@ impl ActorRegistry {
             return Ok(false);
         }
 
-        self.deps.streamer_manager.reap_deleted(streamer_id).await
+        let reaped = self.deps.streamer_manager.reap_deleted(streamer_id).await?;
+        if reaped {
+            self.config_revisions.remove(streamer_id);
+        }
+        Ok(reaped)
     }
 
     /// Retire and reap every streamer row carrying a `deleted_at` marker.
@@ -748,16 +756,18 @@ impl ActorRegistry {
 
     /// Refresh resolved `offline_check_*` fields for a single streamer's cached metadata.
     pub async fn refresh_metadata_offline_check(&self, streamer_id: &str) {
+        let revision = self.next_config_revision(streamer_id);
         match self
             .deps
             .config_service
             .get_config_for_streamer(streamer_id)
             .await
         {
-            Ok(merged) => self
-                .deps
-                .streamer_manager
-                .apply_resolved_config(streamer_id, &merged),
+            Ok(merged) => self.deps.streamer_manager.apply_resolved_config_versioned(
+                streamer_id,
+                revision,
+                &merged,
+            ),
             Err(error) => debug!(
                 streamer_id,
                 error = %error,
@@ -800,8 +810,23 @@ impl ActorRegistry {
             });
         }
 
-        // Cancel any in-flight startup lease for this session.
+        // Cancel any in-flight startup lease for this session and wait for it
+        // to exit so a racing startup task cannot spawn a download after we
+        // inspect `active_download_ids_for_streamer`.
         self.deps.leases.cancel_session(&session_id);
+        if !self
+            .deps
+            .leases
+            .wait_for_session_cleared(&session_id, CREDENTIAL_RETIREMENT_STOP_TIMEOUT)
+            .await
+        {
+            warn!(
+                %streamer_id,
+                %session_id,
+                "Credential retirement awaits in-flight startup lease exit"
+            );
+            return;
+        }
 
         // Wait for every active download belonging to the captured session to stop.
         let downloads: Vec<_> = self
@@ -1171,6 +1196,8 @@ impl ActorRegistry {
             self.deps.prober.credential_blocks().clear(streamer_id);
             if let Some(entry) = self.actors.get(streamer_id) {
                 let _ = entry.handle.send_input(FsmInput::Disable);
+            } else {
+                self.config_revisions.remove(streamer_id);
             }
             return;
         };
@@ -1232,20 +1259,41 @@ impl ActorRegistry {
     async fn spawn_actor(self: &Arc<Self>, metadata: Arc<StreamerMetadata>) {
         let streamer_id = metadata.id.clone();
         let revision = self.next_config_revision(&streamer_id);
-        let config = self.resolve_actor_config(&streamer_id, &metadata).await;
+        let config = self
+            .resolve_actor_config(&streamer_id, revision, &metadata)
+            .await;
+
+        // Re-validate liveness, shutdown, and deletion markers after awaiting
+        // async config resolution so a concurrent shutdown, deletion, or
+        // replace-import cannot leave behind a zombie actor.
+        if self.shutting_down.load(Ordering::Acquire) || self.actors.contains_key(&streamer_id) {
+            return;
+        }
+        let Some(fresh) = self
+            .deps
+            .streamer_manager
+            .get_streamer_snapshot(&streamer_id)
+        else {
+            return;
+        };
+        if !should_spawn_actor(fresh.state, fresh.is_deleted()) {
+            return;
+        }
+
         let snapshot = InitialStreamerSnapshot {
             streamer_id: streamer_id.clone(),
-            state: metadata.state,
-            deleted: metadata.is_deleted(),
-            consecutive_error_count: metadata.consecutive_error_count,
-            disabled_until: metadata.disabled_until,
-            last_error: metadata.last_error.clone(),
+            state: fresh.state,
+            deleted: fresh.is_deleted(),
+            consecutive_error_count: fresh.consecutive_error_count,
+            disabled_until: fresh.disabled_until,
+            last_error: fresh.last_error.clone(),
             config,
             config_revision: revision,
         };
         let generation = self.generation_counter.fetch_add(1, Ordering::AcqRel);
         let (actor, handle) = StreamerActor::new(generation, snapshot, self.deps.clone());
         let (exit_tx, exit_rx) = watch::channel(false);
+        let shutdown_handle = handle.clone();
 
         self.actors.insert(
             streamer_id.clone(),
@@ -1269,6 +1317,10 @@ impl ActorRegistry {
             self.actors
                 .remove_if(&streamer_id, |_, entry| entry.generation == generation);
             let _ = exit_tx.send(true);
+        } else if self.shutting_down.load(Ordering::Acquire) {
+            // Close the race window where `shutdown_until` iterated `self.actors`
+            // just before our insert.
+            let _ = shutdown_handle.send_input(FsmInput::Shutdown);
         }
     }
 
@@ -1361,6 +1413,7 @@ impl ActorRegistry {
     async fn resolve_actor_config(
         &self,
         streamer_id: &str,
+        revision: u64,
         metadata: &StreamerMetadata,
     ) -> ResolvedActorConfig {
         let check_interval_ms = self.check_interval_ms.load(Ordering::Acquire);
@@ -1371,9 +1424,11 @@ impl ActorRegistry {
             .await
         {
             Ok(merged) => {
-                self.deps
-                    .streamer_manager
-                    .apply_resolved_config(streamer_id, &merged);
+                self.deps.streamer_manager.apply_resolved_config_versioned(
+                    streamer_id,
+                    revision,
+                    &merged,
+                );
                 ResolvedActorConfig::from_metadata_and_merged(metadata, &merged, check_interval_ms)
             }
             Err(error) => {
@@ -1406,7 +1461,9 @@ impl ActorRegistry {
         // Allocate revision strictly BEFORE awaiting async config resolution so
         // an older slow resolution cannot overwrite a newer revision in the FSM.
         let revision = self.next_config_revision(streamer_id);
-        let config = self.resolve_actor_config(streamer_id, metadata).await;
+        let config = self
+            .resolve_actor_config(streamer_id, revision, metadata)
+            .await;
         let _ = handle.send_input(FsmInput::ConfigUpdated {
             revision,
             config: Box::new(config),
@@ -1488,6 +1545,22 @@ impl ActorRegistry {
                 }
             }
             DownloadManagerEvent::Terminal(terminal) => {
+                if self.download_coordination_active.load(Ordering::Acquire) {
+                    // `DownloadEnded` was already applied synchronously to the FSM
+                    // inside `handle_required_download_event` before
+                    // `finalizer.release_active()`. Now that active ownership is
+                    // released, notify `PhysicalLeaseReleased` (carrying the reserved
+                    // feedback permit) if no physical media leases remain.
+                    if !self.has_physical_media_lease(streamer_id)
+                        && let Some(entry) = self.actors.get(streamer_id)
+                    {
+                        let _ = entry.handle.send_message(ActorMessage::ReservedDownload {
+                            input: FsmInput::PhysicalLeaseReleased,
+                            _permit: permit,
+                        });
+                    }
+                    return;
+                }
                 let attempt_id = terminal
                     .download_id()
                     .and_then(|download_id| self.deps.leases.take_attempt_for_download(download_id))
@@ -1773,11 +1846,34 @@ impl ActorRegistry {
                 )
                 .await
             }
-            DownloadManagerEvent::Terminal(_) => {
-                // All preceding `SegmentStarted` and `SegmentCompleted` receipts
-                // have already settled before `AttemptTask` reaches this barrier.
-                // `DownloadEnded` is delivered strictly after `finalizer.release_active()`
-                // via `RecorderFeedbackSink::publish_reserved`.
+            DownloadManagerEvent::Terminal(terminal) => {
+                // Apply `DownloadEnded` synchronously to the resident FSM before
+                // `finalizer.release_active()` releases active ownership and wakes
+                // `stop_download_with_reason()` waiters, while keeping the actor
+                // non-blocking (the ack resolves as soon as the synchronous FSM
+                // step and non-blocking effect dispatch finish).
+                let streamer_id = terminal.streamer_id();
+                let attempt_id = terminal
+                    .download_id()
+                    .and_then(|download_id| self.deps.leases.take_attempt_for_download(download_id))
+                    .or_else(|| {
+                        self.deps
+                            .leases
+                            .attempt_for_session(streamer_id, terminal.session_id())
+                    })
+                    .unwrap_or(0);
+                if let Some(handle) = self.actors.get(streamer_id).map(|e| e.handle.clone()) {
+                    let (ack_tx, ack_rx) = oneshot::channel();
+                    let input = FsmInput::DownloadEnded {
+                        attempt_id,
+                        event: terminal,
+                    };
+                    if handle.send_message(ActorMessage::DownloadEnded { input, ack: ack_tx })
+                        && let Ok(res) = ack_rx.await
+                    {
+                        return res;
+                    }
+                }
                 Ok(())
             }
             DownloadManagerEvent::Progress(_) => Ok(()),

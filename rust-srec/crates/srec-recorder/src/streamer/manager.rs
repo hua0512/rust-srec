@@ -37,6 +37,9 @@ where
     committed: Option<Arc<CommittedStreamerState>>,
     /// Lowercased URL index for fast lookups.
     url_index: Arc<DashMap<String, String>>,
+    /// Monotonic revision fence for `apply_resolved_config_versioned` so
+    /// slower concurrent config resolutions cannot regress `offline_check_*`.
+    resolved_config_revisions: DashMap<String, u64>,
     /// Streamer repository for persistence.
     repo: Arc<R>,
     /// Event broadcaster for config updates.
@@ -86,6 +89,7 @@ where
         Self {
             metadata: cache.metadata.clone(),
             url_index: cache.urls.clone(),
+            resolved_config_revisions: DashMap::new(),
             cache,
             committed,
             repo,
@@ -631,6 +635,9 @@ where
     /// `Ok(false)` when the row was already reaped.
     pub async fn reap_deleted(&self, id: &str) -> Result<bool> {
         let reaped = self.repo.delete_marked_streamer(id).await?;
+        if reaped {
+            self.resolved_config_revisions.remove(id);
+        }
         if self.committed.is_some() {
             return Ok(reaped);
         }
@@ -678,6 +685,29 @@ where
         if let Some(mut entry) = self.metadata.get_mut(streamer_id) {
             let entry = Arc::make_mut(entry.value_mut());
             entry.apply_resolved_config(merged);
+        }
+    }
+
+    /// Revision-fenced variant of [`Self::apply_resolved_config`]: ignores a
+    /// stale async resolution whose pre-allocated `revision` is older than the
+    /// last applied revision for `streamer_id`.
+    pub fn apply_resolved_config_versioned(
+        &self,
+        streamer_id: &str,
+        revision: u64,
+        merged: &crate::config::MergedConfig,
+    ) {
+        let _publication = self.cache.publication.write();
+        if let Some(last) = self.resolved_config_revisions.get(streamer_id)
+            && revision < *last
+        {
+            return;
+        }
+        if let Some(mut entry) = self.metadata.get_mut(streamer_id) {
+            let entry = Arc::make_mut(entry.value_mut());
+            entry.apply_resolved_config(merged);
+            self.resolved_config_revisions
+                .insert(streamer_id.to_owned(), revision);
         }
     }
 

@@ -862,6 +862,7 @@ async fn deliver_durable_rejects_shutdown_and_dead_letter_persistence_failures()
         .write()
         .subscriptions_by_event
         .insert("system_startup".into(), vec!["ch-1".into()]);
+    failing_dl_service.db_loaded.store(true, Ordering::Release);
     let dl_result = tokio::time::timeout(
         Duration::from_secs(1),
         failing_dl_service.deliver_durable(event()),
