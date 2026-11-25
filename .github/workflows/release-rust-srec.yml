@@ -121,11 +121,11 @@ jobs:
           shared-key: pr-test
           save-if: false
       - name: Clippy
-        run: cargo clippy -p rust-srec -p srec-core -p srec-sqlite -p srec-processors -p srec-engines --locked --features rust-srec/tls-native-fallback -- -D warnings
+        run: cargo clippy -p rust-srec -p srec-core -p srec-sqlite -p srec-processors -p srec-engines -p srec-notify --locked --features rust-srec/tls-native-fallback -- -D warnings
       - name: Test
-        run: cargo nextest run -p rust-srec -p srec-core -p srec-sqlite -p srec-processors -p srec-engines --locked --features rust-srec/tls-native-fallback
+        run: cargo nextest run -p rust-srec -p srec-core -p srec-sqlite -p srec-processors -p srec-engines -p srec-notify --locked --features rust-srec/tls-native-fallback
       - name: Doctests
-        run: cargo test -p rust-srec -p srec-core -p srec-sqlite -p srec-processors -p srec-engines --locked --doc --features rust-srec/tls-native-fallback
+        run: cargo test -p rust-srec -p srec-core -p srec-sqlite -p srec-processors -p srec-engines -p srec-notify --locked --doc --features rust-srec/tls-native-fallback
 
   build:
     needs: check-and-test

@@ -290,7 +290,7 @@ pub async fn subscribe_web_push(
         .validate_endpoint(endpoint)
         .await
         .map_err(|error| match error {
-            crate::Error::Validation(msg) => ApiError::bad_request(msg),
+            crate::notification::NotifyError::Validation(msg) => ApiError::bad_request(msg),
             other => ApiError::from(other),
         })?;
 
@@ -679,13 +679,12 @@ mod tests {
 
     use axum::body::{Body, to_bytes};
     use axum::http::Request;
-    use p256::ecdsa::SigningKey;
     use tower::ServiceExt;
 
     use super::*;
     use crate::database::repositories::SqlxNotificationRepository;
     use crate::notification::NotificationService;
-    use crate::notification::web_push::WebPushService;
+    use crate::notification::web_push::{WebPushConfig, WebPushService, generate_vapid_keypair};
 
     #[tokio::test]
     async fn web_push_routes_work_when_auth_disabled_and_reject_private_endpoints() {
@@ -700,14 +699,17 @@ mod tests {
             repo.clone(),
         ));
 
-        let private = [41u8; 32];
-        let signing = SigningKey::from_bytes((&private).into()).unwrap();
-        let public = signing.verifying_key().to_sec1_point(false);
-        let pub_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(public.as_bytes());
+        let keypair = generate_vapid_keypair();
+        let pub_b64 = keypair.public_key_b64.clone();
         let auth_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode([7u8; 16]);
-        let web_push_service = Arc::new(
-            WebPushService::test_new(pool.clone(), pool.clone(), pub_b64.clone(), private).unwrap(),
-        );
+        let web_push_config = WebPushConfig::from_vapid(
+            keypair.public_key_b64,
+            keypair.private_key_b64,
+            "mailto:test@localhost",
+        )
+        .unwrap();
+        let web_push_service =
+            Arc::new(WebPushService::new(pool.clone(), pool.clone(), web_push_config).unwrap());
 
         let state = NotificationRouteState {
             auth_enabled: false,

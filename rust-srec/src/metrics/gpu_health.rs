@@ -70,8 +70,8 @@ const COMPONENT_NAME: &str = "gpu";
 /// The `as_str` values are used as i18n discriminator keys
 /// (`notification.gpu_unavailable.description.<kind>`) and as the
 /// `kind=` field in tracing logs. Adding a variant requires adding the
-/// matching key to `locales/{en,zh-CN}.yml` and a branch to the
-/// `description()` arm in `notification/events.rs`.
+/// matching key to `rust-srec/crates/srec-notify/locales/{en,zh-CN}.yml`
+/// and a branch to `description_in()` in `srec-notify`'s `events/render.rs`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GpuErrorKind {
     /// `Failed to initialize NVML: Unknown Error` — the cgroup-wipe

@@ -30,9 +30,6 @@ url = { workspace = true }
 percent-encoding = { workspace = true }
 base64 = { workspace = true }
 rustls = { workspace = true }
-aes-gcm = { workspace = true }
-hkdf = { workspace = true }
-p256 = { workspace = true }
 
 # Caching
 dashmap = { workspace = true }
@@ -49,6 +46,7 @@ sysinfo = { workspace = true }
 
 srec-core = { workspace = true }
 srec-engines = { workspace = true }
+srec-notify = { workspace = true }
 srec-processors = { workspace = true }
 srec-sqlite = { workspace = true }
 pipeline-common = { path = "../crates/pipeline-common" }
@@ -69,7 +67,6 @@ utoipa-swagger-ui = { workspace = true }
 rmcp = { workspace = true }
 schemars = { workspace = true }
 jsonwebtoken = { workspace = true }
-lettre = { workspace = true }
 mimalloc = { workspace = true }
 
 # Cryptography for password hashing and token generation
@@ -85,10 +82,6 @@ flate2 = { workspace = true }
 
 # Filesystem (used at runtime by the output-root write gate's startup probe)
 tempfile = { workspace = true }
-
-# Backend i18n for every NotificationEvent variant (including credential events);
-# API errors and health messages stay English by design.
-rust-i18n = { workspace = true }
 
 [dev-dependencies]
 srec-engines = { workspace = true, features = ["test-support"] }

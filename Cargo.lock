@@ -5720,7 +5720,6 @@ dependencies = [
 name = "rust-srec"
 version = "0.8.0"
 dependencies = [
- "aes-gcm",
  "anyhow",
  "arc-swap",
  "argon2",
@@ -5733,13 +5732,10 @@ dependencies = [
  "flate2",
  "futures",
  "hex",
- "hkdf",
  "jiff",
  "jiff-cron",
  "jsonwebtoken",
- "lettre",
  "mimalloc",
- "p256",
  "parking_lot",
  "percent-encoding",
  "pipeline-common",
@@ -5752,7 +5748,6 @@ dependencies = [
  "regex",
  "reqwest",
  "rmcp",
- "rust-i18n",
  "rustls",
  "schemars 1.2.3",
  "serde",
@@ -5761,6 +5756,7 @@ dependencies = [
  "sqlx",
  "srec-core",
  "srec-engines",
+ "srec-notify",
  "srec-processors",
  "srec-sqlite",
  "syn 3.0.10",
@@ -6785,6 +6781,38 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "srec-notify"
+version = "0.8.0"
+dependencies = [
+ "aes-gcm",
+ "async-trait",
+ "base64 0.23.1",
+ "dashmap",
+ "futures",
+ "hkdf",
+ "jiff",
+ "lettre",
+ "p256",
+ "parking_lot",
+ "rand 0.10.4",
+ "reqwest",
+ "rust-i18n",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "sqlx",
+ "srec-core",
+ "srec-sqlite",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
 ]
 
 [[package]]

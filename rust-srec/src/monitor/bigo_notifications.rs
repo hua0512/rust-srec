@@ -131,8 +131,8 @@ const NOT_ARRIVING_AFTER: u32 = 3;
 /// How long the listener may stay disconnected before the notification
 /// channels hear of it. Reconnecting after a dropped connection takes
 /// seconds, so only an outage that the backoff or [`SLOW_RETRY`] keeps going
-/// alerts. The alert's text in `locales/` and the status's `down_since`
-/// documentation name this duration.
+/// alerts. The alert's text in `rust-srec/crates/srec-notify/locales/` and
+/// the status's `down_since` documentation name this duration.
 const DOWN_ALERT_AFTER: Duration = Duration::from_secs(5 * 60);
 
 /// Bound on refreshing a signed-out account.

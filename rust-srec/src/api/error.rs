@@ -326,6 +326,12 @@ impl From<srec_sqlite::DbError> for ApiError {
     }
 }
 
+impl From<srec_notify::NotifyError> for ApiError {
+    fn from(err: srec_notify::NotifyError) -> Self {
+        Self::from(Error::from(err))
+    }
+}
+
 impl From<crate::proxies::ProxyError> for ApiError {
     fn from(error: crate::proxies::ProxyError) -> Self {
         use crate::proxies::ProxyError;

@@ -826,6 +826,7 @@ fn component_for_external_crate(ident: &str) -> Option<Component> {
         "srec_sqlite" => Some(Component::Sqlite),
         "srec_engines" => Some(Component::Engines),
         "srec_processors" => Some(Component::Processors),
+        "srec_notify" => Some(Component::Notify),
         "rust_srec" => Some(Component::AppEntry),
         _ => None,
     }
@@ -910,6 +911,13 @@ fn production_source_files() -> Vec<AnalyzedFile> {
         &manifest_dir.join("crates/srec-processors"),
         "crates/srec-processors/src",
         Component::Processors,
+        false,
+        &mut analyzed,
+    );
+    analyze_extracted_crate(
+        &manifest_dir.join("crates/srec-notify"),
+        "crates/srec-notify/src",
+        Component::Notify,
         false,
         &mut analyzed,
     );
@@ -1106,15 +1114,15 @@ fn heavy_external_dependencies_stay_within_target_crates() {
             crates: &["p256"],
             bare_markers: &[],
             allowed_slots: &[ModuleSlot::Layer(Component::Notify)],
-            allowed_files: &["bin/rust-srec-vapid.rs"],
-            rationale: "VAPID P-256 keys belong exclusively to srec-notify and the VAPID CLI",
+            allowed_files: &[],
+            rationale: "VAPID P-256 keys belong exclusively to srec-notify",
         },
         ExternalRule {
             crates: &["rust_i18n"],
             bare_markers: &["t_str", "t_str_in"],
             allowed_slots: &[ModuleSlot::Layer(Component::Notify)],
-            allowed_files: &["lib.rs"],
-            rationale: "backend i18n belongs exclusively to srec-notify (plus crate-root macro init)",
+            allowed_files: &[],
+            rationale: "backend i18n belongs exclusively to srec-notify",
         },
         ExternalRule {
             crates: &[
@@ -1167,10 +1175,12 @@ fn heavy_external_dependencies_stay_within_target_crates() {
     for entry in &analyzed {
         let rel = entry.display_path.as_str();
 
-        if rel == "i18n.rs" && entry.refs.has_macro_export {
-            violations.push(
-                "i18n.rs: exports i18n macros outside the crate via #[macro_export]".to_owned(),
-            );
+        if (rel == "i18n.rs" || rel == "crates/srec-notify/src/i18n.rs")
+            && entry.refs.has_macro_export
+        {
+            violations.push(format!(
+                "{rel}: exports i18n macros outside the crate via #[macro_export]"
+            ));
         }
 
         let slot_name = match entry.slot {
@@ -1300,32 +1310,29 @@ fn extracted_layer0_manifests_isolate_forbidden_dependencies() {
 #[test]
 fn extracted_layer1_manifests_isolate_forbidden_dependencies() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let shared_forbidden = [
+    let common_forbidden = [
         "rust-srec",
-        "sqlx",
-        "srec-sqlite",
-        "srec-notify",
         "platforms-parser",
         "axum",
         "utoipa",
         "utoipa-swagger-ui",
         "schemars",
         "rmcp",
+        "prost",
+        "argon2",
+        "jsonwebtoken",
+    ];
+    let notify_only_deps = [
+        "sqlx",
+        "srec-sqlite",
+        "srec-notify",
         "lettre",
         "p256",
         "aes-gcm",
         "hkdf",
         "rust-i18n",
-        "prost",
-        "argon2",
-        "jsonwebtoken",
     ];
-
-    let mut violations = Vec::new();
-
-    let processors_deps =
-        manifest_dependency_names(&manifest_dir.join("crates/srec-processors/Cargo.toml"));
-    for forbidden in shared_forbidden.into_iter().chain([
+    let engine_only_deps = [
         "srec-engines",
         "mesio",
         "mesio-engine",
@@ -1333,7 +1340,18 @@ fn extracted_layer1_manifests_isolate_forbidden_dependencies() {
         "flv-fix",
         "hls",
         "hls-fix",
-    ]) {
+    ];
+    let processor_only_deps = ["srec-processors", "zip", "tar"];
+
+    let mut violations = Vec::new();
+
+    let processors_deps =
+        manifest_dependency_names(&manifest_dir.join("crates/srec-processors/Cargo.toml"));
+    for forbidden in common_forbidden
+        .into_iter()
+        .chain(notify_only_deps)
+        .chain(engine_only_deps)
+    {
         if processors_deps.contains(forbidden) {
             violations.push(format!(
                 "crates/srec-processors/Cargo.toml must not depend on `{forbidden}`"
@@ -1343,13 +1361,37 @@ fn extracted_layer1_manifests_isolate_forbidden_dependencies() {
 
     let engines_deps =
         manifest_dependency_names(&manifest_dir.join("crates/srec-engines/Cargo.toml"));
-    for forbidden in shared_forbidden
+    for forbidden in common_forbidden
         .into_iter()
-        .chain(["srec-processors", "zip", "tar"])
+        .chain(notify_only_deps)
+        .chain(processor_only_deps)
     {
         if engines_deps.contains(forbidden) {
             violations.push(format!(
                 "crates/srec-engines/Cargo.toml must not depend on `{forbidden}`"
+            ));
+        }
+    }
+
+    let notify_deps =
+        manifest_dependency_names(&manifest_dir.join("crates/srec-notify/Cargo.toml"));
+    for forbidden in common_forbidden
+        .into_iter()
+        .chain(engine_only_deps)
+        .chain(processor_only_deps)
+    {
+        if notify_deps.contains(forbidden) {
+            violations.push(format!(
+                "crates/srec-notify/Cargo.toml must not depend on `{forbidden}`"
+            ));
+        }
+    }
+
+    let root_deps = manifest_dependency_names(&manifest_dir.join("Cargo.toml"));
+    for notify_exclusive in ["lettre", "p256", "aes-gcm", "hkdf", "rust-i18n"] {
+        if root_deps.contains(notify_exclusive) {
+            violations.push(format!(
+                "rust-srec/Cargo.toml must not depend directly on `{notify_exclusive}` (belongs exclusively to srec-notify)"
             ));
         }
     }
@@ -1397,6 +1439,7 @@ fn desktop_tauri_accesses_backend_only_through_facade() {
             "srec_sqlite",
             "srec_engines",
             "srec_processors",
+            "srec_notify",
         ] {
             if refs.external_roots.contains(internal_crate) {
                 violations.push(format!(
@@ -1415,6 +1458,7 @@ fn desktop_tauri_accesses_backend_only_through_facade() {
         "srec-sqlite",
         "srec-engines",
         "srec-processors",
+        "srec-notify",
     ] {
         if tauri_deps.contains(internal_crate) {
             violations.push(format!(

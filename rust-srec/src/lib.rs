@@ -2,12 +2,6 @@
 //!
 //! This module exposes the core functionality for integration testing.
 
-// Embed locale YAML files at compile time. Must be invoked at the crate root
-// because the `t!` macro generates code that resolves `_rust_i18n_t` via
-// `crate::_rust_i18n_t`. See `crate::i18n` for the wrapper module that
-// re-exports `t!` and exposes locale-management helpers.
-rust_i18n::i18n!("locales", fallback = "en");
-
 pub mod backend;
 pub mod error;
 mod mcp;
@@ -35,7 +29,7 @@ pub use srec_sqlite as database;
 #[doc(hidden)]
 pub mod downloader;
 #[doc(hidden)]
-pub mod i18n;
+pub use srec_notify::i18n;
 #[doc(hidden)]
 pub mod logging;
 #[doc(hidden)]
@@ -43,7 +37,7 @@ pub mod metrics;
 #[doc(hidden)]
 pub mod monitor;
 #[doc(hidden)]
-pub mod notification;
+pub use srec_notify as notification;
 #[doc(hidden)]
 pub mod panic_hook;
 #[doc(hidden)]
@@ -62,3 +56,23 @@ pub mod streamer;
 #[doc(hidden)]
 pub use api::auth_request::override_socket_revalidation_interval;
 pub use error::{Error, Result};
+
+impl From<srec_notify::NotifyError> for Error {
+    fn from(error: srec_notify::NotifyError) -> Self {
+        match error {
+            srec_notify::NotifyError::Database(e) => Self::from(e),
+            srec_notify::NotifyError::DatabaseSqlx(e) => Self::DatabaseSqlx(e),
+            srec_notify::NotifyError::Serialization(e) => Self::Serialization(e),
+            srec_notify::NotifyError::NotFound { entity_type, id } => {
+                Self::NotFound { entity_type, id }
+            }
+            srec_notify::NotifyError::Validation(msg) => Self::Validation(msg),
+            srec_notify::NotifyError::Configuration(msg) => Self::Configuration(msg),
+            srec_notify::NotifyError::Proxy(e) => Self::Proxy(e),
+            srec_notify::NotifyError::NotificationDelivery { channel, message } => {
+                Self::NotificationDelivery { channel, message }
+            }
+            srec_notify::NotifyError::Other(msg) => Self::Other(msg),
+        }
+    }
+}

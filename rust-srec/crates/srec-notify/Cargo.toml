@@ -1,0 +1,43 @@
+[package]
+name = "srec-notify"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Notification channels, localized event rendering, Web Push, and durable outbox delivery for rust-srec"
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+aes-gcm = { workspace = true }
+async-trait = { workspace = true }
+base64 = { workspace = true }
+dashmap = { workspace = true }
+futures = { workspace = true }
+hkdf = { workspace = true }
+jiff = { workspace = true }
+lettre = { workspace = true }
+p256 = { workspace = true }
+parking_lot = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true }
+rust-i18n = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+sqlx = { workspace = true }
+srec-core = { workspace = true }
+srec-sqlite = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+srec-sqlite = { workspace = true, features = ["test-support"] }
+tokio = { workspace = true, features = ["test-util"] }
+tracing-subscriber = { workspace = true }
