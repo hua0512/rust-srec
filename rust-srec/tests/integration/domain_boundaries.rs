@@ -824,6 +824,8 @@ fn component_for_external_crate(ident: &str) -> Option<Component> {
     match ident {
         "srec_core" => Some(Component::Core),
         "srec_sqlite" => Some(Component::Sqlite),
+        "srec_engines" => Some(Component::Engines),
+        "srec_processors" => Some(Component::Processors),
         "rust_srec" => Some(Component::AppEntry),
         _ => None,
     }
@@ -880,8 +882,9 @@ fn production_source_files() -> Vec<AnalyzedFile> {
     let mut unmapped = Vec::new();
     let mut analyzed = Vec::new();
 
-    // Scan extracted Layer 0 workspace crates directly. `srec-core` includes its
-    // unit tests so domain and utility tests stay storage-free as well.
+    // Scan extracted Layer 0 and Layer 1 workspace crates directly. `srec-core`
+    // includes its unit tests so domain and utility tests stay storage-free as
+    // well.
     analyze_extracted_crate(
         &manifest_dir.join("crates/srec-core"),
         "crates/srec-core/src",
@@ -893,6 +896,20 @@ fn production_source_files() -> Vec<AnalyzedFile> {
         &manifest_dir.join("crates/srec-sqlite"),
         "crates/srec-sqlite/src",
         Component::Sqlite,
+        false,
+        &mut analyzed,
+    );
+    analyze_extracted_crate(
+        &manifest_dir.join("crates/srec-engines"),
+        "crates/srec-engines/src",
+        Component::Engines,
+        false,
+        &mut analyzed,
+    );
+    analyze_extracted_crate(
+        &manifest_dir.join("crates/srec-processors"),
+        "crates/srec-processors/src",
+        Component::Processors,
         false,
         &mut analyzed,
     );
@@ -1226,6 +1243,9 @@ fn extracted_layer0_manifests_isolate_forbidden_dependencies() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let shared_forbidden = [
         "rust-srec",
+        "srec-engines",
+        "srec-processors",
+        "srec-notify",
         "axum",
         "utoipa",
         "utoipa-swagger-ui",
@@ -1278,6 +1298,70 @@ fn extracted_layer0_manifests_isolate_forbidden_dependencies() {
 }
 
 #[test]
+fn extracted_layer1_manifests_isolate_forbidden_dependencies() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let shared_forbidden = [
+        "rust-srec",
+        "sqlx",
+        "srec-sqlite",
+        "srec-notify",
+        "platforms-parser",
+        "axum",
+        "utoipa",
+        "utoipa-swagger-ui",
+        "schemars",
+        "rmcp",
+        "lettre",
+        "p256",
+        "aes-gcm",
+        "hkdf",
+        "rust-i18n",
+        "prost",
+        "argon2",
+        "jsonwebtoken",
+    ];
+
+    let mut violations = Vec::new();
+
+    let processors_deps =
+        manifest_dependency_names(&manifest_dir.join("crates/srec-processors/Cargo.toml"));
+    for forbidden in shared_forbidden.into_iter().chain([
+        "srec-engines",
+        "mesio",
+        "mesio-engine",
+        "flv",
+        "flv-fix",
+        "hls",
+        "hls-fix",
+    ]) {
+        if processors_deps.contains(forbidden) {
+            violations.push(format!(
+                "crates/srec-processors/Cargo.toml must not depend on `{forbidden}`"
+            ));
+        }
+    }
+
+    let engines_deps =
+        manifest_dependency_names(&manifest_dir.join("crates/srec-engines/Cargo.toml"));
+    for forbidden in shared_forbidden
+        .into_iter()
+        .chain(["srec-processors", "zip", "tar"])
+    {
+        if engines_deps.contains(forbidden) {
+            violations.push(format!(
+                "crates/srec-engines/Cargo.toml must not depend on `{forbidden}`"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "extracted Layer 1 Cargo.toml files violated dependency isolation:\n{}",
+        violations.join("\n")
+    );
+}
+
+#[test]
 fn desktop_tauri_accesses_backend_only_through_facade() {
     let tauri_src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src-tauri/src");
     let mut files = Vec::new();
@@ -1308,13 +1392,34 @@ fn desktop_tauri_accesses_backend_only_through_facade() {
                 ));
             }
         }
-        for internal_crate in ["srec_core", "srec_sqlite"] {
+        for internal_crate in [
+            "srec_core",
+            "srec_sqlite",
+            "srec_engines",
+            "srec_processors",
+        ] {
             if refs.external_roots.contains(internal_crate) {
                 violations.push(format!(
                     "src-tauri/src/{}: direct reference to `{internal_crate}` (must go through rust_srec::backend)",
                     rel.display()
                 ));
             }
+        }
+    }
+
+    let tauri_deps = manifest_dependency_names(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("src-tauri/Cargo.toml"),
+    );
+    for internal_crate in [
+        "srec-core",
+        "srec-sqlite",
+        "srec-engines",
+        "srec-processors",
+    ] {
+        if tauri_deps.contains(internal_crate) {
+            violations.push(format!(
+                "src-tauri/Cargo.toml must not depend directly on `{internal_crate}` (must go through rust-srec::backend)"
+            ));
         }
     }
 

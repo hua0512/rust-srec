@@ -9,7 +9,7 @@
 //! - Stream selection based on quality, format, and CDN preferences
 
 mod bigo_native;
-pub mod engine;
+pub use srec_engines as engine;
 
 mod manager;
 pub(crate) mod output_root_gate;

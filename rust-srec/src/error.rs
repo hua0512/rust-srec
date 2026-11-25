@@ -171,58 +171,6 @@ impl Error {
                 )
         )
     }
-
-    pub(crate) fn into_core_error(self) -> srec_core::CoreError {
-        match self {
-            Self::ManualSplit(e) => srec_core::CoreError::ManualSplit(e),
-            Self::SchedulerFeedbackBusy { streamer_id } => {
-                srec_core::CoreError::SchedulerFeedbackBusy { streamer_id }
-            }
-            Self::DatabaseSqlx(e) => srec_core::CoreError::Database(e.to_string()),
-            Self::FilterSnapshot(e) => srec_core::CoreError::Database(e.to_string()),
-            Self::Database(msg) => srec_core::CoreError::Database(msg),
-            Self::Serialization(e) => srec_core::CoreError::Serialization(e),
-            Self::InvalidStateTransition { from, to } => {
-                srec_core::CoreError::InvalidStateTransition { from, to }
-            }
-            Self::NotFound { entity_type, id } => {
-                srec_core::CoreError::NotFound { entity_type, id }
-            }
-            Self::Validation(msg) => srec_core::CoreError::Validation(msg),
-            Self::Conflict(msg) => srec_core::CoreError::Conflict(msg),
-            Self::DagAlreadyTerminal { dag_id } => {
-                srec_core::CoreError::DagAlreadyTerminal { dag_id }
-            }
-            Self::Configuration(msg) => srec_core::CoreError::Configuration(msg),
-            Self::Io(e) => srec_core::CoreError::Io(e),
-            Self::IoPath { op, path, source } => srec_core::CoreError::IoPath { op, path, source },
-            Self::Monitor(msg) => srec_core::CoreError::Monitor(msg),
-            Self::Extractor(e) => srec_core::CoreError::Other(e.to_string()),
-            Self::CredentialProfile(e) => srec_core::CoreError::CredentialProfile(e),
-            Self::CredentialUnavailable(e) => srec_core::CoreError::CredentialUnavailable(e),
-            Self::Proxy(e) => srec_core::CoreError::Proxy(e),
-            Self::PipelineError(msg) => srec_core::CoreError::PipelineError(msg),
-            Self::NonRetryablePipeline(msg) => srec_core::CoreError::NonRetryablePipeline(msg),
-            Self::ApiError(msg) => srec_core::CoreError::ApiError(msg),
-            Self::DanmakuError(e) => srec_core::CoreError::Other(e.to_string()),
-            Self::Other(msg) => srec_core::CoreError::Other(msg),
-            Self::NotificationDelivery { channel, message } => {
-                srec_core::CoreError::NotificationDelivery { channel, message }
-            }
-            Self::DuplicateUrl(url) => srec_core::CoreError::DuplicateUrl(url),
-            Self::PresetInUse {
-                change,
-                kind,
-                name,
-                users,
-            } => srec_core::CoreError::PresetInUse {
-                change,
-                kind,
-                name,
-                users,
-            },
-        }
-    }
 }
 
 impl From<srec_core::CoreError> for Error {

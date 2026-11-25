@@ -1,0 +1,742 @@
+//! Stage complete processor outputs before publishing them, with batch rollback.
+
+use std::path::{Path, PathBuf};
+
+use tracing::warn;
+
+use super::paths::{StagedPath, StagedPathIndex};
+use srec_core::domain::processor::{StagedOutputTracker, temp_path_for};
+use srec_core::{CoreError as Error, CoreResult as Result};
+
+/// Fold one successful or skipped media result into the batch result, in input
+/// order. Size metrics are summed; an item without a size (a skipped input)
+/// leaves the totals untouched. Batch callers own metadata, commit/rollback and
+/// post-publication source deletion. Transfer results and partial-failure
+/// drivers use their own aggregation policy.
+pub(super) fn accumulate_media_output(
+    batch: &mut super::ProcessorOutput,
+    one: super::ProcessorOutput,
+) {
+    batch.duration_secs += one.duration_secs;
+    batch.outputs.extend(one.outputs);
+    batch.items_produced.extend(one.items_produced);
+    batch.skipped_inputs.extend(one.skipped_inputs);
+    batch.succeeded_inputs.extend(one.succeeded_inputs);
+    batch.logs.extend(one.logs);
+    for (total, size) in [
+        (&mut batch.input_size_bytes, one.input_size_bytes),
+        (&mut batch.output_size_bytes, one.output_size_bytes),
+    ] {
+        if let Some(size) = size {
+            *total = Some(total.unwrap_or(0).saturating_add(size));
+        }
+    }
+}
+
+pub(super) struct TempOutputGuard {
+    path: PathBuf,
+    cleanup: bool,
+    /// Set only while a blocking closure owns the guard; async owners must not
+    /// run filesystem cleanup on their runtime thread.
+    pub(super) cleanup_on_current_thread: bool,
+    /// A hard-linked backup shares permissions with the original file.
+    cleanup_readonly: bool,
+}
+
+impl TempOutputGuard {
+    /// A guard for a new temporary sibling of `output_path`, recorded through
+    /// `tracker` before the caller creates the file, so a crash that skips
+    /// this guard's cleanup still leaves the file listed after a restart.
+    pub(super) async fn recorded(output_path: &Path, tracker: &StagedOutputTracker) -> Self {
+        let guard = Self::new(output_path);
+        tracker.record(guard.path(), output_path).await;
+        guard
+    }
+
+    /// An unrecorded guard, for overwrite backups that exist only while a
+    /// commit renames outputs into place. Staged outputs use [`Self::recorded`].
+    pub(super) fn new(output_path: &Path) -> Self {
+        Self {
+            path: temp_path_for(output_path),
+            cleanup: true,
+            cleanup_on_current_thread: false,
+            cleanup_readonly: true,
+        }
+    }
+
+    pub(super) fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TempOutputGuard {
+    fn drop(&mut self) {
+        if !self.cleanup {
+            return;
+        }
+        let path = self.path.clone();
+        let cleanup_readonly = self.cleanup_readonly;
+        dispatch_cleanup(self.cleanup_on_current_thread, move || {
+            remove_temp_output(&path, cleanup_readonly)
+        });
+    }
+}
+
+fn dispatch_cleanup(in_blocking_commit: bool, cleanup: impl FnOnce() + Send + 'static) {
+    if !in_blocking_commit && let Ok(runtime) = tokio::runtime::Handle::try_current() {
+        runtime.spawn_blocking(cleanup);
+    } else {
+        cleanup();
+    }
+}
+
+fn remove_temp_output(path: &Path, cleanup_readonly: bool) {
+    #[cfg(not(windows))]
+    let _ = cleanup_readonly;
+    for attempt in 0..=20 {
+        if attempt > 0 {
+            // Windows may briefly retain a file handle after process-tree termination.
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        match std::fs::remove_file(path) {
+            Ok(()) => return,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+            Err(error) if attempt == 20 => {
+                warn!(%error, path = %path.display(), "Failed to remove temporary processor output");
+            }
+            #[cfg(windows)]
+            Err(error)
+                if cleanup_readonly && error.kind() == std::io::ErrorKind::PermissionDenied =>
+            {
+                // Copying a read-only source preserves that attribute on its
+                // private temp. Clear only that temp's attribute; hard-linked
+                // backups must leave surviving originals' permissions alone.
+                let reset = std::fs::metadata(path).and_then(|metadata| {
+                    let mut permissions = metadata.permissions();
+                    if metadata.is_file() && permissions.readonly() {
+                        #[allow(
+                            clippy::permissions_set_readonly_false,
+                            reason = "Windows-only attribute reset; Unix permission bits are unchanged"
+                        )]
+                        permissions.set_readonly(false);
+                        std::fs::set_permissions(path, permissions)?;
+                    }
+                    Ok(())
+                });
+                if let Err(error) = reset {
+                    tracing::debug!(%error, path = %path.display(), "Could not clear temporary output's read-only attribute; cleanup will retry");
+                }
+            }
+            Err(_) => {}
+        }
+    }
+}
+
+fn verified_size(path: &Path) -> Result<u64> {
+    let metadata = std::fs::symlink_metadata(path)
+        .map_err(|error| Error::io_path("inspect processor output", path, error))?;
+    if !metadata.is_file() || metadata.len() == 0 {
+        return Err(Error::PipelineError(format!(
+            "Processor did not produce a nonempty regular file: {}",
+            path.display()
+        )));
+    }
+    Ok(metadata.len())
+}
+
+pub(super) async fn output_size(path: &Path) -> Result<u64> {
+    let path = path.to_owned();
+    tokio::task::spawn_blocking(move || verified_size(&path))
+        .await
+        .map_err(|error| Error::PipelineError(format!("Output validation failed: {error}")))?
+}
+
+fn promote(temp: &Path, output: &Path, overwrite: bool) -> Result<()> {
+    if overwrite {
+        std::fs::rename(temp, output)
+            .map_err(|error| Error::io_path("promote processor output", output, error))
+    } else {
+        // tempfile uses native no-replace rename where available (including Windows,
+        // Linux and macOS), with a hard-link fallback on older platforms. Unlike an
+        // existence check followed by rename, it never overwrites a competing output.
+        let path = tempfile::TempPath::try_from_path(temp)
+            .map_err(|error| Error::io_path("prepare output promotion", temp, error))?;
+        path.persist_noclobber(output).map_err(|failure| {
+            let error = failure.error;
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                Error::PipelineError(format!(
+                    "Output file already exists and overwrite is disabled: {}",
+                    output.display()
+                ))
+            } else {
+                Error::io_path("publish processor output", output, error)
+            }
+        })
+    }
+}
+
+#[derive(Default)]
+struct OutputValidation {
+    sources: StagedPathIndex,
+    outputs: StagedPathIndex,
+}
+
+impl OutputValidation {
+    fn protect(&mut self, sources: impl IntoIterator<Item = PathBuf>) {
+        for source in sources {
+            self.sources.insert(StagedPath::prepare(source));
+        }
+    }
+
+    fn stage(&mut self, output: &Path) -> Result<()> {
+        let prepared = StagedPath::prepare(output.to_owned());
+        if self.sources.aliases(&prepared)? {
+            return Err(Error::PipelineError(format!(
+                "Output path aliases an input file: {}",
+                output.display()
+            )));
+        }
+        if self.outputs.aliases(&prepared)? {
+            return Err(Error::PipelineError(format!(
+                "Multiple outputs name the same file: {}",
+                output.display()
+            )));
+        }
+        self.outputs.insert(prepared);
+        Ok(())
+    }
+}
+
+struct PendingOutput {
+    temp: TempOutputGuard,
+    output: PathBuf,
+    overwrite: bool,
+    original: Option<TempOutputGuard>,
+    published_identity: Option<same_file::Handle>,
+}
+
+pub(super) struct OutputBatch {
+    sources: Vec<PathBuf>,
+    pending: Vec<PendingOutput>,
+    staging_validation: Option<OutputValidation>,
+    staged_outputs: StagedOutputTracker,
+    committed: bool,
+}
+
+impl OutputBatch {
+    pub(super) fn new(inputs: &[String], ctx: &super::ProcessorContext) -> Self {
+        Self {
+            sources: inputs.iter().map(PathBuf::from).collect(),
+            pending: Vec::new(),
+            staging_validation: None,
+            staged_outputs: ctx.staged_outputs.clone(),
+            committed: false,
+        }
+    }
+
+    pub(super) fn protect(&mut self, input: &Path) {
+        self.sources.push(input.to_owned());
+    }
+
+    pub(super) fn discard(&mut self, temp: &Path) {
+        self.pending.retain(|entry| entry.temp.path() != temp);
+        // Rebuild without the discarded destination on the next staging call.
+        self.staging_validation = None;
+    }
+
+    pub(super) async fn stage(&mut self, output: &Path, overwrite: bool) -> Result<PathBuf> {
+        let mut validation = self.staging_validation.take().unwrap_or_default();
+        let sources = self.sources[validation.sources.len()..].to_vec();
+        let other_outputs: Vec<_> = self.pending[validation.outputs.len()..]
+            .iter()
+            .map(|entry| entry.output.clone())
+            .collect();
+        let output = output.to_owned();
+        let checked_output = output.clone();
+        let validation = tokio::task::spawn_blocking(move || {
+            validation.protect(sources);
+            for previous in other_outputs {
+                validation.outputs.insert(StagedPath::prepare(previous));
+            }
+            validation.stage(&checked_output)?;
+            Ok::<_, Error>(validation)
+        })
+        .await
+        .map_err(|error| {
+            Error::PipelineError(format!("Output path validation failed: {error}"))
+        })??;
+        self.staging_validation = Some(validation);
+        let temp = TempOutputGuard::recorded(&output, &self.staged_outputs).await;
+        let path = temp.path().to_owned();
+        self.pending.push(PendingOutput {
+            temp,
+            output,
+            overwrite,
+            original: None,
+            published_identity: None,
+        });
+        Ok(path)
+    }
+
+    pub(super) async fn commit(self) -> Result<()> {
+        // Once publication starts, the owned transaction finishes or rolls back
+        // independently of cancellation. It can only publish complete files.
+        tokio::task::spawn_blocking(move || self.commit_blocking())
+            .await
+            .map_err(|error| Error::PipelineError(format!("Output commit failed: {error}")))?
+    }
+
+    fn commit_blocking(mut self) -> Result<()> {
+        for entry in &mut self.pending {
+            entry.temp.cleanup_on_current_thread = true;
+        }
+        // Never reuse staging snapshots: sources, destinations, or symlink
+        // parents may have been replaced while processors produced their files.
+        let mut validation = OutputValidation::default();
+        validation.protect(self.sources.iter().cloned());
+        for entry in &self.pending {
+            verified_size(entry.temp.path())?;
+            validation.stage(&entry.output)?;
+        }
+        for entry in &mut self.pending {
+            let identity = same_file::Handle::from_path(entry.temp.path()).map_err(|error| {
+                Error::io_path("inspect output identity", entry.temp.path(), error)
+            })?;
+            if entry.overwrite {
+                match std::fs::symlink_metadata(&entry.output) {
+                    Ok(metadata) => {
+                        if !metadata.is_file() {
+                            return Err(Error::PipelineError(format!(
+                                "Output destination is not a regular file: {}",
+                                entry.output.display()
+                            )));
+                        }
+                        let mut backup = TempOutputGuard::new(&entry.output);
+                        backup.cleanup_on_current_thread = true;
+                        if std::fs::hard_link(&entry.output, backup.path()).is_ok() {
+                            backup.cleanup_readonly = false;
+                        } else {
+                            // Filesystems without hard links still support replacement.
+                            std::fs::copy(&entry.output, backup.path()).map_err(|error| {
+                                Error::io_path("preserve existing output", &entry.output, error)
+                            })?;
+                        }
+                        entry.original = Some(backup);
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        return Err(Error::io_path(
+                            "inspect output destination",
+                            &entry.output,
+                            error,
+                        ));
+                    }
+                }
+            }
+            promote(entry.temp.path(), &entry.output, entry.overwrite)?;
+            entry.published_identity = Some(identity);
+        }
+        self.committed = true;
+        Ok(())
+    }
+}
+
+impl Drop for OutputBatch {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+        // Published entries exist only inside commit_blocking, so rollback IO stays
+        // on that worker. Dropping an uncommitted async batch only drops staged guards.
+        for entry in self.pending.iter_mut().rev() {
+            let Some(identity) = &entry.published_identity else {
+                continue;
+            };
+            let still_owned = same_file::Handle::from_path(&entry.output)
+                .is_ok_and(|current| current == *identity);
+            if !still_owned {
+                if let Some(original) = &mut entry.original {
+                    original.cleanup = false;
+                    warn!(path = %entry.output.display(), backup = %original.path().display(), "Output changed during rollback; retained original backup");
+                }
+                continue;
+            }
+            let result = if let Some(original) = &entry.original {
+                std::fs::rename(original.path(), &entry.output)
+            } else {
+                std::fs::remove_file(&entry.output)
+            };
+            if let Err(error) = result {
+                if let Some(original) = &mut entry.original {
+                    original.cleanup = false;
+                }
+                warn!(%error, path = %entry.output.display(), backup = ?entry.original.as_ref().map(|original| original.path()), "Failed to roll back processor output");
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    fn new_batch(inputs: &[String]) -> OutputBatch {
+        OutputBatch::new(
+            inputs,
+            &super::super::ProcessorContext::noop("outputs-test"),
+        )
+    }
+
+    #[tokio::test]
+    async fn staging_records_the_temporary_file_before_it_exists() {
+        use srec_core::domain::processor::{StagedOutputSink, is_temp_path_for};
+
+        #[derive(Default)]
+        struct RecordingSink {
+            recorded: std::sync::Mutex<Vec<(PathBuf, PathBuf, bool)>>,
+        }
+
+        #[async_trait::async_trait]
+        impl StagedOutputSink for RecordingSink {
+            async fn record(&self, temp_path: &Path, output_path: &Path) {
+                self.recorded.lock().unwrap().push((
+                    temp_path.to_path_buf(),
+                    output_path.to_path_buf(),
+                    temp_path.exists(),
+                ));
+            }
+
+            async fn finish(&self) {}
+        }
+
+        let sink = Arc::new(RecordingSink::default());
+        let tracker = StagedOutputTracker::new(sink.clone());
+        let ctx = super::super::ProcessorContext::noop("job-1").with_staged_outputs(tracker);
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("video.mp4");
+
+        let mut batch = OutputBatch::new(&[], &ctx);
+        let temp = batch.stage(&output, false).await.unwrap();
+
+        let recorded = sink.recorded.lock().unwrap();
+        assert_eq!(recorded.len(), 1);
+        assert_eq!(recorded[0].0, temp);
+        assert_eq!(recorded[0].1, output);
+        assert!(
+            !recorded[0].2,
+            "temp path must be recorded before it exists"
+        );
+        assert!(is_temp_path_for(&temp, &output));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn temporary_output_cleanup_does_not_block_async_runtime() {
+        let runtime_thread = std::thread::current().id();
+        let (started, observed) = tokio::sync::oneshot::channel();
+        let (release, blocked) = std::sync::mpsc::sync_channel(1);
+        let (finished, completion) = tokio::sync::oneshot::channel();
+        dispatch_cleanup(false, move || {
+            started.send(std::thread::current().id()).unwrap();
+            blocked
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .unwrap();
+            finished.send(()).unwrap();
+        });
+        let cleanup_thread = tokio::time::timeout(std::time::Duration::from_secs(1), observed)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_ne!(cleanup_thread, runtime_thread);
+        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        release.send(()).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(1), completion)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    async fn staged(
+        batch: &mut OutputBatch,
+        output: &Path,
+        overwrite: bool,
+        bytes: &[u8],
+    ) -> PathBuf {
+        let path = batch.stage(output, overwrite).await.unwrap();
+        tokio::fs::write(&path, bytes).await.unwrap();
+        path
+    }
+
+    fn assert_no_temps(dir: &Path) {
+        assert!(std::fs::read_dir(dir).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains(".tmp-")
+        }));
+    }
+
+    /// External tools pick their container from the extension, so a staged
+    /// path keeps it; the guard removes the file it named on drop.
+    #[test]
+    fn temp_output_guard_preserves_extension_and_cleans_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("output.mp4");
+        let guard = TempOutputGuard::new(&output);
+        let temp = guard.path().to_path_buf();
+        std::fs::write(&temp, b"partial").unwrap();
+        assert_eq!(temp.extension(), Some(std::ffi::OsStr::new("mp4")));
+        drop(guard);
+        assert!(!temp.exists());
+    }
+
+    #[tokio::test]
+    async fn missing_or_empty_outputs_do_not_replace_existing_files() {
+        for missing in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let output = dir.path().join("output.mp4");
+            std::fs::write(&output, b"original").unwrap();
+            let mut batch = new_batch(&[]);
+            let temp = batch.stage(&output, true).await.unwrap();
+            if !missing {
+                std::fs::write(&temp, b"").unwrap();
+            }
+            assert!(batch.commit().await.is_err());
+            assert_eq!(std::fs::read(output).unwrap(), b"original");
+            assert_no_temps(dir.path());
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_publication_rolls_back_new_and_overwritten_outputs() {
+        for replace in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let first = dir.path().join("first.mp4");
+            let second = dir.path().join("second.mp4");
+            if replace {
+                std::fs::write(&first, b"original").unwrap();
+            }
+            let mut batch = new_batch(&[]);
+            staged(&mut batch, &first, replace, b"completed first").await;
+            staged(&mut batch, &second, false, b"completed second").await;
+            std::fs::write(&second, b"unrelated").unwrap();
+            assert!(batch.commit().await.is_err());
+            if replace {
+                assert_eq!(std::fs::read(first).unwrap(), b"original");
+            } else {
+                assert!(!first.exists());
+            }
+            assert_eq!(std::fs::read(second).unwrap(), b"unrelated");
+            assert_no_temps(dir.path());
+        }
+    }
+
+    #[tokio::test]
+    async fn no_overwrite_publication_has_one_winner() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("output.mp4");
+        let mut first = new_batch(&[]);
+        let mut second = new_batch(&[]);
+        staged(&mut first, &output, false, b"first").await;
+        staged(&mut second, &output, false, b"second").await;
+        let (first, second) = tokio::join!(first.commit(), second.commit());
+        assert_ne!(first.is_ok(), second.is_ok());
+        let bytes = std::fs::read(output).unwrap();
+        assert!(bytes == b"first" || bytes == b"second");
+        assert_no_temps(dir.path());
+    }
+
+    #[tokio::test]
+    async fn source_aliases_and_duplicate_destinations_are_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("input.mp4");
+        let hardlink = dir.path().join("alias.mp4");
+        std::fs::write(&input, b"source").unwrap();
+        std::fs::hard_link(&input, &hardlink).unwrap();
+        let mut batch = new_batch(&[input.to_string_lossy().into_owned()]);
+        assert!(batch.stage(&input, true).await.is_err());
+        assert!(batch.stage(&hardlink, true).await.is_err());
+        assert!(
+            batch
+                .stage(&dir.path().join(".").join("input.mp4"), true)
+                .await
+                .is_err()
+        );
+        #[cfg(unix)]
+        {
+            let symlink = dir.path().join("symlink.mp4");
+            std::os::unix::fs::symlink(&input, &symlink).unwrap();
+            assert!(batch.stage(&symlink, true).await.is_err());
+        }
+        let output = dir.path().join("output.mp4");
+        batch.stage(&output, true).await.unwrap();
+        assert!(
+            batch
+                .stage(&dir.path().join(".").join("output.mp4"), true)
+                .await
+                .is_err()
+        );
+        assert_eq!(std::fs::read(input).unwrap(), b"source");
+    }
+
+    #[tokio::test]
+    async fn source_added_after_staging_is_protected() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.mp4");
+        let first = dir.path().join("first.mp4");
+        std::fs::write(&source, b"source").unwrap();
+        let mut batch = new_batch(&[]);
+        staged(&mut batch, &first, true, b"first").await;
+        batch.protect(&source);
+        assert!(batch.stage(&source, true).await.is_err());
+        assert_eq!(std::fs::read(source).unwrap(), b"source");
+    }
+
+    #[tokio::test]
+    async fn discarded_destination_can_be_staged_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("output.mp4");
+        let mut batch = new_batch(&[]);
+        let discarded = batch.stage(&output, true).await.unwrap();
+        batch.discard(&discarded);
+        staged(&mut batch, &output, true, b"replacement").await;
+        batch.commit().await.unwrap();
+        assert_eq!(std::fs::read(output).unwrap(), b"replacement");
+    }
+
+    /// NTFS deletes read-only files directly, so this checks the cleanup
+    /// contract; the attribute reset runs only without POSIX delete support.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn readonly_temporary_output_is_removed_without_touching_other_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.mp4");
+        let output = dir.path().join("output.mp4");
+        let guard = TempOutputGuard::new(&output);
+        let temp = guard.path().to_owned();
+        for (path, bytes) in [
+            (&source, b"source".as_slice()),
+            (&output, b"existing".as_slice()),
+            (&temp, b"partial".as_slice()),
+        ] {
+            std::fs::write(path, bytes).unwrap();
+            let mut permissions = std::fs::metadata(path).unwrap().permissions();
+            permissions.set_readonly(true);
+            std::fs::set_permissions(path, permissions).unwrap();
+        }
+        drop(guard);
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                match tokio::fs::try_exists(&temp).await {
+                    Ok(false) => break,
+                    Ok(true) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {}
+                    Err(error) => panic!("failed to inspect staged output during cleanup: {error}"),
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(std::fs::read(&source).unwrap(), b"source");
+        assert_eq!(std::fs::read(&output).unwrap(), b"existing");
+        for path in [&source, &output] {
+            let mut permissions = std::fs::metadata(path).unwrap().permissions();
+            assert!(permissions.readonly());
+            #[allow(
+                clippy::permissions_set_readonly_false,
+                reason = "Windows-only cleanup of test-owned files"
+            )]
+            permissions.set_readonly(false);
+            std::fs::set_permissions(path, permissions).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn commit_rechecks_sources_and_destinations_after_staging() {
+        for replace_source in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let source = dir.path().join("source.mp4");
+            let output = dir.path().join("output.mp4");
+            std::fs::write(&source, b"source").unwrap();
+            std::fs::write(&output, b"existing").unwrap();
+            let mut batch = new_batch(&[source.to_string_lossy().into_owned()]);
+            staged(&mut batch, &output, true, b"replacement").await;
+            if replace_source {
+                std::fs::remove_file(&source).unwrap();
+                std::fs::hard_link(&output, &source).unwrap();
+            } else {
+                std::fs::remove_file(&output).unwrap();
+                std::fs::hard_link(&source, &output).unwrap();
+            }
+            let expected = std::fs::read(&source).unwrap();
+            assert!(batch.commit().await.is_err());
+            assert_eq!(std::fs::read(&source).unwrap(), expected);
+            assert_eq!(std::fs::read(&output).unwrap(), expected);
+            assert_no_temps(dir.path());
+        }
+    }
+
+    #[tokio::test]
+    async fn commit_rechecks_destinations_that_become_hardlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first.mp4");
+        let second = dir.path().join("second.mp4");
+        let mut batch = new_batch(&[]);
+        staged(&mut batch, &first, true, b"first replacement").await;
+        staged(&mut batch, &second, true, b"second replacement").await;
+        std::fs::write(&first, b"existing").unwrap();
+        std::fs::hard_link(&first, &second).unwrap();
+        assert!(batch.commit().await.is_err());
+        assert_eq!(std::fs::read(&first).unwrap(), b"existing");
+        assert_eq!(std::fs::read(&second).unwrap(), b"existing");
+        assert_no_temps(dir.path());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn commit_rechecks_source_symlink_retargeting() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.mp4");
+        let link = dir.path().join("source-link.mp4");
+        let output = dir.path().join("output.mp4");
+        std::fs::write(&source, b"source").unwrap();
+        std::fs::write(&output, b"existing").unwrap();
+        std::os::unix::fs::symlink(&source, &link).unwrap();
+        let mut batch = new_batch(&[link.to_string_lossy().into_owned()]);
+        staged(&mut batch, &output, true, b"replacement").await;
+        std::fs::remove_file(&link).unwrap();
+        std::os::unix::fs::symlink(&output, &link).unwrap();
+        assert!(batch.commit().await.is_err());
+        assert_eq!(std::fs::read(&source).unwrap(), b"source");
+        assert_eq!(std::fs::read(&output).unwrap(), b"existing");
+        assert_no_temps(dir.path());
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn temporary_cleanup_retries_until_exclusive_handle_closes() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let guard = TempOutputGuard::new(&dir.path().join("output.mp4"));
+        let temp = guard.path().to_owned();
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .share_mode(0)
+            .open(&temp)
+            .unwrap();
+        drop(guard);
+        tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+        drop(file);
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            while temp.exists() {
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_no_temps(dir.path());
+    }
+}

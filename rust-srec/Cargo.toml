@@ -48,13 +48,10 @@ sysinfo = { workspace = true }
 # Workspace crates
 
 srec-core = { workspace = true }
+srec-engines = { workspace = true }
+srec-processors = { workspace = true }
 srec-sqlite = { workspace = true }
 pipeline-common = { path = "../crates/pipeline-common" }
-flv = { path = "../crates/flv" }
-flv-fix = { path = "../crates/flv-fix", features = ["progress"] }
-hls = { path = "../crates/hls" }
-hls-fix = { path = "../crates/hls-fix", features = ["progress"] }
-mesio = { path = "../crates/mesio", package = "mesio-engine" }
 platforms-parser = { path = "../crates/platforms" }
 process-utils = { path = "../crates/process-utils" }
 thiserror = { workspace = true }
@@ -83,38 +80,30 @@ hex = { workspace = true }
 # Protocol Buffers
 prost = { workspace = true }
 
-# Compression
-zip = { workspace = true }
+# Compression (danmu checkpoint gzip)
 flate2 = { workspace = true }
-tar = { workspace = true }
 
 # Filesystem (used at runtime by the output-root write gate's startup probe)
 tempfile = { workspace = true }
-same-file = "1.0.6"
 
 # Backend i18n for every NotificationEvent variant (including credential events);
 # API errors and health messages stay English by design.
 rust-i18n = { workspace = true }
 
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem"] }
-
-[target.'cfg(target_os = "macos")'.dependencies]
-libc = "0.2.190"
-
 [dev-dependencies]
+srec-engines = { workspace = true, features = ["test-support"] }
 srec-sqlite = { workspace = true, features = ["test-support"] }
-m3u8-rs = { workspace = true }
 syn = { version = "3", features = ["full", "visit"] }
 tokio = { workspace = true, features = ["test-util"] }
 tokio-tungstenite = { workspace = true }
 prost-build = { workspace = true }
 protox = { workspace = true }
+zip = { workspace = true }
 
 
 [features]
 default = []
-static-ssl = ["platforms-parser/static-ssl", "mesio/static-ssl"]
+static-ssl = ["platforms-parser/static-ssl", "srec-engines/static-ssl"]
 
 # Opt-in: enable native-tls fallback for legacy endpoints (e.g. Douyu CDN / danmu).
-tls-native-fallback = ["platforms-parser/tls-native-fallback", "mesio/tls-native-fallback"]
+tls-native-fallback = ["platforms-parser/tls-native-fallback", "srec-engines/tls-native-fallback"]

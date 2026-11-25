@@ -15,7 +15,7 @@ mod job_queue;
 mod manager;
 mod manifest;
 mod ports;
-mod processors;
+pub(crate) use srec_processors::processors;
 mod progress;
 mod staged_outputs;
 mod throttle;

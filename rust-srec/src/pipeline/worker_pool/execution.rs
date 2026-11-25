@@ -591,7 +591,7 @@ impl JobRunner {
             }
             res = &mut timed => match res {
                 Ok(Ok(output)) => JobOutcome::Completed(Box::new(output)),
-                Ok(Err(e)) => JobOutcome::Failed(e),
+                Ok(Err(e)) => JobOutcome::Failed(e.into()),
                 Err(_) => {
                     // Helpers can retain a log sender until cancellation. Signal them
                     // before execute_job waits for the log collector to drain.

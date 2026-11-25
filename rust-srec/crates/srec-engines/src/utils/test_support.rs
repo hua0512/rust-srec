@@ -1,0 +1,444 @@
+use std::sync::Arc;
+
+#[derive(Clone, Default)]
+pub struct CapturedLog(Arc<parking_lot::Mutex<Vec<u8>>>);
+
+impl CapturedLog {
+    pub fn contents(&self) -> String {
+        String::from_utf8_lossy(&self.0.lock()).into_owned()
+    }
+}
+
+impl std::io::Write for CapturedLog {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for CapturedLog {
+    type Writer = Self;
+    fn make_writer(&'a self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+#[cfg(test)]
+pub(crate) use internal::*;
+
+#[cfg(test)]
+mod internal {
+    use std::future::Future;
+    use std::net::SocketAddr;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::Path;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    use crate::{DownloadConfig, DownloadEngine, DownloadHandle, SegmentEvent};
+    #[cfg(unix)]
+    use crate::{DownloadFailureKind, IoErrorKindSer};
+
+    /// Minimal HTTP/1.1 GET test server over loopback `TcpListener`, keeping
+    /// `srec-engines` free of HTTP framework dev-dependencies.
+    pub(crate) async fn serve_http_get<F, Fut>(
+        handler: F,
+    ) -> (SocketAddr, tokio_util::task::AbortOnDropHandle<()>)
+    where
+        F: Fn(String) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = (u16, &'static str, Vec<u8>)> + Send + 'static,
+    {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind test HTTP server");
+        let addr = listener.local_addr().expect("test HTTP server address");
+        let handler = Arc::new(handler);
+        let server = tokio_util::task::AbortOnDropHandle::new(tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    break;
+                };
+                let handler = Arc::clone(&handler);
+                tokio::spawn(async move {
+                    let mut buf = Vec::with_capacity(1024);
+                    let mut chunk = [0u8; 1024];
+                    loop {
+                        match stream.read(&mut chunk).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(n) => {
+                                buf.extend_from_slice(&chunk[..n]);
+                                if buf.windows(4).any(|w| w == b"\r\n\r\n") || buf.len() > 64 * 1024
+                                {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    let request = String::from_utf8_lossy(&buf);
+                    let target = request
+                        .lines()
+                        .next()
+                        .and_then(|line| line.split_whitespace().nth(1))
+                        .unwrap_or("/");
+                    let path = target.split('?').next().unwrap_or(target).to_owned();
+                    let (status, content_type, body) = handler(path).await;
+                    let reason = match status {
+                        200 => "OK",
+                        404 => "Not Found",
+                        _ => "Error",
+                    };
+                    let header = format!(
+                        "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    );
+                    let _ = stream.write_all(header.as_bytes()).await;
+                    let _ = stream.write_all(&body).await;
+                    let _ = stream.shutdown().await;
+                });
+            }
+        }));
+        (addr, server)
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn script(dir: &Path, name: &str, body: &str) -> String {
+        let path = dir.join(name);
+        std::fs::write(&path, format!("#!/bin/sh\n{body}")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        path.to_str().unwrap().to_owned()
+    }
+
+    #[cfg(unix)]
+    pub(crate) async fn assert_output_failure(engine: &dyn DownloadEngine, dir: &Path) {
+        let config = DownloadConfig::new(
+            "https://invalid.test/live",
+            dir.join("recording"),
+            "streamer",
+            "Streamer",
+            "session",
+        );
+        let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+        let handle = Arc::new(DownloadHandle::new(
+            "test",
+            engine.engine_type(),
+            config,
+            tx,
+        ));
+        tokio::time::timeout(Duration::from_secs(10), engine.run(handle))
+            .await
+            .unwrap()
+            .unwrap();
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+        let output_error = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    SegmentEvent::OutputIoError {
+                        io_kind: IoErrorKindSer::PermissionDenied,
+                        ..
+                    }
+                )
+            })
+            .expect("output error must be classified");
+        let terminal = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    SegmentEvent::DownloadFailed {
+                        kind: DownloadFailureKind::OutputRootUnavailable {
+                            io_kind: IoErrorKindSer::PermissionDenied
+                        },
+                        ..
+                    }
+                )
+            })
+            .expect("terminal must retain output classification");
+        assert!(output_error < terminal);
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, SegmentEvent::DownloadCompleted { .. }))
+        );
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    pub(crate) enum StopCase {
+        Graceful,
+        Expired,
+        ExpiresWhileWaiting,
+        Unconfirmed,
+    }
+
+    impl StopCase {
+        pub(crate) const ALL: [Self; 4] = [
+            Self::Graceful,
+            Self::Expired,
+            Self::ExpiresWhileWaiting,
+            Self::Unconfirmed,
+        ];
+    }
+
+    #[derive(Clone)]
+    pub(crate) struct RecordingFixture {
+        path: std::path::PathBuf,
+        graceful: bool,
+        pub(crate) unconfirmed: bool,
+        contract: Option<super::super::recording_contracts::ContractCase>,
+        pipeline: bool,
+    }
+
+    impl RecordingFixture {
+        pub(crate) fn new(dir: &Path, case: StopCase) -> Self {
+            Self {
+                path: dir.join("final.ts"),
+                graceful: matches!(case, StopCase::Graceful),
+                unconfirmed: matches!(case, StopCase::Unconfirmed),
+                contract: None,
+                pipeline: false,
+            }
+        }
+
+        pub(crate) fn contract(
+            dir: &Path,
+            case: super::super::recording_contracts::ContractCase,
+            pipeline: bool,
+        ) -> Self {
+            Self {
+                path: dir.join("final.ts"),
+                graceful: false,
+                unconfirmed: false,
+                contract: Some(case),
+                pipeline,
+            }
+        }
+
+        pub(crate) async fn inject_wait_failure(&self) -> std::io::Result<()> {
+            if matches!(
+                self.contract,
+                Some(super::super::recording_contracts::ContractCase::WaitFailure)
+            ) {
+                super::super::recording_contracts::wait_for_file(
+                    &self.path.with_file_name("wait-ready"),
+                )
+                .await;
+                return Err(std::io::Error::other("injected recording wait failure"));
+            }
+            Ok(())
+        }
+
+        pub(crate) fn command(&self, streamlink: bool) -> tokio::process::Command {
+            let mut command = process_utils::tokio_command(std::env::current_exe().unwrap());
+            command
+                .args([
+                    "--exact",
+                    "utils::test_support::internal::recording_child",
+                    "--nocapture",
+                ])
+                .env("SREC_RECORDING_TEST_PATH", &self.path)
+                .env(
+                    "SREC_RECORDING_TEST_MODE",
+                    if streamlink {
+                        "source"
+                    } else if self.graceful {
+                        "graceful"
+                    } else {
+                        "stubborn"
+                    },
+                );
+            if let Some(case) = self.contract {
+                command.env("SREC_RECORDING_CONTRACT", case.name()).env(
+                    "SREC_RECORDING_PIPELINE",
+                    if self.pipeline { "1" } else { "0" },
+                );
+            }
+            command
+        }
+    }
+
+    // Re-enter the native Rust test executable so the pipe and process behavior is
+    // exercised identically on Windows and Unix, without a shell or installed FFmpeg.
+    #[test]
+    fn recording_child() {
+        use std::io::{Read, Write};
+        let Some(path) = std::env::var_os("SREC_RECORDING_TEST_PATH") else {
+            return;
+        };
+        let mode = std::env::var("SREC_RECORDING_TEST_MODE").unwrap();
+        if let Ok(case) = std::env::var("SREC_RECORDING_CONTRACT") {
+            super::super::recording_contracts::recording_contract_child(
+                Path::new(&path),
+                &mode,
+                &case,
+            );
+        }
+        if mode != "source" {
+            // This must finish before announcing the segment: an unread stdout pipe
+            // would fill here and make the parent fail its bounded startup wait.
+            std::io::stdout()
+                .write_all(&vec![b'x'; 2 * 1024 * 1024])
+                .unwrap();
+            std::io::stdout().flush().unwrap();
+            std::fs::write(&path, b"settled recording").unwrap();
+            eprintln!(
+                "[segment @ fixture] Opening '{}' for writing",
+                Path::new(&path).display()
+            );
+            if mode == "graceful" {
+                let mut byte = [0];
+                loop {
+                    match std::io::stdin().read(&mut byte) {
+                        Ok(0) | Err(_) => break,
+                        Ok(_) if byte[0] == b'q' => break,
+                        Ok(_) => {}
+                    }
+                }
+                return;
+            }
+        }
+        std::thread::sleep(Duration::from_secs(30));
+    }
+
+    pub(crate) async fn assert_recording_stop(
+        engine: impl DownloadEngine + 'static,
+        fixture: RecordingFixture,
+        case: StopCase,
+    ) {
+        let config = DownloadConfig::new(
+            "https://invalid.test/live",
+            fixture.path.parent().unwrap(),
+            "streamer",
+            "Streamer",
+            "session",
+        )
+        .with_max_segment_duration(10);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+        let handle = Arc::new(DownloadHandle::new(
+            "test",
+            engine.engine_type(),
+            config,
+            tx,
+        ));
+        let engine_handle = handle.clone();
+        let task = tokio_util::task::AbortOnDropHandle::new(tokio::spawn(async move {
+            engine.run(engine_handle).await
+        }));
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if matches!(
+                    rx.recv().await.expect("engine must announce segment"),
+                    SegmentEvent::SegmentStarted { .. }
+                ) {
+                    break;
+                }
+            }
+        })
+        .await
+        .expect("stdout flood and segment startup must finish");
+        match case {
+            StopCase::Graceful => {}
+            StopCase::Expired | StopCase::Unconfirmed => {
+                handle.set_stop_deadline(tokio::time::Instant::now())
+            }
+            StopCase::ExpiresWhileWaiting => {
+                handle.set_stop_deadline(tokio::time::Instant::now() + Duration::from_millis(100))
+            }
+        }
+        handle.cancellation_token.cancel();
+        let result = tokio::time::timeout(Duration::from_secs(8), task)
+            .await
+            .expect("stop remains bounded")
+            .unwrap();
+        // Streamlink shares the attempt deadline with reaping, including when that
+        // deadline expires during the graceful wait.
+        // An immediate OS acknowledgement is valid; otherwise only this precise
+        // deadline failure is permitted, and final segment publication is forbidden.
+        // Direct FFmpeg retains its existing fixture contract.
+        let deadline_streamlink_unconfirmed = if handle.engine_type == crate::EngineType::Streamlink
+            && matches!(case, StopCase::Expired | StopCase::ExpiresWhileWaiting)
+            && let Err(error) = &result
+        {
+            assert!(matches!(&error.kind, crate::DownloadFailureKind::Other));
+            let reasons = error
+                .message
+                .strip_prefix(
+                    "Streamlink task settlement failed: process cleanup was not confirmed: ",
+                )
+                .expect("expired Streamlink failure must identify unconfirmed process cleanup");
+            let reasons = reasons
+                .strip_prefix("ffmpeg exceeded the stop deadline; ")
+                .unwrap_or(reasons);
+            assert!(
+                reasons.split("; process cleanup error: ").all(|reason| {
+                    ["streamlink", "ffmpeg"].into_iter().any(|process| {
+                        reason
+                            .strip_prefix(&format!(
+                                "failed to contain {process} before the stop deadline: deadline elapsed while reaping force-terminated child ",
+                            ))
+                            .is_some_and(|pid| !pid.is_empty() && pid.bytes().all(|byte| byte.is_ascii_digit()))
+                    })
+                }),
+                "unexpected expired cleanup failure: {}",
+                error.message
+            );
+            true
+        } else {
+            false
+        };
+        let unconfirmed = fixture.unconfirmed || deadline_streamlink_unconfirmed;
+        assert_eq!(result.is_err(), unconfirmed, "{case:?}: {result:?}");
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+        let completed: Vec<_> = events
+            .iter()
+            .enumerate()
+            .filter_map(|(index, event)| {
+                matches!(event, SegmentEvent::SegmentCompleted(_)).then_some(index)
+            })
+            .collect();
+        if unconfirmed {
+            assert!(
+                completed.is_empty(),
+                "unconfirmed cleanup must not publish completion"
+            );
+            assert!(
+                events
+                    .iter()
+                    .any(|event| matches!(event, SegmentEvent::DownloadFailed { .. }))
+            );
+            assert!(
+                !events
+                    .iter()
+                    .any(|event| matches!(event, SegmentEvent::DownloadCompleted { .. }))
+            );
+            return;
+        }
+        assert_eq!(completed.len(), 1, "{case:?}: {events:?}");
+        let terminal = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    SegmentEvent::DownloadCompleted { .. } | SegmentEvent::DownloadFailed { .. }
+                )
+            })
+            .expect("terminal event");
+        assert!(completed[0] < terminal, "final segment precedes terminal");
+        if let SegmentEvent::SegmentCompleted(segment) = &events[completed[0]] {
+            assert_eq!(segment.path, fixture.path);
+            assert_eq!(segment.size_bytes, 17);
+        }
+    }
+}

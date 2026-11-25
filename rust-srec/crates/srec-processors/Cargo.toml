@@ -1,0 +1,44 @@
+[package]
+name = "srec-processors"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Pipeline post-processing operators and BaiduPCS-Go CLI runner for rust-srec"
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+dashmap = { workspace = true }
+flate2 = { workspace = true }
+jiff = { workspace = true }
+parking_lot = { workspace = true }
+pipeline-common = { path = "../../../crates/pipeline-common" }
+process-utils = { path = "../../../crates/process-utils" }
+regex = { workspace = true }
+same-file = "1.0.6"
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+srec-core = { workspace = true }
+tar = { workspace = true }
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+zip = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2.190"
+
+[dev-dependencies]
+futures = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }

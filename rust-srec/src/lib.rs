@@ -19,7 +19,7 @@ mod server;
 #[doc(hidden)]
 pub mod api;
 #[doc(hidden)]
-pub mod baidupcs;
+pub use srec_processors::baidupcs;
 #[doc(hidden)]
 pub mod config;
 #[doc(hidden)]

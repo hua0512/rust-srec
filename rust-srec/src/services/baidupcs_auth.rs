@@ -203,7 +203,7 @@ impl BaiduPcsAuthenticator for StoredLoginAuthenticator {
             Err(e) => {
                 self.cooldown.record_failure(&key);
                 self.notify_relogin_failure(&key, &e.to_string());
-                Err(e.into_core_error())
+                Err(e)
             }
         }
     }

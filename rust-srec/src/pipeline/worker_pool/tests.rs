@@ -101,7 +101,7 @@ impl Processor for GatedProcessor {
         &self,
         _input: &ProcessorInput,
         _ctx: &ProcessorContext,
-    ) -> crate::Result<ProcessorOutput> {
+    ) -> srec_core::CoreResult<ProcessorOutput> {
         let (release_tx, release_rx) = tokio::sync::oneshot::channel();
         self.0.send(release_tx).unwrap();
         release_rx.await.unwrap();
@@ -147,7 +147,7 @@ impl Processor for GatedUploadProcessor {
         &self,
         _input: &ProcessorInput,
         _ctx: &ProcessorContext,
-    ) -> crate::Result<ProcessorOutput> {
+    ) -> srec_core::CoreResult<ProcessorOutput> {
         let (release_tx, release_rx) = tokio::sync::oneshot::channel();
         self.started
             .send((self.job_type.to_string(), release_tx))
@@ -417,7 +417,7 @@ impl Processor for NoopProcessor {
         &self,
         _input: &ProcessorInput,
         _ctx: &ProcessorContext,
-    ) -> crate::Result<ProcessorOutput> {
+    ) -> srec_core::CoreResult<ProcessorOutput> {
         Ok(ProcessorOutput {
             duration_secs: 1.5,
             ..Default::default()
@@ -445,8 +445,8 @@ impl Processor for FailingProcessor {
         &self,
         _input: &ProcessorInput,
         _ctx: &ProcessorContext,
-    ) -> crate::Result<ProcessorOutput> {
-        Err(crate::Error::PipelineError("boom".to_string()))
+    ) -> srec_core::CoreResult<ProcessorOutput> {
+        Err(srec_core::CoreError::PipelineError("boom".to_string()))
     }
 
     fn name(&self) -> &'static str {
@@ -487,7 +487,7 @@ impl Processor for ObservedProcessor {
         &self,
         _input: &ProcessorInput,
         ctx: &ProcessorContext,
-    ) -> crate::Result<ProcessorOutput> {
+    ) -> srec_core::CoreResult<ProcessorOutput> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         *self.token.lock() = Some(ctx.cancellation_token.clone());
         self.entered.notify_one();
@@ -534,7 +534,7 @@ impl Processor for ContextHandoffProcessor {
         &self,
         _input: &ProcessorInput,
         ctx: &ProcessorContext,
-    ) -> crate::Result<ProcessorOutput> {
+    ) -> srec_core::CoreResult<ProcessorOutput> {
         self.0.try_send(ctx.clone()).unwrap();
         std::future::pending().await
     }
@@ -663,7 +663,7 @@ impl Processor for CompletingProcessor {
         &self,
         _input: &ProcessorInput,
         _ctx: &ProcessorContext,
-    ) -> crate::Result<ProcessorOutput> {
+    ) -> srec_core::CoreResult<ProcessorOutput> {
         Ok(ProcessorOutput::default())
     }
 }
@@ -882,9 +882,11 @@ async fn failed_status_writes_retry_without_rerunning_and_allow_cancel_or_shutdo
             &self,
             _: &ProcessorInput,
             _: &ProcessorContext,
-        ) -> crate::Result<ProcessorOutput> {
+        ) -> srec_core::CoreResult<ProcessorOutput> {
             self.0.fetch_add(1, Ordering::SeqCst);
-            Err(crate::Error::PipelineError("processor failed".into()))
+            Err(srec_core::CoreError::PipelineError(
+                "processor failed".into(),
+            ))
         }
     }
 
@@ -1490,13 +1492,13 @@ async fn non_retryable_step_failures_skip_dag_retry_and_notify_immediately() {
             &self,
             _: &ProcessorInput,
             ctx: &ProcessorContext,
-        ) -> crate::Result<ProcessorOutput> {
+        ) -> srec_core::CoreResult<ProcessorOutput> {
             self.saw_step_retry
                 .store(ctx.has_step_retry, Ordering::SeqCst);
             match self.mode {
-                Mode::NonRetryableErr | Mode::LegacyMissingStateFlag => {
-                    Err(crate::Error::NonRetryablePipeline("invalid_grant".into()))
-                }
+                Mode::NonRetryableErr | Mode::LegacyMissingStateFlag => Err(
+                    srec_core::CoreError::NonRetryablePipeline("invalid_grant".into()),
+                ),
                 Mode::NonRetryablePartialOutput => Ok(ProcessorOutput {
                     succeeded_inputs: vec!["ok.mp4".into()],
                     failed_inputs: vec![("bad.mp4".into(), "illegal name".into())],
@@ -1836,9 +1838,9 @@ async fn zero_backoff_retry_orders_retry_scheduled_before_reenqueue_without_leak
             &self,
             input: &ProcessorInput,
             _ctx: &ProcessorContext,
-        ) -> crate::Result<ProcessorOutput> {
+        ) -> srec_core::CoreResult<ProcessorOutput> {
             if self.attempts.fetch_add(1, Ordering::SeqCst) == 0 {
-                Err(crate::Error::Other("transient boom".into()))
+                Err(srec_core::CoreError::Other("transient boom".into()))
             } else {
                 Ok(ProcessorOutput {
                     outputs: input.inputs.clone(),

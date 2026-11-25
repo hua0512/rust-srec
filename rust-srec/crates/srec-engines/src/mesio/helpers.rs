@@ -1,0 +1,929 @@
+//! Shared helpers for FLV and HLS download orchestrators.
+
+use std::fmt::Display;
+use std::future::Future;
+use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
+
+use futures::StreamExt;
+use jiff::Timestamp;
+use pipeline_common::{PipelineError, PipelineSender, WriterCallbacks, WriterError, WriterStats};
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
+use tracing::{debug, error, info, warn};
+
+use crate::traits::{DownloadFailureKind, DownloadProgress, SegmentEvent, SegmentInfo};
+use crate::utils::{observe_segment_event_send, sanitize_engine_message};
+
+// ---------------------------------------------------------------------------
+// DownloadStats (moved from hls_downloader)
+// ---------------------------------------------------------------------------
+
+/// Statistics returned after download completes.
+#[derive(Debug, Clone, Default)]
+pub struct DownloadStats {
+    /// Total bytes written across all files.
+    pub total_bytes: u64,
+    /// Total items (segments/tags) written.
+    pub total_items: usize,
+    /// Total media duration in seconds.
+    pub total_duration_secs: f64,
+    /// Number of files created.
+    pub files_created: u32,
+}
+
+// ---------------------------------------------------------------------------
+// setup_writer_callbacks
+// ---------------------------------------------------------------------------
+
+/// Wire up segment-start, segment-complete, and progress callbacks on the
+/// writer.
+///
+/// Callbacks run on a blocking thread; `blocking_send` applies backpressure
+/// rather than unbounded buffering.
+pub(super) fn setup_writer_callbacks(
+    writer: &mut impl WriterCallbacks,
+    event_tx: &mpsc::Sender<SegmentEvent>,
+) {
+    let event_tx_start = event_tx.clone();
+    let event_tx_complete = event_tx.clone();
+    let event_tx_progress = event_tx.clone();
+
+    // Segments are strictly sequential (start N, complete N, start N+1, …),
+    // so a single atomic timestamp is enough to pass started_at from the start
+    // callback to the complete callback without locking.
+    let started_at_ms = Arc::new(AtomicI64::new(0));
+    let started_at_writer = Arc::clone(&started_at_ms);
+    let started_at_reader = started_at_ms;
+
+    writer.set_on_segment_start_callback(move |path, sequence| {
+        let started_at = Timestamp::now();
+        started_at_writer.store(started_at.as_millisecond(), Ordering::Release);
+        let event = SegmentEvent::SegmentStarted {
+            path: path.to_path_buf(),
+            sequence,
+            started_at,
+        };
+        if let Err(error) = event_tx_start.blocking_send(event) {
+            debug!(%error, "segment-start event receiver closed");
+        }
+    });
+
+    writer.set_on_segment_complete_callback(
+        move |path, sequence, duration_secs, size_bytes, split_reason| {
+            let event_path = path.to_path_buf();
+
+            let ms = started_at_reader.swap(0, Ordering::Acquire);
+            let started_at = if ms != 0 {
+                Timestamp::from_millisecond(ms).ok()
+            } else {
+                None
+            };
+
+            let event = SegmentEvent::SegmentCompleted(SegmentInfo {
+                path: event_path,
+                duration_secs,
+                size_bytes,
+                index: sequence,
+                started_at,
+                completed_at: Timestamp::now(),
+                split_reason: split_reason.cloned(),
+            });
+            if let Err(error) = event_tx_complete.blocking_send(event) {
+                debug!(%error, "segment-complete event receiver closed");
+            }
+        },
+    );
+
+    writer.set_progress_callback(move |progress| {
+        let download_progress = DownloadProgress {
+            bytes_downloaded: progress.bytes_written_total,
+            duration_secs: progress.elapsed_secs,
+            speed_bytes_per_sec: progress.speed_bytes_per_sec,
+            segments_completed: progress.current_file_sequence,
+            current_segment: None,
+            media_duration_secs: progress.media_duration_secs_total,
+            playback_ratio: progress.playback_ratio,
+        };
+        match event_tx_progress.try_send(SegmentEvent::Progress(download_progress)) {
+            Ok(()) | Err(mpsc::error::TrySendError::Full(_)) => {}
+            Err(error @ mpsc::error::TrySendError::Closed(_)) => {
+                debug!(%error, "progress event receiver closed");
+            }
+        }
+    });
+}
+
+// ---------------------------------------------------------------------------
+// consume_stream
+// ---------------------------------------------------------------------------
+
+pub(super) trait StreamSender<T> {
+    fn send_item(
+        &self,
+        item: std::result::Result<T, PipelineError>,
+    ) -> impl Future<Output = Result<(), ()>> + Send;
+}
+
+impl<T: Send> StreamSender<T> for mpsc::Sender<std::result::Result<T, PipelineError>> {
+    async fn send_item(&self, item: std::result::Result<T, PipelineError>) -> Result<(), ()> {
+        self.send(item).await.map_err(|_| ())
+    }
+}
+
+impl<T: Send> StreamSender<T> for PipelineSender<T> {
+    async fn send_item(&self, item: std::result::Result<T, PipelineError>) -> Result<(), ()> {
+        self.send(item).await.map_err(|_| ())
+    }
+}
+
+/// Where downloaded items go: into the processing pipeline, or straight to
+/// the writer.
+pub(super) enum WriterInput<T> {
+    Pipeline(PipelineSender<T>),
+    Raw(mpsc::Sender<std::result::Result<T, PipelineError>>),
+}
+
+impl<T: Send> StreamSender<T> for WriterInput<T> {
+    async fn send_item(&self, item: std::result::Result<T, PipelineError>) -> Result<(), ()> {
+        match self {
+            Self::Pipeline(tx) => tx.send_item(item).await,
+            Self::Raw(tx) => tx.send_item(item).await,
+        }
+    }
+}
+
+pub(super) struct StreamConsumeContext<'a> {
+    pub managed_credentials: bool,
+    pub parent_token: &'a CancellationToken,
+    pub child_token: &'a CancellationToken,
+    pub streamer_id: &'a str,
+    pub protocol: &'a str,
+}
+
+/// Consume a protocol stream, forwarding items to a channel.
+///
+/// Returns `Some((kind, message))` if the stream yielded an error, or `None`
+/// if it completed cleanly (or was cancelled).
+///
+/// `inspect` is invoked on every successful item before forwarding so callers
+/// can tap protocol-specific signals (e.g. HLS and DASH observing
+/// `HlsData::EndMarker(Some(SplitReason::EndOfStream))` to surface
+/// `EngineEndSignal::HlsEndlist` / `DashEnd`). FLV callers pass a no-op
+/// closure.
+pub(super) async fn consume_stream<T: Send, E: Display>(
+    stream: impl futures::Stream<Item = std::result::Result<T, E>> + Unpin,
+    tx: &impl StreamSender<T>,
+    context: StreamConsumeContext<'_>,
+    classify: impl Fn(&E) -> DownloadFailureKind,
+    mut inspect: impl FnMut(&T),
+) -> Option<(DownloadFailureKind, String)> {
+    let mut stream = std::pin::pin!(stream);
+    let mut stream_error: Option<(DownloadFailureKind, String)> = None;
+    // One wait-list registration per token for the whole stream. A fresh
+    // `cancelled()` future inside each `select!` would register and
+    // deregister on every item, once to receive it and once to forward it.
+    let mut parent_cancelled = std::pin::pin!(context.parent_token.cancelled());
+    let mut child_cancelled = std::pin::pin!(context.child_token.cancelled());
+
+    loop {
+        let result = tokio::select! {
+            biased;
+            _ = &mut parent_cancelled => {
+                debug!(
+                    protocol = context.protocol,
+                    streamer_id = context.streamer_id,
+                    "Download cancelled while waiting for stream data"
+                );
+                break;
+            }
+            _ = &mut child_cancelled => {
+                debug!(
+                    protocol = context.protocol,
+                    streamer_id = context.streamer_id,
+                    "Download cancelled while waiting for stream data"
+                );
+                break;
+            }
+            result = stream.next() => result,
+        };
+        let Some(result) = result else {
+            break;
+        };
+
+        match result {
+            Ok(item) => {
+                inspect(&item);
+                let send_result = tokio::select! {
+                    biased;
+                    _ = &mut parent_cancelled => {
+                        debug!(
+                            protocol = context.protocol,
+                            streamer_id = context.streamer_id,
+                            "Download cancelled while forwarding stream data"
+                        );
+                        break;
+                    }
+                    _ = &mut child_cancelled => {
+                        debug!(
+                            protocol = context.protocol,
+                            streamer_id = context.streamer_id,
+                            "Download cancelled while forwarding stream data"
+                        );
+                        break;
+                    }
+                    result = tx.send_item(Ok(item)) => result,
+                };
+                if send_result.is_err() {
+                    warn!(
+                        protocol = context.protocol,
+                        "Channel closed, stopping download"
+                    );
+                    break;
+                }
+            }
+            Err(e) => {
+                let kind = classify(&e);
+                let msg = sanitize_engine_message(&e.to_string(), context.managed_credentials);
+                error!(
+                    protocol = context.protocol,
+                    streamer_id = context.streamer_id,
+                    error = %msg,
+                    ?kind,
+                    "Stream failed"
+                );
+                stream_error = Some((kind, msg.clone()));
+                let send_result = tokio::select! {
+                    biased;
+                    _ = &mut parent_cancelled => {
+                        debug!(
+                            protocol = context.protocol,
+                            streamer_id = context.streamer_id,
+                            "Download cancelled while forwarding a stream error"
+                        );
+                        break;
+                    }
+                    _ = &mut child_cancelled => {
+                        debug!(
+                            protocol = context.protocol,
+                            streamer_id = context.streamer_id,
+                            "Download cancelled while forwarding a stream error"
+                        );
+                        break;
+                    }
+                    result = tx.send_item(Err(PipelineError::Strategy(Box::new(
+                        std::io::Error::other(msg.clone()),
+                    )))) => result,
+                };
+                if send_result.is_err() {
+                    debug!(
+                        protocol = context.protocol,
+                        streamer_id = context.streamer_id,
+                        "Stream error receiver already closed"
+                    );
+                }
+                break;
+            }
+        }
+    }
+
+    stream_error
+}
+
+// ---------------------------------------------------------------------------
+// handle_writer_result
+// ---------------------------------------------------------------------------
+
+/// Per-download context for [`handle_writer_result`].
+pub(super) struct WriterSettleContext<'a> {
+    pub managed_credentials: bool,
+    /// Sink for the terminal `SegmentEvent` (and the `OutputIoError` that may
+    /// precede it).
+    pub event_tx: &'a mpsc::Sender<SegmentEvent>,
+    pub streamer_id: &'a str,
+    /// `"FLV"`, `"HLS"` or `"DASH"`, used only in log and event message
+    /// prefixes.
+    pub protocol: &'a str,
+    /// Directory the writer was told to write into
+    /// (`DownloadConfig::output_dir`). Carried in the
+    /// [`SegmentEvent::OutputIoError`] payload so `OutputRootGate::resolve_root`
+    /// keys the same root the ffmpeg and streamlink stderr readers key.
+    pub output_dir: &'a Path,
+    /// How this download ended from the engine's POV — see
+    /// [`crate::EngineEndSignal`]. Callers pass `CleanDisconnect`
+    /// for mesio FLV's TCP-close path, `HlsEndlist` for HLS when the
+    /// playlist contained `#EXT-X-ENDLIST`, and `DashEnd` for DASH when the
+    /// presentation ended.
+    pub engine_signal: crate::EngineEndSignal,
+}
+
+/// Await the writer and pipeline tasks, emit terminal events, and return
+/// `DownloadStats`.
+///
+/// `processing_tasks` should be empty for raw-mode calls.
+pub(super) async fn handle_writer_result(
+    writer_task: tokio::task::JoinHandle<std::result::Result<WriterStats, WriterError>>,
+    stream_error: Option<(DownloadFailureKind, String)>,
+    processing_tasks: Vec<tokio::task::JoinHandle<std::result::Result<(), PipelineError>>>,
+    context: WriterSettleContext<'_>,
+) -> srec_core::CoreResult<DownloadStats> {
+    let WriterSettleContext {
+        managed_credentials,
+        event_tx,
+        streamer_id,
+        protocol,
+        output_dir,
+        engine_signal,
+    } = context;
+
+    let writer_result = match writer_task.await {
+        Ok(result) => result,
+        Err(join_error) => {
+            let cleanup_errors = settle_processing_tasks(processing_tasks).await;
+            let mut writer_message = format!(
+                "{} writer task failed to join for {}: {}",
+                protocol, streamer_id, join_error
+            );
+            if !cleanup_errors.is_empty() {
+                writer_message.push_str("; pipeline cleanup errors: ");
+                writer_message.push_str(&cleanup_errors.join("; "));
+            }
+
+            let (kind, message) = if let Some((kind, stream_message)) = stream_error {
+                (
+                    kind,
+                    format!(
+                        "{} stream error for {}: {}; {}",
+                        protocol, streamer_id, stream_message, writer_message
+                    ),
+                )
+            } else {
+                (DownloadFailureKind::Processing, writer_message)
+            };
+            let message = sanitize_engine_message(&message, managed_credentials);
+            observe_segment_event_send(
+                event_tx
+                    .send(SegmentEvent::DownloadFailed {
+                        kind,
+                        message: message.clone(),
+                    })
+                    .await,
+                streamer_id,
+            );
+            return Err(srec_core::CoreError::Other(message));
+        }
+    };
+
+    let processing_errors = settle_processing_tasks(processing_tasks).await;
+    match writer_result {
+        Ok(stats) if processing_errors.is_empty() => {
+            let download_stats = DownloadStats {
+                total_bytes: stats.bytes_written,
+                total_items: stats.items_written,
+                total_duration_secs: stats.duration_secs,
+                files_created: stats.files_created,
+            };
+
+            if let Some((kind, msg)) = stream_error {
+                let message = sanitize_engine_message(
+                    &format!("{} stream error for {}: {}", protocol, streamer_id, msg),
+                    managed_credentials,
+                );
+                observe_segment_event_send(
+                    event_tx
+                        .send(SegmentEvent::DownloadFailed {
+                            kind,
+                            message: message.clone(),
+                        })
+                        .await,
+                    streamer_id,
+                );
+                return Err(srec_core::CoreError::Other(message));
+            }
+
+            observe_segment_event_send(
+                event_tx
+                    .send(SegmentEvent::DownloadCompleted {
+                        total_bytes: download_stats.total_bytes,
+                        total_duration_secs: download_stats.total_duration_secs,
+                        total_segments: download_stats.files_created,
+                        engine_signal,
+                    })
+                    .await,
+                streamer_id,
+            );
+
+            info!(
+                "{} download completed for {}: {} items, {} files",
+                protocol, streamer_id, stats.items_written, download_stats.files_created
+            );
+
+            Ok(download_stats)
+        }
+        Ok(_) => {
+            let pipeline_message = format!(
+                "{} pipeline cleanup failed for {}: {}",
+                protocol,
+                streamer_id,
+                processing_errors.join("; ")
+            );
+            let (kind, message) = if let Some((kind, stream_message)) = stream_error {
+                (
+                    kind,
+                    format!(
+                        "{} stream error for {}: {}; {}",
+                        protocol, streamer_id, stream_message, pipeline_message
+                    ),
+                )
+            } else {
+                (DownloadFailureKind::Processing, pipeline_message)
+            };
+            let message = sanitize_engine_message(&message, managed_credentials);
+            warn!(%message, ?kind, "Pipeline processing task failed");
+            observe_segment_event_send(
+                event_tx
+                    .send(SegmentEvent::DownloadFailed {
+                        kind,
+                        message: message.clone(),
+                    })
+                    .await,
+                streamer_id,
+            );
+            Err(srec_core::CoreError::Other(message))
+        }
+        Err(writer_error) => {
+            let writer_kind = classify_writer_error(&writer_error);
+            let mut writer_message = format!(
+                "{} writer error for {}: {}",
+                protocol, streamer_id, writer_error
+            );
+            if !processing_errors.is_empty() {
+                writer_message.push_str("; pipeline cleanup errors: ");
+                writer_message.push_str(&processing_errors.join("; "));
+            }
+
+            // Preserve the upstream diagnosis while independently reporting output
+            // failures: storage can fail while buffered data is being closed.
+            let (kind, message) = if let Some((kind, stream_message)) = stream_error {
+                (
+                    kind,
+                    format!(
+                        "{} stream error for {}: {}; {}",
+                        protocol, streamer_id, stream_message, writer_message
+                    ),
+                )
+            } else {
+                (writer_kind, writer_message)
+            };
+
+            // The translator stops at DownloadFailed, so storage must be gated first.
+            if let DownloadFailureKind::OutputRootUnavailable { io_kind } = writer_kind {
+                observe_segment_event_send(
+                    event_tx
+                        .send(SegmentEvent::OutputIoError {
+                            output_dir: output_dir.to_path_buf(),
+                            io_kind,
+                            detail: sanitize_engine_message(
+                                &format!("mesio {}: {}", protocol, writer_error),
+                                managed_credentials,
+                            ),
+                        })
+                        .await,
+                    streamer_id,
+                );
+            }
+
+            let message = sanitize_engine_message(&message, managed_credentials);
+            observe_segment_event_send(
+                event_tx
+                    .send(SegmentEvent::DownloadFailed {
+                        kind,
+                        message: message.clone(),
+                    })
+                    .await,
+                streamer_id,
+            );
+            Err(srec_core::CoreError::Other(message))
+        }
+    }
+}
+
+/// Classify output-side I/O only. An input error's source can also be an
+/// io::Error (for example a network timeout), but says nothing about storage.
+fn classify_writer_error(error: &WriterError) -> DownloadFailureKind {
+    match error {
+        WriterError::InputError(input) => match DownloadFailureKind::from_error_chain(input) {
+            Some(DownloadFailureKind::OutputRootUnavailable { .. }) => DownloadFailureKind::Io,
+            Some(kind) => kind,
+            None => DownloadFailureKind::Processing,
+        },
+        WriterError::InputAndClose { close, .. } => classify_writer_error(close),
+        _ => {
+            DownloadFailureKind::from_error_chain(error).unwrap_or(DownloadFailureKind::Processing)
+        }
+    }
+}
+
+async fn settle_processing_tasks(
+    processing_tasks: Vec<tokio::task::JoinHandle<std::result::Result<(), PipelineError>>>,
+) -> Vec<String> {
+    let mut errors = Vec::new();
+    for (index, task) in processing_tasks.into_iter().enumerate() {
+        match task.await {
+            Ok(Ok(())) => {}
+            Ok(Err(PipelineError::Cancelled)) => {}
+            Ok(Err(error)) => {
+                errors.push(format!("pipeline task {index} failed: {error}"));
+            }
+            Err(join_error) if join_error.is_cancelled() => {}
+            Err(join_error) => {
+                errors.push(format!(
+                    "pipeline task {index} failed to join: {join_error}"
+                ));
+            }
+        }
+    }
+    errors
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::IoErrorKindSer;
+
+    #[tokio::test]
+    async fn managed_mesio_stream_errors_keep_http_evidence_without_log_or_terminal_secrets() {
+        let captured = crate::utils::test_support::CapturedLog::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_max_level(tracing::Level::TRACE)
+            .with_writer(captured.clone())
+            .finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+        let parent_token = CancellationToken::new();
+        let child_token = parent_token.child_token();
+        let (tx, mut rx) = mpsc::channel::<std::result::Result<u8, PipelineError>>(4);
+        let error = mesio::DownloadError::HttpStatus { status: reqwest::StatusCode::FORBIDDEN, url: "https://cdn.invalid/signed-path-sentinel?Cookie=cookie-sentinel&Authorization=token-sentinel".into(), operation: "segment" };
+        let result = consume_stream(
+            futures::stream::iter([Err(error)]),
+            &tx,
+            StreamConsumeContext {
+                managed_credentials: true,
+                parent_token: &parent_token,
+                child_token: &child_token,
+                streamer_id: "managed",
+                protocol: "HLS",
+            },
+            super::super::classify_download_error,
+            |_| {},
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            result.0,
+            DownloadFailureKind::HttpClientError { status: 403 }
+        );
+        assert!(
+            !rx.try_recv()
+                .unwrap()
+                .unwrap_err()
+                .to_string()
+                .contains("sentinel")
+        );
+        let (event_tx, mut events) = mpsc::channel(4);
+        let writer = tokio::spawn(async {
+            Ok(WriterStats {
+                items_written: 0,
+                files_created: 0,
+                bytes_written: 0,
+                duration_secs: 0.0,
+            })
+        });
+        let result = handle_writer_result(
+            writer,
+            Some(result),
+            vec![],
+            WriterSettleContext {
+                managed_credentials: true,
+                event_tx: &event_tx,
+                streamer_id: "managed",
+                protocol: "HLS",
+                output_dir: Path::new("."),
+                engine_signal: crate::EngineEndSignal::CleanDisconnect,
+            },
+        )
+        .await;
+        assert!(result.is_err());
+        let terminal = events.try_recv().unwrap();
+        assert!(matches!(
+            &terminal,
+            SegmentEvent::DownloadFailed {
+                kind: DownloadFailureKind::HttpClientError { status: 403 },
+                ..
+            }
+        ));
+        let rendered = format!("{} {terminal:?} {result:?}", captured.contents());
+        assert!(rendered.contains("Stream failed"));
+        assert!(rendered.contains("403"));
+        assert!(!rendered.contains("sentinel"), "{rendered}");
+    }
+
+    #[tokio::test]
+    async fn stream_consumption_stops_when_cancelled_while_source_is_pending() {
+        let parent_token = CancellationToken::new();
+        let child_token = parent_token.child_token();
+        let cancel = parent_token.clone();
+        let (tx, _rx) = mpsc::channel::<std::result::Result<u8, PipelineError>>(1);
+
+        tokio::spawn(async move {
+            tokio::task::yield_now().await;
+            cancel.cancel();
+        });
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            consume_stream(
+                futures::stream::pending::<std::result::Result<u8, std::io::Error>>(),
+                &tx,
+                StreamConsumeContext {
+                    managed_credentials: false,
+                    parent_token: &parent_token,
+                    child_token: &child_token,
+                    streamer_id: "streamer-1",
+                    protocol: "FLV",
+                },
+                |_| DownloadFailureKind::Network,
+                |_| {},
+            ),
+        )
+        .await
+        .expect("cancellation should unblock a pending source");
+
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn stream_consumption_stops_when_cancelled_while_sink_is_full() {
+        let parent_token = CancellationToken::new();
+        let child_token = parent_token.child_token();
+        let cancel = parent_token.clone();
+        let (tx, mut rx) = mpsc::channel::<std::result::Result<u8, PipelineError>>(1);
+        tx.send(Ok(1)).await.expect("initial item should fill sink");
+
+        tokio::spawn(async move {
+            tokio::task::yield_now().await;
+            cancel.cancel();
+        });
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            consume_stream(
+                futures::stream::iter([Ok::<u8, std::io::Error>(2)]),
+                &tx,
+                StreamConsumeContext {
+                    managed_credentials: false,
+                    parent_token: &parent_token,
+                    child_token: &child_token,
+                    streamer_id: "streamer-1",
+                    protocol: "FLV",
+                },
+                |_| DownloadFailureKind::Network,
+                |_| {},
+            ),
+        )
+        .await
+        .expect("cancellation should unblock a full sink");
+
+        assert!(result.is_none());
+        assert_eq!(
+            rx.recv()
+                .await
+                .expect("initial item should remain")
+                .unwrap(),
+            1
+        );
+        assert!(matches!(
+            rx.try_recv(),
+            Err(mpsc::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[tokio::test]
+    async fn writer_join_failure_waits_for_processing_tasks_and_keeps_context() {
+        let writer_task = tokio::spawn(std::future::pending::<
+            std::result::Result<WriterStats, WriterError>,
+        >());
+        writer_task.abort();
+
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let processing_task = tokio::spawn(async move {
+            let _ = started_tx.send(());
+            let _ = release_rx.await;
+            Err::<(), PipelineError>(PipelineError::Strategy(Box::new(std::io::Error::other(
+                "cleanup failed",
+            ))))
+        });
+        let (event_tx, mut event_rx) = mpsc::channel(1);
+
+        let settlement = tokio::spawn(async move {
+            handle_writer_result(
+                writer_task,
+                Some((
+                    DownloadFailureKind::Network,
+                    "upstream disconnected".to_string(),
+                )),
+                vec![processing_task],
+                WriterSettleContext {
+                    managed_credentials: false,
+                    event_tx: &event_tx,
+                    streamer_id: "streamer-1",
+                    protocol: "FLV",
+                    output_dir: Path::new("/rec/streamer-1"),
+                    engine_signal: crate::EngineEndSignal::CleanDisconnect,
+                },
+            )
+            .await
+        });
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), started_rx)
+            .await
+            .expect("processing cleanup should start")
+            .expect("processing cleanup start sender should remain available");
+        assert!(
+            !settlement.is_finished(),
+            "writer failure must still await pipeline cleanup"
+        );
+        release_tx
+            .send(())
+            .expect("processing task should still be waiting");
+
+        let error = tokio::time::timeout(std::time::Duration::from_secs(1), settlement)
+            .await
+            .expect("settlement should complete")
+            .expect("settlement task should not panic")
+            .expect_err("writer join failure should fail the run");
+        let message = error.to_string();
+        assert!(message.contains("upstream disconnected"));
+        assert!(message.contains("writer task failed to join"));
+        assert!(message.contains("cleanup failed"));
+
+        let event = event_rx
+            .recv()
+            .await
+            .expect("failure event should be emitted");
+        let SegmentEvent::DownloadFailed {
+            kind,
+            message: event_message,
+        } = event
+        else {
+            panic!("expected DownloadFailed");
+        };
+        assert_eq!(kind, DownloadFailureKind::Network);
+        assert_eq!(event_message, message);
+    }
+
+    /// Run `handle_writer_result` against a writer task that already failed
+    /// and drain every event it emitted, in order.
+    async fn settle_failed_writer(
+        writer_error: WriterError,
+        stream_error: Option<(DownloadFailureKind, String)>,
+    ) -> Vec<SegmentEvent> {
+        let writer_task =
+            tokio::spawn(async move { Err::<WriterStats, WriterError>(writer_error) });
+        let (event_tx, mut event_rx) = mpsc::channel(4);
+
+        let result = handle_writer_result(
+            writer_task,
+            stream_error,
+            vec![],
+            WriterSettleContext {
+                managed_credentials: false,
+                event_tx: &event_tx,
+                streamer_id: "streamer-1",
+                protocol: "FLV",
+                output_dir: Path::new("/rec/streamer-1/2026-09-03"),
+                engine_signal: crate::EngineEndSignal::CleanDisconnect,
+            },
+        )
+        .await;
+        assert!(result.is_err(), "a writer error must fail the run");
+
+        drop(event_tx);
+        let mut events = Vec::new();
+        while let Some(event) = event_rx.recv().await {
+            events.push(event);
+        }
+        events
+    }
+
+    #[test]
+    fn file_scoped_writer_io_keeps_the_circuit_breaker() {
+        let kind = classify_writer_error(&WriterError::Io(std::io::Error::other("broken pipe")));
+        assert_eq!(kind, DownloadFailureKind::Io);
+        assert!(kind.affects_circuit_breaker());
+    }
+
+    #[tokio::test]
+    async fn writer_enospc_still_reaches_the_gate_when_a_stream_error_came_first() {
+        let events = settle_failed_writer(
+            WriterError::Io(std::io::Error::from(std::io::ErrorKind::StorageFull)),
+            Some((
+                DownloadFailureKind::Network,
+                "upstream disconnected".to_string(),
+            )),
+        )
+        .await;
+
+        assert!(
+            matches!(events[0], SegmentEvent::OutputIoError { .. }),
+            "the filesystem is full regardless of why the stream ended, got {:?}",
+            events
+        );
+        // The stream error is still the reported cause of the attempt.
+        let SegmentEvent::DownloadFailed { kind, message } = &events[1] else {
+            panic!("expected DownloadFailed, got {:?}", events);
+        };
+        assert_eq!(*kind, DownloadFailureKind::Network);
+        assert!(message.contains("upstream disconnected"), "{message}");
+    }
+
+    #[tokio::test]
+    async fn writer_processing_failure_stays_unrecoverable_and_skips_the_gate() {
+        let events =
+            settle_failed_writer(WriterError::Internal("writer not open".to_string()), None).await;
+
+        let SegmentEvent::DownloadFailed { kind, .. } = &events[0] else {
+            panic!("expected DownloadFailed, got {:?}", events);
+        };
+        assert_eq!(*kind, DownloadFailureKind::Processing);
+        assert!(kind.affects_circuit_breaker());
+        assert!(!kind.is_recoverable());
+        assert_eq!(
+            events.len(),
+            1,
+            "no OutputIoError for a non-I/O writer failure"
+        );
+    }
+
+    #[tokio::test]
+    async fn writer_output_errors_reach_the_gate_before_the_terminal() {
+        for io_kind in [
+            IoErrorKindSer::StorageFull,
+            IoErrorKindSer::ReadOnlyFilesystem,
+            IoErrorKindSer::PermissionDenied,
+            IoErrorKindSer::NotFound,
+            IoErrorKindSer::TimedOut,
+        ] {
+            for strategy in ["direct", "flv", "input_and_close"] {
+                let io = std::io::Error::from(io_kind.to_io_kind());
+                let error = match strategy {
+                    "flv" => WriterError::Strategy(Box::new(flv_fix::FlvStrategyError::Io(io))),
+                    "input_and_close" => WriterError::InputAndClose {
+                        input: PipelineError::Io(std::io::Error::from(
+                            std::io::ErrorKind::ConnectionReset,
+                        )),
+                        close: Box::new(WriterError::Io(io)),
+                    },
+                    _ => WriterError::Io(io),
+                };
+                let events = settle_failed_writer(error, None).await;
+                assert!(
+                    matches!(&events[0], SegmentEvent::OutputIoError { io_kind: actual, .. } if *actual == io_kind)
+                );
+                let SegmentEvent::DownloadFailed { kind, .. } = &events[1] else {
+                    panic!("expected DownloadFailed, got {events:?}");
+                };
+                assert_eq!(
+                    *kind,
+                    DownloadFailureKind::OutputRootUnavailable { io_kind }
+                );
+                // The gate blocks starts until the root recovers; charging the
+                // engine circuit breaker too would keep it blocked afterwards.
+                assert!(!kind.affects_circuit_breaker(), "{kind:?}");
+                assert!(kind.is_recoverable(), "{kind:?}");
+                assert_eq!(events.len(), 2);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn upstream_io_failures_do_not_gate_the_output_root() {
+        let events = settle_failed_writer(
+            WriterError::InputError(PipelineError::Io(std::io::Error::from(
+                std::io::ErrorKind::TimedOut,
+            ))),
+            Some((DownloadFailureKind::Network, "upstream timeout".to_owned())),
+        )
+        .await;
+        assert!(matches!(
+            &events[0],
+            SegmentEvent::DownloadFailed {
+                kind: DownloadFailureKind::Network,
+                ..
+            }
+        ));
+        assert_eq!(events.len(), 1);
+    }
+}
