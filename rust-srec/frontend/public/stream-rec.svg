@@ -1,36 +1,13 @@
-<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg width="64" height="64" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="bg" x1="8" y1="4" x2="56" y2="60" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#222229" />
-      <stop offset="100%" stop-color="#0F0F13" />
-    </linearGradient>
-    <radialGradient id="glow" cx="62%" cy="38%" r="55%">
-      <stop offset="0%" stop-color="#F16529" stop-opacity="0.34" />
-      <stop offset="100%" stop-color="#F16529" stop-opacity="0" />
-    </radialGradient>
-    <linearGradient id="ring" x1="12" y1="15" x2="48" y2="52" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#FFFFFF" />
-      <stop offset="100%" stop-color="#C4C4CE" />
-    </linearGradient>
-    <linearGradient id="wave" x1="34" y1="12" x2="52" y2="31" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#FF9666" />
-      <stop offset="100%" stop-color="#E84D24" />
-    </linearGradient>
-    <linearGradient id="core" x1="24" y1="24" x2="40" y2="40" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#FF8352" />
+    <linearGradient id="body" x1="18" y1="16" x2="108" y2="116" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF7842" />
       <stop offset="55%" stop-color="#F15A24" />
-      <stop offset="100%" stop-color="#D13415" />
+      <stop offset="100%" stop-color="#DC4216" />
     </linearGradient>
   </defs>
 
-  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#bg)" />
-  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#glow)" />
-  <rect x="2.5" y="2.5" width="59" height="59" rx="14.5" stroke="#FFFFFF" stroke-opacity="0.14" stroke-width="1" />
-
-  <g transform="translate(-1 1)">
-    <path d="M48.90 36.53 A17.5 17.5 0 1 1 27.47 15.10" stroke="url(#ring)" stroke-width="5.2" stroke-linecap="round" />
-    <path d="M34.17 19.69 A12.5 12.5 0 0 1 44.31 29.83" stroke="url(#wave)" stroke-width="4.2" stroke-linecap="round" />
-    <path d="M34.78 12.19 A20 20 0 0 1 51.81 29.22" stroke="url(#wave)" stroke-opacity="0.9" stroke-width="4.2" stroke-linecap="round" />
-    <circle cx="32" cy="32" r="7.2" fill="url(#core)" />
-  </g>
+  <path d="M42 18L64 42L86 18" stroke="url(#body)" stroke-width="12.5" stroke-linecap="round" stroke-linejoin="round" />
+  <rect x="12" y="42" width="104" height="74" rx="22" fill="url(#body)" />
+  <path d="M43 87L57 73L71 85L85 71" stroke="#FFFFFF" stroke-width="10.5" stroke-linecap="round" stroke-linejoin="round" />
 </svg>
