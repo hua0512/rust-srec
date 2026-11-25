@@ -75,6 +75,12 @@ impl From<srec_core::CoreError> for ConfigurationImportError {
     }
 }
 
+impl From<srec_recorder::RecorderError> for ConfigurationImportError {
+    fn from(error: srec_recorder::RecorderError) -> Self {
+        Self::from(crate::Error::from(error))
+    }
+}
+
 struct CommittedImport {
     stats: ImportStats,
     streamers: StreamerImportDiff,

@@ -5729,15 +5729,12 @@ dependencies = [
  "bytes",
  "dashmap",
  "dotenvy",
- "flate2",
  "futures",
  "hex",
  "jiff",
- "jiff-cron",
  "jsonwebtoken",
  "mimalloc",
  "parking_lot",
- "percent-encoding",
  "pipeline-common",
  "platforms-parser",
  "process-utils",
@@ -5759,6 +5756,7 @@ dependencies = [
  "srec-notify",
  "srec-pipeline",
  "srec-processors",
+ "srec-recorder",
  "srec-sqlite",
  "syn 3.0.10",
  "sysinfo",
@@ -6869,6 +6867,38 @@ dependencies = [
  "uuid",
  "windows-sys 0.61.2",
  "zip",
+]
+
+[[package]]
+name = "srec-recorder"
+version = "0.8.0"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "bytes",
+ "dashmap",
+ "flate2",
+ "futures",
+ "jiff",
+ "parking_lot",
+ "percent-encoding",
+ "pipeline-common",
+ "platforms-parser",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "sqlx",
+ "srec-core",
+ "srec-engines",
+ "srec-sqlite",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+ "uuid",
 ]
 
 [[package]]

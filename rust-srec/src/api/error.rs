@@ -338,6 +338,12 @@ impl From<srec_pipeline::PipelineError> for ApiError {
     }
 }
 
+impl From<srec_recorder::RecorderError> for ApiError {
+    fn from(err: srec_recorder::RecorderError) -> Self {
+        Self::from(Error::from(err))
+    }
+}
+
 impl From<crate::proxies::ProxyError> for ApiError {
     fn from(error: crate::proxies::ProxyError) -> Self {
         use crate::proxies::ProxyError;

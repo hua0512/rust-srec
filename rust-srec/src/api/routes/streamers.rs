@@ -197,7 +197,7 @@ async fn streamer_response(
         .await
     {
         Ok(route) => route,
-        Err(crate::Error::NotFound { .. }) => crate::proxies::ProxyRoute::Inherit,
+        Err(srec_recorder::RecorderError::NotFound { .. }) => crate::proxies::ProxyRoute::Inherit,
         Err(error) => return Err(error.into()),
     };
     Ok(metadata_to_response(

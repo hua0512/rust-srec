@@ -481,10 +481,13 @@ async fn extract_managed(
                             extras,
                             selection,
                         )
-                        .map_err(crate::Error::from)?;
-                    let mut media = extractor.extract().await.map_err(crate::Error::from)?;
+                        .map_err(srec_recorder::RecorderError::from)?;
+                    let mut media = extractor
+                        .extract()
+                        .await
+                        .map_err(srec_recorder::RecorderError::from)?;
                     if media.streams.len() > crate::api::playback_context::MAX_PLAYBACK_STREAMS {
-                        return Err(crate::Error::validation(
+                        return Err(srec_recorder::RecorderError::validation(
                             "Too many playback stream candidates",
                         ));
                     }

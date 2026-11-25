@@ -190,7 +190,8 @@ async fn hard_cap_retains_manager_and_import_commit_publication() {
                                     streamer_specific_config: None,
                                 })
                                 .await
-                                .map(|_| ()),
+                                .map(|_| ())
+                                .map_err(crate::Error::from),
                             Mutation::Import => caller_state
                                 .config_backup
                                 .import_config(config, ImportMode::Merge, None)

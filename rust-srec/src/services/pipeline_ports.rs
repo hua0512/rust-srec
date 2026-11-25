@@ -20,27 +20,47 @@ use crate::pipeline::{
 use crate::recorder::{
     PipelineDrainStatus, PipelineNotification as RecorderPipelineNotification, RecorderPipelinePort,
 };
-use crate::{Error, Result};
+use srec_recorder::{RecorderError, RecorderResult};
 
-fn to_pipeline_error(error: Error) -> PipelineError {
+fn to_pipeline_error(error: RecorderError) -> PipelineError {
     match error {
-        Error::DatabaseSqlx(e) => PipelineError::DatabaseSqlx(e),
-        Error::Database(msg) => PipelineError::Database(msg),
-        Error::Serialization(e) => PipelineError::Serialization(e),
-        Error::InvalidStateTransition { from, to } => {
+        RecorderError::DatabaseSqlx(e) => PipelineError::DatabaseSqlx(e),
+        RecorderError::Database(msg) => PipelineError::Database(msg),
+        RecorderError::Db(e) => PipelineError::from(e),
+        RecorderError::Core(e) => PipelineError::from(e),
+        RecorderError::Serialization(e) => PipelineError::Serialization(e),
+        RecorderError::InvalidStateTransition { from, to } => {
             PipelineError::InvalidStateTransition { from, to }
         }
-        Error::NotFound { entity_type, id } => PipelineError::NotFound { entity_type, id },
-        Error::Validation(msg) => PipelineError::Validation(msg),
-        Error::Conflict(msg) => PipelineError::Conflict(msg),
-        Error::DagAlreadyTerminal { dag_id } => PipelineError::DagAlreadyTerminal { dag_id },
-        Error::Configuration(msg) => PipelineError::Configuration(msg),
-        Error::Io(e) => PipelineError::Io(e),
-        Error::IoPath { op, path, source } => PipelineError::IoPath { op, path, source },
-        Error::Proxy(e) => PipelineError::Proxy(e),
-        Error::PipelineError(msg) => PipelineError::PipelineError(msg),
-        Error::NonRetryablePipeline(msg) => PipelineError::NonRetryablePipeline(msg),
+        RecorderError::NotFound { entity_type, id } => PipelineError::NotFound { entity_type, id },
+        RecorderError::Validation(msg) => PipelineError::Validation(msg),
+        RecorderError::Conflict(msg) => PipelineError::Conflict(msg),
+        RecorderError::Configuration(msg) => PipelineError::Configuration(msg),
+        RecorderError::Io(e) => PipelineError::Io(e),
+        RecorderError::IoPath { op, path, source } => PipelineError::IoPath { op, path, source },
+        RecorderError::Proxy(e) => PipelineError::Proxy(e),
         other => PipelineError::Other(other.to_string()),
+    }
+}
+
+fn pipeline_to_recorder_error(error: PipelineError) -> RecorderError {
+    match error {
+        PipelineError::DatabaseSqlx(e) => RecorderError::DatabaseSqlx(e),
+        PipelineError::Database(msg) => RecorderError::Database(msg),
+        PipelineError::Db(e) => RecorderError::from(e),
+        PipelineError::Core(e) => RecorderError::from(e),
+        PipelineError::Serialization(e) => RecorderError::Serialization(e),
+        PipelineError::InvalidStateTransition { from, to } => {
+            RecorderError::InvalidStateTransition { from, to }
+        }
+        PipelineError::NotFound { entity_type, id } => RecorderError::NotFound { entity_type, id },
+        PipelineError::Validation(msg) => RecorderError::Validation(msg),
+        PipelineError::Conflict(msg) => RecorderError::Conflict(msg),
+        PipelineError::Configuration(msg) => RecorderError::Configuration(msg),
+        PipelineError::Io(e) => RecorderError::Io(e),
+        PipelineError::IoPath { op, path, source } => RecorderError::IoPath { op, path, source },
+        PipelineError::Proxy(e) => RecorderError::Proxy(e),
+        other => RecorderError::Other(other.to_string()),
     }
 }
 
@@ -94,7 +114,7 @@ where
             .await
         {
             Ok(platform) => Ok(Some(platform.platform_name)),
-            Err(Error::NotFound { .. }) => Ok(None),
+            Err(RecorderError::NotFound { .. }) => Ok(None),
             Err(error) => Err(to_pipeline_error(error)),
         }
     }
@@ -414,22 +434,23 @@ fn map_recorder_notification(
 
 #[async_trait]
 impl RecorderPipelinePort for PipelineManagerRecorderPort {
-    async fn notify(&self, notification: RecorderPipelineNotification) -> Result<()> {
-        Ok(self
-            .pipeline_manager
+    async fn notify(&self, notification: RecorderPipelineNotification) -> RecorderResult<()> {
+        self.pipeline_manager
             .handle_recorder_notification(map_recorder_notification(notification))
-            .await?)
+            .await
+            .map_err(pipeline_to_recorder_error)
     }
 
     async fn drain_for_streamer(
         &self,
         streamer_id: &str,
         timeout: Duration,
-    ) -> Result<PipelineDrainStatus> {
+    ) -> RecorderResult<PipelineDrainStatus> {
         let drain = self
             .pipeline_manager
             .drain_for_streamer(streamer_id, timeout)
-            .await?;
+            .await
+            .map_err(pipeline_to_recorder_error)?;
         Ok(PipelineDrainStatus {
             unsettled_sessions: drain.sessions.len(),
             outstanding_jobs: drain.jobs,

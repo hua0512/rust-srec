@@ -10,6 +10,7 @@ members = [
     "rust-srec/crates/srec-notify",
     "rust-srec/crates/srec-pipeline",
     "rust-srec/crates/srec-processors",
+    "rust-srec/crates/srec-recorder",
     "rust-srec/crates/srec-sqlite",
     "rust-srec/src-tauri",
     "crates/flv",
@@ -92,6 +93,7 @@ srec-engines = { path = "rust-srec/crates/srec-engines" }
 srec-notify = { path = "rust-srec/crates/srec-notify" }
 srec-pipeline = { path = "rust-srec/crates/srec-pipeline" }
 srec-processors = { path = "rust-srec/crates/srec-processors" }
+srec-recorder = { path = "rust-srec/crates/srec-recorder" }
 srec-sqlite = { path = "rust-srec/crates/srec-sqlite" }
 anyhow = "1.0.104"
 tower-http = { version = "0.7.1", features = ["cors", "trace", "request-id", "fs"] }

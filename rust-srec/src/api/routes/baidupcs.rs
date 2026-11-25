@@ -124,6 +124,7 @@ async fn account_proxy(state: &AppState) -> crate::Result<crate::proxies::ProxyT
         .routes()
         .target(&crate::proxies::ProxyRoute::Inherit)
         .await
+        .map_err(crate::Error::from)
 }
 
 fn non_empty(value: Option<&str>) -> Option<&str> {

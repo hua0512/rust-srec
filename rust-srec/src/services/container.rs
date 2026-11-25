@@ -34,6 +34,8 @@ use output_roots::{
 };
 pub(crate) use shutdown::ServiceShutdownSchedule;
 
+#[cfg(test)]
+mod actor_registry_tests;
 mod builder;
 #[cfg(test)]
 mod config_refresh_tests;
@@ -261,7 +263,12 @@ impl ServiceContainer {
 
         let hydrate_start = Instant::now();
         let ((streamer_count, hydration_complete), recovery) = tokio::try_join!(
-            self.streamer_manager.hydrate_with_recovery_status(),
+            async {
+                self.streamer_manager
+                    .hydrate_with_recovery_status()
+                    .await
+                    .map_err(crate::Error::from)
+            },
             async {
                 self.pipeline_manager
                     .recover_jobs_with_status()

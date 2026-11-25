@@ -16,7 +16,6 @@ axum = { workspace = true }
 serde = { workspace = true }
 uuid = { workspace = true }
 jiff = { workspace = true, features = ["tzdb-bundle-always"] }
-jiff-cron = { workspace = true }
 bytes = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -27,7 +26,6 @@ async-trait = { workspace = true }
 reqwest = { workspace = true }
 sqlx = { workspace = true }
 url = { workspace = true }
-percent-encoding = { workspace = true }
 base64 = { workspace = true }
 rustls = { workspace = true }
 
@@ -45,10 +43,10 @@ sysinfo = { workspace = true }
 # Workspace crates
 
 srec-core = { workspace = true }
-srec-engines = { workspace = true }
 srec-notify = { workspace = true }
 srec-pipeline = { workspace = true }
 srec-processors = { workspace = true }
+srec-recorder = { workspace = true }
 srec-sqlite = { workspace = true }
 pipeline-common = { path = "../crates/pipeline-common" }
 platforms-parser = { path = "../crates/platforms" }
@@ -78,15 +76,13 @@ hex = { workspace = true }
 # Protocol Buffers
 prost = { workspace = true }
 
-# Compression (danmu checkpoint gzip)
-flate2 = { workspace = true }
-
 # Filesystem (used at runtime by the output-root write gate's startup probe)
 tempfile = { workspace = true }
 
 [dev-dependencies]
 srec-engines = { workspace = true, features = ["test-support"] }
 srec-pipeline = { workspace = true, features = ["test-support"] }
+srec-recorder = { workspace = true, features = ["test-support"] }
 srec-sqlite = { workspace = true, features = ["test-support"] }
 syn = { version = "3", features = ["full", "visit"] }
 tokio = { workspace = true, features = ["test-util"] }
@@ -98,7 +94,7 @@ zip = { workspace = true }
 
 [features]
 default = []
-static-ssl = ["platforms-parser/static-ssl", "srec-engines/static-ssl"]
+static-ssl = ["platforms-parser/static-ssl", "srec-recorder/static-ssl"]
 
 # Opt-in: enable native-tls fallback for legacy endpoints (e.g. Douyu CDN / danmu).
-tls-native-fallback = ["platforms-parser/tls-native-fallback", "srec-engines/tls-native-fallback"]
+tls-native-fallback = ["platforms-parser/tls-native-fallback", "srec-recorder/tls-native-fallback"]

@@ -1,0 +1,1467 @@
+use std::sync::atomic::Ordering;
+use std::time::Duration;
+
+use async_trait::async_trait;
+use pipeline_common::SplitReason;
+
+use crate::downloader::SegmentInfo;
+use crate::downloader::engine::{EngineStartError, IoErrorKindSer, SegmentEvent};
+
+use super::coordination::DownloadCoordinationReceipt;
+use super::*;
+
+mod credential_admission;
+
+#[derive(Clone)]
+struct ScriptedSegmentEngine {
+    prelude: Vec<SegmentEvent>,
+    /// Optional barrier: when set, the engine emits `prelude`, then awaits
+    /// this notify before emitting `tail` + `DownloadCompleted`. Lets a
+    /// test interleave `stop_download` between the prelude and the tail
+    /// to reproduce the trailing-flush race.
+    release_tail: Option<Arc<tokio::sync::Notify>>,
+    release_tail_on_cancel: bool,
+    tail: Vec<SegmentEvent>,
+}
+
+impl ScriptedSegmentEngine {
+    fn new(events: Vec<SegmentEvent>) -> Self {
+        Self {
+            prelude: events,
+            release_tail: None,
+            release_tail_on_cancel: false,
+            tail: Vec::new(),
+        }
+    }
+
+    fn with_gated_tail(
+        prelude: Vec<SegmentEvent>,
+        release: Arc<tokio::sync::Notify>,
+        tail: Vec<SegmentEvent>,
+    ) -> Self {
+        Self {
+            prelude,
+            release_tail: Some(release),
+            release_tail_on_cancel: false,
+            tail,
+        }
+    }
+
+    fn with_shutdown_tail(prelude: Vec<SegmentEvent>, tail: Vec<SegmentEvent>) -> Self {
+        Self {
+            prelude,
+            release_tail: None,
+            release_tail_on_cancel: true,
+            tail,
+        }
+    }
+}
+
+#[async_trait]
+impl DownloadEngine for ScriptedSegmentEngine {
+    fn engine_type(&self) -> EngineType {
+        EngineType::Ffmpeg
+    }
+
+    async fn run(&self, handle: Arc<DownloadHandle>) -> std::result::Result<(), EngineStartError> {
+        for event in self.prelude.clone() {
+            handle
+                .event_tx
+                .send(event)
+                .await
+                .map_err(|e| EngineStartError {
+                    kind: DownloadFailureKind::Other,
+                    message: format!("failed to emit scripted segment event: {}", e),
+                })?;
+        }
+        if let Some(release) = self.release_tail.as_ref() {
+            release.notified().await;
+        } else if self.release_tail_on_cancel {
+            handle.cancellation_token.cancelled().await;
+        }
+        for event in self.tail.clone() {
+            handle
+                .event_tx
+                .send(event)
+                .await
+                .map_err(|e| EngineStartError {
+                    kind: DownloadFailureKind::Other,
+                    message: format!("failed to emit scripted tail event: {}", e),
+                })?;
+        }
+        handle
+            .event_tx
+            .send(SegmentEvent::DownloadCompleted {
+                total_bytes: 0,
+                total_duration_secs: 0.0,
+                total_segments: 0,
+                engine_signal: EngineEndSignal::Unknown,
+            })
+            .await
+            .map_err(|e| EngineStartError {
+                kind: DownloadFailureKind::Other,
+                message: format!("failed to emit scripted completion event: {}", e),
+            })?;
+        Ok(())
+    }
+
+    fn is_available(&self) -> bool {
+        true
+    }
+
+    fn version(&self) -> Option<String> {
+        Some("scripted".to_string())
+    }
+}
+
+fn completed_segment(path: std::path::PathBuf, index: u32) -> SegmentEvent {
+    SegmentEvent::SegmentCompleted(SegmentInfo {
+        path,
+        duration_secs: 1.0,
+        size_bytes: 128,
+        index,
+        started_at: None,
+        completed_at: jiff::Timestamp::now(),
+        split_reason: None,
+    })
+}
+
+fn test_download_config(output_dir: std::path::PathBuf, session_id: &str) -> DownloadConfig {
+    DownloadConfig::new(
+        "https://example.com/test.flv",
+        output_dir,
+        "test-streamer-id",
+        "TestStreamer",
+        session_id,
+    )
+}
+
+#[tokio::test]
+async fn manual_cut_completes_after_both_segment_events_in_either_order() {
+    for external_order in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let manager = DownloadManager::new();
+        let mut events = manager.subscribe();
+        let release = Arc::new(tokio::sync::Notify::new());
+        let started = |sequence| SegmentEvent::SegmentStarted {
+            path: directory.path().join(format!("{sequence}.flv")),
+            sequence,
+            started_at: jiff::Timestamp::now(),
+        };
+        let mut closed = completed_segment(directory.path().join("0.flv"), 0);
+        if let SegmentEvent::SegmentCompleted(info) = &mut closed {
+            info.split_reason = Some(SplitReason::Manual { request_id: 1 });
+        }
+        let tail = if external_order {
+            vec![started(1), closed]
+        } else {
+            vec![closed, started(1)]
+        };
+        let id = start_scripted_download_with_engine(
+            &manager,
+            test_download_config(directory.path().to_path_buf(), "manual"),
+            ScriptedSegmentEngine::with_gated_tail(vec![started(0)], release.clone(), tail),
+        )
+        .await
+        .unwrap();
+        let handle = manager.active_downloads.get(&id).unwrap().handle.clone();
+        assert!(matches!(
+            manager.request_manual_split(&id),
+            Err(crate::Error::ManualSplit(
+                pipeline_common::ManualSplitError::Unavailable
+            ))
+        ));
+        handle.manual_split.enable();
+        let first = manager.request_manual_split(&id).unwrap();
+        assert_eq!(first, manager.request_manual_split(&id).unwrap());
+        assert!(matches!(
+            manager.request_manual_split("stale-attempt"),
+            Err(crate::Error::NotFound { .. })
+        ));
+        assert_eq!(handle.manual_split.begin(), Some(1));
+        release.notify_one();
+        let mut revisions = Vec::new();
+        let mut terminal = false;
+        while !terminal || !events.is_empty() {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+                .await
+                .expect("timed out waiting for download events")
+                .expect("download event channel closed");
+            match event {
+                DownloadManagerEvent::Terminal(_) => terminal = true,
+                DownloadManagerEvent::Progress(DownloadProgressEvent::ManualSplitChanged {
+                    state,
+                    ..
+                }) => revisions.push((state.revision, state.status)),
+                _ => {}
+            }
+        }
+        assert_eq!(
+            handle.manual_split.snapshot().status,
+            pipeline_common::ManualSplitStatus::Completed
+        );
+        // Each revision is published once, in order.
+        assert!(
+            revisions.windows(2).all(|pair| pair[0].0 < pair[1].0),
+            "{revisions:?}"
+        );
+        assert!(
+            revisions.contains(&(4, pipeline_common::ManualSplitStatus::Completed)),
+            "{revisions:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn manual_cut_is_rejected_after_stop_and_does_not_survive_the_attempt() {
+    let directory = tempfile::tempdir().unwrap();
+    let manager = DownloadManager::new();
+    let mut events = manager.subscribe();
+    let release = Arc::new(tokio::sync::Notify::new());
+    let id = start_scripted_download_with_engine(
+        &manager,
+        test_download_config(directory.path().to_path_buf(), "manual-stop"),
+        ScriptedSegmentEngine::with_gated_tail(Vec::new(), release.clone(), Vec::new()),
+    )
+    .await
+    .unwrap();
+    let handle = manager.active_downloads.get(&id).unwrap().handle.clone();
+    handle.manual_split.enable();
+    manager.request_manual_split(&id).unwrap();
+    manager
+        .request_stop_download(&id, DownloadStopCause::User)
+        .unwrap();
+    assert!(matches!(
+        manager.request_manual_split(&id),
+        Err(crate::Error::ManualSplit(
+            pipeline_common::ManualSplitError::Closed
+        ))
+    ));
+    assert_eq!(handle.manual_split.begin(), None);
+    release.notify_one();
+    wait_for_download_terminal(&mut events).await;
+    assert_eq!(
+        handle.manual_split.snapshot().status,
+        pipeline_common::ManualSplitStatus::Cancelled
+    );
+}
+
+async fn start_scripted_download(
+    manager: &DownloadManager,
+    config: DownloadConfig,
+    events: Vec<SegmentEvent>,
+) -> Result<String> {
+    start_scripted_download_with_engine(manager, config, ScriptedSegmentEngine::new(events)).await
+}
+
+async fn start_scripted_download_with_engine(
+    manager: &DownloadManager,
+    config: DownloadConfig,
+    scripted: ScriptedSegmentEngine,
+) -> Result<String> {
+    let engine = EngineHandle {
+        engine: Arc::new(scripted),
+        engine_type: EngineType::Ffmpeg,
+        engine_key: EngineKey::global(EngineType::Ffmpeg),
+    };
+    let slot = manager
+        .acquire_slot(
+            AcquireRequest {
+                session_id: config.session_id.clone(),
+                streamer_id: config.streamer_id.clone(),
+                streamer_name: config.streamer_name.clone(),
+                engine_type: EngineType::Ffmpeg,
+                priority: Priority::Normal,
+            },
+            CancellationToken::new(),
+        )
+        .await?;
+
+    manager.start_with_slot(slot, config, engine).await
+}
+
+async fn collect_segment_completed(
+    events: &mut broadcast::Receiver<DownloadManagerEvent>,
+) -> DownloadProgressEvent {
+    loop {
+        let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+            .await
+            .expect("timed out waiting for download event")
+            .expect("download event channel closed");
+        if let DownloadManagerEvent::Progress(
+            progress @ DownloadProgressEvent::SegmentCompleted { .. },
+        ) = event
+        {
+            return progress;
+        }
+    }
+}
+
+async fn wait_for_download_terminal(
+    events: &mut broadcast::Receiver<DownloadManagerEvent>,
+) -> DownloadTerminalEvent {
+    loop {
+        let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+            .await
+            .expect("timed out waiting for terminal download event")
+            .expect("download event channel closed");
+        if let DownloadManagerEvent::Terminal(terminal) = event {
+            return terminal;
+        }
+    }
+}
+
+async fn collect_segment_progress_events(
+    events: &mut broadcast::Receiver<DownloadManagerEvent>,
+    count: usize,
+) -> Vec<DownloadProgressEvent> {
+    let mut collected = Vec::new();
+    while collected.len() < count {
+        let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+            .await
+            .expect("timed out waiting for download event")
+            .expect("download event channel closed");
+        if let DownloadManagerEvent::Progress(
+            progress @ (DownloadProgressEvent::SegmentStarted { .. }
+            | DownloadProgressEvent::SegmentCompleted { .. }),
+        ) = event
+        {
+            collected.push(progress);
+        }
+    }
+    collected
+}
+
+#[tokio::test]
+async fn maintenance_admission_fences_preacquired_recording_starts() {
+    let manager = DownloadManager::new();
+    let temp = tempfile::tempdir().unwrap();
+    let config = test_download_config(temp.path().to_path_buf(), "maintenance-fence");
+    let slot = manager
+        .acquire_slot(
+            AcquireRequest {
+                session_id: config.session_id.clone(),
+                streamer_id: config.streamer_id.clone(),
+                streamer_name: config.streamer_name.clone(),
+                engine_type: EngineType::Ffmpeg,
+                priority: Priority::Normal,
+            },
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    let admission = manager
+        .try_admit_maintenance(0)
+        .expect("idle maintenance admitted");
+    let engine = EngineHandle {
+        engine: Arc::new(ScriptedSegmentEngine::with_shutdown_tail(vec![], vec![])),
+        engine_type: EngineType::Ffmpeg,
+        engine_key: EngineKey::global(EngineType::Ffmpeg),
+    };
+    let mut start = Box::pin(manager.start_with_slot(slot, config, engine));
+    assert!(
+        futures::poll!(start.as_mut()).is_pending(),
+        "even a preacquired slot cannot bypass maintenance"
+    );
+    assert_eq!(manager.active_count(), 0);
+    assert!(manager.try_admit_maintenance(0).is_none());
+    drop(admission);
+    let id = tokio::time::timeout(Duration::from_secs(2), start)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(manager.active_count(), 1);
+    assert!(manager.try_admit_maintenance(0).is_none());
+    let admission = manager
+        .try_admit_maintenance(1)
+        .expect("configured active threshold is honored");
+    // Completion does not acquire the admission lock: it must remain able
+    // to settle an already running recording while maintenance is admitted.
+    tokio::time::timeout(Duration::from_secs(2), manager.stop_download(&id))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(manager.active_count(), 0);
+    drop(admission);
+    assert!(manager.try_admit_maintenance(0).is_some());
+    let operation = manager.begin_operation().await.unwrap();
+    assert!(
+        manager.try_admit_maintenance(0).is_none(),
+        "in-flight admission work conservatively defers maintenance"
+    );
+    drop(operation);
+}
+
+#[tokio::test]
+async fn maintenance_admission_respects_shutdown_and_cancelled_starts() {
+    let manager = DownloadManager::new();
+    let admission = manager.try_admit_maintenance(0).unwrap();
+    let mut operation = Box::pin(manager.begin_operation());
+    assert!(futures::poll!(operation.as_mut()).is_pending());
+    drop(operation);
+    drop(admission);
+    assert!(
+        manager.try_admit_maintenance(0).is_some(),
+        "cancelled waiter does not retain the fence"
+    );
+    let report = tokio::time::timeout(
+        Duration::from_secs(2),
+        manager.shutdown_until(tokio::time::Instant::now() + Duration::from_secs(1)),
+    )
+    .await
+    .unwrap();
+    assert!(report.failures.is_empty());
+    assert!(
+        manager.try_admit_maintenance(0).is_none(),
+        "maintenance cannot race shutdown admission"
+    );
+}
+
+#[tokio::test]
+async fn cancelled_queued_start_clears_event_and_capacity_while_maintenance_is_admitted() {
+    enum CancelMode {
+        DropFuture,
+        BeforeStart,
+        DuringWait,
+    }
+    for mode in [
+        CancelMode::DropFuture,
+        CancelMode::BeforeStart,
+        CancelMode::DuringWait,
+    ] {
+        let manager = DownloadManager::with_config(DownloadManagerConfig {
+            max_concurrent_downloads: 1,
+            high_priority_extra_slots: 0,
+            ..Default::default()
+        });
+        let mut events = manager.subscribe();
+        let request = |session: &str| AcquireRequest {
+            session_id: session.to_owned(),
+            streamer_id: "streamer".to_owned(),
+            streamer_name: "Streamer".to_owned(),
+            engine_type: EngineType::Ffmpeg,
+            priority: Priority::Normal,
+        };
+        let holder = manager
+            .acquire_slot(request("holder"), CancellationToken::new())
+            .await
+            .unwrap();
+        let mut queued =
+            Box::pin(manager.acquire_slot(request("queued"), CancellationToken::new()));
+        assert!(futures::poll!(queued.as_mut()).is_pending());
+        drop(holder);
+        let slot = tokio::time::timeout(Duration::from_secs(2), queued)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(slot.queued_event_emitted());
+        let admission = manager.try_admit_maintenance(0).unwrap();
+        let config = DownloadConfig::new(
+            "https://invalid.test/live",
+            "recordings",
+            "streamer",
+            "Streamer",
+            "queued",
+        );
+        let engine = EngineHandle {
+            engine: Arc::new(ScriptedSegmentEngine::with_shutdown_tail(vec![], vec![])),
+            engine_type: EngineType::Ffmpeg,
+            engine_key: EngineKey::global(EngineType::Ffmpeg),
+        };
+        let cancel = CancellationToken::new();
+        if matches!(mode, CancelMode::BeforeStart) {
+            cancel.cancel();
+        }
+        let mut start =
+            Box::pin(manager.start_with_slot_cancellable(slot, config, engine, &cancel));
+        if !matches!(mode, CancelMode::BeforeStart) {
+            assert!(futures::poll!(start.as_mut()).is_pending());
+        }
+        match mode {
+            CancelMode::DropFuture => drop(start),
+            CancelMode::BeforeStart | CancelMode::DuringWait => {
+                cancel.cancel();
+                assert!(
+                    tokio::time::timeout(Duration::from_secs(2), start)
+                        .await
+                        .unwrap()
+                        .unwrap()
+                        .is_none()
+                );
+            }
+        }
+        let mut queued_events = 0;
+        let mut dequeued_events = 0;
+        while let Ok(event) = events.try_recv() {
+            match event {
+                DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadQueued {
+                    session_id,
+                    ..
+                }) if session_id == "queued" => queued_events += 1,
+                DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadDequeued {
+                    session_id,
+                    ..
+                }) if session_id == "queued" => dequeued_events += 1,
+                DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
+                    ..
+                }) => panic!("cancelled start must not launch an engine"),
+                _ => {}
+            }
+        }
+        assert_eq!(queued_events, 1);
+        assert_eq!(dequeued_events, 1);
+        drop(admission);
+        let replacement = tokio::time::timeout(
+            Duration::from_secs(2),
+            manager.acquire_slot(request("queued"), CancellationToken::new()),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(
+            !replacement.queued_event_emitted(),
+            "cancelled start releases capacity and its session reservation"
+        );
+        assert_eq!(
+            manager.active_count(),
+            0,
+            "cancelled start stays stopped after maintenance releases admission"
+        );
+    }
+}
+
+#[test]
+fn relative_segment_paths_are_resolved_without_canonicalizing() {
+    let relative = std::path::Path::new("recordings").join("segment.flv");
+    let expected = std::env::current_dir()
+        .expect("current directory")
+        .join(&relative);
+
+    assert_eq!(resolve_segment_path(&relative), expected.to_string_lossy());
+}
+
+#[tokio::test]
+async fn segment_completion_preserves_engine_reported_path() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let nested = temp.path().join("nested");
+    tokio::fs::create_dir_all(&nested)
+        .await
+        .expect("create nested directory");
+    tokio::fs::write(temp.path().join("segment.flv"), b"segment")
+        .await
+        .expect("create segment");
+
+    let manager = DownloadManager::new();
+    let mut events = manager.subscribe();
+    let segment_path = nested.join("..").join("segment.flv");
+    let expected_path = segment_path.to_string_lossy().to_string();
+
+    start_scripted_download(
+        &manager,
+        test_download_config(temp.path().to_path_buf(), "session-path-identity"),
+        vec![
+            SegmentEvent::SegmentStarted {
+                path: segment_path.clone(),
+                sequence: 0,
+                started_at: jiff::Timestamp::now(),
+            },
+            completed_segment(segment_path, 0),
+        ],
+    )
+    .await
+    .expect("download should start");
+
+    let segment_events = collect_segment_progress_events(&mut events, 2).await;
+    let DownloadProgressEvent::SegmentStarted {
+        segment_path: started_path,
+        ..
+    } = &segment_events[0]
+    else {
+        panic!("expected segment started event first");
+    };
+    let DownloadProgressEvent::SegmentCompleted {
+        segment_path: completed_path,
+        ..
+    } = &segment_events[1]
+    else {
+        panic!("expected segment completed event second");
+    };
+
+    assert_eq!(started_path, &expected_path);
+    assert_eq!(completed_path, &expected_path);
+
+    loop {
+        let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+            .await
+            .expect("timed out waiting for terminal event")
+            .expect("download event channel closed");
+        if let DownloadManagerEvent::Terminal(DownloadTerminalEvent::Completed {
+            file_path, ..
+        }) = event
+        {
+            assert_eq!(file_path.as_deref(), Some(expected_path.as_str()));
+            break;
+        }
+    }
+}
+
+/// Trailing `SegmentCompleted` flushed after `stop_download_with_reason`
+/// must reuse the session_segment_index that the matching
+/// `SegmentStarted` allocated. The mapping is the spawn loop's local
+/// `engine_to_session` `HashMap`, which is alive as long as the loop is
+/// draining the engine's channel and is unaffected by
+/// `active_downloads.remove(download_id)`.
+#[tokio::test]
+async fn segment_completed_after_stop_keeps_session_index() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let manager = DownloadManager::new();
+    let mut events = manager.subscribe();
+    let segment_path = temp.path().join("segment.flv");
+    let release_tail = Arc::new(tokio::sync::Notify::new());
+
+    let scripted = ScriptedSegmentEngine::with_gated_tail(
+        vec![SegmentEvent::SegmentStarted {
+            path: segment_path.clone(),
+            sequence: 0,
+            started_at: jiff::Timestamp::now(),
+        }],
+        release_tail.clone(),
+        vec![SegmentEvent::SegmentCompleted(SegmentInfo {
+            path: segment_path,
+            duration_secs: 1.0,
+            size_bytes: 128,
+            index: 0,
+            started_at: None,
+            completed_at: jiff::Timestamp::now(),
+            split_reason: None,
+        })],
+    );
+
+    let download_id = start_scripted_download_with_engine(
+        &manager,
+        test_download_config(temp.path().to_path_buf(), "session-trailing-flush"),
+        scripted,
+    )
+    .await
+    .expect("download should start");
+
+    // Drain the SegmentStarted so we know its session_index.
+    let started_index = loop {
+        let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+            .await
+            .expect("timed out waiting for segment started")
+            .expect("download event channel closed");
+        if let DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
+            segment_index,
+            ..
+        }) = event
+        {
+            break segment_index;
+        }
+    };
+
+    // Stop must stay pending while the engine is still flushing its tail.
+    let mut stop = Box::pin(manager.stop_download(&download_id));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), stop.as_mut())
+            .await
+            .is_err(),
+        "stop returned before the engine flushed its trailing segment"
+    );
+
+    // Release the trailing SegmentCompleted.
+    release_tail.notify_one();
+    stop.await
+        .expect("stop should finish after the tail drains");
+
+    // The trailing SegmentCompleted must report the same session_index
+    // as the SegmentStarted.
+    let completed = collect_segment_completed(&mut events).await;
+    let DownloadProgressEvent::SegmentCompleted {
+        segment_index: completed_index,
+        ..
+    } = completed
+    else {
+        panic!("expected segment completed event");
+    };
+    assert_eq!(completed_index, started_index);
+
+    let terminal = wait_for_download_terminal(&mut events).await;
+    assert!(matches!(
+        terminal,
+        DownloadTerminalEvent::Completed {
+            stop_cause: Some(DownloadStopCause::User),
+            ..
+        }
+    ));
+}
+
+#[tokio::test]
+async fn shutdown_waits_for_trailing_segment_and_emits_one_terminal_outcome() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let (coordination_tx, mut coordination_rx) = download_coordination_channel();
+    let manager = DownloadManager::new().with_coordination_sender(coordination_tx);
+    let mut events = manager.subscribe();
+    let segment_path = temp.path().join("shutdown-tail.flv");
+    let completion_received = Arc::new(tokio::sync::Notify::new());
+    let release_completion = Arc::new(tokio::sync::Notify::new());
+    let coordination_completion_received = completion_received.clone();
+    let coordination_release_completion = release_completion.clone();
+    let coordination_task = tokio::spawn(async move {
+        while let Some(delivery) = coordination_rx
+            .recv_event()
+            .await
+            .expect("coordination channel should close with a marker")
+        {
+            let (event, acknowledgement) = delivery.into_parts();
+            if matches!(
+                event,
+                DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted { .. })
+            ) {
+                coordination_completion_received.notify_one();
+                coordination_release_completion.notified().await;
+            }
+            acknowledgement
+                .send(Ok(()))
+                .expect("attempt should await its acknowledgement");
+        }
+    });
+
+    let scripted = ScriptedSegmentEngine::with_shutdown_tail(
+        vec![SegmentEvent::SegmentStarted {
+            path: segment_path.clone(),
+            sequence: 0,
+            started_at: jiff::Timestamp::now(),
+        }],
+        vec![completed_segment(segment_path, 0)],
+    );
+
+    start_scripted_download_with_engine(
+        &manager,
+        test_download_config(temp.path().to_path_buf(), "session-shutdown-tail"),
+        scripted,
+    )
+    .await
+    .expect("download should start");
+
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+            .await
+            .expect("timed out waiting for segment start")
+            .expect("download event channel closed");
+        if matches!(
+            event,
+            DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted { .. })
+        ) {
+            break;
+        }
+    }
+
+    let shutdown = manager.shutdown_until(tokio::time::Instant::now() + Duration::from_secs(1));
+    tokio::pin!(shutdown);
+    tokio::select! {
+        () = completion_received.notified() => {}
+        result = &mut shutdown => panic!(
+            "shutdown returned before SegmentCompleted acknowledgement: {result:?}"
+        ),
+    }
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), shutdown.as_mut())
+            .await
+            .is_err(),
+        "shutdown must remain pending until SegmentCompleted is durably applied"
+    );
+    release_completion.notify_one();
+    shutdown.await;
+    coordination_task
+        .await
+        .expect("coordination task should finish after the drain marker");
+
+    let mut saw_segment_completed = false;
+    let terminal = loop {
+        let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+            .await
+            .expect("timed out waiting for shutdown events")
+            .expect("download event channel closed");
+        match event {
+            DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted { .. }) => {
+                saw_segment_completed = true
+            }
+            DownloadManagerEvent::Terminal(terminal) => break terminal,
+            _ => {}
+        }
+    };
+
+    assert!(
+        saw_segment_completed,
+        "the final segment must be published before the terminal outcome"
+    );
+    assert!(matches!(
+        terminal,
+        DownloadTerminalEvent::Cancelled {
+            cause: DownloadStopCause::Shutdown,
+            ..
+        }
+    ));
+    let mut additional_terminals = 0;
+    while let Ok(Ok(event)) = tokio::time::timeout(Duration::from_millis(20), events.recv()).await {
+        if matches!(event, DownloadManagerEvent::Terminal(_)) {
+            additional_terminals += 1;
+        }
+    }
+    assert_eq!(additional_terminals, 0, "terminal outcome must be unique");
+    assert_eq!(manager.active_count(), 0);
+}
+
+#[tokio::test]
+async fn shutdown_rejects_queued_start_before_active_slot_is_released() {
+    let temp = tempfile::tempdir().expect("temp directory should be created");
+    let manager = Arc::new(DownloadManager::with_config(DownloadManagerConfig {
+        max_concurrent_downloads: 1,
+        high_priority_extra_slots: 0,
+        ..Default::default()
+    }));
+    manager.register_engine(Arc::new(ScriptedSegmentEngine::with_shutdown_tail(
+        Vec::new(),
+        Vec::new(),
+    )));
+    let mut events = manager.subscribe();
+
+    manager
+        .start_download(
+            DownloadConfig::new(
+                "https://example.com/active.flv",
+                temp.path().to_path_buf(),
+                "active-streamer",
+                "Active Streamer",
+                "active-session",
+            ),
+            Some("ffmpeg".to_string()),
+            false,
+        )
+        .await
+        .expect("first download should occupy the only slot");
+
+    let queued_manager = manager.clone();
+    let queued_output = temp.path().to_path_buf();
+    let queued = tokio::spawn(async move {
+        queued_manager
+            .start_download(
+                DownloadConfig::new(
+                    "https://example.com/queued.flv",
+                    queued_output,
+                    "queued-streamer",
+                    "Queued Streamer",
+                    "queued-session",
+                ),
+                Some("ffmpeg".to_string()),
+                false,
+            )
+            .await
+    });
+
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while manager.queue.pending_count() != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("second download should park in the queue");
+
+    let report = manager
+        .shutdown_until(tokio::time::Instant::now() + Duration::from_secs(1))
+        .await;
+    let queued_error = queued
+        .await
+        .expect("queued start task should not panic")
+        .expect_err("queued start must be rejected during shutdown");
+
+    assert!(queued_error.to_string().contains("shutting down"));
+    assert_eq!(report.stopped_download_ids.len(), 1);
+    assert!(report.deadline_exceeded_download_ids.is_empty());
+    assert_eq!(manager.active_count(), 0);
+    assert_eq!(manager.queue.pending_count(), 0);
+
+    let started_count = std::iter::from_fn(|| events.try_recv().ok())
+        .filter(|event| {
+            matches!(
+                event,
+                DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted { .. })
+            )
+        })
+        .count();
+    assert_eq!(started_count, 1, "the queued engine must never start");
+}
+
+/// `clear_session_segment_index` can fire mid-drain (the dedicated
+/// `SessionTransition::Ended` subscriber in `services/container.rs` runs
+/// as soon as `SessionLifecycle` writes `end_time`, independent of the
+/// download's spawn loop). The trailing `SegmentCompleted` that follows
+/// must still report the same session_index as its matching
+/// `SegmentStarted`. The spawn loop's local `engine_to_session` map is
+/// what makes this hold — it survives the session-counter eviction.
+///
+/// The prelude includes a complete first segment (Start+Complete for
+/// engine seq=0) so the session counter advances past 0 before the
+/// second `SegmentStarted` (seq=1) lands. A naive design that wipes the
+/// mapping along with the counter would re-allocate the trailing
+/// `SegmentCompleted(1)` as session_index=0 from the recreated counter,
+/// not 1 — that's what this test rules out.
+#[tokio::test]
+async fn segment_completed_after_session_cleanup_keeps_index() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let manager = DownloadManager::new();
+    let mut events = manager.subscribe();
+    let first_path = temp.path().join("segment-0.flv");
+    let second_path = temp.path().join("segment-1.flv");
+    let release_tail = Arc::new(tokio::sync::Notify::new());
+    let session_id = "session-cleanup-mid-drain";
+
+    let scripted = ScriptedSegmentEngine::with_gated_tail(
+        vec![
+            SegmentEvent::SegmentStarted {
+                path: first_path.clone(),
+                sequence: 0,
+                started_at: jiff::Timestamp::now(),
+            },
+            completed_segment(first_path, 0),
+            SegmentEvent::SegmentStarted {
+                path: second_path.clone(),
+                sequence: 1,
+                started_at: jiff::Timestamp::now(),
+            },
+        ],
+        release_tail.clone(),
+        vec![completed_segment(second_path.clone(), 1)],
+    );
+
+    start_scripted_download_with_engine(
+        &manager,
+        test_download_config(temp.path().to_path_buf(), session_id),
+        scripted,
+    )
+    .await
+    .expect("download should start");
+
+    // Drain events until we see the SegmentStarted for engine seq=1 —
+    // that's the one whose matching SegmentCompleted is gated.
+    let started_index = loop {
+        let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+            .await
+            .expect("timed out waiting for segment started")
+            .expect("download event channel closed");
+        if let DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
+            segment_index,
+            segment_path,
+            ..
+        }) = event
+            && segment_path == second_path.to_string_lossy()
+        {
+            break segment_index;
+        }
+    };
+    // With the counter advanced past 0, the second SegmentStarted's
+    // session_index must be > 0; otherwise the trailing assertion below
+    // can't distinguish fixed from broken.
+    assert!(
+        started_index > 0,
+        "test setup expects session counter to advance past 0 before the gated tail; got {started_index}"
+    );
+
+    // Simulate the `SessionTransition::Ended` subscriber firing while the
+    // engine is still parked.
+    manager.clear_session_segment_index(session_id);
+
+    // Release the trailing SegmentCompleted.
+    release_tail.notify_one();
+
+    let completed = collect_segment_completed(&mut events).await;
+    let DownloadProgressEvent::SegmentCompleted {
+        segment_index: completed_index,
+        ..
+    } = completed
+    else {
+        panic!("expected segment completed event");
+    };
+    assert_eq!(completed_index, started_index);
+}
+
+/// `shutdown_until` contains attempts past its deadline, so an engine that
+/// ignores `DownloadHandle::cancel` keeps it pending forever. A caller that
+/// stops awaiting it must still be able to reclaim those attempts:
+/// `abort_attempts` drops each attempt future, which is what kills the
+/// engine child owned through `kill_on_drop`.
+#[tokio::test]
+async fn abort_attempts_reclaims_attempts_left_by_a_dropped_shutdown() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let manager = DownloadManager::new();
+    let mut events = manager.subscribe();
+    let segment_path = temp.path().join("segment-0.flv");
+    // Never notified, so the engine parks past the shutdown request.
+    let wedged = Arc::new(tokio::sync::Notify::new());
+
+    let scripted = ScriptedSegmentEngine::with_gated_tail(
+        vec![SegmentEvent::SegmentStarted {
+            path: segment_path.clone(),
+            sequence: 0,
+            started_at: jiff::Timestamp::now(),
+        }],
+        wedged,
+        Vec::new(),
+    );
+    let download_id = start_scripted_download_with_engine(
+        &manager,
+        test_download_config(temp.path().to_path_buf(), "session-abort-attempts"),
+        scripted,
+    )
+    .await
+    .expect("download should start");
+
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+            .await
+            .expect("timed out waiting for segment started")
+            .expect("download event channel closed");
+        if matches!(
+            event,
+            DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted { .. })
+        ) {
+            break;
+        }
+    }
+
+    assert!(
+        tokio::time::timeout(
+            Duration::from_millis(50),
+            manager.shutdown_until(tokio::time::Instant::now()),
+        )
+        .await
+        .is_err(),
+        "shutdown_until must keep containing an attempt whose engine ignores cancellation"
+    );
+
+    let aborted = manager
+        .abort_attempts(tokio::time::Instant::now() + Duration::from_secs(5))
+        .await;
+    assert_eq!(aborted, vec![download_id]);
+    assert_eq!(manager.active_count(), 0);
+}
+
+#[test]
+fn throttle_capacity_is_bounded_without_mutating_configured_limits() {
+    for (configured, factor, effective) in [
+        (10, 0.5, 5),
+        (6, 0.5, 3),
+        (1, 0.5, 1),
+        (0, 0.5, 1),
+        (6, 0.0, 1),
+        (6, -1.0, 1),
+        (6, 2.0, 6),
+        (6, f32::NAN, 6),
+    ] {
+        let manager = DownloadManager::with_config(DownloadManagerConfig {
+            max_concurrent_downloads: configured,
+            high_priority_extra_slots: 2,
+            ..Default::default()
+        });
+        assert_eq!(
+            manager.set_download_throttle(Some(factor)),
+            (configured.max(1), effective)
+        );
+        assert_eq!(manager.max_concurrent_downloads(), configured.max(1));
+        assert_eq!(manager.queue.normal_capacity(), effective);
+        assert_eq!(manager.queue.high_extra_capacity(), 2);
+        assert_eq!(
+            manager.set_download_throttle(None),
+            (configured.max(1), configured.max(1))
+        );
+        assert_eq!(manager.queue.normal_capacity(), configured.max(1));
+    }
+}
+
+// ========== Output-root write gate integration ==========
+
+/// Build a `DownloadConfig` pointed at `output_dir`, with the other
+/// fields set to minimal plausible values. The URL/streamer fields are
+/// only used for logging — we never actually spawn an engine in these
+/// tests.
+fn test_config_with_output_dir(output_dir: std::path::PathBuf) -> DownloadConfig {
+    DownloadConfig::new(
+        "https://example.com/test.flv",
+        output_dir,
+        "test-streamer-id",
+        "TestStreamer",
+        "test-session-id",
+    )
+}
+
+/// Wrap a `DownloadManager` with a freshly constructed gate and return
+/// both the manager and a counter the recovery hook bumps each time it
+/// fires.
+fn manager_with_gate() -> (
+    DownloadManager,
+    Arc<std::sync::atomic::AtomicUsize>,
+    Arc<super::super::output_root_gate::OutputRootGate>,
+) {
+    use super::super::output_root_gate::{OutputRootGate, RecoveryHook};
+    use std::sync::atomic::AtomicUsize;
+
+    let counter = Arc::new(AtomicUsize::new(0));
+    let c2 = counter.clone();
+    let hook: RecoveryHook = Arc::new(move |_root: &std::path::Path| {
+        c2.fetch_add(1, Ordering::SeqCst);
+    });
+    let gate = OutputRootGate::new(
+        None,
+        hook,
+        vec![],
+        Duration::from_secs(1), // short cooldown for the test runner
+    );
+    let manager = DownloadManager::new();
+    manager.set_output_root_gate(gate.clone());
+    (manager, counter, gate)
+}
+
+#[tokio::test]
+async fn mid_stream_output_io_degrades_the_gate_before_the_terminal() {
+    for io_kind in [
+        IoErrorKindSer::StorageFull,
+        IoErrorKindSer::PermissionDenied,
+        IoErrorKindSer::ReadOnlyFilesystem,
+        IoErrorKindSer::NotFound,
+        IoErrorKindSer::TimedOut,
+    ] {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let output_dir = temp.path().join("recording");
+        let (manager, _, gate) = manager_with_gate();
+        let mut events = manager.subscribe();
+        start_scripted_download(
+            &manager,
+            test_download_config(output_dir.clone(), "output-io-session"),
+            vec![
+                SegmentEvent::OutputIoError {
+                    output_dir: output_dir.clone(),
+                    io_kind,
+                    detail: "output fault".to_owned(),
+                },
+                SegmentEvent::DownloadFailed {
+                    kind: DownloadFailureKind::OutputRootUnavailable { io_kind },
+                    message: "writer failed".to_owned(),
+                },
+            ],
+        )
+        .await
+        .unwrap();
+        let terminal = wait_for_download_terminal(&mut events).await;
+        assert!(
+            matches!(terminal, DownloadTerminalEvent::Failed { kind: DownloadFailureKind::OutputRootUnavailable { io_kind: actual }, .. } if actual == io_kind)
+        );
+        let blocked = gate
+            .check(&output_dir)
+            .expect_err("gate must reject before the terminal is observed");
+        assert_eq!(blocked.kind, io_kind);
+        assert_eq!(blocked.message, "output fault");
+    }
+}
+
+#[tokio::test]
+async fn output_failures_without_a_gate_record_keep_the_circuit_breaker() {
+    for attach_gate in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let output_dir = temp.path().join("recording");
+        let (manager, gate) = if attach_gate {
+            let (manager, _, gate) = manager_with_gate();
+            (manager, Some(gate))
+        } else {
+            (DownloadManager::new(), None)
+        };
+        let mut events = manager.subscribe();
+        let output_error = SegmentEvent::OutputIoError {
+            output_dir: output_dir.clone(),
+            io_kind: IoErrorKindSer::PermissionDenied,
+            detail: "denied".to_owned(),
+        };
+        let terminal = SegmentEvent::DownloadFailed {
+            kind: DownloadFailureKind::OutputRootUnavailable {
+                io_kind: IoErrorKindSer::PermissionDenied,
+            },
+            message: "writer failed".to_owned(),
+        };
+        // Either the event is correctly ordered but there is no gate, or
+        // the gate is attached but the engine sent its terminal too early.
+        let scripted = if attach_gate {
+            vec![terminal, output_error]
+        } else {
+            vec![output_error, terminal]
+        };
+        start_scripted_download(
+            &manager,
+            test_download_config(output_dir.clone(), "unpaired-output-failure"),
+            scripted,
+        )
+        .await
+        .unwrap();
+        let terminal = wait_for_download_terminal(&mut events).await;
+        assert!(matches!(
+            terminal,
+            DownloadTerminalEvent::Failed {
+                kind: DownloadFailureKind::Io,
+                ..
+            }
+        ));
+        if let Some(gate) = gate {
+            assert!(gate.check(&output_dir).is_ok());
+        }
+    }
+}
+
+#[tokio::test]
+async fn early_cancellation_does_not_charge_breaker_but_racing_failure_does() {
+    for kind in [DownloadFailureKind::Cancelled, DownloadFailureKind::Other] {
+        let manager = DownloadManager::new();
+        let temp = tempfile::tempdir().unwrap();
+        let mut events = manager.subscribe();
+        let key = EngineKey::global(EngineType::Ffmpeg);
+        for attempt in 0..5 {
+            let scripted = ScriptedSegmentEngine::with_shutdown_tail(
+                vec![],
+                vec![SegmentEvent::DownloadFailed {
+                    kind,
+                    message: "early engine outcome".to_owned(),
+                }],
+            );
+            let id = start_scripted_download_with_engine(
+                &manager,
+                test_download_config(temp.path().to_path_buf(), &format!("early-stop-{attempt}")),
+                scripted,
+            )
+            .await
+            .unwrap();
+            manager
+                .request_stop(&id, DownloadStopCause::Shutdown)
+                .unwrap();
+            assert!(matches!(
+                wait_for_download_terminal(&mut events).await,
+                DownloadTerminalEvent::Cancelled { .. }
+            ));
+        }
+        assert_eq!(
+            manager.circuit_breakers.is_allowed(&key),
+            kind == DownloadFailureKind::Cancelled
+        );
+    }
+}
+
+#[tokio::test]
+async fn prepare_output_dir_on_unwritable_parent_trips_gate() {
+    // Force create_dir_all to fail portably. GHA's Windows runner
+    // runs as admin, so `C:\nonexistent\...` is creatable there;
+    // Linux CI sandboxes often mount `/` read-only → EROFS. Instead,
+    // put a regular file in a tempdir and point the output path at
+    // a child of it — `create_dir_all` then fails with NotADirectory
+    // on Unix and ERROR_DIRECTORY on Windows, both of which the gate
+    // classifies into DownloadFailureKind::OutputRootUnavailable.
+    // We don't pin the exact io_kind because the classification
+    // bucket (never `Other`) is what's actually under test.
+    let temp = tempfile::tempdir().expect("tempdir");
+    let blocker = temp.path().join("blocker");
+    std::fs::write(&blocker, b"i am a file, not a dir").unwrap();
+    let bad_output = blocker.join("huya").join("X").join("20260415");
+    let (manager, counter, gate) = manager_with_gate();
+
+    let config = test_config_with_output_dir(bad_output.clone());
+    let result = manager.prepare_output_dir(&config).await;
+
+    // Must fail with OutputRootUnavailable{...}, NOT the generic Io
+    // kind — this proves `EngineStartError::from` correctly walked
+    // the error chain and the manager's `prepare_output_dir` routed
+    // the io::Error into the gate before returning.
+    let err = result.expect_err("should fail on unwritable parent");
+    let io_kind = match err.kind {
+        DownloadFailureKind::OutputRootUnavailable { io_kind } => io_kind,
+        other => panic!("expected OutputRootUnavailable{{_}}, got {:?}", other),
+    };
+    assert!(
+        !matches!(io_kind, IoErrorKindSer::Other),
+        "expected a classified io_kind (NotFound / PermissionDenied / \
+         ReadOnlyFilesystem / StorageFull / TimedOut), got Other"
+    );
+
+    // The gate must now be tracking a Degraded root with a matching
+    // cached error kind.
+    let snapshot = gate.snapshot();
+    assert_eq!(snapshot.len(), 1);
+    assert_eq!(
+        snapshot[0].state,
+        crate::downloader::RootHealthState::Degraded
+    );
+    let last_error = snapshot[0]
+        .last_error
+        .as_ref()
+        .expect("degraded root must have cached error");
+    assert_eq!(last_error.0, io_kind);
+
+    // A second `prepare_output_dir` call inside the cooldown window
+    // must fast-reject via `gate.check()`, not re-try `create_dir_all`.
+    // This bounds filesystem retries while the output root is unavailable.
+    let result2 = manager.prepare_output_dir(&config).await;
+    let err2 = result2.expect_err("second call should fast-reject");
+    assert!(matches!(
+        err2.kind,
+        DownloadFailureKind::OutputRootUnavailable { .. }
+    ));
+    // Recovery hook must NOT have fired — we're still Degraded.
+    assert_eq!(counter.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn prepare_output_dir_recovers_after_path_becomes_valid() {
+    // Trip the gate by pointing at a child of a regular file (fails
+    // portably on Unix ENOTDIR and Windows ERROR_DIRECTORY — tokio's
+    // create_dir_all will not recreate a file-as-directory ancestor).
+    // Then fix the filesystem, wait past the cooldown, retry. The
+    // winning CAS caller should see ensure_output_dir succeed, flip
+    // the gate to Healthy, and fire the recovery hook exactly once.
+    let temp = tempfile::tempdir().expect("tempdir");
+
+    use super::super::output_root_gate::{OutputRootGate, RecoveryHook};
+    use std::sync::atomic::AtomicUsize;
+
+    let counter = Arc::new(AtomicUsize::new(0));
+    let c2 = counter.clone();
+    let hook: RecoveryHook = Arc::new(move |_root: &std::path::Path| {
+        c2.fetch_add(1, Ordering::SeqCst);
+    });
+    let configured_root = temp.path().to_path_buf();
+    let gate = OutputRootGate::new(
+        None,
+        hook,
+        vec![configured_root.clone()],
+        Duration::from_secs(1),
+    );
+    let manager = DownloadManager::new();
+    manager.set_output_root_gate(gate.clone());
+
+    // `doomed` is a regular file; any path under it will fail
+    // create_dir_all because an ancestor component is not a directory.
+    let doomed = temp.path().join("doomed");
+    std::fs::write(&doomed, b"i am a file, not a dir").unwrap();
+    let under_doomed = doomed.join("will-fail");
+
+    // Now `create_dir_all(under_doomed)` will fail with NotADirectory
+    // or similar because one of the ancestor components is a regular
+    // file. On Linux this surfaces as ErrorKind::NotFound or
+    // ErrorKind::NotADirectory depending on kernel version; either
+    // way the gate records a failure.
+    let bad_config = test_config_with_output_dir(under_doomed.clone());
+    let first = manager.prepare_output_dir(&bad_config).await;
+    assert!(first.is_err(), "should fail when ancestor is a file");
+    let snap = gate.snapshot();
+    assert_eq!(snap.len(), 1, "gate should be tracking the configured root");
+    assert_eq!(snap[0].state, crate::downloader::RootHealthState::Degraded);
+    assert_eq!(counter.load(Ordering::SeqCst), 0);
+
+    // Fix the filesystem: remove the blocking file and recreate the
+    // directory structure. Wait past the 1s cooldown before retrying.
+    std::fs::remove_file(&doomed).unwrap();
+    std::fs::create_dir_all(&under_doomed).unwrap();
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+
+    // Retry. The winning CAS caller's ensure_output_dir succeeds, the
+    // gate flips to Healthy, the recovery hook fires.
+    let second = manager.prepare_output_dir(&bad_config).await;
+    assert!(
+        second.is_ok(),
+        "retry should succeed after cooldown and filesystem fix: {:?}",
+        second
+    );
+
+    // Recovery hook is spawned on a tokio task; yield so it runs.
+    tokio::task::yield_now().await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(
+        counter.load(Ordering::SeqCst),
+        1,
+        "recovery hook should fire exactly once per Degraded→Healthy transition"
+    );
+
+    // Gate snapshot should now show Healthy.
+    let snap = gate.snapshot();
+    assert_eq!(snap.len(), 1);
+    assert_eq!(snap[0].state, crate::downloader::RootHealthState::Healthy);
+}
+
+#[tokio::test]
+async fn required_terminal_event_survives_lagged_observer() {
+    let (coordination_tx, mut coordination_rx) = download_coordination_channel();
+    let manager = DownloadManager::new().with_coordination_sender(coordination_tx);
+    let mut observer = manager.subscribe();
+
+    for index in 0..300 {
+        manager.events.publish(DownloadManagerEvent::Progress(
+            DownloadProgressEvent::DownloadDequeued {
+                streamer_id: "streamer".to_string(),
+                streamer_name: "Streamer".to_string(),
+                session_id: format!("session-{index}"),
+            },
+        ));
+    }
+
+    let publish = manager.emit_rejected(
+        "streamer".to_string(),
+        "Streamer".to_string(),
+        "required-session".to_string(),
+        "test rejection".to_string(),
+        Some(5),
+        DownloadRejectedKind::CircuitBreaker,
+    );
+    tokio::pin!(publish);
+
+    let delivery = tokio::select! {
+        delivery = coordination_rx.recv_event() => delivery
+            .expect("required terminal channel stays open")
+            .expect("required terminal event should arrive"),
+        result = &mut publish => panic!("publish returned before acknowledgement: {result:?}"),
+    };
+    let (event, acknowledgement) = delivery.into_parts();
+    let DownloadManagerEvent::Terminal(terminal) = event else {
+        panic!("expected terminal coordination event");
+    };
+    let _ = acknowledgement.send(Ok(()));
+    publish
+        .await
+        .expect("rejection should complete after acknowledgement");
+    assert_eq!(terminal.session_id(), "required-session");
+    assert!(matches!(
+        observer.recv().await,
+        Err(broadcast::error::RecvError::Lagged(_))
+    ));
+}
+
+#[tokio::test]
+async fn coordination_shutdown_rejects_events_behind_marker() {
+    let (coordination_tx, mut coordination_rx) = download_coordination_channel();
+    let late_sender = coordination_tx.clone();
+    let shutdown = tokio::spawn(async move { coordination_tx.shutdown().await });
+
+    assert!(matches!(coordination_rx.recv_event().await, Ok(None)));
+    shutdown
+        .await
+        .expect("shutdown task should not panic")
+        .expect("shutdown marker should be acknowledged");
+
+    let late_event = DownloadManagerEvent::Terminal(DownloadTerminalEvent::Rejected {
+        streamer_id: "streamer".to_string(),
+        streamer_name: "Streamer".to_string(),
+        session_id: "session".to_string(),
+        reason: "late event".to_string(),
+        retry_after_secs: None,
+        kind: DownloadRejectedKind::CircuitBreaker,
+    });
+    assert!(matches!(
+        late_sender.publish(late_event),
+        DownloadCoordinationReceipt::Unavailable
+    ));
+}
+
+mod feedback;

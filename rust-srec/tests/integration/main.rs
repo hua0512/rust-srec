@@ -14,6 +14,7 @@ mod credential_profile_owner_deletion;
 mod database_index_budget;
 mod database_mutation_atomicity;
 mod domain_boundaries;
+mod download_throttle;
 mod filter_timezone_migration;
 mod integration_tests;
 mod job_claim_rank;

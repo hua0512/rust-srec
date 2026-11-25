@@ -834,6 +834,7 @@ fn component_for_external_crate(ident: &str) -> Option<Component> {
         "srec_processors" => Some(Component::Processors),
         "srec_notify" => Some(Component::Notify),
         "srec_pipeline" => Some(Component::Pipeline),
+        "srec_recorder" => Some(Component::Recorder),
         "rust_srec" => Some(Component::AppEntry),
         _ => None,
     }
@@ -932,6 +933,13 @@ fn production_source_files() -> Vec<AnalyzedFile> {
         &manifest_dir.join("crates/srec-pipeline"),
         "crates/srec-pipeline/src",
         Component::Pipeline,
+        false,
+        &mut analyzed,
+    );
+    analyze_extracted_crate(
+        &manifest_dir.join("crates/srec-recorder"),
+        "crates/srec-recorder/src",
+        Component::Recorder,
         false,
         &mut analyzed,
     );
@@ -1272,6 +1280,7 @@ fn extracted_layer0_manifests_isolate_forbidden_dependencies() {
         "srec-processors",
         "srec-notify",
         "srec-pipeline",
+        "srec-recorder",
         "axum",
         "utoipa",
         "utoipa-swagger-ui",
@@ -1329,6 +1338,7 @@ fn extracted_layer1_manifests_isolate_forbidden_dependencies() {
     let common_forbidden = [
         "rust-srec",
         "srec-pipeline",
+        "srec-recorder",
         "platforms-parser",
         "axum",
         "utoipa",
@@ -1463,6 +1473,37 @@ fn extracted_layer2_manifests_isolate_forbidden_dependencies() {
         }
     }
 
+    let recorder_forbidden = [
+        "rust-srec",
+        "srec-pipeline",
+        "srec-processors",
+        "srec-notify",
+        "zip",
+        "tar",
+        "axum",
+        "utoipa",
+        "utoipa-swagger-ui",
+        "schemars",
+        "rmcp",
+        "lettre",
+        "p256",
+        "aes-gcm",
+        "hkdf",
+        "rust-i18n",
+        "prost",
+        "argon2",
+        "jsonwebtoken",
+    ];
+    let recorder_deps =
+        manifest_dependency_names(&manifest_dir.join("crates/srec-recorder/Cargo.toml"));
+    for forbidden in recorder_forbidden {
+        if recorder_deps.contains(forbidden) {
+            violations.push(format!(
+                "crates/srec-recorder/Cargo.toml must not depend on `{forbidden}`"
+            ));
+        }
+    }
+
     assert!(
         violations.is_empty(),
         "extracted Layer 2 Cargo.toml files violated dependency isolation:\n{}",
@@ -1508,6 +1549,7 @@ fn desktop_tauri_accesses_backend_only_through_facade() {
             "srec_processors",
             "srec_notify",
             "srec_pipeline",
+            "srec_recorder",
         ] {
             if refs.external_roots.contains(internal_crate) {
                 violations.push(format!(
@@ -1528,6 +1570,7 @@ fn desktop_tauri_accesses_backend_only_through_facade() {
         "srec-processors",
         "srec-notify",
         "srec-pipeline",
+        "srec-recorder",
     ] {
         if tauri_deps.contains(internal_crate) {
             violations.push(format!(
