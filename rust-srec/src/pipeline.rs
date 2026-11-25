@@ -14,10 +14,10 @@ mod dag_scheduler;
 mod job_queue;
 mod manager;
 mod manifest;
+mod ports;
 mod processors;
 mod progress;
 mod staged_outputs;
-pub(crate) mod step_routes;
 mod throttle;
 mod upload_events;
 mod worker_pool;
@@ -40,6 +40,10 @@ pub use manager::{
     SessionDrain, SessionPipelineOutstanding, StreamerDrain,
 };
 pub use manifest::{ManifestScope, ManifestSegment, PipelineInputManifest};
+pub use ports::{
+    PipelineNotification, PipelineSessionMeta, PipelineSessionPort, PipelineSessionSegment,
+    PipelineSessionSummary, PipelineStreamerMeta, SessionPipelineConfig, SessionPipelineConfigPort,
+};
 pub use processors::{
     AssBurnInConfig, AssBurnInProcessor, AssMatchStrategy, BaiduPcsConfig, BaiduPcsPolicy,
     BaiduPcsProcessor, ConfirmedUpload, CopyMoveConfig, CopyMoveOperation, CopyMoveProcessor,
@@ -48,9 +52,7 @@ pub use processors::{
     RemuxProcessor, ThumbnailProcessor, UploadItemStatus, UploadResultItem,
 };
 pub use progress::{JobPhase, JobProgressSnapshot, ProgressKind, ProgressReporter};
-pub(crate) use staged_outputs::{
-    StagedOutputRecorder, is_temp_path_for, remove_leftover, temp_path_for,
-};
+pub(crate) use staged_outputs::{StagedOutputRecorder, is_temp_path_for, remove_leftover};
 pub use throttle::{DownloadLimitAdjuster, ThrottleConfig, ThrottleController, ThrottleEvent};
 pub use upload_events::{
     UploadBroadcastEnvelope, UploadStatusBroadcaster, UploadStatusEvent, UploadTerminalStatus,

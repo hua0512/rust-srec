@@ -71,7 +71,7 @@ pub(crate) async fn write_pipeline_preset(
     require_step_routes(
         connection,
         &[StepDocument::Pipelines(
-            crate::pipeline::step_routes::Layout::Pipeline,
+            crate::domain::step_routes::Layout::Pipeline,
             model.dag_definition.as_deref(),
         )],
     )

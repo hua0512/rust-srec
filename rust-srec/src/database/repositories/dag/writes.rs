@@ -34,7 +34,7 @@ pub(super) async fn insert_dag(
     super::super::proxies::require_step_routes(
         &mut *connection,
         &[super::super::proxies::StepDocument::Pipelines(
-            crate::pipeline::step_routes::Layout::Pipeline,
+            crate::domain::step_routes::Layout::Pipeline,
             Some(&dag.dag_definition),
         )],
     )

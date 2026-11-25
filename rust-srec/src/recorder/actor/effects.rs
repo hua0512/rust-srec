@@ -13,8 +13,6 @@ use tokio::task::JoinSet;
 use tracing::{debug, warn};
 
 use crate::danmu::{CollectionStopReason, DanmuService};
-use crate::database::repositories::config::SqlxConfigRepository;
-use crate::database::repositories::streamer::SqlxStreamerRepository;
 use crate::downloader::{DownloadManager, DownloadStopCause};
 use crate::pipeline::PipelineManager;
 use crate::recorder::actor::{ActorMessage, ActorRuntimeDeps};
@@ -522,7 +520,7 @@ pub(crate) async fn delete_discarded_files(video_path: Option<&str>, danmu_path:
 }
 
 pub(crate) async fn deliver_pipeline_notification(
-    pipeline_manager: &PipelineManager<SqlxConfigRepository, SqlxStreamerRepository>,
+    pipeline_manager: &PipelineManager,
     download_manager: &DownloadManager,
     leases: &super::startup_task::StartupLeaseRegistry,
     notification: PipelineNotification,
@@ -540,7 +538,7 @@ pub(crate) async fn deliver_pipeline_notification(
 }
 
 async fn deliver_pipeline_notification_result(
-    pipeline_manager: &PipelineManager<SqlxConfigRepository, SqlxStreamerRepository>,
+    pipeline_manager: &PipelineManager,
     download_manager: &DownloadManager,
     leases: &super::startup_task::StartupLeaseRegistry,
     notification: PipelineNotification,
@@ -555,7 +553,7 @@ async fn deliver_pipeline_notification_result(
         leases.clear_session(streamer_id, session_id);
     }
     pipeline_manager
-        .handle_recorder_notification(notification)
+        .handle_recorder_notification(notification.into())
         .await
 }
 

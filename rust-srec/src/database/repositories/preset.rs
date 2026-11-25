@@ -7,7 +7,9 @@ use std::sync::Arc;
 
 use crate::Result;
 use crate::database::models::{JobPreset, Pagination};
-use crate::pipeline::step_routes::Layout;
+pub(crate) use crate::domain::step_routes::summarize_users;
+use crate::domain::step_routes::{Layout, pipeline_steps_mut};
+pub use crate::domain::step_routes::{PresetChange, StepRef, StepUser, StepUserKind};
 use async_trait::async_trait;
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
@@ -49,47 +51,8 @@ fn push_search_filter(query: &mut QueryBuilder<Sqlite>, separator: &str, search:
         .push(r" ESCAPE '\')");
 }
 
-/// A pipeline step kind that stored pipelines reference by name.
-#[derive(Clone, Copy, Debug)]
-pub enum StepRef {
-    JobPreset,
-    Workflow,
-}
-
-impl StepRef {
-    /// The `type` tag of [`crate::database::models::PipelineStep`].
-    fn tag(self) -> &'static str {
-        match self {
-            Self::JobPreset => "preset",
-            Self::Workflow => "workflow",
-        }
-    }
-
-    fn table(self) -> &'static str {
-        super::config_retirement::RetiredConfigKind::from(self).table()
-    }
-}
-
-impl std::fmt::Display for StepRef {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.tag())
-    }
-}
-
-/// A change to a job preset or workflow that stored pipelines can block.
-#[derive(Clone, Copy, Debug)]
-pub enum PresetChange {
-    Delete,
-    Rename,
-}
-
-impl std::fmt::Display for PresetChange {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::Delete => "delete",
-            Self::Rename => "rename",
-        })
-    }
+fn step_ref_table(step: StepRef) -> &'static str {
+    super::config_retirement::RetiredConfigKind::from(step).table()
 }
 
 /// Which stored pipelines count as users of a step.
@@ -102,48 +65,6 @@ pub(crate) enum Owners {
     /// left out: retirement keeps definitions for them until they finish
     /// (`config_retirement::delete_or_defer`).
     Kept,
-}
-
-/// What kind of configuration owns a pipeline that names a step.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, sqlx::Type, utoipa::ToSchema)]
-#[serde(rename_all = "snake_case")]
-#[sqlx(rename_all = "snake_case")]
-pub enum StepUserKind {
-    Global,
-    Platform,
-    Template,
-    Streamer,
-    Workflow,
-}
-
-/// A stored pipeline owner that names a step definition.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, utoipa::ToSchema)]
-pub struct StepUser {
-    pub kind: StepUserKind,
-    /// The owner's id; empty for the global config.
-    pub id: String,
-    /// The owner's name; empty for the global config.
-    pub name: String,
-    /// The owner is being removed but still runs the pipelines owed to its
-    /// last session.
-    pub removing: bool,
-}
-
-impl std::fmt::Display for StepUser {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let kind = match self.kind {
-            StepUserKind::Global => return f.write_str("the global config"),
-            StepUserKind::Platform => "platform",
-            StepUserKind::Template => "template",
-            StepUserKind::Streamer => "streamer",
-            StepUserKind::Workflow => "workflow",
-        };
-        write!(f, "{kind} '{}'", self.name)?;
-        if self.removing {
-            f.write_str(" (being removed)")?;
-        }
-        Ok(())
-    }
 }
 
 /// The stored pipeline owners that name the `step` definition `id` called
@@ -172,7 +93,7 @@ pub(crate) async fn step_users(
                 .documents
                 .iter_mut()
                 .any(|(layout, document)| {
-                    crate::pipeline::step_routes::pipeline_steps_mut(document, *layout)
+                    pipeline_steps_mut(document, *layout)
                         .into_iter()
                         .any(|step_value| names_step(step_value))
                 })
@@ -213,7 +134,7 @@ pub(crate) async fn pipeline_owners(
         kept_workflow = kept(WORKFLOW_REMOVING),
     );
     type Row = (
-        StepUserKind,
+        String,
         String,
         String,
         bool,
@@ -225,9 +146,11 @@ pub(crate) async fn pipeline_owners(
     let rows: Vec<Row> = sqlx::query_as(sqlx::AssertSqlSafe(query))
         .fetch_all(conn)
         .await?;
-    Ok(rows
-        .into_iter()
-        .map(|(kind, id, name, removing, a, b, c, d)| {
+    rows.into_iter()
+        .map(|(raw_kind, id, name, removing, a, b, c, d)| {
+            let kind = StepUserKind::parse(&raw_kind).ok_or_else(|| {
+                sqlx::Error::Decode(format!("unknown step user kind: {raw_kind:?}").into())
+            })?;
             // The first column is a streamer's config or a pipeline; a
             // template's fourth holds its platform overrides.
             let first = match kind {
@@ -235,7 +158,7 @@ pub(crate) async fn pipeline_owners(
                 _ => Layout::Pipeline,
             };
             let layouts = [first, Layout::Pipeline, Layout::Pipeline, Layout::Overrides];
-            PipelineOwner {
+            Ok(PipelineOwner {
                 user: StepUser {
                     kind,
                     id,
@@ -247,27 +170,9 @@ pub(crate) async fn pipeline_owners(
                     .zip([a, b, c, d])
                     .filter_map(|(layout, text)| Some((layout, serde_json::from_str(&text?).ok()?)))
                     .collect(),
-            }
+            })
         })
-        .collect())
-}
-
-/// How many users a message names before summarising the rest as a count.
-const LISTED_USERS: usize = 5;
-
-/// `users` as a comma-separated list of the first [`LISTED_USERS`], followed
-/// by a count of the rest, so a widely used preset still yields a readable
-/// message.
-pub(crate) fn summarize_users(users: &[StepUser]) -> String {
-    let mut labels: Vec<String> = users
-        .iter()
-        .take(LISTED_USERS)
-        .map(ToString::to_string)
-        .collect();
-    if users.len() > LISTED_USERS {
-        labels.push(format!("{} more", users.len() - LISTED_USERS));
-    }
-    labels.join(", ")
+        .collect()
 }
 
 /// Fail with [`crate::Error::PresetInUse`] if a stored pipeline names the
@@ -298,7 +203,7 @@ async fn stored_name(
 ) -> Result<Option<String>> {
     Ok(sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT name FROM {} WHERE id = ?",
-        step.table()
+        step_ref_table(step)
     )))
     .bind(id)
     .fetch_optional(conn)
@@ -315,7 +220,7 @@ async fn delete_unused(write_pool: &SqlitePool, step: StepRef, id: &str) -> Resu
     ensure_unused(&mut tx, step, id, &name, PresetChange::Delete).await?;
     sqlx::query(sqlx::AssertSqlSafe(format!(
         "DELETE FROM {} WHERE id = ?",
-        step.table()
+        step_ref_table(step)
     )))
     .bind(id)
     .execute(&mut *tx)

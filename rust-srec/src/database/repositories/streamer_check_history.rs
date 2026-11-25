@@ -1,9 +1,9 @@
 //! `streamer_check_history` table access.
 //!
-//! Append-only ring buffer of monitor poll outcomes. The writer task
-//! (assembled in `crate::services`) feeds rows here best-effort — a failed
-//! insert logs and is dropped, never propagated, because diagnostic
-//! telemetry must not block the polling hot path.
+//! Append-only ring buffer of monitor poll outcomes. The background writer
+//! task feeds rows here best-effort — a failed insert logs and is dropped,
+//! never propagated, because diagnostic telemetry must not block the polling
+//! hot path.
 //!
 //! The retention trim runs in the same statement batch as the insert so the
 //! per-streamer row count converges to `KEEP_PER_STREAMER` even under

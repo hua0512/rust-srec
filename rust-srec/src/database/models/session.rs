@@ -178,11 +178,11 @@ pub struct TitleEntry {
 
 /// One row from the `session_events` table.
 ///
-/// Append-only audit log of `SessionLifecycle` transitions. The `kind` column
+/// Append-only audit log of session lifecycle transitions. The `kind` column
 /// is the discriminator string (`session_started` / `hysteresis_entered` /
 /// `session_resumed` / `session_ended`); `payload` is JSON-encoded
-/// [`crate::session::SessionEventPayload`]. See the migration for column
-/// semantics.
+/// [`crate::domain::session::SessionEventPayload`]. See the migration for
+/// column semantics.
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct SessionEventDbModel {
     /// Surrogate key (auto-increment). Stable for a given DB; not stable
@@ -200,10 +200,10 @@ pub struct SessionEventDbModel {
     pub payload: Option<String>,
 }
 
-impl From<SessionEventDbModel> for crate::session::SessionEvent {
+impl From<SessionEventDbModel> for crate::domain::session::SessionEvent {
     fn from(row: SessionEventDbModel) -> Self {
         let payload = row.payload.as_deref().and_then(|raw| {
-            match serde_json::from_str::<crate::session::SessionEventPayload>(raw) {
+            match serde_json::from_str::<crate::domain::session::SessionEventPayload>(raw) {
                 Ok(payload) if payload.kind().as_str() == row.kind => Some(payload),
                 Ok(payload) => {
                     tracing::warn!(

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqliteRow;
 use sqlx::{FromRow, Row};
 
-use crate::proxies::ProxyRoute;
+use crate::domain::proxy::ProxyRoute;
 
 /// Notification channel database model.
 /// Represents a configured destination for system event notifications.

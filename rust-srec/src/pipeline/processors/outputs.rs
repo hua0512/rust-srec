@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use tracing::warn;
 
 use super::paths::{StagedPath, StagedPathIndex};
-use crate::pipeline::StagedOutputRecorder;
+use crate::domain::processor::{StagedOutputTracker, temp_path_for};
 use crate::{Error, Result};
 
 /// Fold one successful or skipped media result into the batch result, in input
@@ -45,11 +45,11 @@ pub(super) struct TempOutputGuard {
 
 impl TempOutputGuard {
     /// A guard for a new temporary sibling of `output_path`, recorded through
-    /// `recorder` before the caller creates the file, so a crash that skips
+    /// `tracker` before the caller creates the file, so a crash that skips
     /// this guard's cleanup still leaves the file listed after a restart.
-    pub(super) async fn recorded(output_path: &Path, recorder: &StagedOutputRecorder) -> Self {
+    pub(super) async fn recorded(output_path: &Path, tracker: &StagedOutputTracker) -> Self {
         let guard = Self::new(output_path);
-        recorder.record(guard.path(), output_path).await;
+        tracker.record(guard.path(), output_path).await;
         guard
     }
 
@@ -57,7 +57,7 @@ impl TempOutputGuard {
     /// commit renames outputs into place. Staged outputs use [`Self::recorded`].
     pub(super) fn new(output_path: &Path) -> Self {
         Self {
-            path: crate::pipeline::temp_path_for(output_path),
+            path: temp_path_for(output_path),
             cleanup: true,
             cleanup_on_current_thread: false,
             cleanup_readonly: true,
@@ -219,7 +219,7 @@ pub(super) struct OutputBatch {
     sources: Vec<PathBuf>,
     pending: Vec<PendingOutput>,
     staging_validation: Option<OutputValidation>,
-    staged_outputs: StagedOutputRecorder,
+    staged_outputs: StagedOutputTracker,
     committed: bool,
 }
 
@@ -390,43 +390,44 @@ mod tests {
 
     #[tokio::test]
     async fn staging_records_the_temporary_file_before_it_exists() {
-        use crate::database::repositories::{SqlxStagedOutputRepository, StagedOutputRepository};
+        use crate::domain::processor::{StagedOutputSink, is_temp_path_for};
 
-        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
-            .await
-            .unwrap();
-        crate::database::run_migrations(&pool).await.unwrap();
-        let repository = Arc::new(SqlxStagedOutputRepository::new(pool.clone(), pool));
-        let recorder = StagedOutputRecorder::for_attempt(repository.clone(), "job-1");
-        let ctx =
-            super::super::ProcessorContext::noop("job-1").with_staged_outputs(recorder.clone());
+        #[derive(Default)]
+        struct RecordingSink {
+            recorded: std::sync::Mutex<Vec<(PathBuf, PathBuf, bool)>>,
+        }
+
+        #[async_trait::async_trait]
+        impl StagedOutputSink for RecordingSink {
+            async fn record(&self, temp_path: &Path, output_path: &Path) {
+                self.recorded.lock().unwrap().push((
+                    temp_path.to_path_buf(),
+                    output_path.to_path_buf(),
+                    temp_path.exists(),
+                ));
+            }
+
+            async fn finish(&self) {}
+        }
+
+        let sink = Arc::new(RecordingSink::default());
+        let tracker = StagedOutputTracker::new(sink.clone());
+        let ctx = super::super::ProcessorContext::noop("job-1").with_staged_outputs(tracker);
         let directory = tempfile::tempdir().unwrap();
         let output = directory.path().join("video.mp4");
 
         let mut batch = OutputBatch::new(&[], &ctx);
         let temp = batch.stage(&output, false).await.unwrap();
 
-        assert!(!temp.exists());
-        repository.mark_interrupted(1).await.unwrap();
-        let rows = repository
-            .list_interrupted(Some("job-1"), 10)
-            .await
-            .unwrap();
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].path, temp.to_string_lossy());
-        assert_eq!(rows[0].output_path, output.to_string_lossy());
-        assert!(crate::pipeline::is_temp_path_for(&temp, &output));
-
-        // A finished attempt leaves nothing for the next startup to list.
-        let next = StagedOutputRecorder::for_attempt(repository.clone(), "job-1");
-        let ctx = super::super::ProcessorContext::noop("job-1").with_staged_outputs(next.clone());
-        let mut batch = OutputBatch::new(&[], &ctx);
-        batch
-            .stage(&directory.path().join("other.mp4"), false)
-            .await
-            .unwrap();
-        next.finish().await;
-        assert_eq!(repository.mark_interrupted(2).await.unwrap(), 0);
+        let recorded = sink.recorded.lock().unwrap();
+        assert_eq!(recorded.len(), 1);
+        assert_eq!(recorded[0].0, temp);
+        assert_eq!(recorded[0].1, output);
+        assert!(
+            !recorded[0].2,
+            "temp path must be recorded before it exists"
+        );
+        assert!(is_temp_path_for(&temp, &output));
     }
 
     #[tokio::test(flavor = "current_thread")]

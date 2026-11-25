@@ -1,10 +1,6 @@
 use super::*;
 
-impl<CR, SR> PipelineManager<CR, SR>
-where
-    CR: ConfigRepository + Send + Sync + 'static,
-    SR: StreamerRepository + Send + Sync + 'static,
-{
+impl PipelineManager {
     pub async fn enqueue(&self, job: Job) -> Result<String> {
         let job_id = job.id.clone();
         let job_type = job.job_type.clone();

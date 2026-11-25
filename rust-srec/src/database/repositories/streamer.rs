@@ -2,18 +2,79 @@
 
 mod committed;
 mod writes;
-use crate::streamer::CommittedStreamerState;
+use std::any::Any;
 use std::sync::Arc;
 pub(crate) use writes::import_streamer_row;
 
 use async_trait::async_trait;
-use sqlx::SqlitePool;
+use futures::future::BoxFuture;
+use jiff::Timestamp;
+use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::database::models::StreamerDbModel;
 use crate::database::repositories::MonitorOutboxTxOps;
+use crate::domain::streamer::StreamerUpdateParams;
 use crate::{Error, Result};
 
-use jiff::Timestamp;
+/// How a committed streamer write publishes changes to runtime caches and listeners.
+#[doc(hidden)]
+#[derive(Clone, Copy)]
+pub enum StatePublication {
+    Silent,
+    StateOnly,
+    Metadata,
+    Manager,
+    Deleted,
+}
+
+/// Rows and invalidations produced inside a committed streamer transaction.
+#[doc(hidden)]
+pub struct StateChange<T> {
+    pub value: T,
+    pub rows: Vec<StreamerDbModel>,
+    pub removed: Vec<String>,
+    /// Streamers whose account selection changed. The selection is stored
+    /// outside the row, so an identical row does not mean an unchanged
+    /// configuration.
+    pub reconfigured: Vec<String>,
+}
+
+impl<T> StateChange<T> {
+    pub(crate) fn row(value: T, row: Option<StreamerDbModel>) -> Self {
+        Self {
+            value,
+            rows: row.into_iter().collect(),
+            removed: Vec::new(),
+            reconfigured: Vec::new(),
+        }
+    }
+}
+
+#[doc(hidden)]
+pub type StreamerTxOp = Box<
+    dyn for<'c> FnOnce(
+            &'c mut SqliteConnection,
+        ) -> BoxFuture<'c, Result<StateChange<Option<StreamerDbModel>>>>
+        + Send,
+>;
+
+/// Narrow port implemented by the runtime streamer state store so
+/// [`SqlxStreamerRepository`] can serialize and publish writes without
+/// depending on outer runtime modules.
+#[doc(hidden)]
+#[async_trait]
+pub trait StreamerCommitOwner: Send + Sync {
+    fn require_same_pool(&self, pool: &SqlitePool) -> Result<()>;
+
+    async fn commit_streamer_write(
+        &self,
+        label: &'static str,
+        publication: StatePublication,
+        operation: StreamerTxOp,
+    ) -> Result<Option<StreamerDbModel>>;
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
+}
 
 /// Streamer repository trait.
 #[async_trait]
@@ -23,24 +84,21 @@ pub trait StreamerRepository: Send + Sync {
     }
     async fn patch_streamer_for_manager(
         &self,
-        patch: crate::streamer::manager::StreamerUpdateParams,
+        patch: StreamerUpdateParams,
     ) -> Result<StreamerDbModel> {
         self.patch_streamer(patch).await
     }
 
-    fn committed_state(&self) -> Option<Arc<CommittedStreamerState>> {
+    fn commit_owner(&self) -> Option<Arc<dyn StreamerCommitOwner>> {
         None
     }
-    fn bind_committed_state(
+    fn get_or_init_commit_owner(
         &self,
-        _broadcaster: crate::config::ConfigEventBroadcaster,
-    ) -> Option<Arc<CommittedStreamerState>> {
-        self.committed_state()
+        _init: Box<dyn FnOnce(SqlitePool) -> Arc<dyn StreamerCommitOwner> + Send>,
+    ) -> Option<Arc<dyn StreamerCommitOwner>> {
+        self.commit_owner()
     }
-    async fn patch_streamer(
-        &self,
-        patch: crate::streamer::manager::StreamerUpdateParams,
-    ) -> Result<StreamerDbModel> {
+    async fn patch_streamer(&self, patch: StreamerUpdateParams) -> Result<StreamerDbModel> {
         let mut model = self.get_streamer(&patch.id).await?;
         committed::apply_patch(&mut model, patch);
         self.update_streamer(&model).await?;
@@ -88,8 +146,8 @@ pub trait StreamerRepository: Send + Sync {
     async fn clear_streamer_error_state(&self, id: &str) -> Result<()>;
     async fn clear_streamer_last_error(&self, id: &str) -> Result<()>;
     /// Clears the error state after a success. With a threshold, a cleared
-    /// run that reached it also enqueues
-    /// [`crate::monitor::MonitorEvent::ChecksRestored`] in the same write.
+    /// run that reached it also enqueues a `ChecksRestored` outbox row in the
+    /// same write.
     async fn record_streamer_success(
         &self,
         id: &str,
@@ -149,27 +207,27 @@ fn duplicate_url(error: Error, url: &str) -> Error {
 pub struct SqlxStreamerRepository {
     pool: SqlitePool,
     write_pool: SqlitePool,
-    committed_state: std::sync::OnceLock<Arc<CommittedStreamerState>>,
+    commit_owner: std::sync::OnceLock<Arc<dyn StreamerCommitOwner>>,
 }
 
 impl SqlxStreamerRepository {
-    fn mutation_owner(&self) -> Result<Option<Arc<CommittedStreamerState>>> {
-        let state = self.committed_state.get().cloned();
+    fn mutation_owner(&self) -> Result<Option<Arc<dyn StreamerCommitOwner>>> {
+        let state = self.commit_owner.get().cloned();
         if let Some(state) = &state {
-            state.writer.require_same_pool(&self.write_pool)?;
+            state.require_same_pool(&self.write_pool)?;
         }
         Ok(state)
     }
 
-    pub(crate) fn with_committed_state(self, state: Arc<CommittedStreamerState>) -> Self {
-        self.committed_state.get_or_init(|| state);
+    pub(crate) fn with_commit_owner(self, owner: Arc<dyn StreamerCommitOwner>) -> Self {
+        self.commit_owner.get_or_init(|| owner);
         self
     }
     pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
         Self {
             pool,
             write_pool,
-            committed_state: std::sync::OnceLock::new(),
+            commit_owner: std::sync::OnceLock::new(),
         }
     }
 }
@@ -190,7 +248,7 @@ impl StreamerRepository for SqlxStreamerRepository {
     }
     async fn patch_streamer_for_manager(
         &self,
-        patch: crate::streamer::manager::StreamerUpdateParams,
+        patch: StreamerUpdateParams,
     ) -> Result<StreamerDbModel> {
         if let Some(store) = self.mutation_owner()? {
             let id = patch.id.clone();
@@ -205,31 +263,20 @@ impl StreamerRepository for SqlxStreamerRepository {
         self.patch_streamer(patch).await
     }
 
-    fn committed_state(&self) -> Option<Arc<CommittedStreamerState>> {
-        self.committed_state.get().cloned()
+    fn commit_owner(&self) -> Option<Arc<dyn StreamerCommitOwner>> {
+        self.commit_owner.get().cloned()
     }
-    fn bind_committed_state(
+    fn get_or_init_commit_owner(
         &self,
-        broadcaster: crate::config::ConfigEventBroadcaster,
-    ) -> Option<Arc<CommittedStreamerState>> {
+        init: Box<dyn FnOnce(SqlitePool) -> Arc<dyn StreamerCommitOwner> + Send>,
+    ) -> Option<Arc<dyn StreamerCommitOwner>> {
         Some(
-            self.committed_state
-                .get_or_init(|| {
-                    Arc::new(CommittedStreamerState::new(
-                        Arc::new(crate::database::CommittedWriter::for_invalidation(
-                            self.write_pool.clone(),
-                            Arc::new(crate::utils::task_supervisor::TaskSupervisor::new()),
-                        )),
-                        broadcaster,
-                    ))
-                })
+            self.commit_owner
+                .get_or_init(|| init(self.write_pool.clone()))
                 .clone(),
         )
     }
-    async fn patch_streamer(
-        &self,
-        patch: crate::streamer::manager::StreamerUpdateParams,
-    ) -> Result<StreamerDbModel> {
+    async fn patch_streamer(&self, patch: StreamerUpdateParams) -> Result<StreamerDbModel> {
         if let Some(store) = self.mutation_owner()? {
             let id = patch.id.clone();
             return committed::write(store.clone(), id.clone(), committed::Mutation::Patch(patch))

@@ -88,7 +88,7 @@ pub(crate) struct ActorRuntimeDeps {
     pub prober: Arc<RecorderProber>,
     pub download_manager: Arc<DownloadManager>,
     pub danmu_service: Arc<DanmuService>,
-    pub pipeline_manager: Arc<PipelineManager<SqlxConfigRepository, SqlxStreamerRepository>>,
+    pub pipeline_manager: Arc<PipelineManager>,
     pub streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
     pub config_service: Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
     pub leases: Arc<StartupLeaseRegistry>,

@@ -42,11 +42,7 @@ where
     })
 }
 
-impl<CR, SR> PipelineManager<CR, SR>
-where
-    CR: ConfigRepository + Send + Sync + 'static,
-    SR: StreamerRepository + Send + Sync + 'static,
-{
+impl PipelineManager {
     pub(super) async fn handle_dag_completion(&self, completion: DagCompletionInfo) {
         let session_id = completion.session_id.clone();
         self.apply_dag_completion(completion).await;
@@ -289,10 +285,10 @@ where
     /// `segment_source = 'session_complete'` check in that query keeps a failed write from
     /// producing a duplicate run.
     pub(super) async fn mark_session_complete_dispatched(&self, session_id: &str) -> bool {
-        let Some(repo) = self.session_repo.as_ref() else {
+        let Some(port) = self.session_port.as_ref() else {
             return false;
         };
-        if let Err(e) = repo.mark_session_complete_dispatched(session_id).await {
+        if let Err(e) = port.mark_session_complete_dispatched(session_id).await {
             warn!(
                 session_id = %session_id,
                 error = %e,
@@ -514,59 +510,32 @@ where
         &self,
         streamer_id: &str,
     ) -> (Option<String>, Option<String>) {
-        let Some(repository) = self.streamer_repo.as_ref() else {
+        let Some(port) = self.session_port.as_ref() else {
             return (None, None);
         };
-        let streamer = match repository.get_streamer(streamer_id).await {
-            Ok(streamer) => streamer,
+        match port.get_streamer_meta(streamer_id).await {
+            Ok(Some(meta)) => (Some(meta.name), meta.platform),
+            Ok(None) => (None, None),
             Err(error) => {
                 debug!(streamer_id, %error, "Failed to look up streamer metadata");
-                return (None, None);
+                (None, None)
             }
-        };
-        let platform = if let Some(service) = &self.config_service {
-            match service
-                .get_platform_config(&streamer.platform_config_id)
-                .await
-            {
-                Ok(platform) => Some(platform.platform_name),
-                Err(error) => {
-                    debug!(streamer_id, platform_id = %streamer.platform_config_id, %error,
-                        "Failed to look up platform name");
-                    None
-                }
-            }
-        } else {
-            None
-        };
-        (Some(streamer.name), platform)
+        }
     }
 
-    /// Look up session metadata from the repository.
-    /// Returns the most recent title from the titles JSON array and the session start time.
+    /// Look up session metadata from the session port.
+    /// Returns the most recent title and the session start time.
     pub(super) async fn lookup_session_meta(
         &self,
         session_id: &str,
     ) -> (Option<String>, Option<Timestamp>) {
-        let Some(repo) = self.session_repo.as_ref() else {
+        let Some(port) = self.session_port.as_ref() else {
             return (None, None);
         };
 
-        match repo.get_session(session_id).await {
-            Ok(session) => {
-                let session_start = Some(crate::database::time::ms_to_datetime(session.start_time));
-                // Parse the titles JSON array and get the most recent title
-                let title = if let Some(titles_json) = session.titles
-                    && let Ok(entries) = serde_json::from_str::<Vec<TitleEntry>>(&titles_json)
-                {
-                    // Return the last (most recent) title
-                    entries.last().map(|e| e.title.clone())
-                } else {
-                    None
-                };
-
-                (title, session_start)
-            }
+        match port.get_session_meta(session_id).await {
+            Ok(Some(meta)) => (meta.title, Some(meta.started_at)),
+            Ok(None) => (None, None),
             Err(e) => {
                 debug!(
                     session_id = %session_id,

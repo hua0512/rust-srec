@@ -2,8 +2,7 @@
 //!
 //! Writes come from a tool's login routes (save on remembered login, delete
 //! on logout); reads serve `has_stored_credentials` and the automatic
-//! re-login path (`crate::baidupcs::StoredLoginAuthenticator`). Single row
-//! per `(tool, account_key)`.
+//! re-login path. Single row per `(tool, account_key)`.
 
 use async_trait::async_trait;
 use sqlx::SqlitePool;

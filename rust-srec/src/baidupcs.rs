@@ -10,24 +10,17 @@
 //! pipeline runs uploads one at a time
 //! ([`crate::pipeline::Processor::runs_one_at_a_time`]).
 
-use std::collections::HashMap;
 use std::process::Stdio;
-use std::sync::{Arc, OnceLock, Weak};
-use std::time::{Duration, Instant};
+use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
-use async_trait::async_trait;
-use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
+use process_utils::NoWindowExt;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::sync::{OwnedRwLockWriteGuard, RwLock};
-use tracing::{debug, warn};
 
-use crate::database::models::ToolCredentialDbModel;
-use crate::database::repositories::ToolCredentialRepository;
-use crate::notification::{NotificationEvent, NotificationService};
-use crate::proxies::ProxyTarget;
-use process_utils::NoWindowExt;
+pub use crate::domain::processor::{BaiduPcsAuthenticator, LoginMaterial};
+use crate::domain::proxy::ProxyTarget;
 
 /// Binary name used when neither an explicit path nor [`BINARY_PATH_ENV`]
 /// provides one; resolved through `PATH` at spawn time.
@@ -53,7 +46,7 @@ pub const LOGOUT_SUCCESS_MARKER: &str = "退出用户成功";
 
 /// Timeout for `BaiduPCS-Go login`, which performs network calls against
 /// Baidu before persisting the session. Shared by the API login endpoint
-/// and [`StoredLoginAuthenticator::relogin`].
+/// and [`BaiduPcsAuthenticator::relogin`].
 pub const LOGIN_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Resolve the BaiduPCS-Go binary path: explicit (per-job or per-request)
@@ -74,9 +67,6 @@ pub fn resolve_binary_path(explicit: Option<&str>) -> String {
 /// status probes hold the read side so they never observe a half-written
 /// session. API handlers should use `try_write()` and reject with a
 /// conflict instead of queueing behind a multi-hour upload.
-/// This single process-wide lock covers all configured directories. Guards
-/// deliberately span CLI awaits; login retains its owned write lease until
-/// child cleanup is confirmed so cancellation cannot expose a live writer.
 pub fn cli_lock() -> &'static Arc<RwLock<()>> {
     static LOCK: OnceLock<Arc<RwLock<()>>> = OnceLock::new();
     LOCK.get_or_init(|| Arc::new(RwLock::new(())))
@@ -128,7 +118,7 @@ pub async fn connected_command(
             })??;
     }
     let mut command = tool_command(binary_path, config_dir);
-    crate::proxies::set_tool_environment(&mut command, proxy, "BaiduPCS-Go")?;
+    crate::domain::proxy::set_tool_environment(&mut command, proxy, "BaiduPCS-Go")?;
     Ok(command)
 }
 
@@ -157,12 +147,7 @@ impl CliOutput {
 
 /// Run a short-lived BaiduPCS-Go command (`login`, `who`, `quota`, `-v`,
 /// `logout`) to completion, optionally writing `stdin_input` first (the
-/// `logout` confirmation prompt reads `y\n` from stdin). The child is
-/// killed when `timeout` elapses or the future is dropped
-/// (`kill_on_drop`), so a surprise interactive prompt cannot hang a worker.
-///
-/// Long-running `upload` invocations do not use this helper; they stream
-/// through `pipeline::processors::utils::run_baidupcs_with_logs` instead.
+/// `logout` confirmation prompt reads `y\n` from stdin).
 pub async fn run_capture(
     mut command: Command,
     stdin_input: Option<&[u8]>,
@@ -186,8 +171,6 @@ pub async fn run_capture(
     if let Some(bytes) = stdin_input
         && let Some(mut stdin) = child.stdin.take()
     {
-        // Write errors are ignored: the child may exit before reading (e.g.
-        // logout with no logged-in account never shows the prompt).
         let _ = stdin.write_all(bytes).await;
         let _ = stdin.shutdown().await;
     }
@@ -216,9 +199,6 @@ pub struct BaiduAccount {
 }
 
 /// Parse `who` output (`当前帐号 uid: %d, 用户名: %s, 性别: %s, 年龄: %.1f`).
-/// A `uid` of 0 means no account is logged in; callers decide how to
-/// surface that. Returns `None` when the line shape is unrecognized so the
-/// raw output can be shown as a fallback detail.
 pub fn parse_who(output: &str) -> Option<BaiduAccount> {
     for line in output.lines() {
         let Some(rest) = line.split("uid: ").nth(1) else {
@@ -308,85 +288,6 @@ pub fn config_dir_key(config_dir: Option<&str>) -> String {
 /// `tool_credentials.tool` value for this integration.
 pub const CREDENTIAL_TOOL: &str = "baidupcs";
 
-/// Login material in one of the two forms `BaiduPCS-Go login` accepts:
-/// a full cookie string, or BDUSS with an optional STOKEN.
-///
-/// Serialized as the `tool_credentials.payload` JSON for
-/// [`CREDENTIAL_TOOL`]; `#[serde(default)]` keeps older payloads loadable
-/// if a field is ever added.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default)]
-pub struct LoginMaterial {
-    pub cookies: Option<String>,
-    pub bduss: Option<String>,
-    pub stoken: Option<String>,
-}
-
-impl LoginMaterial {
-    fn field(value: Option<&String>) -> Option<&str> {
-        value.map(|v| v.trim()).filter(|v| !v.is_empty())
-    }
-
-    /// True when at least one accepted login form is present.
-    pub fn is_usable(&self) -> bool {
-        Self::field(self.cookies.as_ref()).is_some() || Self::field(self.bduss.as_ref()).is_some()
-    }
-
-    /// Command input for the supported no-argument REPL. Never pass this to process argv.
-    fn login_input(&self) -> crate::Result<Vec<u8>> {
-        fn quoted(value: &str) -> crate::Result<String> {
-            if value.contains(['\r', '\n', '\0']) {
-                return Err(crate::Error::validation(
-                    "BaiduPCS-Go credentials must not contain line breaks or NUL",
-                ));
-            }
-            // The upstream pcsliner/args parser unescapes backslashes and quotes;
-            // shell expansion is not involved. Reject physical newlines above.
-            Ok(format!(
-                "\"{}\"",
-                value.replace('\\', "\\\\").replace('\"', "\\\"")
-            ))
-        }
-        let command = if let Some(cookies) = Self::field(self.cookies.as_ref()) {
-            format!("login -cookies={}\nquit\n", quoted(cookies)?)
-        } else {
-            let bduss = Self::field(self.bduss.as_ref())
-                .ok_or_else(|| crate::Error::validation("No usable BaiduPCS-Go login material"))?;
-            let mut command = format!("login -bduss={}", quoted(bduss)?);
-            if let Some(stoken) = Self::field(self.stoken.as_ref()) {
-                command.push_str(&format!(" -stoken={}", quoted(stoken)?));
-            }
-            command.push_str("\nquit\n");
-            command
-        };
-        Ok(command.into_bytes())
-    }
-
-    /// Values [`scrub`] must mask out of any relayed CLI output.
-    pub fn secrets(&self) -> Vec<&str> {
-        [&self.cookies, &self.bduss, &self.stoken]
-            .into_iter()
-            .filter_map(|value| Self::field(value.as_ref()))
-            .collect()
-    }
-}
-
-impl LoginMaterial {
-    /// Parse a `tool_credentials.payload` JSON blob. A malformed payload
-    /// reads as "no usable material" rather than an error, so a hand-edited
-    /// row only disables auto re-login.
-    fn from_payload(payload: &str) -> Option<Self> {
-        match serde_json::from_str::<Self>(payload) {
-            Ok(material) if material.is_usable() => Some(material),
-            Ok(_) => None,
-            Err(e) => {
-                warn!(error = %e, "Stored BaiduPCS-Go credential payload is not readable");
-                None
-            }
-        }
-    }
-}
-
 /// Result of one `login` run: the CLI exits 0 even on failure, so
 /// `success` comes from [`LOGIN_SUCCESS_MARKER`] and `message` carries the
 /// scrubbed combined output for diagnostics.
@@ -411,238 +312,9 @@ pub async fn run_login(
     login::run(binary_path, config_dir, proxy, material, timeout, lease).await
 }
 
-/// How long a config-dir key sits out of automatic re-login after a
-/// rejected or errored attempt. Bounds the failed-Baidu-call rate when the
-/// stored material is permanently dead (e.g. password change): at most one
-/// replay per window instead of one per upload job.
-const RELOGIN_COOLDOWN: Duration = Duration::from_secs(60 * 60);
-
-/// Failed re-login bookkeeping, keyed by [`config_dir_key`].
-/// In-process only: a restart retries immediately, which is the desired
-/// "maybe it works now" behavior after an operator intervenes.
-struct ReloginCooldown {
-    window: Duration,
-    last_failure: Mutex<HashMap<String, Instant>>,
-}
-
-impl ReloginCooldown {
-    fn new(window: Duration) -> Self {
-        Self {
-            window,
-            last_failure: Mutex::new(HashMap::new()),
-        }
-    }
-
-    fn should_attempt(&self, key: &str) -> bool {
-        self.should_attempt_at(key, Instant::now())
-    }
-
-    fn should_attempt_at(&self, key: &str, now: Instant) -> bool {
-        self.last_failure
-            .lock()
-            .get(key)
-            .is_none_or(|failed_at| now.duration_since(*failed_at) >= self.window)
-    }
-
-    fn record_failure(&self, key: &str) {
-        self.record_failure_at(key, Instant::now());
-    }
-
-    fn record_failure_at(&self, key: &str, now: Instant) {
-        self.last_failure.lock().insert(key.to_string(), now);
-    }
-
-    /// Cleared on success and whenever the stored material changes
-    /// (`save_credentials` / `delete_credentials`), so fresh credentials are
-    /// tried immediately instead of sitting out a stale window.
-    fn clear(&self, key: &str) {
-        self.last_failure.lock().remove(key);
-    }
-}
-
-/// Stored-credential operations shared by the API routes (save on
-/// remembered login, delete on logout, `has_stored_credentials`) and by
-/// `BaiduPcsProcessor` (automatic re-login when a session is logged out or
-/// an upload attempt failed).
-#[async_trait]
-pub trait BaiduPcsAuthenticator: Send + Sync {
-    /// Usable stored material exists for this config dir. Lookup errors
-    /// degrade to `false` so a DB hiccup only skips auto re-login instead
-    /// of failing the caller.
-    async fn has_credentials(&self, config_dir: Option<&str>) -> bool;
-
-    /// Persist login material for this config dir, replacing any earlier
-    /// row.
-    async fn save_credentials(
-        &self,
-        config_dir: Option<&str>,
-        material: &LoginMaterial,
-    ) -> crate::Result<()>;
-
-    /// Forget the stored material for this config dir (no-op when absent).
-    async fn delete_credentials(&self, config_dir: Option<&str>) -> crate::Result<()>;
-
-    /// Replay the stored material through `BaiduPCS-Go login`. Returns
-    /// `Ok(false)` when nothing usable is stored or the CLI rejected the
-    /// material. Acquires the write side of [`cli_lock`] itself, so the
-    /// caller must not hold either side.
-    async fn relogin(
-        &self,
-        binary_path: &str,
-        config_dir: Option<&str>,
-        proxy: &ProxyTarget,
-    ) -> crate::Result<bool>;
-}
-
-/// Production [`BaiduPcsAuthenticator`] over the `tool_credentials` table
-/// (rows scoped by [`CREDENTIAL_TOOL`]), with a per-config-dir failure
-/// cooldown and a notification on rejected re-logins.
-pub struct StoredLoginAuthenticator {
-    repository: Arc<dyn ToolCredentialRepository>,
-    cooldown: ReloginCooldown,
-    /// Weak so the authenticator (held in a process-wide `OnceLock`) never
-    /// keeps the notification service alive through shutdown; same shape
-    /// as `crate::metrics::gpu_health`.
-    notification_service: Weak<NotificationService>,
-}
-
-impl StoredLoginAuthenticator {
-    pub fn new(repository: Arc<dyn ToolCredentialRepository>) -> Self {
-        Self {
-            repository,
-            cooldown: ReloginCooldown::new(RELOGIN_COOLDOWN),
-            notification_service: Weak::new(),
-        }
-    }
-
-    /// Attach the notification service used to report rejected re-logins.
-    pub fn with_notification_service(mut self, service: Weak<NotificationService>) -> Self {
-        self.notification_service = service;
-        self
-    }
-
-    /// Emit `NotificationEvent::BaiduPcsReloginFailed`. Called only after a
-    /// real re-login attempt (never for cooldown skips), so with
-    /// [`RELOGIN_COOLDOWN`] this fires at most once per window per key.
-    fn notify_relogin_failure(&self, key: &str, message: &str) {
-        let Some(service) = self.notification_service.upgrade() else {
-            return;
-        };
-        service.dispatch_notification(NotificationEvent::BaiduPcsReloginFailed {
-            config_dir: if key.is_empty() {
-                "default".to_string()
-            } else {
-                key.to_string()
-            },
-            message: crate::utils::text::truncate_chars(message.trim(), 300),
-            timestamp: jiff::Timestamp::now(),
-        });
-    }
-}
-
-#[async_trait]
-impl BaiduPcsAuthenticator for StoredLoginAuthenticator {
-    async fn has_credentials(&self, config_dir: Option<&str>) -> bool {
-        let key = config_dir_key(config_dir);
-        match self.repository.get(CREDENTIAL_TOOL, &key).await {
-            Ok(Some(row)) => LoginMaterial::from_payload(&row.payload).is_some(),
-            Ok(None) => false,
-            Err(e) => {
-                warn!(error = %e, "Failed to look up stored BaiduPCS-Go credentials");
-                false
-            }
-        }
-    }
-
-    async fn save_credentials(
-        &self,
-        config_dir: Option<&str>,
-        material: &LoginMaterial,
-    ) -> crate::Result<()> {
-        let key = config_dir_key(config_dir);
-        let payload = serde_json::to_string(material).map_err(|e| {
-            crate::Error::Other(format!("Failed to serialize BaiduPCS-Go credentials: {e}"))
-        })?;
-        let now_ms = jiff::Timestamp::now().as_millisecond();
-        self.repository
-            .upsert(&ToolCredentialDbModel {
-                tool: CREDENTIAL_TOOL.to_string(),
-                account_key: key.clone(),
-                payload,
-                created_at: now_ms,
-                updated_at: now_ms,
-            })
-            .await?;
-        // Fresh material must be tried immediately, not sit out a cooldown
-        // earned by the previous credentials.
-        self.cooldown.clear(&key);
-        Ok(())
-    }
-
-    async fn delete_credentials(&self, config_dir: Option<&str>) -> crate::Result<()> {
-        let key = config_dir_key(config_dir);
-        self.repository.delete(CREDENTIAL_TOOL, &key).await?;
-        self.cooldown.clear(&key);
-        Ok(())
-    }
-
-    async fn relogin(
-        &self,
-        binary_path: &str,
-        config_dir: Option<&str>,
-        proxy: &ProxyTarget,
-    ) -> crate::Result<bool> {
-        let key = config_dir_key(config_dir);
-        if !self.cooldown.should_attempt(&key) {
-            debug!("Skipping BaiduPCS-Go re-login during failure cooldown");
-            return Ok(false);
-        }
-        let Some(row) = self.repository.get(CREDENTIAL_TOOL, &key).await? else {
-            return Ok(false);
-        };
-        let Some(material) = LoginMaterial::from_payload(&row.payload) else {
-            return Ok(false);
-        };
-
-        let outcome = {
-            let lease = Arc::new(cli_lock().clone().write_owned().await);
-            run_login(
-                binary_path,
-                config_dir,
-                proxy,
-                &material,
-                LOGIN_TIMEOUT,
-                lease,
-            )
-            .await
-        };
-        match outcome {
-            Ok(outcome) if outcome.success => {
-                self.cooldown.clear(&key);
-                Ok(true)
-            }
-            Ok(outcome) => {
-                self.cooldown.record_failure(&key);
-                warn!(
-                    message = %outcome.message,
-                    "Automatic BaiduPCS-Go re-login was rejected; stored credentials may have expired"
-                );
-                self.notify_relogin_failure(&key, &outcome.message);
-                Ok(false)
-            }
-            Err(e) => {
-                self.cooldown.record_failure(&key);
-                self.notify_relogin_failure(&key, &e.to_string());
-                Err(e)
-            }
-        }
-    }
-}
-
 /// Process-wide authenticator installed once at startup by the service
-/// container (`ServiceContainerBuilder`), after the database pools exist.
-/// `None` (e.g. in unit tests) disables stored-credential features; callers
-/// must degrade gracefully.
+/// container, after the database pools exist. `None` (e.g. in unit tests)
+/// disables stored-credential features; callers must degrade gracefully.
 pub fn set_authenticator(authenticator: Arc<dyn BaiduPcsAuthenticator>) {
     let _ = AUTHENTICATOR.set(authenticator);
 }
@@ -696,163 +368,5 @@ mod tests {
         assert_eq!(parse_size(" 1.000000GB "), Some(1024u64.pow(3)));
         assert_eq!(parse_size("weird"), None);
         assert_eq!(parse_size(""), None);
-    }
-
-    #[test]
-    fn login_material_prefers_cookies_over_bduss() {
-        let material = LoginMaterial {
-            cookies: Some("BDUSS=a; STOKEN=B".to_string()),
-            bduss: Some("ignored".to_string()),
-            stoken: Some("ignored".to_string()),
-        };
-        assert!(material.is_usable());
-        assert_eq!(
-            String::from_utf8(material.login_input().unwrap()).unwrap(),
-            "login -cookies=\"BDUSS=a; STOKEN=B\"\nquit\n"
-        );
-    }
-
-    #[test]
-    fn login_material_bduss_form_and_unusable() {
-        let material = LoginMaterial {
-            cookies: None,
-            bduss: Some("bd".to_string()),
-            stoken: Some("ST".to_string()),
-        };
-        assert_eq!(
-            String::from_utf8(material.login_input().unwrap()).unwrap(),
-            "login -bduss=\"bd\" -stoken=\"ST\"\nquit\n"
-        );
-        assert_eq!(material.secrets(), vec!["bd", "ST"]);
-
-        let empty = LoginMaterial {
-            cookies: Some("  ".to_string()),
-            bduss: None,
-            stoken: Some("orphan-stoken".to_string()),
-        };
-        assert!(!empty.is_usable());
-        assert!(empty.login_input().is_err());
-    }
-
-    #[test]
-    fn relogin_cooldown_blocks_within_window_only() {
-        let cooldown = ReloginCooldown::new(Duration::from_secs(3600));
-        let start = Instant::now();
-
-        assert!(cooldown.should_attempt_at("", start));
-        cooldown.record_failure_at("", start);
-        assert!(!cooldown.should_attempt_at("", start + Duration::from_secs(3599)));
-        assert!(cooldown.should_attempt_at("", start + Duration::from_secs(3600)));
-        // Other keys are unaffected.
-        assert!(cooldown.should_attempt_at("/other", start));
-
-        cooldown.record_failure_at("", start);
-        cooldown.clear("");
-        assert!(cooldown.should_attempt_at("", start));
-    }
-
-    struct MockCredentialRepo {
-        row: Option<ToolCredentialDbModel>,
-        gets: std::sync::atomic::AtomicUsize,
-    }
-
-    impl MockCredentialRepo {
-        fn new(row: Option<ToolCredentialDbModel>) -> Arc<Self> {
-            Arc::new(Self {
-                row,
-                gets: std::sync::atomic::AtomicUsize::new(0),
-            })
-        }
-
-        fn gets(&self) -> usize {
-            self.gets.load(std::sync::atomic::Ordering::Relaxed)
-        }
-    }
-
-    #[async_trait]
-    impl ToolCredentialRepository for MockCredentialRepo {
-        async fn get(
-            &self,
-            tool: &str,
-            account_key: &str,
-        ) -> crate::Result<Option<ToolCredentialDbModel>> {
-            self.gets.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            Ok(self
-                .row
-                .clone()
-                .filter(|row| row.tool == tool && row.account_key == account_key))
-        }
-
-        async fn upsert(&self, _model: &ToolCredentialDbModel) -> crate::Result<()> {
-            Ok(())
-        }
-
-        async fn delete(&self, _tool: &str, _account_key: &str) -> crate::Result<()> {
-            Ok(())
-        }
-    }
-
-    fn stored_row() -> ToolCredentialDbModel {
-        ToolCredentialDbModel {
-            tool: CREDENTIAL_TOOL.to_string(),
-            account_key: String::new(),
-            payload: r#"{"cookies":"BDUSS=abc; STOKEN=DEF"}"#.to_string(),
-            created_at: 0,
-            updated_at: 0,
-        }
-    }
-
-    #[tokio::test]
-    async fn relogin_skips_everything_during_cooldown() {
-        let repo = MockCredentialRepo::new(Some(stored_row()));
-        let authenticator = StoredLoginAuthenticator::new(repo.clone());
-        authenticator.cooldown.record_failure("");
-
-        let result = authenticator
-            .relogin("BaiduPCS-Go", None, &ProxyTarget::System)
-            .await
-            .unwrap();
-
-        assert!(!result);
-        assert_eq!(repo.gets(), 0, "cooldown short-circuits before the store");
-    }
-
-    /// With no stored login there is nothing to retry, so the attempt
-    /// neither enters the cooldown nor counts as a failed re-login.
-    #[tokio::test]
-    async fn relogin_without_stored_material_records_no_failure() {
-        let repo = MockCredentialRepo::new(None);
-        let authenticator = StoredLoginAuthenticator::new(repo.clone());
-
-        let result = authenticator
-            .relogin("BaiduPCS-Go", None, &ProxyTarget::System)
-            .await
-            .unwrap();
-
-        assert!(!result);
-        assert_eq!(repo.gets(), 1);
-        assert!(authenticator.cooldown.should_attempt(""));
-    }
-
-    #[tokio::test]
-    async fn saving_credentials_clears_the_cooldown() {
-        let repo = MockCredentialRepo::new(None);
-        let authenticator = StoredLoginAuthenticator::new(repo);
-        authenticator.cooldown.record_failure("");
-        assert!(!authenticator.cooldown.should_attempt(""));
-
-        authenticator
-            .save_credentials(
-                None,
-                &LoginMaterial {
-                    cookies: Some("BDUSS=new; STOKEN=NEW".to_string()),
-                    bduss: None,
-                    stoken: None,
-                },
-            )
-            .await
-            .unwrap();
-
-        assert!(authenticator.cooldown.should_attempt(""));
     }
 }

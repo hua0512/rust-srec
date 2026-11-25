@@ -109,7 +109,7 @@ pub struct ApiServices {
     /// Streamer manager
     pub streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
     /// Pipeline manager
-    pub pipeline_manager: Arc<PipelineManager<SqlxConfigRepository, SqlxStreamerRepository>>,
+    pub pipeline_manager: Arc<PipelineManager>,
     /// Download manager
     pub download_manager: Arc<DownloadManager>,
     /// Session repository for session and output queries

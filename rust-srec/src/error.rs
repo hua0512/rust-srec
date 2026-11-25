@@ -71,13 +71,13 @@ pub enum Error {
     Extractor(#[from] platforms_parser::extractor::error::ExtractorError),
 
     #[error(transparent)]
-    CredentialProfile(#[from] crate::credentials::ProfileError),
+    CredentialProfile(#[from] crate::domain::credential::ProfileError),
 
     #[error(transparent)]
-    CredentialUnavailable(crate::credentials::CredentialUnavailable),
+    CredentialUnavailable(crate::domain::credential::CredentialUnavailable),
 
     #[error(transparent)]
-    Proxy(#[from] crate::proxies::ProxyError),
+    Proxy(#[from] crate::domain::proxy::ProxyError),
 
     #[error("Pipeline error: {0}")]
     PipelineError(String),
@@ -111,14 +111,14 @@ pub enum Error {
     /// fail to resolve the step at run time.
     #[error(
         "Cannot {change} {kind} '{name}': it is used by {}",
-        crate::database::repositories::preset::summarize_users(.users)
+        crate::domain::step_routes::summarize_users(.users)
     )]
     PresetInUse {
-        change: crate::database::repositories::preset::PresetChange,
-        kind: crate::database::repositories::preset::StepRef,
+        change: crate::domain::step_routes::PresetChange,
+        kind: crate::domain::step_routes::StepRef,
         name: String,
         /// Every user, in a stable order.
-        users: Vec<crate::database::repositories::preset::StepUser>,
+        users: Vec<crate::domain::step_routes::StepUser>,
     },
 }
 
@@ -164,10 +164,10 @@ impl Error {
                 | Self::InvalidStateTransition { .. }
                 | Self::NonRetryablePipeline(_)
                 | Self::Proxy(
-                    crate::proxies::ProxyError::Missing(_)
-                        | crate::proxies::ProxyError::Invalid(_)
-                        | crate::proxies::ProxyError::GlobalInherit
-                        | crate::proxies::ProxyError::ConfigReplaced
+                    crate::domain::proxy::ProxyError::Missing(_)
+                        | crate::domain::proxy::ProxyError::Invalid(_)
+                        | crate::domain::proxy::ProxyError::GlobalInherit
+                        | crate::domain::proxy::ProxyError::ConfigReplaced
                 )
         )
     }

@@ -5,14 +5,109 @@ use std::sync::{Arc, OnceLock};
 
 use sqlx::{SqliteConnection, SqlitePool};
 
-use crate::credentials::{
-    CredentialMaterial, CredentialOwner, CredentialProfile, CredentialProfileHealth,
-    CredentialSelection, CredentialValidity, HealthReason, ProfileError, ProfileReferences,
-    RecordingReference,
-};
 use crate::database::begin_immediate;
-use crate::proxies::ProxyRoute;
+use crate::domain::credential::{
+    ATTENTION_REFRESH_FAILURES, AttentionReason, CredentialAttention, CredentialBinding,
+    CredentialIdentity, CredentialMaterial, CredentialOwner, CredentialProfile,
+    CredentialProfileHealth, CredentialScope, CredentialSelection, CredentialValidity,
+    HealthReason, ProfileError, ProfileReferences, RecordingReference, RefreshedCredentials,
+    ResolvedCredentialPolicy, StreamerSite, carries_authentication_fields, covering_sites,
+    normalize_sites, platform_account_policy, resolve_authentication, site_host,
+};
+use crate::domain::proxy::{ProxyEntry, ProxyRoute, ResolvedRoute, RouteSource, SystemProxy};
 use crate::{Error, Result};
+
+#[derive(sqlx::FromRow)]
+pub(crate) struct CredentialProfileRow {
+    id: String,
+    platform_config_id: String,
+    label: String,
+    enabled: bool,
+    cookies: String,
+    refresh_token: Option<String>,
+    access_token: Option<String>,
+    reauth_config: Option<String>,
+    revision: i64,
+    version: i64,
+    created_at: i64,
+    updated_at: i64,
+    last_used_at: Option<i64>,
+    proxy_route: String,
+    proxy_id: Option<String>,
+}
+
+impl From<CredentialProfileRow> for CredentialProfile {
+    fn from(row: CredentialProfileRow) -> Self {
+        Self {
+            id: row.id,
+            platform_config_id: row.platform_config_id,
+            label: row.label,
+            enabled: row.enabled,
+            cookies: row.cookies,
+            refresh_token: row.refresh_token,
+            access_token: row.access_token,
+            reauth_config: row.reauth_config,
+            revision: row.revision,
+            version: row.version,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            last_used_at: row.last_used_at,
+            proxy_route: row.proxy_route,
+            proxy_id: row.proxy_id,
+        }
+    }
+}
+
+#[derive(sqlx::FromRow)]
+struct CredentialProfileHealthRow {
+    profile_id: String,
+    revision: i64,
+    validity: String,
+    last_check_at: Option<i64>,
+    last_refresh_at: Option<i64>,
+    refresh_failure_count: i64,
+    last_failure_at: Option<i64>,
+    last_notified_failure_count: i64,
+    reason_code: Option<String>,
+}
+
+fn decode_validity(value: &str) -> Result<CredentialValidity> {
+    CredentialValidity::parse(value).ok_or_else(|| {
+        Error::Database(format!(
+            "invalid credential_profile_health.validity: {value:?}"
+        ))
+    })
+}
+
+fn decode_reason_code(value: Option<String>) -> Result<Option<HealthReason>> {
+    value
+        .map(|code| {
+            HealthReason::parse(&code).ok_or_else(|| {
+                Error::Database(format!(
+                    "invalid credential_profile_health.reason_code: {code:?}"
+                ))
+            })
+        })
+        .transpose()
+}
+
+impl TryFrom<CredentialProfileHealthRow> for CredentialProfileHealth {
+    type Error = Error;
+
+    fn try_from(row: CredentialProfileHealthRow) -> Result<Self> {
+        Ok(Self {
+            profile_id: row.profile_id,
+            revision: row.revision,
+            validity: decode_validity(&row.validity)?,
+            last_check_at: row.last_check_at,
+            last_refresh_at: row.last_refresh_at,
+            refresh_failure_count: row.refresh_failure_count,
+            last_failure_at: row.last_failure_at,
+            last_notified_failure_count: row.last_notified_failure_count,
+            reason_code: decode_reason_code(row.reason_code)?,
+        })
+    }
+}
 
 type CredentialPublication = Arc<dyn Fn(CredentialOwner) + Send + Sync>;
 
@@ -139,11 +234,7 @@ impl CredentialProfileRepository {
     }
 
     /// Display names for notifications. A concurrently removed owner keeps its ID.
-    pub async fn scope(
-        &self,
-        owner: &CredentialOwner,
-    ) -> Result<crate::credentials::CredentialScope> {
-        use crate::credentials::CredentialScope;
+    pub async fn scope(&self, owner: &CredentialOwner) -> Result<CredentialScope> {
         let query = match owner {
             CredentialOwner::Platform { .. } => {
                 "SELECT platform_name FROM platform_config WHERE id = ?"
@@ -159,10 +250,7 @@ impl CredentialProfileRepository {
         Ok(CredentialScope::for_owner(owner, name))
     }
 
-    pub async fn active_binding(
-        &self,
-        streamer_id: &str,
-    ) -> Result<Option<crate::credentials::CredentialBinding>> {
+    pub async fn active_binding(&self, streamer_id: &str) -> Result<Option<CredentialBinding>> {
         let raw: Option<Option<String>> = sqlx::query_scalar("SELECT credential_binding FROM live_sessions WHERE streamer_id = ? AND end_time IS NULL")
             .bind(streamer_id).fetch_optional(&self.pool).await?;
         raw.flatten()
@@ -178,16 +266,13 @@ impl CredentialProfileRepository {
         require_current(&mut connection, source, &current).await
     }
 
-    pub async fn validate_selection(
-        &self,
-        policy: &crate::credentials::ResolvedCredentialPolicy,
-    ) -> Result<()> {
+    pub async fn validate_selection(&self, policy: &ResolvedCredentialPolicy) -> Result<()> {
         self.validate_selection_platform(policy).await.map(|_| ())
     }
 
     pub async fn validate_selection_platform(
         &self,
-        policy: &crate::credentials::ResolvedCredentialPolicy,
+        policy: &ResolvedCredentialPolicy,
     ) -> Result<String> {
         validate_policy_platform(
             &mut *self.pool.acquire().await?,
@@ -226,15 +311,15 @@ impl CredentialProfileRepository {
         #[derive(sqlx::FromRow)]
         struct ProfileWithHealthRow {
             #[sqlx(flatten)]
-            profile: CredentialProfile,
+            profile: CredentialProfileRow,
             health_revision: Option<i64>,
-            validity: Option<CredentialValidity>,
+            validity: Option<String>,
             last_check_at: Option<i64>,
             last_refresh_at: Option<i64>,
             refresh_failure_count: Option<i64>,
             last_failure_at: Option<i64>,
             last_notified_failure_count: Option<i64>,
-            reason_code: Option<HealthReason>,
+            reason_code: Option<String>,
         }
 
         let row = sqlx::query_as::<_, ProfileWithHealthRow>(
@@ -257,21 +342,22 @@ impl CredentialProfileRepository {
         .await?
         .ok_or_else(|| Error::not_found("CredentialProfile", id))?;
 
+        let profile: CredentialProfile = row.profile.into();
         let health = match (row.health_revision, row.validity) {
             (Some(revision), Some(validity)) => Some(CredentialProfileHealth {
-                profile_id: row.profile.id.clone(),
+                profile_id: profile.id.clone(),
                 revision,
-                validity,
+                validity: decode_validity(&validity)?,
                 last_check_at: row.last_check_at,
                 last_refresh_at: row.last_refresh_at,
                 refresh_failure_count: row.refresh_failure_count.unwrap_or(0),
                 last_failure_at: row.last_failure_at,
                 last_notified_failure_count: row.last_notified_failure_count.unwrap_or(0),
-                reason_code: row.reason_code,
+                reason_code: decode_reason_code(row.reason_code)?,
             }),
             _ => None,
         };
-        Ok((row.profile, health))
+        Ok((profile, health))
     }
 
     /// Loads candidate profiles, their current-revision health, and resolved
@@ -279,12 +365,12 @@ impl CredentialProfileRepository {
     pub async fn load_pool_candidates(
         &self,
         ids: &[&str],
-        operation: &crate::proxies::ResolvedRoute,
+        operation: &ResolvedRoute,
     ) -> Result<
         Vec<(
             CredentialProfile,
             Option<CredentialProfileHealth>,
-            crate::proxies::ResolvedRoute,
+            ResolvedRoute,
         )>,
     > {
         if ids.is_empty() {
@@ -308,23 +394,24 @@ impl CredentialProfileRepository {
             }
         }
 
-        let mut proxy_entries: HashMap<String, crate::proxies::ProxyEntry> = HashMap::new();
+        let mut proxy_entries: HashMap<String, ProxyEntry> = HashMap::new();
         for chunk in proxy_ids.chunks(super::LOOKUP_BATCH_SIZE) {
             let query = format!(
                 "SELECT * FROM proxies WHERE id IN ({})",
                 vec!["?"; chunk.len()].join(", ")
             );
             let mut statement =
-                sqlx::query_as::<_, crate::proxies::ProxyEntry>(sqlx::AssertSqlSafe(query));
+                sqlx::query_as::<_, super::proxies::ProxyEntryRow>(sqlx::AssertSqlSafe(query));
             for proxy_id in chunk {
                 statement = statement.bind(*proxy_id);
             }
-            for entry in statement.fetch_all(&mut *connection).await? {
+            for row in statement.fetch_all(&mut *connection).await? {
+                let entry: ProxyEntry = row.into();
                 proxy_entries.insert(entry.id.clone(), entry);
             }
         }
 
-        let system = crate::proxies::SystemProxy::current();
+        let system = SystemProxy::current();
         let mut out = Vec::with_capacity(ids.len());
         for id in ids {
             let profile = profiles
@@ -335,8 +422,8 @@ impl CredentialProfileRepository {
             let resolved_route = if own.is_inherit() {
                 operation.clone()
             } else {
-                crate::proxies::resolve(
-                    &[(crate::proxies::RouteSource::Account, own)],
+                crate::domain::proxy::resolve(
+                    &[(RouteSource::Account, own)],
                     |proxy_id| proxy_entries.get(proxy_id),
                     system,
                 )?
@@ -359,14 +446,14 @@ impl CredentialProfileRepository {
     pub async fn account_route(
         &self,
         profile: &CredentialProfile,
-        operation: Option<&crate::proxies::ResolvedRoute>,
-    ) -> Result<crate::proxies::ResolvedRoute> {
+        operation: Option<&ResolvedRoute>,
+    ) -> Result<ResolvedRoute> {
         super::proxies::resolve_account(
             &mut *self.pool.acquire().await?,
             &profile.platform_config_id,
             &profile.route()?,
             operation,
-            crate::proxies::SystemProxy::current(),
+            SystemProxy::current(),
         )
         .await
     }
@@ -380,8 +467,17 @@ impl CredentialProfileRepository {
     ) -> Result<Vec<CredentialProfile>> {
         let mut connection = self.pool.acquire().await?;
         require_owner(&mut connection, owner, platform_id).await?;
-        Ok(sqlx::query_as::<_, CredentialProfile>("SELECT * FROM credential_profiles WHERE platform_config_id = ? ORDER BY created_at, id")
-            .bind(platform_id).fetch_all(&mut *connection).await?)
+        Ok(
+            sqlx::query_as::<_, CredentialProfileRow>(
+                "SELECT * FROM credential_profiles WHERE platform_config_id = ? ORDER BY created_at, id",
+            )
+            .bind(platform_id)
+            .fetch_all(&mut *connection)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect(),
+        )
     }
 
     pub async fn create(
@@ -535,7 +631,7 @@ impl CredentialProfileRepository {
     pub async fn refreshed(
         &self,
         source: &CredentialProfile,
-        replacement: &crate::credentials::RefreshedCredentials,
+        replacement: &RefreshedCredentials,
     ) -> Result<CredentialProfile> {
         let repository = self.clone();
         let source = source.clone();
@@ -556,7 +652,7 @@ impl CredentialProfileRepository {
     async fn refreshed_inner(
         &self,
         source: &CredentialProfile,
-        replacement: &crate::credentials::RefreshedCredentials,
+        replacement: &RefreshedCredentials,
     ) -> Result<CredentialProfile> {
         let mut tx = begin_immediate(&self.write_pool).await?;
         let current = load(&mut tx, &source.id).await?;
@@ -598,8 +694,12 @@ impl CredentialProfileRepository {
     }
 
     pub async fn health(&self, id: &str) -> Result<Option<CredentialProfileHealth>> {
-        Ok(sqlx::query_as::<_, CredentialProfileHealth>("SELECT h.* FROM credential_profile_health h JOIN credential_profiles p ON p.id = h.profile_id AND p.revision = h.revision WHERE h.profile_id = ?")
-            .bind(id).fetch_optional(&self.pool).await?)
+        sqlx::query_as::<_, CredentialProfileHealthRow>("SELECT h.* FROM credential_profile_health h JOIN credential_profiles p ON p.id = h.profile_id AND p.revision = h.revision WHERE h.profile_id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?
+            .map(TryInto::try_into)
+            .transpose()
     }
 
     pub async fn publish_health(
@@ -613,7 +713,13 @@ impl CredentialProfileRepository {
         let current = load(&mut tx, &source.id).await?;
         require_current(&mut tx, source, &current).await?;
         sqlx::query("INSERT INTO credential_profile_health(profile_id, revision, validity, last_check_at, reason_code) VALUES (?, ?, ?, ?, ?) ON CONFLICT(profile_id) DO UPDATE SET revision = excluded.revision, validity = excluded.validity, last_check_at = COALESCE(excluded.last_check_at, credential_profile_health.last_check_at), reason_code = excluded.reason_code")
-            .bind(&source.id).bind(source.revision).bind(validity).bind(checked.then(crate::database::time::now_ms)).bind(reason).execute(&mut *tx).await?;
+            .bind(&source.id)
+            .bind(source.revision)
+            .bind(validity.as_str())
+            .bind(checked.then(crate::database::time::now_ms))
+            .bind(reason.map(HealthReason::as_str))
+            .execute(&mut *tx)
+            .await?;
         tx.commit().await?;
         self.attention_changed();
         Ok(())
@@ -621,50 +727,51 @@ impl CredentialProfileRepository {
 
     /// Enabled accounts that need the user, ordered by platform and label:
     /// those only a new login can fix, and rejected ones whose refresh failed
-    /// [`crate::credentials::ATTENTION_REFRESH_FAILURES`] times in a row.
+    /// [`ATTENTION_REFRESH_FAILURES`] times in a row.
     /// Disabling is the user's own choice, so disabled accounts are left out,
     /// as are accounts an import is retiring.
-    pub async fn needing_attention(&self) -> Result<Vec<crate::credentials::CredentialAttention>> {
+    pub async fn needing_attention(&self) -> Result<Vec<CredentialAttention>> {
         #[derive(sqlx::FromRow)]
         struct Row {
             #[sqlx(flatten)]
-            profile: CredentialProfile,
-            validity: CredentialValidity,
+            profile: CredentialProfileRow,
+            validity: String,
             last_check_at: Option<i64>,
             last_refresh_at: Option<i64>,
             refresh_failure_count: i64,
             last_failure_at: Option<i64>,
             last_notified_failure_count: i64,
-            reason_code: Option<HealthReason>,
+            reason_code: Option<String>,
             platform_name: String,
         }
         let rows = sqlx::query_as::<_, Row>("SELECT p.*, h.validity, h.last_check_at, h.last_refresh_at, h.refresh_failure_count, h.last_failure_at, h.last_notified_failure_count, h.reason_code, c.platform_name FROM credential_profiles p JOIN credential_profile_health h ON h.profile_id = p.id AND h.revision = p.revision JOIN platform_config c ON c.id = p.platform_config_id WHERE p.enabled = 1 AND NOT EXISTS (SELECT 1 FROM retirement_credential_profiles r WHERE r.profile_id = p.id) AND (h.validity = 'invalid' OR (h.validity = 'needs_refresh' AND h.refresh_failure_count >= ?)) ORDER BY c.platform_name, p.label, p.id")
-            .bind(crate::credentials::ATTENTION_REFRESH_FAILURES)
+            .bind(ATTENTION_REFRESH_FAILURES)
             .fetch_all(&self.pool)
             .await?;
-        Ok(rows
-            .into_iter()
-            .filter_map(|row| {
-                let health = CredentialProfileHealth {
-                    profile_id: row.profile.id.clone(),
-                    revision: row.profile.revision,
-                    validity: row.validity,
-                    last_check_at: row.last_check_at,
-                    last_refresh_at: row.last_refresh_at,
-                    refresh_failure_count: row.refresh_failure_count,
-                    last_failure_at: row.last_failure_at,
-                    last_notified_failure_count: row.last_notified_failure_count,
-                    reason_code: row.reason_code,
-                };
-                let reason = crate::credentials::AttentionReason::for_health(&health)?;
-                Some(crate::credentials::CredentialAttention {
-                    profile: row.profile.summary(),
+        let mut out = Vec::with_capacity(rows.len());
+        for row in rows {
+            let profile: CredentialProfile = row.profile.into();
+            let health = CredentialProfileHealth {
+                profile_id: profile.id.clone(),
+                revision: profile.revision,
+                validity: decode_validity(&row.validity)?,
+                last_check_at: row.last_check_at,
+                last_refresh_at: row.last_refresh_at,
+                refresh_failure_count: row.refresh_failure_count,
+                last_failure_at: row.last_failure_at,
+                last_notified_failure_count: row.last_notified_failure_count,
+                reason_code: decode_reason_code(row.reason_code)?,
+            };
+            if let Some(reason) = AttentionReason::for_health(&health) {
+                out.push(CredentialAttention {
+                    profile: profile.summary(),
                     platform_name: row.platform_name,
                     reason,
                     health,
-                })
-            })
-            .collect())
+                });
+            }
+        }
+        Ok(out)
     }
 
     /// Current health of several profiles at once; profiles without health
@@ -676,12 +783,14 @@ impl CredentialProfileRepository {
         if ids.is_empty() {
             return Ok(HashMap::new());
         }
-        let rows = sqlx::query_as::<_, CredentialProfileHealth>("SELECT h.* FROM credential_profile_health h JOIN credential_profiles p ON p.id = h.profile_id AND p.revision = h.revision WHERE h.profile_id IN (SELECT value FROM json_each(?))")
+        let rows = sqlx::query_as::<_, CredentialProfileHealthRow>("SELECT h.* FROM credential_profile_health h JOIN credential_profiles p ON p.id = h.profile_id AND p.revision = h.revision WHERE h.profile_id IN (SELECT value FROM json_each(?))")
             .bind(serde_json::to_string(ids)?).fetch_all(&self.pool).await?;
-        Ok(rows
-            .into_iter()
-            .map(|health| (health.profile_id.clone(), health))
-            .collect())
+        let mut map = HashMap::with_capacity(rows.len());
+        for row in rows {
+            let health: CredentialProfileHealth = row.try_into()?;
+            map.insert(health.profile_id.clone(), health);
+        }
+        Ok(map)
     }
 
     /// The sites of several profiles at once, each list sorted; profiles
@@ -693,10 +802,7 @@ impl CredentialProfileRepository {
     /// The host of a Streamlink streamer's URL and the accounts whose sites
     /// cover it, most specific site first. `None` for a streamer on another
     /// platform.
-    pub async fn streamer_site(
-        &self,
-        streamer_id: &str,
-    ) -> Result<Option<crate::credentials::StreamerSite>> {
+    pub async fn streamer_site(&self, streamer_id: &str) -> Result<Option<StreamerSite>> {
         let mut connection = self.pool.acquire().await?;
         let streamer: Option<(String, String, String)> = sqlx::query_as("SELECT s.url, s.platform_config_id, p.platform_name FROM streamers s JOIN platform_config p ON p.id = s.platform_config_id WHERE s.id = ? AND s.deleted_at IS NULL")
             .bind(streamer_id)
@@ -709,8 +815,8 @@ impl CredentialProfileRepository {
             return Ok(None);
         }
         let accounts = site_accounts(&mut connection, &platform_id, &url).await?;
-        Ok(Some(crate::credentials::StreamerSite {
-            host: crate::credentials::site_host(&url).unwrap_or_default(),
+        Ok(Some(StreamerSite {
+            host: site_host(&url).unwrap_or_default(),
             site: accounts.first().map(|(site, _)| site.clone()),
             accounts: accounts.into_iter().map(|(_, id)| id).collect(),
         }))
@@ -819,10 +925,21 @@ impl CredentialProfileRepository {
     }
 }
 
+pub(crate) async fn load_optional(
+    connection: &mut SqliteConnection,
+    id: &str,
+) -> std::result::Result<Option<CredentialProfile>, sqlx::Error> {
+    Ok(
+        sqlx::query_as::<_, CredentialProfileRow>("SELECT * FROM credential_profiles WHERE id = ?")
+            .bind(id)
+            .fetch_optional(connection)
+            .await?
+            .map(Into::into),
+    )
+}
+
 pub(crate) async fn load(connection: &mut SqliteConnection, id: &str) -> Result<CredentialProfile> {
-    sqlx::query_as::<_, CredentialProfile>("SELECT * FROM credential_profiles WHERE id = ?")
-        .bind(id)
-        .fetch_optional(connection)
+    load_optional(connection, id)
         .await?
         .ok_or_else(|| Error::not_found("CredentialProfile", id))
 }
@@ -1001,11 +1118,12 @@ pub(crate) async fn load_many(
             "SELECT * FROM credential_profiles WHERE id IN ({})",
             vec!["?"; chunk.len()].join(", ")
         );
-        let mut statement = sqlx::query_as::<_, CredentialProfile>(sqlx::AssertSqlSafe(query));
+        let mut statement = sqlx::query_as::<_, CredentialProfileRow>(sqlx::AssertSqlSafe(query));
         for id in chunk {
             statement = statement.bind(*id);
         }
-        for profile in statement.fetch_all(&mut *connection).await? {
+        for row in statement.fetch_all(&mut *connection).await? {
+            let profile: CredentialProfile = row.into();
             profiles.insert(profile.id.clone(), profile);
         }
     }
@@ -1030,12 +1148,13 @@ async fn health_of_in(
             vec!["?"; chunk.len()].join(", ")
         );
         let mut statement =
-            sqlx::query_as::<_, CredentialProfileHealth>(sqlx::AssertSqlSafe(query));
+            sqlx::query_as::<_, CredentialProfileHealthRow>(sqlx::AssertSqlSafe(query));
         for id in chunk {
             statement = statement.bind(*id);
         }
         for row in statement.fetch_all(&mut *connection).await? {
-            health.insert(row.profile_id.clone(), row);
+            let decoded: CredentialProfileHealth = row.try_into()?;
+            health.insert(decoded.profile_id.clone(), decoded);
         }
     }
     Ok(health)
@@ -1156,7 +1275,7 @@ pub(crate) async fn set_sites(
 ) -> Result<bool> {
     let current = load(&mut *connection, profile_id).await?;
     let platform = require_platform(&mut *connection, &current.platform_config_id).await?;
-    let sites = crate::credentials::normalize_sites(&platform, sites)?;
+    let sites = normalize_sites(&platform, sites)?;
     if sites_in(&mut *connection, profile_id).await? == sites {
         return Ok(false);
     }
@@ -1197,7 +1316,7 @@ pub(crate) async fn site_accounts(
     platform_id: &str,
     url: &str,
 ) -> Result<Vec<(String, String)>> {
-    let covering = crate::credentials::covering_sites(url);
+    let covering = covering_sites(url);
     if covering.is_empty() {
         return Ok(Vec::new());
     }
@@ -1212,14 +1331,13 @@ pub(crate) async fn commit_session_binding(
     connection: &mut SqliteConnection,
     session_id: &str,
     streamer_id: &str,
-    incoming: &crate::credentials::CredentialBinding,
+    incoming: &CredentialBinding,
     allow_rebind: bool,
-) -> Result<crate::credentials::CredentialBinding> {
-    use crate::credentials::CredentialIdentity;
+) -> Result<CredentialBinding> {
     let raw: Option<String> = sqlx::query_scalar("SELECT credential_binding FROM live_sessions WHERE id = ? AND streamer_id = ? AND end_time IS NULL").bind(session_id).bind(streamer_id).fetch_optional(&mut *connection).await?.ok_or(ProfileError::SourceChanged)?;
     let existing = raw
         .as_deref()
-        .map(serde_json::from_str::<crate::credentials::CredentialBinding>)
+        .map(serde_json::from_str::<CredentialBinding>)
         .transpose()?;
     if existing.is_none() && incoming.epoch != 0 {
         return Err(ProfileError::SourceChanged.into());
@@ -1243,7 +1361,7 @@ pub(crate) async fn commit_session_binding(
         template_id.as_deref(),
     )
     .await?;
-    let resolved = crate::credentials::resolve_authentication(&platform_id, &layers)?;
+    let resolved = resolve_authentication(&platform_id, &layers)?;
     if resolved.as_ref() != Some(&incoming.policy) {
         return Err(ProfileError::SourceChanged.into());
     }
@@ -1309,15 +1427,14 @@ pub(crate) async fn commit_session_binding(
 }
 
 /// Whether checks on the platform work without an account, so a recording
-/// under any selection may run without one
-/// (`CredentialProvider::accounts_optional`).
+/// under any selection may run without one.
 async fn accounts_optional(connection: &mut SqliteConnection, platform_id: &str) -> Result<bool> {
     let platform: String =
         sqlx::query_scalar("SELECT platform_name FROM platform_config WHERE id = ?")
             .bind(platform_id)
             .fetch_one(&mut *connection)
             .await?;
-    Ok(crate::credentials::provider(&platform).accounts_optional())
+    Ok(platform_account_policy(&platform).accounts_optional)
 }
 
 /// The selections that list the profile and the live recordings bound to it.
@@ -1360,9 +1477,8 @@ pub(crate) async fn references_of(
     let wanted: HashSet<&str> = ids.iter().map(String::as_str).collect();
     let sessions: Vec<OpenBindingRow> = sqlx::query_as("SELECT ls.id, ls.streamer_id, COALESCE(s.name, ls.streamer_name, ls.streamer_id, '') AS streamer_name, ls.credential_binding FROM live_sessions ls LEFT JOIN streamers s ON s.id = ls.streamer_id WHERE ls.end_time IS NULL AND ls.credential_binding IS NOT NULL ORDER BY ls.start_time, ls.id").fetch_all(&mut *connection).await?;
     for session in sessions {
-        let binding: crate::credentials::CredentialBinding =
-            serde_json::from_str(&session.credential_binding)?;
-        if let crate::credentials::CredentialIdentity::Profile { profile_id } = binding.identity
+        let binding: CredentialBinding = serde_json::from_str(&session.credential_binding)?;
+        if let CredentialIdentity::Profile { profile_id } = binding.identity
             && wanted.contains(profile_id.as_str())
         {
             references
@@ -1383,7 +1499,7 @@ pub(crate) async fn references_of(
 /// would be silently ignored, so writes containing it are rejected.
 fn configuration_carries_authentication(raw: Option<&str>, platform: &str) -> bool {
     raw.and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
-        .is_some_and(|value| crate::credentials::carries_authentication_fields(platform, &value))
+        .is_some_and(|value| carries_authentication_fields(platform, &value))
 }
 
 fn authentication_rejected() -> Error {
@@ -1413,9 +1529,9 @@ pub(crate) fn reject_template_authentication(
         .and_then(|raw| serde_json::from_str(raw).ok())
         .unwrap_or_default();
     if overrides.as_object().is_some_and(|entries| {
-        entries.iter().any(|(platform, entry)| {
-            crate::credentials::carries_authentication_fields(platform, entry)
-        })
+        entries
+            .iter()
+            .any(|(platform, entry)| carries_authentication_fields(platform, entry))
     }) {
         return Err(authentication_rejected());
     }

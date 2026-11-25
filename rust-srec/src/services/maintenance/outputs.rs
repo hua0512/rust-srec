@@ -264,7 +264,8 @@ async fn unlink_verified_expired_file(absolute: &Path, cutoff: i64) -> Result<Op
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::{MaintenanceConfig, init_pool_with_size, run_migrations};
+    use crate::database::{init_pool_with_size, run_migrations};
+    use crate::services::maintenance::MaintenanceConfig;
 
     const FILE_PATH: &str = "/archive/video.mp4";
     const CUTOFF: i64 = 100;

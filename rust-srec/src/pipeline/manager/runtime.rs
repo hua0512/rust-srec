@@ -1,10 +1,6 @@
 use super::*;
 
-impl<CR, SR> PipelineManager<CR, SR>
-where
-    CR: ConfigRepository + Send + Sync + 'static,
-    SR: StreamerRepository + Send + Sync + 'static,
-{
+impl PipelineManager {
     /// Start the pipeline manager.
     pub fn start(self: Arc<Self>) {
         let mut runtime = self.runtime.lock();

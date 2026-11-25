@@ -27,25 +27,12 @@ use std::collections::HashMap;
 use serde_json::Value;
 use sqlx::SqliteConnection;
 
-use crate::credentials::{
+use crate::database::repositories::credential_profiles;
+use crate::domain::credential::{
     CredentialOwner, CredentialSelection, PoolStrategy, ProfileError, SelectionReference,
 };
-use crate::database::repositories::credential_profiles;
+pub use crate::domain::credential::{SELECTION_KEY, StoredSelection};
 use crate::{Error, Result};
-
-/// The configuration key that carries a selection on the wire.
-pub const SELECTION_KEY: &str = "credential_selection";
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StoredSelection {
-    pub owner: CredentialOwner,
-    pub platform_id: String,
-    pub platform_name: String,
-    pub selection: CredentialSelection,
-    /// For the account a Streamlink streamer uses through its site, that
-    /// site. Such a layer is owned by the platform and never stored.
-    pub site: Option<String>,
-}
 
 /// How a refused selection write names the selecting scope:
 /// `platform:<id>`, `template:<id>:<platform name>` or `streamer:<id>`.

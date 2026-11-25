@@ -165,8 +165,7 @@ impl SessionTxOps {
     /// In normal operation the partial unique index
     /// `live_sessions_one_active_per_streamer` caps the candidate set at 0 or
     /// 1 row for a non-NULL `streamer_id`. The helper exists for the
-    /// self-heal path inside
-    /// [`crate::database::repositories::SessionLifecycleRepository::start_or_resume`]: if a
+    /// self-heal path when starting or resuming a session: if a
     /// database without that index contains multiple active rows, the
     /// lifecycle calls this with `keep = Some(most_recent_id)` to retain
     /// the row about to be reused, ending the others — or `keep = None` to clear

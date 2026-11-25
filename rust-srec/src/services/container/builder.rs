@@ -9,7 +9,6 @@ use crate::Result;
 use crate::config::{ConfigCache, ConfigEventBroadcaster, ConfigService};
 use crate::credentials::CredentialProviderRegistry;
 use crate::danmu::{DanmuService, events::danmu_coordination_channel};
-use crate::database::maintenance::{MaintenanceConfig, MaintenanceScheduler};
 use crate::database::repositories::{
     ConfigRepository, SqlxNotificationRepository,
     config::SqlxConfigRepository,
@@ -27,6 +26,7 @@ use crate::metrics::{HealthChecker, MetricsCollector};
 use crate::notification::web_push::WebPushService;
 use crate::notification::{NotificationService, NotificationServiceConfig};
 use crate::pipeline::PipelineManager;
+use crate::services::maintenance::{MaintenanceConfig, MaintenanceScheduler};
 use crate::streamer::StreamerManager;
 use crate::utils::task_supervisor::TaskSupervisor;
 
@@ -136,7 +136,7 @@ impl ServiceContainer {
         );
         let streamer_repo = Arc::new(
             SqlxStreamerRepository::new(pool.clone(), write_pool.clone())
-                .with_committed_state(committed_streamers.clone()),
+                .with_commit_owner(committed_streamers.clone()),
         );
 
         // Load global config early for initial runtime knobs (worker pools, polling cadence, etc.).
@@ -326,15 +326,24 @@ impl ServiceContainer {
             global_config.pipeline_io_job_timeout_secs.max(1) as u64;
         effective_pipeline_config.execute_timeout_secs =
             global_config.pipeline_execute_timeout_secs.max(1) as u64;
+        let pipeline_config_port: Arc<dyn crate::pipeline::SessionPipelineConfigPort> = Arc::new(
+            crate::services::pipeline_ports::ConfigServicePipelineConfigPort::new(
+                config_service.clone(),
+            ),
+        );
+        let pipeline_session_port: Arc<dyn crate::pipeline::PipelineSessionPort> = Arc::new(
+            crate::services::pipeline_ports::DatabasePipelineSessionPort::new(session_repo.clone())
+                .with_streamer_repository(streamer_repo.clone())
+                .with_config_port(pipeline_config_port.clone()),
+        );
         let pipeline_manager = Arc::new(PipelineManager::for_runtime(
             effective_pipeline_config,
             crate::pipeline::PipelineRuntimeDependencies {
                 job_repository: job_repo,
-                session_repository: session_repo.clone(),
-                streamer_repository: streamer_repo.clone(),
+                session_port: pipeline_session_port,
+                config_port: pipeline_config_port,
                 preset_repository: preset_repo.clone(),
                 pipeline_preset_repository: pipeline_preset_repo.clone(),
-                config_service: config_service.clone(),
                 dag_repository: Arc::new(SqlxDagRepository::new(pool.clone(), write_pool.clone())),
                 upload_record_repository: upload_record_repo.clone(),
                 staged_output_repository: Arc::new(
@@ -345,7 +354,7 @@ impl ServiceContainer {
                 ),
                 upload_broadcaster: upload_status_broadcaster.clone(),
                 download_limit_adjuster: download_manager.clone(),
-                routes: crate::proxies::ServiceRoutes::new(pool.clone()),
+                routes: Arc::new(crate::proxies::ServiceRoutes::new(pool.clone())),
             },
         ));
 
@@ -391,7 +400,7 @@ impl ServiceContainer {
         // /api/tools/baidupcs routes and BaiduPcsProcessor's automatic
         // re-login share one store (crate::baidupcs::authenticator).
         crate::baidupcs::set_authenticator(Arc::new(
-            crate::baidupcs::StoredLoginAuthenticator::new(Arc::new(
+            crate::services::baidupcs_auth::StoredLoginAuthenticator::new(Arc::new(
                 crate::database::repositories::SqlxToolCredentialRepository::new(
                     pool.clone(),
                     write_pool.clone(),

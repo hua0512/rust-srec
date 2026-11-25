@@ -1481,6 +1481,12 @@ impl DownloadManager {
     }
 }
 
+impl crate::domain::processor::DownloadLimitAdjuster for DownloadManager {
+    fn set_throttle_factor(&self, factor: Option<f32>) -> (usize, usize) {
+        self.set_download_throttle(factor)
+    }
+}
+
 impl Default for DownloadManager {
     fn default() -> Self {
         Self::new()

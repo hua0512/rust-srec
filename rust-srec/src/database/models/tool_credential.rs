@@ -17,10 +17,9 @@ pub struct ToolCredentialDbModel {
     /// Owning tool (`"baidupcs"` today).
     pub tool: String,
     /// Per-tool account discriminator; `""` is that tool's default account.
-    /// For `baidupcs` this is the BaiduPCS-Go config directory (see
-    /// `crate::baidupcs::config_dir_key`).
+    /// For `baidupcs` this is the normalized BaiduPCS-Go config directory key.
     pub account_key: String,
-    /// Tool-shaped JSON payload (`crate::baidupcs::LoginMaterial` for
+    /// Tool-shaped JSON payload (`crate::domain::processor::LoginMaterial` for
     /// `baidupcs`).
     pub payload: String,
     /// Milliseconds since Unix epoch (UTC).

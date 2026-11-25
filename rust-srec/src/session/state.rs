@@ -1,9 +1,9 @@
 //! Session domain types — [`EngineKind`], [`TerminalCause`], and [`OfflineSignal`].
 
-use serde::{Deserialize, Serialize};
-
 use crate::downloader::engine::EngineType;
 use crate::downloader::{DownloadFailureKind, DownloadProtocol, DownloadStopCause};
+
+pub use crate::domain::session::OfflineSignal;
 
 /// Which download engine and protocol produced a download outcome.
 ///
@@ -137,27 +137,6 @@ impl TerminalCause {
             Self::DefinitiveOffline { .. } => "definitive_offline",
             Self::UserDisabled => "user_disabled",
             Self::OutOfSchedule => "out_of_schedule",
-        }
-    }
-}
-
-/// A high-confidence offline signal observed at the engine or danmu boundary
-/// that bypasses the hysteresis quiet period.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
-#[serde(tag = "type", content = "count", rename_all = "snake_case")]
-pub enum OfflineSignal {
-    /// Danmu websocket sent an explicit stream-closed control frame.
-    DanmuStreamClosed,
-    /// `n` consecutive network failures inside the sliding failure window.
-    ConsecutiveFailures(u32),
-}
-
-impl OfflineSignal {
-    /// Short, stable string for logging and metrics labels.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::DanmuStreamClosed => "danmu_stream_closed",
-            Self::ConsecutiveFailures(_) => "consecutive_failures",
         }
     }
 }

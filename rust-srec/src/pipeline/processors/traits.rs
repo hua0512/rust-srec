@@ -8,10 +8,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio_util::sync::CancellationToken;
 
 use crate::Result;
-use crate::pipeline::job_queue::JobLogEntry;
-use crate::pipeline::manifest::PipelineInputManifest;
-use crate::pipeline::progress::ProgressReporter;
-use crate::pipeline::staged_outputs::StagedOutputRecorder;
+use crate::domain::processor::{
+    JobLogEntry, PipelineInputManifest, ProgressReporter, StagedOutputTracker,
+    expand_placeholders_at,
+};
+use crate::domain::proxy::OutputScrubber;
 
 /// Type of processor (determines which worker pool handles it).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -136,7 +137,7 @@ impl ProcessorInput {
         template: &str,
         reference_timestamp_ms: Option<i64>,
     ) -> String {
-        crate::utils::filename::expand_placeholders_at(
+        expand_placeholders_at(
             template,
             &self.streamer_id,
             &self.session_id,
@@ -203,7 +204,7 @@ pub struct ProcessorContext {
     pub step_timeout: Option<std::time::Duration>,
     /// Records staged temporary files so a restart can list what an
     /// interrupted attempt left behind.
-    pub(crate) staged_outputs: StagedOutputRecorder,
+    pub(crate) staged_outputs: StagedOutputTracker,
     /// Per-file `local_path -> ConfirmedUpload` outcomes already confirmed as
     /// `COMPLETED` by an earlier attempt of this job and bound to the
     /// destination account. Upload processors use this on retries so
@@ -218,7 +219,7 @@ pub struct JobLogSink {
     tx: tokio::sync::mpsc::Sender<JobLogEntry>,
     dropped: Arc<AtomicUsize>,
     /// Applied to every entry sent; see [`ProcessorContext::scrubbing`].
-    scrubber: crate::proxies::OutputScrubber,
+    scrubber: OutputScrubber,
 }
 
 impl JobLogSink {
@@ -226,7 +227,7 @@ impl JobLogSink {
         Self {
             tx,
             dropped,
-            scrubber: crate::proxies::OutputScrubber::default(),
+            scrubber: OutputScrubber::default(),
         }
     }
 
@@ -255,7 +256,7 @@ impl ProcessorContext {
             is_retry: false,
             has_step_retry: false,
             step_timeout: None,
-            staged_outputs: StagedOutputRecorder::default(),
+            staged_outputs: StagedOutputTracker::default(),
             prior_completed_uploads: std::collections::HashMap::new(),
         }
     }
@@ -274,7 +275,7 @@ impl ProcessorContext {
             is_retry: false,
             has_step_retry: false,
             step_timeout: None,
-            staged_outputs: StagedOutputRecorder::default(),
+            staged_outputs: StagedOutputTracker::default(),
             prior_completed_uploads: std::collections::HashMap::new(),
         }
     }
@@ -297,9 +298,9 @@ impl ProcessorContext {
         self
     }
 
-    /// Record this attempt's staged temporary files through `recorder`.
-    pub(crate) fn with_staged_outputs(mut self, recorder: StagedOutputRecorder) -> Self {
-        self.staged_outputs = recorder;
+    /// Record this attempt's staged temporary files through `tracker`.
+    pub(crate) fn with_staged_outputs(mut self, tracker: impl Into<StagedOutputTracker>) -> Self {
+        self.staged_outputs = tracker.into();
         self
     }
 
@@ -319,7 +320,7 @@ impl ProcessorContext {
     /// context's log sink are discarded without counting as dropped for the job.
     /// This context with `scrubber` applied to the job log, for a tool
     /// that may print a proxy login.
-    pub fn scrubbing(&self, scrubber: &crate::proxies::OutputScrubber) -> Self {
+    pub fn scrubbing(&self, scrubber: &OutputScrubber) -> Self {
         let mut context = self.clone();
         context.log_sink.scrubber = scrubber.clone();
         context
@@ -405,8 +406,8 @@ pub enum UploadItemStatus {
 }
 
 impl UploadItemStatus {
-    /// Persisted discriminator; must match the `upload_records.status` CHECK
-    /// constraint values in `crate::database::models::upload_record::upload_status`.
+    /// Persisted discriminator; matches the `upload_records.status` CHECK
+    /// constraint values (`COMPLETED`, `FAILED`, `SKIPPED`).
     pub fn as_str(&self) -> &'static str {
         match self {
             UploadItemStatus::Completed => "COMPLETED",
@@ -485,7 +486,7 @@ impl ProcessorOutput {
     /// `result` with `scrubber` applied to every message it reports.
     pub(crate) fn scrubbed(
         result: crate::Result<Self>,
-        scrubber: &crate::proxies::OutputScrubber,
+        scrubber: &OutputScrubber,
     ) -> crate::Result<Self> {
         let mut output = match result {
             Ok(output) => output,

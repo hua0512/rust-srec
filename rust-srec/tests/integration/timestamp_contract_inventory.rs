@@ -22,7 +22,9 @@ async fn canonical_timestamp_inventory_storage_and_nullability() {
         .await
         .unwrap();
     // Includes the post-migration conversions that drop their pending markers.
-    rust_srec::database::run_migrations(&pool).await.unwrap();
+    rust_srec::services::legacy_upgrade::run_migrations(&pool)
+        .await
+        .unwrap();
     let inventory: BTreeMap<String, TableContract> = serde_json::from_str(include_str!(
         "../fixtures/timestamp_contract_inventory.json"
     ))

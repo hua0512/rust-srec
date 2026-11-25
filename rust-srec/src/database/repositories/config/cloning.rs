@@ -1,6 +1,6 @@
-use crate::credentials::CredentialOwner;
 use crate::database::models::TemplateConfigDbModel;
 use crate::database::repositories::{credential_selections, row_write::WriteMode};
+use crate::domain::credential::CredentialOwner;
 use crate::{Error, Result};
 
 use super::{SqlxConfigRepository, writes};

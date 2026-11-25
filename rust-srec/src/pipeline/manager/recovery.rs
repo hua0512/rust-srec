@@ -12,16 +12,12 @@ pub(crate) struct RecoveryReport {
 }
 
 struct RecoveredCoordinatorSession {
-    session: crate::database::models::LiveSessionDbModel,
+    session: PipelineSessionSummary,
     has_in_flight_coordination_dag: bool,
     needs_session_complete_recovery: bool,
 }
 
-impl<CR, SR> PipelineManager<CR, SR>
-where
-    CR: ConfigRepository + Send + Sync + 'static,
-    SR: StreamerRepository + Send + Sync + 'static,
-{
+impl PipelineManager {
     /// Recover jobs from database on startup.
     /// Re-drives persisted DAG completions before resetting interrupted jobs for re-execution.
     /// For sequential pipelines, no special handling is needed since only one job
@@ -171,18 +167,18 @@ where
     }
 
     async fn recover_pipeline_coordination_with_status(&self, complete: &mut bool) -> Result<()> {
-        let Some(session_repo) = &self.session_repo else {
+        let Some(session_port) = &self.session_port else {
             return Ok(());
         };
 
         let sessions = self
-            .collect_recovery_sessions(session_repo, complete)
+            .collect_recovery_sessions(session_port, complete)
             .await?;
 
         let mut recovered = 0usize;
         for recovered_session in sessions.into_values() {
             if self
-                .recover_session(session_repo, recovered_session, complete)
+                .recover_session(session_port, recovered_session, complete)
                 .await
             {
                 recovered += 1;
@@ -204,20 +200,14 @@ where
     /// in-flight coordination DAG.
     async fn collect_recovery_sessions(
         &self,
-        session_repo: &Arc<dyn SessionRepository>,
+        session_port: &Arc<dyn PipelineSessionPort>,
         complete: &mut bool,
     ) -> Result<BTreeMap<String, RecoveredCoordinatorSession>> {
         let mut sessions = BTreeMap::<String, RecoveredCoordinatorSession>::new();
-        let filters = SessionFilters {
-            active_only: Some(true),
-            include_empty: Some(true),
-            ..SessionFilters::new()
-        };
         let mut offset = 0;
         loop {
-            let pagination = Pagination::new(COORDINATOR_RECOVERY_PAGE_LIMIT, offset);
-            let (page, _) = session_repo
-                .list_sessions_filtered(&filters, &pagination)
+            let page = session_port
+                .list_active_sessions(COORDINATOR_RECOVERY_PAGE_LIMIT, offset)
                 .await?;
             let page_len = page.len();
             for session in page {
@@ -237,12 +227,14 @@ where
             offset = offset.saturating_add(COORDINATOR_RECOVERY_PAGE_LIMIT);
         }
 
-        if self.config_service.is_some() {
+        if self.config_port.is_some() {
             let mut offset = 0;
             loop {
-                let pagination = Pagination::new(COORDINATOR_RECOVERY_PAGE_LIMIT, offset);
-                let page = session_repo
-                    .list_ended_sessions_pending_pipeline_recovery(&pagination)
+                let page = session_port
+                    .list_ended_sessions_pending_pipeline_recovery(
+                        COORDINATOR_RECOVERY_PAGE_LIMIT,
+                        offset,
+                    )
                     .await?;
                 let page_len = page.len();
                 for session in page {
@@ -275,8 +267,8 @@ where
                     };
 
                     if !sessions.contains_key(session_id) {
-                        match session_repo.get_session(session_id).await {
-                            Ok(session) => {
+                        match session_port.get_session_summary(session_id).await {
+                            Ok(Some(session)) => {
                                 sessions.insert(
                                     session_id.to_string(),
                                     RecoveredCoordinatorSession {
@@ -284,6 +276,15 @@ where
                                         has_in_flight_coordination_dag: true,
                                         needs_session_complete_recovery: false,
                                     },
+                                );
+                            }
+                            Ok(None) => {
+                                *complete = false;
+                                warn!(
+                                    session_id = %session_id,
+                                    dag_id = %dag.id,
+                                    ?status,
+                                    "Skipping pipeline coordinator recovery for DAG with missing session"
                                 );
                             }
                             Err(e) => {
@@ -311,18 +312,17 @@ where
     /// coordinator. Returns false when the session is skipped.
     async fn recover_session(
         &self,
-        session_repo: &Arc<dyn SessionRepository>,
+        session_port: &Arc<dyn PipelineSessionPort>,
         recovered_session: RecoveredCoordinatorSession,
         complete: &mut bool,
     ) -> bool {
         let session = recovered_session.session;
-        let recover_ended_session = session.end_time.is_some()
+        let recover_ended_session = session.ended
             && (recovered_session.has_in_flight_coordination_dag
                 || recovered_session.needs_session_complete_recovery);
-        // A session whose streamer was deleted has no config to resolve and
-        // no `StreamerActor` to hand the recovered state to, so it is not a
-        // recovery candidate: every `PipelineCoordinationEvent` below is
-        // keyed by streamer id. `list_ended_sessions_pending_pipeline_recovery`
+        // A session whose streamer was deleted has no config to resolve, so it
+        // is not a recovery candidate: every `PipelineCoordinationEvent` below
+        // is keyed by streamer id. `list_ended_sessions_pending_pipeline_recovery`
         // already filters these out, so reaching here means the session was
         // pulled in by an in-flight coordination DAG — worth a line, same as
         // the DAG-with-missing-session case above.
@@ -335,8 +335,8 @@ where
             return false;
         };
         let session_id = session.id.clone();
-        let config = match &self.config_service {
-            Some(service) => match service.get_config_for_streamer(&streamer_id).await {
+        let config = match &self.config_port {
+            Some(port) => match port.get_session_pipeline_config(&streamer_id).await {
                 Ok(config) => Some(config),
                 Err(error) => {
                     *complete = false;
@@ -357,7 +357,9 @@ where
                     session_id: session_id.clone(),
                     streamer_id: streamer_id.clone(),
                     danmu_enabled,
-                    segment_pipeline: config.as_ref().and_then(|config| config.pipeline.clone()),
+                    segment_pipeline: config
+                        .as_ref()
+                        .and_then(|config| config.segment_pipeline.clone()),
                     paired_segment_pipeline: config
                         .as_ref()
                         .and_then(|config| config.paired_segment_pipeline.clone())
@@ -504,11 +506,8 @@ where
         let mut danmu_segment_indices: HashMap<PathBuf, Option<u32>> = HashMap::new();
         let mut segment_offset = 0u32;
         loop {
-            let segments = match session_repo
-                .list_session_segments_page(
-                    &session_id,
-                    &Pagination::new(COORDINATOR_RECOVERY_PAGE_LIMIT, segment_offset),
-                )
+            let segments = match session_port
+                .list_session_segments(&session_id, COORDINATOR_RECOVERY_PAGE_LIMIT, segment_offset)
                 .await
             {
                 Ok(segments) => segments,
@@ -555,17 +554,11 @@ where
             };
             segment_offset = next_offset;
         }
-        match session_repo
-            .get_media_outputs_for_session(&session_id)
-            .await
-        {
+        match session_port.list_session_danmu_outputs(&session_id).await {
             Ok(outputs) => {
-                for output in outputs {
-                    if output.file_type != MediaFileType::DanmuXml.as_str() {
-                        continue;
-                    }
+                for file_path in outputs {
                     recovered_danmu_activity = true;
-                    let path = PathBuf::from(&output.file_path);
+                    let path = PathBuf::from(file_path);
                     let segment_index = match danmu_segment_indices.get(&path) {
                         Some(Some(index)) => *index,
                         association => {

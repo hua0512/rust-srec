@@ -6,8 +6,6 @@
 use sqlx::{Row, SqliteConnection, SqlitePool};
 
 use crate::Result;
-use crate::monitor::MonitorEvent;
-use crate::recorder::OutboxEvent;
 
 /// Transactional operations for monitor event outbox.
 ///
@@ -16,26 +14,14 @@ use crate::recorder::OutboxEvent;
 pub struct MonitorOutboxTxOps;
 
 impl MonitorOutboxTxOps {
-    /// Enqueue a monitor event into the outbox within a transaction.
-    pub async fn enqueue_event(
+    /// Enqueue a pre-serialized outbox event row within a transaction.
+    pub async fn enqueue_raw(
         tx: &mut SqliteConnection,
-        streamer_id: &str,
-        event: &MonitorEvent,
+        streamer_id: Option<&str>,
+        event_type: &str,
+        payload: &str,
+        created_at_ms: i64,
     ) -> Result<()> {
-        let payload = serde_json::to_string(event).map_err(|e| {
-            crate::Error::Other(format!("Failed to serialize monitor event: {}", e))
-        })?;
-
-        let event_type = match event {
-            MonitorEvent::StreamerLive { .. } => "StreamerLive",
-            MonitorEvent::StreamerOffline { .. } => "StreamerOffline",
-            MonitorEvent::FatalError { .. } => "FatalError",
-            MonitorEvent::TransientError { .. } => "TransientError",
-            MonitorEvent::ChecksFailing { .. } => "ChecksFailing",
-            MonitorEvent::ChecksRestored { .. } => "ChecksRestored",
-            MonitorEvent::StateChanged { .. } => "StateChanged",
-        };
-
         sqlx::query(
             r#"
             INSERT INTO monitor_event_outbox (streamer_id, event_type, payload, created_at)
@@ -45,33 +31,6 @@ impl MonitorOutboxTxOps {
         .bind(streamer_id)
         .bind(event_type)
         .bind(payload)
-        .bind(crate::database::time::now_ms())
-        .execute(tx)
-        .await?;
-
-        Ok(())
-    }
-
-    /// Enqueue a typed notification-only [`OutboxEvent`] within a transaction,
-    /// using the transaction's exact millisecond timestamp.
-    pub async fn enqueue_outbox_event(
-        tx: &mut SqliteConnection,
-        streamer_id: Option<&str>,
-        event: &OutboxEvent,
-        created_at_ms: i64,
-    ) -> Result<()> {
-        let payload = serde_json::to_string(event)
-            .map_err(|e| crate::Error::Other(format!("Failed to serialize outbox event: {}", e)))?;
-
-        sqlx::query(
-            r#"
-            INSERT INTO monitor_event_outbox (streamer_id, event_type, payload, created_at)
-            VALUES (?, ?, ?, ?)
-            "#,
-        )
-        .bind(streamer_id)
-        .bind(event.event_type())
-        .bind(payload)
         .bind(created_at_ms)
         .execute(tx)
         .await?;
@@ -79,9 +38,8 @@ impl MonitorOutboxTxOps {
         Ok(())
     }
 
-    /// Enqueue [`MonitorEvent::ChecksRestored`] when the streamer's current
-    /// run of failures reached `threshold`, the count at which
-    /// [`MonitorEvent::ChecksFailing`] was sent.
+    /// Enqueue a `ChecksRestored` outbox row when the streamer's current run
+    /// of failures reached `threshold`.
     ///
     /// Call it in the transaction that clears the errors, before the clear:
     /// reading the count there reports each cleared run exactly once, however
@@ -100,12 +58,22 @@ impl MonitorOutboxTxOps {
         if let Some((streamer_name, Some(count))) = row
             && count >= threshold
         {
-            let event = MonitorEvent::ChecksRestored {
-                streamer_id: streamer_id.to_owned(),
-                streamer_name,
-                timestamp,
-            };
-            Self::enqueue_event(tx, streamer_id, &event).await?;
+            let payload = serde_json::json!({
+                "ChecksRestored": {
+                    "streamer_id": streamer_id,
+                    "streamer_name": streamer_name,
+                    "timestamp": timestamp,
+                }
+            })
+            .to_string();
+            Self::enqueue_raw(
+                tx,
+                Some(streamer_id),
+                "ChecksRestored",
+                &payload,
+                crate::database::time::now_ms(),
+            )
+            .await?;
         }
         Ok(())
     }

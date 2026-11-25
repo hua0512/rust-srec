@@ -3,66 +3,8 @@
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
+pub use crate::domain::credential::CredentialScope;
 use crate::notification::NotificationPriority;
-
-/// Represents the configuration layer where credentials are defined.
-///
-/// Credentials can be defined at Platform, Template, or Streamer scope.
-/// Global scope is explicitly NOT supported for credentials.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum CredentialScope {
-    /// Platform-wide credentials (shared by all streamers on this platform)
-    Platform {
-        platform_id: String,
-        platform_name: String,
-    },
-    /// Template-specific credentials
-    Template {
-        template_id: String,
-        template_name: String,
-    },
-    /// Streamer-specific credentials (highest priority)
-    Streamer {
-        streamer_id: String,
-        streamer_name: String,
-    },
-}
-
-impl CredentialScope {
-    /// The scope of a profile owner, labelled with the owner's display name.
-    pub fn for_owner(owner: &super::CredentialOwner, name: String) -> Self {
-        match owner {
-            super::CredentialOwner::Platform { platform_id } => Self::Platform {
-                platform_id: platform_id.clone(),
-                platform_name: name,
-            },
-            super::CredentialOwner::Template { template_id } => Self::Template {
-                template_id: template_id.clone(),
-                template_name: name,
-            },
-            super::CredentialOwner::Streamer { streamer_id } => Self::Streamer {
-                streamer_id: streamer_id.clone(),
-                streamer_name: name,
-            },
-        }
-    }
-
-    /// Human-readable description of the scope.
-    pub fn describe(&self) -> String {
-        match self {
-            Self::Platform { platform_name, .. } => {
-                format!("Platform: {}", platform_name)
-            }
-            Self::Template { template_name, .. } => {
-                format!("Template: {}", template_name)
-            }
-            Self::Streamer { streamer_name, .. } => {
-                format!("Streamer: {}", streamer_name)
-            }
-        }
-    }
-}
 
 /// Credential event for notifications.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -347,7 +289,7 @@ mod tests {
     #[test]
     fn credential_notices_render_reasons_and_account_labels() {
         use super::CredentialEvent;
-        use crate::credentials::profile::UNAVAILABLE_REASON_CODES;
+        use crate::domain::credential::UNAVAILABLE_REASON_CODES;
         let scope = CredentialScope::Template {
             template_id: "template-1".to_string(),
             template_name: "Night shift".to_string(),

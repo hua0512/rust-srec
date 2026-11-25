@@ -1,12 +1,12 @@
 use std::time::Duration;
 
 use super::*;
+use crate::Result;
 use crate::database::models::{Pagination, UploadRecordDbModel};
 use crate::pipeline::JobPhase;
 use crate::pipeline::processors::UploadItemStatus;
 use crate::pipeline::progress::ProgressKind;
 use crate::pipeline::upload_events::{UploadStatusEvent, UploadTerminalStatus};
-use crate::{Error, Result};
 
 /// The manifest travels in the `state` column with the placeholder metadata
 /// and comes back through `db_model_to_job`; rows written before the column
@@ -295,11 +295,13 @@ async fn test_resolve_job_metadata_persists_backfilled_state() {
         crate::database::repositories::job::SqlxJobRepository::new(pool.clone(), pool.clone()),
     );
     let queue = JobQueue::with_repository(JobQueueConfig::default(), job_repo.clone());
-    queue.set_session_repo(Arc::new(
-        crate::database::repositories::session::SqlxSessionRepository::new(
-            pool.clone(),
-            pool.clone(),
-        ),
+    queue.set_session_port(Arc::new(
+        crate::services::pipeline_ports::DatabasePipelineSessionPort::new(Arc::new(
+            crate::database::repositories::session::SqlxSessionRepository::new(
+                pool.clone(),
+                pool.clone(),
+            ),
+        )),
     ));
 
     let mut job = Job::new(
@@ -949,6 +951,7 @@ async fn recovery_lists_files_staged_by_unfinished_attempts_only() {
     // One attempt finishes normally; the other never does, as in a crash.
     let finished = queue.staged_output_recorder("job-done");
     finished
+        .tracker()
         .record(
             std::path::Path::new("/out/a.tmp-1.mp4"),
             std::path::Path::new("/out/a.mp4"),
@@ -957,6 +960,7 @@ async fn recovery_lists_files_staged_by_unfinished_attempts_only() {
     finished.finish().await;
     queue
         .staged_output_recorder("job-crashed")
+        .tracker()
         .record(
             std::path::Path::new("/out/b.tmp-2.mp4"),
             std::path::Path::new("/out/b.mp4"),
@@ -1249,90 +1253,91 @@ async fn cached_progress_copies_the_snapshot_without_raw() {
 
 #[tokio::test]
 async fn cancel_job_and_cancel_pipeline_serialize_with_in_flight_dequeue() {
-    use crate::database::models::StreamerDbModel;
+    use crate::pipeline::{
+        PipelineSessionMeta, PipelineSessionPort, PipelineSessionSegment, PipelineSessionSummary,
+        PipelineStreamerMeta,
+    };
     use async_trait::async_trait;
 
-    struct BlockingStreamerRepo {
+    struct BlockingSessionPort {
         paused: tokio::sync::Notify,
         release: tokio::sync::Notify,
     }
 
     #[async_trait]
-    impl StreamerRepository for BlockingStreamerRepo {
-        async fn get_streamer(&self, id: &str) -> Result<StreamerDbModel> {
+    impl PipelineSessionPort for BlockingSessionPort {
+        async fn session_has_thumbnail(&self, _session_id: &str) -> Result<bool> {
+            unimplemented!()
+        }
+        async fn record_thumbnail_output(
+            &self,
+            _session_id: &str,
+            _output_path: &str,
+            _size_bytes: i64,
+        ) -> Result<bool> {
+            unimplemented!()
+        }
+        async fn mark_session_complete_dispatched(&self, _session_id: &str) -> Result<()> {
+            unimplemented!()
+        }
+        async fn session_pipeline_settled(&self, _session_id: &str) -> Result<bool> {
+            unimplemented!()
+        }
+        async fn list_session_ids_for_retirement(&self, _streamer_id: &str) -> Result<Vec<String>> {
+            unimplemented!()
+        }
+        async fn list_active_sessions(
+            &self,
+            _limit: u32,
+            _offset: u32,
+        ) -> Result<Vec<PipelineSessionSummary>> {
+            unimplemented!()
+        }
+        async fn list_ended_sessions_pending_pipeline_recovery(
+            &self,
+            _limit: u32,
+            _offset: u32,
+        ) -> Result<Vec<PipelineSessionSummary>> {
+            unimplemented!()
+        }
+        async fn get_session_summary(
+            &self,
+            _session_id: &str,
+        ) -> Result<Option<PipelineSessionSummary>> {
+            unimplemented!()
+        }
+        async fn list_session_segments(
+            &self,
+            _session_id: &str,
+            _limit: u32,
+            _offset: u32,
+        ) -> Result<Vec<PipelineSessionSegment>> {
+            unimplemented!()
+        }
+        async fn list_session_danmu_outputs(&self, _session_id: &str) -> Result<Vec<String>> {
+            unimplemented!()
+        }
+        async fn get_session_meta(&self, _session_id: &str) -> Result<Option<PipelineSessionMeta>> {
+            unimplemented!()
+        }
+        async fn get_streamer_meta(
+            &self,
+            _streamer_id: &str,
+        ) -> Result<Option<PipelineStreamerMeta>> {
             self.paused.notify_one();
             self.release.notified().await;
-            Err(Error::not_found("Streamer", id))
-        }
-        async fn list_all_streamers(&self) -> Result<Vec<StreamerDbModel>> {
-            unimplemented!()
-        }
-        async fn get_streamer_by_url(&self, _url: &str) -> Result<StreamerDbModel> {
-            unimplemented!()
-        }
-        async fn list_streamers(&self) -> Result<Vec<StreamerDbModel>> {
-            unimplemented!()
-        }
-        async fn create_streamer(&self, _streamer: &StreamerDbModel) -> Result<()> {
-            unimplemented!()
-        }
-        async fn update_streamer(&self, _streamer: &StreamerDbModel) -> Result<()> {
-            unimplemented!()
-        }
-        async fn mark_streamer_deleted(&self, _id: &str) -> Result<bool> {
-            unimplemented!()
-        }
-        async fn delete_marked_streamer(&self, _id: &str) -> Result<bool> {
-            unimplemented!()
-        }
-        async fn update_streamer_state(&self, _id: &str, _state: &str) -> Result<()> {
-            unimplemented!()
-        }
-        async fn update_streamer_priority(&self, _id: &str, _priority: &str) -> Result<()> {
-            unimplemented!()
-        }
-        async fn set_disabled_until(&self, _id: &str, _until: Option<i64>) -> Result<()> {
-            unimplemented!()
-        }
-        async fn update_avatar(&self, _id: &str, _avatar_url: Option<&str>) -> Result<()> {
-            unimplemented!()
-        }
-        async fn clear_streamer_error_state(&self, _id: &str) -> Result<()> {
-            unimplemented!()
-        }
-        async fn clear_streamer_last_error(&self, _id: &str) -> Result<()> {
-            unimplemented!()
-        }
-        async fn record_streamer_success(
-            &self,
-            _id: &str,
-            _last_live_time: Option<Timestamp>,
-            _checks_restored_threshold: Option<i32>,
-        ) -> Result<()> {
-            unimplemented!()
-        }
-        async fn list_streamers_by_platform(
-            &self,
-            _platform_id: &str,
-        ) -> Result<Vec<StreamerDbModel>> {
-            unimplemented!()
-        }
-        async fn list_streamers_by_template(
-            &self,
-            _template_id: &str,
-        ) -> Result<Vec<StreamerDbModel>> {
-            unimplemented!()
+            Ok(None)
         }
     }
 
     for mode in ["cancel_job", "cancel_pipeline"] {
         let repo = crate::database::test_support::job_repository().await;
         let queue = Arc::new(JobQueue::with_repository(Default::default(), repo));
-        let blocker = Arc::new(BlockingStreamerRepo {
+        let blocker = Arc::new(BlockingSessionPort {
             paused: tokio::sync::Notify::new(),
             release: tokio::sync::Notify::new(),
         });
-        queue.set_streamer_repo(blocker.clone());
+        queue.set_session_port(blocker.clone());
 
         let mut job = Job::new("remux", vec!["/in.flv".into()], vec![], "streamer-1", "");
         job.pipeline_id = Some("pipe-1".to_string());

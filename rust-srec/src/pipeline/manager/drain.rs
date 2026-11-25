@@ -68,11 +68,7 @@ impl SessionDrain {
     }
 }
 
-impl<CR, SR> PipelineManager<CR, SR>
-where
-    CR: ConfigRepository + Send + Sync + 'static,
-    SR: StreamerRepository + Send + Sync + 'static,
-{
+impl PipelineManager {
     /// Observe every session that can still need this streamer's configuration.
     /// Runtime callers stop producers first. Retry an already-observed final
     /// dispatch when its dependencies have settled. Only a durable dispatch/skip
@@ -82,35 +78,35 @@ where
         streamer_id: &str,
         bound: Duration,
     ) -> Result<StreamerDrain> {
-        let repo = self.session_repo.as_ref().ok_or_else(|| {
+        let port = self.session_port.as_ref().ok_or_else(|| {
             Error::Validation(
-                "Session repository is required to acknowledge streamer retirement".to_string(),
+                "Session port is required to acknowledge streamer retirement".to_string(),
             )
         })?;
         let deadline = tokio::time::Instant::now().checked_add(bound);
         let mut result = StreamerDrain::default();
-        for session in repo.list_sessions_for_retirement(streamer_id).await? {
-            if let Some(outstanding) = self.pipeline_coordinator.session_outstanding(&session.id)
+        for session_id in port.list_session_ids_for_retirement(streamer_id).await? {
+            if let Some(outstanding) = self.pipeline_coordinator.session_outstanding(&session_id)
                 && outstanding.end_processed
                 && outstanding.session_complete_owed
                 && outstanding.pending_dags == 0
-                && !repo.session_pipeline_settled(&session.id).await?
+                && !port.session_pipeline_settled(&session_id).await?
             {
                 let commands = self.pipeline_coordinator.apply_event(
                     PipelineCoordinationEvent::SessionEndPersisted {
-                        session_id: session.id.clone(),
+                        session_id: session_id.clone(),
                     },
                 );
                 self.execute_pipeline_commands(commands).await;
-                self.record_session_pipeline_settlement(&session.id).await;
+                self.record_session_pipeline_settlement(&session_id).await;
             }
-            let settled = repo.session_pipeline_settled(&session.id).await?;
+            let settled = port.session_pipeline_settled(&session_id).await?;
             let remaining = deadline
                 .map(|deadline| deadline.saturating_duration_since(tokio::time::Instant::now()))
                 .unwrap_or(bound);
-            let drained = self.drain_for_session(&session.id, remaining).await?;
+            let drained = self.drain_for_session(&session_id, remaining).await?;
             if !settled || !drained.is_drained() {
-                result.sessions.push(session.id);
+                result.sessions.push(session_id);
             }
         }
         // Standalone jobs, or jobs whose session was explicitly removed, still

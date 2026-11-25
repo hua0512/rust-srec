@@ -30,9 +30,10 @@ use super::upload_runner::{
 };
 use super::utils::CommandOutput;
 use crate::Result;
-use crate::pipeline::job_queue::JobLogEntry;
-use crate::pipeline::progress::ProgressKind;
-use crate::proxies::ProxyTarget;
+use crate::domain::processor::{BaiduPcsAuthenticator, JobLogEntry, ProgressKind};
+use crate::domain::proxy::{
+    OutputScrubber, ProxyRoute, ProxyRouteResolver, ProxyTarget, upload_target,
+};
 
 /// Upper bound on configured retry attempts, guarding against runaway
 /// configs re-spawning a large upload dozens of times.
@@ -141,7 +142,7 @@ pub struct BaiduPcsConfig {
 
     /// How BaiduPCS-Go connects, re-logins included; `inherit`, the
     /// default, follows the global route.
-    pub proxy_route: crate::proxies::ProxyRoute,
+    pub proxy_route: ProxyRoute,
 }
 
 impl Default for BaiduPcsConfig {
@@ -156,7 +157,7 @@ impl Default for BaiduPcsConfig {
             args: Vec::new(),
             max_retries: 3,
             remove_source_after_upload: false,
-            proxy_route: crate::proxies::ProxyRoute::Inherit,
+            proxy_route: ProxyRoute::Inherit,
         }
     }
 }
@@ -169,15 +170,15 @@ pub struct BaiduPcsProcessor {
     /// Runs assembled commands; a seam so tests can observe and stub
     /// invocations without spawning a real process.
     command_runner: Arc<dyn BaiduPcsCommandRunner>,
-    /// Test override for [`crate::baidupcs::authenticator`]. `None` in
+    /// Override for [`crate::baidupcs::authenticator`]. `None` in
     /// production constructors — the process-wide authenticator is resolved
     /// at call time because the service container installs it after
     /// `PipelineManager` builds its processor list.
-    authenticator_override: Option<Arc<dyn crate::baidupcs::BaiduPcsAuthenticator>>,
+    authenticator_override: Option<Arc<dyn BaiduPcsAuthenticator>>,
     /// See [`UPLOAD_ARGS_BUDGET`]; lowered by tests to exercise chunking.
     upload_args_budget: usize,
-    /// Resolves each step's proxy route; see [`crate::proxies::upload_target`].
-    routes: Option<crate::proxies::ServiceRoutes>,
+    /// Resolves each step's proxy route; see [`upload_target`].
+    routes: Option<Arc<dyn ProxyRouteResolver>>,
 }
 
 #[async_trait]
@@ -311,16 +312,13 @@ impl BaiduPcsProcessor {
     }
 
     /// Resolves each step's proxy route through `routes`.
-    pub fn with_routes(mut self, routes: crate::proxies::ServiceRoutes) -> Self {
+    pub fn with_routes(mut self, routes: Arc<dyn ProxyRouteResolver>) -> Self {
         self.routes = Some(routes);
         self
     }
 
-    #[cfg(test)]
-    fn with_authenticator(
-        mut self,
-        authenticator: Arc<dyn crate::baidupcs::BaiduPcsAuthenticator>,
-    ) -> Self {
+    /// Override the authenticator used for automatic re-login.
+    pub fn with_authenticator(mut self, authenticator: Arc<dyn BaiduPcsAuthenticator>) -> Self {
         self.authenticator_override = Some(authenticator);
         self
     }
@@ -332,7 +330,7 @@ impl BaiduPcsProcessor {
     }
 
     /// The authenticator to use for stored-credential re-login, if any.
-    fn authenticator(&self) -> Option<Arc<dyn crate::baidupcs::BaiduPcsAuthenticator>> {
+    fn authenticator(&self) -> Option<Arc<dyn BaiduPcsAuthenticator>> {
         self.authenticator_override
             .clone()
             .or_else(crate::baidupcs::authenticator)
@@ -376,7 +374,7 @@ impl BaiduPcsProcessor {
     /// itself.
     async fn attempt_relogin(
         &self,
-        authenticator: &Arc<dyn crate::baidupcs::BaiduPcsAuthenticator>,
+        authenticator: &Arc<dyn BaiduPcsAuthenticator>,
         binary_path: &str,
         config: &BaiduPcsConfig,
         proxy: &ProxyTarget,
@@ -602,9 +600,8 @@ impl Processor for BaiduPcsProcessor {
 
         let config: BaiduPcsConfig =
             super::utils::parse_config_strict(input.config.as_deref(), "baidupcs")?;
-        let proxy =
-            crate::proxies::upload_target(self.routes.as_ref(), &config.proxy_route).await?;
-        let scrubber = crate::proxies::OutputScrubber::for_target(&proxy);
+        let proxy = upload_target(self.routes.as_deref(), &config.proxy_route).await?;
+        let scrubber = OutputScrubber::for_target(&proxy);
         let ctx = &ctx.scrubbing(&scrubber);
         let result = async {
 

@@ -7,12 +7,39 @@ use std::collections::HashMap;
 
 use sqlx::SqliteConnection;
 
-use crate::pipeline::step_routes::Layout;
-use crate::proxies::{
+use crate::domain::proxy::{
     AccountReference, NamedReference, ProxyEndpoint, ProxyEntry, ProxyError, ProxyReferences,
-    ProxyRoute, ResolvedRoute, RouteSource, SystemProxy, TemplateReference, resolve,
+    ProxyRoute, ResolvedRoute, RouteSource, SystemProxy, TemplateReference, canonical, resolve,
 };
+use crate::domain::step_routes::{Layout, pipeline_routes_mut, preset_route_mut};
 use crate::{Error, Result};
+
+#[derive(sqlx::FromRow)]
+pub(crate) struct ProxyEntryRow {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub version: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+impl From<ProxyEntryRow> for ProxyEntry {
+    fn from(row: ProxyEntryRow) -> Self {
+        Self {
+            id: row.id,
+            name: row.name,
+            url: row.url,
+            username: row.username,
+            password: row.password,
+            version: row.version,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }
+    }
+}
 
 const MAX_NAME_CHARS: usize = 64;
 
@@ -109,9 +136,14 @@ fn validate_name(name: &str) -> std::result::Result<String, ProxyError> {
 
 pub(crate) async fn list(connection: &mut SqliteConnection) -> Result<Vec<ProxyEntry>> {
     Ok(
-        sqlx::query_as::<_, ProxyEntry>("SELECT * FROM proxies ORDER BY name COLLATE NOCASE, id")
-            .fetch_all(connection)
-            .await?,
+        sqlx::query_as::<_, ProxyEntryRow>(
+            "SELECT * FROM proxies ORDER BY name COLLATE NOCASE, id",
+        )
+        .fetch_all(connection)
+        .await?
+        .into_iter()
+        .map(Into::into)
+        .collect(),
     )
 }
 
@@ -120,10 +152,11 @@ pub(crate) async fn find(
     id: &str,
 ) -> Result<Option<ProxyEntry>> {
     Ok(
-        sqlx::query_as::<_, ProxyEntry>("SELECT * FROM proxies WHERE id = ?")
+        sqlx::query_as::<_, ProxyEntryRow>("SELECT * FROM proxies WHERE id = ?")
             .bind(id)
             .fetch_optional(connection)
-            .await?,
+            .await?
+            .map(Into::into),
     )
 }
 
@@ -138,10 +171,11 @@ pub(crate) async fn find_by_name(
     name: &str,
 ) -> Result<Option<ProxyEntry>> {
     Ok(
-        sqlx::query_as::<_, ProxyEntry>("SELECT * FROM proxies WHERE name = ? COLLATE NOCASE")
+        sqlx::query_as::<_, ProxyEntryRow>("SELECT * FROM proxies WHERE name = ? COLLATE NOCASE")
             .bind(name.trim())
             .fetch_optional(connection)
-            .await?,
+            .await?
+            .map(Into::into),
     )
 }
 
@@ -150,13 +184,14 @@ pub(crate) async fn find_by_exit(
     connection: &mut SqliteConnection,
     endpoint: &ProxyEndpoint,
 ) -> Result<Option<ProxyEntry>> {
-    Ok(sqlx::query_as::<_, ProxyEntry>(
+    Ok(sqlx::query_as::<_, ProxyEntryRow>(
         "SELECT * FROM proxies WHERE url = ? AND COALESCE(username, '') = COALESCE(?, '')",
     )
     .bind(&endpoint.url)
     .bind(&endpoint.username)
     .fetch_optional(connection)
-    .await?)
+    .await?
+    .map(Into::into))
 }
 
 /// Rejects a name or exit another entry already has.
@@ -187,7 +222,7 @@ pub(crate) async fn create(
     endpoint: &ProxyEndpoint,
 ) -> Result<ProxyEntry> {
     let name = validate_name(name)?;
-    let endpoint = crate::proxies::canonical(endpoint)?;
+    let endpoint = canonical(endpoint)?;
     require_unique(connection, None, &name, &endpoint).await?;
     let id = id.map_or_else(|| uuid::Uuid::new_v4().to_string(), str::to_owned);
     let now = crate::database::time::now_ms();
@@ -228,7 +263,7 @@ pub(crate) async fn update(
         (Some(_), Some(password)) => Some(password),
         (Some(_), None) => current.password.clone(),
     };
-    let endpoint = crate::proxies::canonical(&ProxyEndpoint {
+    let endpoint = canonical(&ProxyEndpoint {
         url: update.url.unwrap_or_else(|| current.url.clone()),
         username,
         password,
@@ -410,8 +445,7 @@ pub(crate) async fn all_references(
             continue;
         };
         if let Some(proxy_id) =
-            crate::pipeline::step_routes::preset_route_mut(&processor, &mut config)
-                .and_then(|route| saved_proxy(route))
+            preset_route_mut(&processor, &mut config).and_then(|route| saved_proxy(route))
         {
             let entry = references.entry(proxy_id).or_default();
             entry.job_presets.push(NamedReference { id, name });
@@ -422,9 +456,7 @@ pub(crate) async fn all_references(
         let mut named: Vec<String> = owner
             .documents
             .iter_mut()
-            .flat_map(|(layout, document)| {
-                crate::pipeline::step_routes::pipeline_routes_mut(document, *layout)
-            })
+            .flat_map(|(layout, document)| pipeline_routes_mut(document, *layout))
             .filter_map(|route| saved_proxy(route))
             .collect();
         named.sort();
@@ -613,14 +645,10 @@ pub(crate) async fn require_step_routes(
             continue;
         };
         let routes = match document {
-            StepDocument::Pipelines(layout, _) => {
-                crate::pipeline::step_routes::pipeline_routes_mut(&mut value, *layout)
-            }
-            StepDocument::PresetConfig { processor, .. } => {
-                crate::pipeline::step_routes::preset_route_mut(processor, &mut value)
-                    .into_iter()
-                    .collect()
-            }
+            StepDocument::Pipelines(layout, _) => pipeline_routes_mut(&mut value, *layout),
+            StepDocument::PresetConfig { processor, .. } => preset_route_mut(processor, &mut value)
+                .into_iter()
+                .collect(),
         };
         for route in routes {
             let route: ProxyRoute = serde_json::from_value(route.clone()).map_err(|_| {

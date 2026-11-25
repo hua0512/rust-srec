@@ -27,6 +27,18 @@ use crate::streamer::state_store::StateChange;
 
 const STALE_ACTIVE_REPLACED_REASON: &str = "stale_active_replaced";
 
+async fn enqueue_outbox_event(
+    tx: &mut SqliteConnection,
+    streamer_id: Option<&str>,
+    event: &OutboxEvent,
+    created_at_ms: i64,
+) -> Result<()> {
+    let payload = serde_json::to_string(event)
+        .map_err(|e| crate::Error::Other(format!("Failed to serialize outbox event: {}", e)))?;
+    MonitorOutboxTxOps::enqueue_raw(tx, streamer_id, event.event_type(), &payload, created_at_ms)
+        .await
+}
+
 pub(super) fn commit_op_label(op: &DbCommitOp) -> &'static str {
     match op {
         DbCommitOp::StartOrResumeSession { .. } => "recorder start_or_resume_session",
@@ -495,13 +507,7 @@ async fn start_or_resume_session(
         started_at_ms: now_ms,
         kind: online_kind,
     };
-    MonitorOutboxTxOps::enqueue_outbox_event(
-        &mut *tx,
-        Some(&params.streamer_id),
-        &outbox_event,
-        now_ms,
-    )
-    .await?;
+    enqueue_outbox_event(&mut *tx, Some(&params.streamer_id), &outbox_event, now_ms).await?;
 
     Ok(TxCommitPayload {
         value: DbCommitOutcome::SessionStarted {
@@ -595,13 +601,7 @@ async fn resume_hysteresis(
         started_at_ms: now_ms,
         kind: StreamOnlineKind::HysteresisResumed,
     };
-    MonitorOutboxTxOps::enqueue_outbox_event(
-        &mut *tx,
-        Some(&params.streamer_id),
-        &outbox_event,
-        now_ms,
-    )
-    .await?;
+    enqueue_outbox_event(&mut *tx, Some(&params.streamer_id), &outbox_event, now_ms).await?;
 
     Ok(TxCommitPayload {
         value: DbCommitOutcome::HysteresisResumed {
@@ -663,8 +663,7 @@ async fn enqueue_checks_restored_if_due(
             streamer_name,
             occurred_at_ms: now_ms,
         };
-        MonitorOutboxTxOps::enqueue_outbox_event(&mut *tx, Some(streamer_id), &event, now_ms)
-            .await?;
+        enqueue_outbox_event(&mut *tx, Some(streamer_id), &event, now_ms).await?;
         return Ok(true);
     }
     Ok(false)
@@ -799,13 +798,7 @@ async fn end_session(
             duration_secs,
             ended_at_ms: now_ms,
         };
-        MonitorOutboxTxOps::enqueue_outbox_event(
-            &mut *tx,
-            Some(&params.streamer_id),
-            &event,
-            now_ms,
-        )
-        .await?;
+        enqueue_outbox_event(&mut *tx, Some(&params.streamer_id), &event, now_ms).await?;
         offline_event_emitted = true;
         outbox_enqueued = true;
     }
@@ -1072,8 +1065,7 @@ async fn record_fatal_error(
         new_state,
         occurred_at_ms: now_ms,
     };
-    MonitorOutboxTxOps::enqueue_outbox_event(&mut *tx, Some(streamer_id), &fatal_event, now_ms)
-        .await?;
+    enqueue_outbox_event(&mut *tx, Some(streamer_id), &fatal_event, now_ms).await?;
 
     Ok(TxCommitPayload {
         value: DbCommitOutcome::FatalErrorRecorded {
@@ -1124,8 +1116,7 @@ async fn record_transient_error(
             consecutive_errors: new_error_count,
             occurred_at_ms: now_ms,
         };
-        MonitorOutboxTxOps::enqueue_outbox_event(&mut *tx, Some(streamer_id), &event, now_ms)
-            .await?;
+        enqueue_outbox_event(&mut *tx, Some(streamer_id), &event, now_ms).await?;
     }
 
     Ok(TxCommitPayload {

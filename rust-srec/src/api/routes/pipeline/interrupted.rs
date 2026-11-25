@@ -544,7 +544,7 @@ mod tests {
         let (state, repository) = state().await;
         let directory = tempfile::tempdir().unwrap();
         let output = directory.path().join("video.mp4");
-        let temp = crate::pipeline::temp_path_for(&output);
+        let temp = crate::domain::processor::temp_path_for(&output);
         std::fs::write(&temp, b"partial").unwrap();
         let id = interrupted(&repository, &temp, &output).await;
         state.file_system.stuck_removals.store(1, Ordering::SeqCst);

@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
+use super::{StateChange, StatePublication, StreamerCommitOwner};
 use crate::database::models::StreamerDbModel;
 use crate::database::repositories::MonitorOutboxTxOps;
 use crate::database::repositories::row_write::WriteMode;
-use crate::streamer::CommittedStreamerState;
-use crate::streamer::state_store::{StateChange, StatePublication};
+use crate::domain::streamer::StreamerUpdateParams;
 use crate::{Error, Result};
 
 pub(super) enum Mutation {
@@ -21,11 +21,11 @@ pub(super) enum Mutation {
     /// Last live time, and the threshold for
     /// [`MonitorOutboxTxOps::enqueue_checks_restored`].
     Success(Option<i64>, Option<i32>),
-    Patch(crate::streamer::manager::StreamerUpdateParams),
+    Patch(StreamerUpdateParams),
 }
 
 pub(super) async fn write(
-    store: Arc<CommittedStreamerState>,
+    store: Arc<dyn StreamerCommitOwner>,
     id: String,
     mutation: Mutation,
 ) -> Result<Option<StreamerDbModel>> {
@@ -41,7 +41,7 @@ pub(super) async fn write(
 }
 
 pub(super) async fn write_for_manager(
-    store: Arc<CommittedStreamerState>,
+    store: Arc<dyn StreamerCommitOwner>,
     id: String,
     mutation: Mutation,
 ) -> Result<Option<StreamerDbModel>> {
@@ -49,12 +49,12 @@ pub(super) async fn write_for_manager(
 }
 
 async fn write_with_publication(
-    store: Arc<CommittedStreamerState>,
+    store: Arc<dyn StreamerCommitOwner>,
     id: String,
     mutation: Mutation,
     publication: StatePublication,
 ) -> Result<Option<StreamerDbModel>> {
-    store.transaction("write committed streamer", publication, move |connection| Box::pin(async move {
+    store.commit_streamer_write("write committed streamer", publication, Box::new(move |connection| Box::pin(async move {
         macro_rules! row {
             ($sql:literal $(, $value:expr)*) => {
                 sqlx::query_as::<_, StreamerDbModel>($sql)$(.bind($value))*.bind(&id).fetch_optional(&mut *connection).await?
@@ -110,13 +110,10 @@ async fn write_with_publication(
         if deleted && row.is_some() { change.removed.push(id.clone()); }
         if reconfigured { change.reconfigured.push(id.clone()); }
         Ok(change)
-    })).await
+    }))).await
 }
 
-pub(super) fn apply_patch(
-    model: &mut StreamerDbModel,
-    patch: crate::streamer::manager::StreamerUpdateParams,
-) {
+pub(super) fn apply_patch(model: &mut StreamerDbModel, patch: StreamerUpdateParams) {
     if let Some(name) = patch.name {
         model.name = name;
     }

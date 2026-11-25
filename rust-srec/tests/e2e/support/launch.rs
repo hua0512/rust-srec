@@ -109,9 +109,12 @@ impl TestApp {
         let migration_pool = backend::init_migration_pool(&database_url)
             .await
             .expect("open the migration pool");
-        rust_srec::database::run_migrations_with_environment_proxy(&migration_pool, false)
-            .await
-            .expect("run migrations");
+        rust_srec::services::legacy_upgrade::run_migrations_with_environment_proxy(
+            &migration_pool,
+            false,
+        )
+        .await
+        .expect("run migrations");
         migration_pool.close().await;
         let (container, address) =
             serve(&database_url, &output_dir, DownloadManagerConfig::default()).await;

@@ -5,7 +5,7 @@ use super::*;
 const SESSION: &str = "danmu-recovery";
 const STREAMER: &str = "streamer-1";
 
-type RecoveryManager = PipelineManager<SqlxConfigRepository, SqlxStreamerRepository>;
+type RecoveryManager = PipelineManager;
 
 async fn manager(
     segment_pipeline: bool,
@@ -33,13 +33,13 @@ async fn manager(
     let sessions = Arc::new(TestSessionRepository::new(None));
     sessions.insert_session(test_session(SESSION, STREAMER, None));
     let dags = Arc::new(TestDagRepository::new());
+    let (sess_port, cfg_port) = wired_ports(sessions.clone(), streamer_repo, config_service);
     let manager = RecoveryManager::with_repository(
         PipelineManagerConfig::default(),
         Arc::new(TestJobRepository::new()),
     )
-    .with_session_repository(sessions.clone())
-    .with_streamer_repository(streamer_repo)
-    .with_config_service(config_service)
+    .with_session_port(sess_port)
+    .with_config_port(cfg_port)
     .with_dag_repository(dags.clone());
     (manager, sessions, dags)
 }

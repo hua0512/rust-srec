@@ -5,8 +5,8 @@ use std::collections::{HashMap, HashSet};
 use percent_encoding::percent_decode_str;
 use serde::Deserialize;
 
-use super::endpoint::{SUPPORTED_SCHEMES, canonical_url, host_text, validate};
 use super::{ProxyEndpoint, name_key};
+use crate::domain::proxy::{SUPPORTED_SCHEMES, canonical_url, host_text, validate};
 
 /// The route a stored `proxy_config` meant.
 #[derive(Debug, Clone, PartialEq, Eq)]

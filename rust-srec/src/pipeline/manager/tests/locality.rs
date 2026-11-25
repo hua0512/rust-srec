@@ -36,12 +36,11 @@ async fn dag_creation_reads_streamer_once_and_persists_all_placeholder_metadata(
         .platform_name;
     let service = Arc::new(ConfigService::new(configs, streamers.clone()));
     let jobs = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
-    let manager: PipelineManager =
-        PipelineManager::with_repository(PipelineManagerConfig::default(), jobs.clone())
-            .with_session_repository(sessions)
-            .with_streamer_repository(streamers)
-            .with_config_service(service)
-            .with_dag_repository(Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone())));
+    let (sess_port, cfg_port) = wired_ports(sessions, streamers, service);
+    let manager = PipelineManager::with_repository(PipelineManagerConfig::default(), jobs.clone())
+        .with_session_port(sess_port)
+        .with_config_port(cfg_port)
+        .with_dag_repository(Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone())));
     let trace = SqlTrace::install(&pool).await;
     let created = manager
         .create_dag_pipeline(
@@ -114,11 +113,11 @@ async fn coordinator_recovery_pages_all_session_statuses_in_one_scan() {
         dag.created_at = index as i64;
         dags.create_dag(&dag).await.unwrap();
     }
-    let manager: PipelineManager = PipelineManager::with_repository(
+    let manager = PipelineManager::with_repository(
         PipelineManagerConfig::default(),
         Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone())),
     )
-    .with_session_repository(sessions)
+    .with_session_port(session_port(sessions))
     .with_dag_repository(dags);
     let trace = SqlTrace::install(&pool).await;
     manager.recover_pipeline_coordination().await.unwrap();

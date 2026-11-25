@@ -12,8 +12,8 @@
 //! protobuf encoding runs **once per event** in the producer (not once per
 //! subscriber), and is skipped entirely when no client is connected. The
 //! encoder closure lives in the API layer (it knows the proto types) and is
-//! injected by `services::container` so this module never depends on
-//! `crate::api`.
+//! injected by the service container so this module never depends on the API
+//! module.
 
 use std::sync::Arc;
 

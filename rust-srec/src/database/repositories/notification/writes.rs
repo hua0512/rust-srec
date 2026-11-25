@@ -1,6 +1,6 @@
 use super::super::row_write::{Mutation, RowWrite, WriteMode};
 use crate::database::models::{ChannelType, NotificationChannelDbModel};
-use crate::proxies::{ProxyError, ProxyRoute};
+use crate::domain::proxy::{ProxyError, ProxyRoute};
 
 /// Whether a channel write stores the model's route or leaves the stored
 /// one, so an edit of other fields cannot revert a concurrent route change.

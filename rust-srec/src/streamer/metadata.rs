@@ -8,10 +8,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::domain::{Priority, StreamerState};
 
-/// Offline-check defaults when no configuration layer supplies a value. They match the values the
-/// initial migration seeds into `global_config`.
-pub(crate) const DEFAULT_OFFLINE_CHECK_COUNT: u32 = 3;
-pub(crate) const DEFAULT_OFFLINE_CHECK_DELAY_MS: u64 = 10_000;
+pub(crate) use crate::domain::streamer::{
+    DEFAULT_OFFLINE_CHECK_COUNT, DEFAULT_OFFLINE_CHECK_DELAY_MS,
+};
 const MIN_DOWNLOAD_FAILURE_THRESHOLD: u32 = 2;
 
 /// Derives the consecutive download-failure threshold from the effective

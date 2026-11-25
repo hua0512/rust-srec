@@ -3,20 +3,20 @@
 use dashmap::DashMap;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
+use super::ports::PipelineSessionPort;
 use super::processors::{ConfirmedUpload, UploadResultItem};
 use super::progress::{JobProgressSnapshot, JobProgressUpdate};
 use super::upload_events::UploadStatusBroadcaster;
 use crate::database::models::JobStatus;
 
 use crate::database::repositories::{
-    JobRepository, SessionRepository, StagedOutputRepository, StreamerRepository,
-    UploadRecordRepository,
+    JobRepository, StagedOutputRepository, UploadRecordRepository,
 };
 use crate::pipeline::manifest::PipelineInputManifest;
 
@@ -189,86 +189,7 @@ pub enum QueueDepthStatus {
     Critical,
 }
 
-/// Log level for job execution logs.
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum LogLevel {
-    /// Debug level log.
-    Debug,
-    /// Info level log.
-    #[default]
-    Info,
-    /// Warning level log.
-    Warn,
-    /// Error level log.
-    Error,
-}
-
-impl LogLevel {
-    /// Uppercase name stored in the `job_execution_logs.level` column and returned by the API.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Debug => "DEBUG",
-            Self::Info => "INFO",
-            Self::Warn => "WARN",
-            Self::Error => "ERROR",
-        }
-    }
-}
-
-/// A single log entry for job execution.
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JobLogEntry {
-    /// Timestamp of the log entry.
-    pub timestamp: Timestamp,
-    /// Log level.
-    pub level: LogLevel,
-    /// Log message.
-    pub message: String,
-    // Shared by clones in streamed and returned logs; equality of timestamps or text does
-    // not identify an occurrence. Owned by the entries so retained snapshots stay bounded
-    // without a queue-wide history, even after their database rows have been trimmed.
-    #[serde(skip)]
-    pub(super) persisted_for: Arc<parking_lot::Mutex<HashSet<Arc<str>>>>,
-}
-
-impl JobLogEntry {
-    /// Create a new log entry with the current timestamp.
-    pub fn new(level: LogLevel, message: impl Into<String>) -> Self {
-        Self {
-            timestamp: Timestamp::now(),
-            level,
-            message: message.into(),
-            persisted_for: Arc::default(),
-        }
-    }
-
-    pub(super) fn mark_persisted(&self, job_id: Arc<str>) {
-        self.persisted_for.lock().insert(job_id);
-    }
-
-    /// Create an info log entry.
-    pub fn info(message: impl Into<String>) -> Self {
-        Self::new(LogLevel::Info, message)
-    }
-
-    /// Create a warning log entry.
-    pub fn warn(message: impl Into<String>) -> Self {
-        Self::new(LogLevel::Warn, message)
-    }
-
-    /// Create an error log entry.
-    pub fn error(message: impl Into<String>) -> Self {
-        Self::new(LogLevel::Error, message)
-    }
-
-    /// Create a debug log entry.
-    pub fn debug(message: impl Into<String>) -> Self {
-        Self::new(LogLevel::Debug, message)
-    }
-}
+pub use crate::domain::processor::{JobLogEntry, LogLevel};
 
 /// Extended job information for observability.
 
@@ -586,10 +507,8 @@ pub struct JobQueue {
     pub(super) notify: Arc<Notify>,
     /// Job repository for database persistence.
     pub(super) job_repository: Arc<dyn JobRepository>,
-    /// Session repository for persisting media outputs (e.g., thumbnails).
-    pub(super) session_repo: std::sync::OnceLock<Arc<dyn SessionRepository>>,
-    /// Streamer repository for looking up streamer metadata (e.g., name).
-    pub(super) streamer_repo: std::sync::OnceLock<Arc<dyn StreamerRepository>>,
+    /// Narrow port for session and streamer metadata/persistence.
+    pub(super) session_port: std::sync::OnceLock<Arc<dyn PipelineSessionPort>>,
     /// Upload record repository for persisting per-file upload results.
     pub(super) upload_repo: std::sync::OnceLock<Arc<dyn UploadRecordRepository>>,
     /// Temporary files staged by attempts, for listing what a crash left behind.
@@ -659,8 +578,7 @@ impl JobQueue {
             depth: AtomicUsize::new(0),
             notify: Arc::new(Notify::new()),
             job_repository: repository,
-            session_repo: std::sync::OnceLock::new(),
-            streamer_repo: std::sync::OnceLock::new(),
+            session_port: std::sync::OnceLock::new(),
             upload_repo: std::sync::OnceLock::new(),
             staged_output_repo: std::sync::OnceLock::new(),
             upload_broadcaster,
@@ -676,19 +594,11 @@ impl JobQueue {
         }
     }
 
-    /// Set the session repository for persisting media outputs (e.g., thumbnails).
+    /// Set the narrow session/streamer metadata port.
     /// This can only be called once.
-    pub(crate) fn set_session_repo(&self, repo: Arc<dyn SessionRepository>) {
-        if self.session_repo.set(repo).is_err() {
-            tracing::warn!("Job queue session repository was already installed");
-        }
-    }
-
-    /// Set the streamer repository for looking up streamer metadata.
-    /// This can only be called once.
-    pub(crate) fn set_streamer_repo(&self, repo: Arc<dyn StreamerRepository>) {
-        if self.streamer_repo.set(repo).is_err() {
-            tracing::warn!("Job queue streamer repository was already installed");
+    pub(crate) fn set_session_port(&self, port: Arc<dyn PipelineSessionPort>) {
+        if self.session_port.set(port).is_err() {
+            tracing::warn!("Job queue session port was already installed");
         }
     }
 

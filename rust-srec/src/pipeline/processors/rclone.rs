@@ -19,9 +19,11 @@ use super::traits::{
 };
 use super::utils::CommandOutput;
 use crate::Result;
-use crate::pipeline::job_queue::LogLevel;
-use crate::pipeline::progress::ProgressKind;
-use crate::proxies::{ProxyRoute, ProxyTarget};
+use crate::domain::processor::{LogLevel, ProgressKind};
+use crate::domain::proxy::{
+    OutputScrubber, ProxyRoute, ProxyRouteResolver, ProxyTarget, set_tool_environment,
+    upload_target,
+};
 
 /// Rclone operation type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -570,8 +572,8 @@ pub struct RcloneProcessor {
     command_runner: Arc<dyn RcloneCommandRunner>,
     /// Serializes destination directory creation across concurrent jobs.
     dir_gate: RemoteDirGate,
-    /// Resolves each step's proxy route; see [`crate::proxies::upload_target`].
-    routes: Option<crate::proxies::ServiceRoutes>,
+    /// Resolves each step's proxy route; see [`upload_target`].
+    routes: Option<Arc<dyn ProxyRouteResolver>>,
 }
 
 #[async_trait]
@@ -631,7 +633,7 @@ impl RcloneProcessor {
     }
 
     /// Resolves each step's proxy route through `routes`.
-    pub fn with_routes(mut self, routes: crate::proxies::ServiceRoutes) -> Self {
+    pub fn with_routes(mut self, routes: Arc<dyn ProxyRouteResolver>) -> Self {
         self.routes = Some(routes);
         self
     }
@@ -656,7 +658,7 @@ impl RcloneProcessor {
             }
             cmd.env_remove("RCLONE_HTTP_PROXY");
         }
-        crate::proxies::set_tool_environment(&mut cmd, execution.proxy, "rclone")?;
+        set_tool_environment(&mut cmd, execution.proxy, "rclone")?;
         if let Some(cfg) = execution.config_path {
             cmd.arg("--config").arg(cfg);
         }
@@ -1686,9 +1688,8 @@ impl Processor for RcloneProcessor {
         } else {
             configured_attempts
         };
-        let proxy =
-            crate::proxies::upload_target(self.routes.as_ref(), &config.proxy_route).await?;
-        let scrubber = crate::proxies::OutputScrubber::for_target(&proxy);
+        let proxy = upload_target(self.routes.as_deref(), &config.proxy_route).await?;
+        let scrubber = OutputScrubber::for_target(&proxy);
         let ctx = &ctx.scrubbing(&scrubber);
         let result = async {
             // Only a retried move can find inputs already consumed and uploaded.

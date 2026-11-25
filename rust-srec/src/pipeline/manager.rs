@@ -19,6 +19,9 @@ use super::dag_scheduler::{
     DagRunContext, DagScheduler, PublicationRollback,
 };
 use super::job_queue::{Job, JobLogEntry, JobQueue, JobQueueConfig, QueueDepthStatus};
+use super::ports::{
+    PipelineNotification, PipelineSessionPort, PipelineSessionSummary, SessionPipelineConfigPort,
+};
 use super::processors::{
     AssBurnInProcessor, AudioExtractProcessor, BaiduPcsProcessor, CompressionProcessor,
     CopyMoveProcessor, DanmakuFactoryProcessor, DeleteProcessor, ExecuteCommandProcessor,
@@ -33,20 +36,16 @@ use super::worker_pool::{
 };
 use crate::Error;
 use crate::Result;
-use crate::config::ConfigService;
 use crate::database::models::JobStatus;
 use crate::database::models::job::{
     DagExecutionStatus, DagPipelineDefinition, DagStep, PipelineStep,
 };
-use crate::database::models::{
-    DagSegmentSource, JobFilters, MediaFileType, Pagination, SessionFilters, TitleEntry,
-};
-use crate::database::repositories::config::{ConfigRepository, SqlxConfigRepository};
-use crate::database::repositories::streamer::{SqlxStreamerRepository, StreamerRepository};
+use crate::database::models::{DagSegmentSource, JobFilters, Pagination};
 use crate::database::repositories::{
-    DagRepository, JobPresetRepository, JobRepository, PipelinePresetRepository, SessionRepository,
+    DagRepository, JobPresetRepository, JobRepository, PipelinePresetRepository,
     StagedOutputRepository, UploadRecordRepository,
 };
+use crate::domain::proxy::ProxyRouteResolver;
 
 mod dag;
 mod drain;
@@ -208,11 +207,7 @@ pub enum PipelineEvent {
 }
 
 /// The Pipeline Manager service.
-pub struct PipelineManager<
-    CR: ConfigRepository + Send + Sync + 'static = SqlxConfigRepository,
-    SR: StreamerRepository + Send + Sync + 'static = SqlxStreamerRepository,
-> {
-    /// Configuration.
+pub struct PipelineManager {
     /// Job queue.
     job_queue: Arc<JobQueue>,
     /// CPU worker pool.
@@ -225,10 +220,8 @@ pub struct PipelineManager<
     processors: Vec<Arc<dyn Processor>>,
     /// Event broadcaster.
     event_tx: broadcast::Sender<PipelineEvent>,
-    /// Session repository for persistence (optional).
-    session_repo: Option<Arc<dyn SessionRepository>>,
-    /// Streamer repository for metadata lookup (optional).
-    streamer_repo: Option<Arc<SR>>,
+    /// Narrow port for session and streamer metadata/persistence (optional).
+    session_port: Option<Arc<dyn PipelineSessionPort>>,
     /// Cancellation token.
     cancellation_token: CancellationToken,
     /// Runtime loops spawned by `start`. `stop` takes and joins this set so
@@ -242,8 +235,8 @@ pub struct PipelineManager<
     preset_repo: Option<Arc<dyn JobPresetRepository>>,
     /// Pipeline preset repository for resolving workflow steps.
     pipeline_preset_repo: Option<Arc<dyn PipelinePresetRepository>>,
-    /// Config service for resolving pipeline rules.
-    config_service: Option<Arc<ConfigService<CR, SR>>>,
+    /// Narrow port for resolving effective pipeline rules for a streamer.
+    config_port: Option<Arc<dyn SessionPipelineConfigPort>>,
     /// Last observed queue depth status (edge-trigger warnings).
     last_queue_status: AtomicU8,
 
@@ -274,30 +267,22 @@ pub struct PipelineManager<
 }
 
 /// Dependencies that every production pipeline runtime requires.
-pub(crate) struct PipelineRuntimeDependencies<
-    CR: ConfigRepository + Send + Sync + 'static,
-    SR: StreamerRepository + Send + Sync + 'static,
-> {
+pub(crate) struct PipelineRuntimeDependencies {
     pub(crate) job_repository: Arc<dyn JobRepository>,
-    pub(crate) session_repository: Arc<dyn SessionRepository>,
-    pub(crate) streamer_repository: Arc<SR>,
+    pub(crate) session_port: Arc<dyn PipelineSessionPort>,
+    pub(crate) config_port: Arc<dyn SessionPipelineConfigPort>,
     pub(crate) preset_repository: Arc<dyn JobPresetRepository>,
     pub(crate) pipeline_preset_repository: Arc<dyn PipelinePresetRepository>,
-    pub(crate) config_service: Arc<ConfigService<CR, SR>>,
     pub(crate) dag_repository: Arc<dyn DagRepository>,
     pub(crate) upload_record_repository: Arc<dyn UploadRecordRepository>,
     pub(crate) staged_output_repository: Arc<dyn StagedOutputRepository>,
     pub(crate) upload_broadcaster: UploadStatusBroadcaster,
     pub(crate) download_limit_adjuster: Arc<dyn DownloadLimitAdjuster>,
     /// Resolves the proxy routes of upload steps.
-    pub(crate) routes: crate::proxies::ServiceRoutes,
+    pub(crate) routes: Arc<dyn ProxyRouteResolver>,
 }
 
-impl<CR, SR> PipelineManager<CR, SR>
-where
-    CR: ConfigRepository + Send + Sync + 'static,
-    SR: StreamerRepository + Send + Sync + 'static,
-{
+impl PipelineManager {
     pub(crate) fn output_files_gate(&self) -> Arc<tokio::sync::RwLock<()>> {
         self.job_queue.output_files_gate.clone()
     }
@@ -347,7 +332,7 @@ where
     fn with_routes(
         config: PipelineManagerConfig,
         job_repository: Arc<dyn JobRepository>,
-        routes: Option<crate::proxies::ServiceRoutes>,
+        routes: Option<Arc<dyn ProxyRouteResolver>>,
     ) -> Self {
         let (event_tx, _) = broadcast::channel(256);
         let job_queue = Arc::new(JobQueue::with_repository(
@@ -400,15 +385,14 @@ where
             job_queue,
             processors,
             event_tx,
-            session_repo: None,
-            streamer_repo: None,
+            session_port: None,
             cancellation_token: CancellationToken::new(),
             runtime: parking_lot::Mutex::new(PipelineRuntime::new()),
             throttle_controller,
             download_adjuster: None,
             preset_repo: None,
             pipeline_preset_repo: None,
-            config_service: None,
+            config_port: None,
             last_queue_status: AtomicU8::new(0),
             pipeline_coordinator: PipelineCoordinator::new(),
             dag_segment_contexts: Arc::new(DashMap::new()),
@@ -423,15 +407,14 @@ where
     /// Create the fully wired production pipeline runtime.
     pub(crate) fn for_runtime(
         config: PipelineManagerConfig,
-        dependencies: PipelineRuntimeDependencies<CR, SR>,
+        dependencies: PipelineRuntimeDependencies,
     ) -> Self {
         let PipelineRuntimeDependencies {
             job_repository,
-            session_repository,
-            streamer_repository,
+            session_port,
+            config_port,
             preset_repository,
             pipeline_preset_repository,
-            config_service,
             dag_repository,
             upload_record_repository,
             staged_output_repository,
@@ -441,11 +424,10 @@ where
         } = dependencies;
 
         Self::with_routes(config, job_repository, Some(routes))
-            .with_session_repository(session_repository)
-            .with_streamer_repository(streamer_repository)
+            .with_session_port(session_port)
+            .with_config_port(config_port)
             .with_preset_repository(preset_repository)
             .with_pipeline_preset_repository(pipeline_preset_repository)
-            .with_config_service(config_service)
             .with_dag_repository(dag_repository)
             .with_upload_record_repository(upload_record_repository)
             .with_staged_output_repository(staged_output_repository)
@@ -453,23 +435,10 @@ where
             .with_download_adjuster(download_limit_adjuster)
     }
 
-    /// Set the session repository for persistence.
-    pub fn with_session_repository(
-        mut self,
-        session_repository: Arc<dyn SessionRepository>,
-    ) -> Self {
-        self.session_repo = Some(session_repository.clone());
-        // Also set session repo on job queue
-        self.job_queue.set_session_repo(session_repository);
-        self
-    }
-
-    /// Set the streamer repository for metadata lookup.
-    pub fn with_streamer_repository(mut self, streamer_repository: Arc<SR>) -> Self {
-        // Also set streamer repo on job queue for metadata resolution during dequeue
-        self.job_queue
-            .set_streamer_repo(streamer_repository.clone() as Arc<dyn StreamerRepository>);
-        self.streamer_repo = Some(streamer_repository);
+    /// Set the narrow session/streamer metadata port.
+    pub fn with_session_port(mut self, session_port: Arc<dyn PipelineSessionPort>) -> Self {
+        self.job_queue.set_session_port(session_port.clone());
+        self.session_port = Some(session_port);
         self
     }
 
@@ -525,9 +494,9 @@ where
         self
     }
 
-    /// Set the config service.
-    pub fn with_config_service(mut self, config_service: Arc<ConfigService<CR, SR>>) -> Self {
-        self.config_service = Some(config_service);
+    /// Set the narrow session pipeline configuration port.
+    pub fn with_config_port(mut self, config_port: Arc<dyn SessionPipelineConfigPort>) -> Self {
+        self.config_port = Some(config_port);
         self
     }
 

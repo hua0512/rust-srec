@@ -1,21 +1,15 @@
 use super::*;
 
-impl<CR, SR> PipelineManager<CR, SR>
-where
-    CR: ConfigRepository + Send + Sync + 'static,
-    SR: StreamerRepository + Send + Sync + 'static,
-{
+impl PipelineManager {
     /// Apply one post-commit recorder notification to the pipeline coordinator.
     ///
-    /// Video and danmu segment database rows are already persisted by
-    /// [`crate::recorder::RecorderStore`] before this method is invoked, so
-    /// this path drives only thumbnail / DAG / session-complete coordination.
+    /// Video and danmu segment database rows are already persisted before this
+    /// method is invoked, so this path drives only thumbnail / DAG /
+    /// session-complete coordination.
     pub async fn handle_recorder_notification(
         &self,
-        notification: crate::recorder::PipelineNotification,
+        notification: PipelineNotification,
     ) -> Result<()> {
-        use crate::recorder::PipelineNotification;
-
         match notification {
             PipelineNotification::VideoSegmentCompleted {
                 session_id,
@@ -25,16 +19,18 @@ where
                 auto_thumbnail_candidate,
             } => {
                 let segment_path = path.to_string_lossy().to_string();
-                let merged_config = if let Some(config_service) = &self.config_service {
-                    config_service
-                        .get_config_for_streamer(&streamer_id)
+                let merged_config = if let Some(config_port) = &self.config_port {
+                    config_port
+                        .get_session_pipeline_config(&streamer_id)
                         .await
                         .ok()
                 } else {
                     None
                 };
 
-                let pipeline_config = merged_config.as_ref().and_then(|c| c.pipeline.clone());
+                let pipeline_config = merged_config
+                    .as_ref()
+                    .and_then(|c| c.segment_pipeline.clone());
                 let session_complete_pipeline = merged_config
                     .as_ref()
                     .and_then(|c| c.session_complete_pipeline.clone());
@@ -106,8 +102,8 @@ where
                 streamer_id,
             } => {
                 let mut commands = Vec::new();
-                if let Some(config_service) = &self.config_service
-                    && let Ok(config) = config_service.get_config_for_streamer(&streamer_id).await
+                if let Some(config_port) = &self.config_port
+                    && let Ok(config) = config_port.get_session_pipeline_config(&streamer_id).await
                 {
                     commands.extend(
                         self.pipeline_coordinator.apply_event(
@@ -115,7 +111,7 @@ where
                                 session_id: session_id.clone(),
                                 streamer_id: streamer_id.clone(),
                                 danmu_enabled: config.record_danmu,
-                                segment_pipeline: config.pipeline.clone(),
+                                segment_pipeline: config.segment_pipeline.clone(),
                                 paired_segment_pipeline: config
                                     .paired_segment_pipeline
                                     .clone()
@@ -140,16 +136,18 @@ where
                 path,
                 ..
             } => {
-                let merged_config = if let Some(config_service) = &self.config_service {
-                    config_service
-                        .get_config_for_streamer(&streamer_id)
+                let merged_config = if let Some(config_port) = &self.config_port {
+                    config_port
+                        .get_session_pipeline_config(&streamer_id)
                         .await
                         .ok()
                 } else {
                     None
                 };
 
-                let pipeline_config = merged_config.as_ref().and_then(|c| c.pipeline.clone());
+                let pipeline_config = merged_config
+                    .as_ref()
+                    .and_then(|c| c.segment_pipeline.clone());
                 let session_complete_pipeline = merged_config
                     .as_ref()
                     .and_then(|c| c.session_complete_pipeline.clone());
@@ -200,40 +198,38 @@ where
                 info!(
                     streamer_id = %streamer_id,
                     session_id = %session_id,
-                    cause = %cause.as_str(),
+                    cause = %cause,
                     "Session ended"
                 );
 
                 let mut commands = Vec::new();
                 if should_run_session_complete {
-                    let config = match &self.config_service {
-                        Some(service) => {
-                            match service.get_config_for_streamer(&streamer_id).await {
-                                Ok(config) => Some(config),
-                                Err(error) => {
-                                    if self
-                                        .pipeline_coordinator
-                                        .has_configured_session(&session_id)
-                                    {
-                                        warn!(
-                                            %session_id,
-                                            %streamer_id,
-                                            %error,
-                                            "Failed to refresh streamer config at session end; using the configuration the session already captured"
-                                        );
-                                        None
-                                    } else {
-                                        warn!(
-                                            %session_id,
-                                            %streamer_id,
-                                            %error,
-                                            "Session pipeline configuration remains unresolved"
-                                        );
-                                        return Ok(());
-                                    }
+                    let config = match &self.config_port {
+                        Some(port) => match port.get_session_pipeline_config(&streamer_id).await {
+                            Ok(config) => Some(config),
+                            Err(error) => {
+                                if self
+                                    .pipeline_coordinator
+                                    .has_configured_session(&session_id)
+                                {
+                                    warn!(
+                                        %session_id,
+                                        %streamer_id,
+                                        %error,
+                                        "Failed to refresh streamer config at session end; using the configuration the session already captured"
+                                    );
+                                    None
+                                } else {
+                                    warn!(
+                                        %session_id,
+                                        %streamer_id,
+                                        %error,
+                                        "Session pipeline configuration remains unresolved"
+                                    );
+                                    return Ok(());
                                 }
                             }
-                        }
+                        },
                         None => None,
                     };
                     if let Some(config) = config {
@@ -243,7 +239,7 @@ where
                                     session_id: session_id.clone(),
                                     streamer_id: streamer_id.clone(),
                                     danmu_enabled: config.record_danmu,
-                                    segment_pipeline: config.pipeline.clone(),
+                                    segment_pipeline: config.segment_pipeline.clone(),
                                     paired_segment_pipeline: config
                                         .paired_segment_pipeline
                                         .clone()
@@ -274,7 +270,7 @@ where
                 } else {
                     debug!(
                         session_id = %session_id,
-                        cause = %cause.as_str(),
+                        cause = %cause,
                         "Terminal cause does not trigger session-complete pipeline"
                     );
                 }
@@ -292,10 +288,10 @@ where
 
     /// Check if session already has a thumbnail by querying media outputs.
     pub(super) async fn session_has_thumbnail(&self, session_id: &str) -> bool {
-        let Some(repo) = &self.session_repo else {
+        let Some(port) = &self.session_port else {
             return false;
         };
-        matches!(repo.first_thumbnail_id(session_id).await, Ok(Some(_)))
+        matches!(port.session_has_thumbnail(session_id).await, Ok(true))
     }
 
     /// Create the built-in thumbnail DAG for the first segment when needed.

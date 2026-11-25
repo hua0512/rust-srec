@@ -14,7 +14,6 @@ pub mod error;
 mod mcp;
 mod runtime;
 mod server;
-mod services;
 
 // Internal modules kept `pub` only so the integration tests in `tests/` can
 // import them; `backend` is the supported public surface.
@@ -50,6 +49,8 @@ pub mod pipeline;
 pub mod proxies;
 #[doc(hidden)]
 pub mod recorder;
+#[doc(hidden)]
+pub mod services;
 #[doc(hidden)]
 pub mod session;
 #[doc(hidden)]

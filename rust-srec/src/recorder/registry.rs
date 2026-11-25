@@ -204,7 +204,7 @@ pub struct ActorRegistryDependencies {
     pub prober: Arc<RecorderProber>,
     pub download_manager: Arc<DownloadManager>,
     pub danmu_service: Arc<DanmuService>,
-    pub pipeline_manager: Arc<PipelineManager<SqlxConfigRepository, SqlxStreamerRepository>>,
+    pub pipeline_manager: Arc<PipelineManager>,
     pub streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
     pub config_service: Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
     pub check_interval_ms: u64,
@@ -1870,13 +1870,16 @@ impl ActorRegistry {
 
         self.deps
             .pipeline_manager
-            .handle_recorder_notification(PipelineNotification::VideoSegmentCompleted {
-                session_id: session_id.to_owned(),
-                streamer_id: streamer_id.to_owned(),
-                segment_index,
-                path: Path::new(&segment_path).to_path_buf(),
-                auto_thumbnail_candidate: segment_index == 0,
-            })
+            .handle_recorder_notification(
+                PipelineNotification::VideoSegmentCompleted {
+                    session_id: session_id.to_owned(),
+                    streamer_id: streamer_id.to_owned(),
+                    segment_index,
+                    path: Path::new(&segment_path).to_path_buf(),
+                    auto_thumbnail_candidate: segment_index == 0,
+                }
+                .into(),
+            )
             .await
             .map_err(|error| format!("failed to notify pipeline for trailing segment: {error}"))?;
         Ok(())
@@ -1929,10 +1932,13 @@ impl ActorRegistry {
                 }
                 self.deps
                     .pipeline_manager
-                    .handle_recorder_notification(PipelineNotification::DanmuCollectionStarted {
-                        session_id,
-                        streamer_id,
-                    })
+                    .handle_recorder_notification(
+                        PipelineNotification::DanmuCollectionStarted {
+                            session_id,
+                            streamer_id,
+                        }
+                        .into(),
+                    )
                     .await
                     .map_err(|error| format!("failed to apply danmu collection start: {error}"))
             }
@@ -2013,13 +2019,16 @@ impl ActorRegistry {
 
                 self.deps
                     .pipeline_manager
-                    .handle_recorder_notification(PipelineNotification::DanmuSegmentCompleted {
-                        session_id,
-                        streamer_id,
-                        segment_index,
-                        path: output_path,
-                        message_count,
-                    })
+                    .handle_recorder_notification(
+                        PipelineNotification::DanmuSegmentCompleted {
+                            session_id,
+                            streamer_id,
+                            segment_index,
+                            path: output_path,
+                            message_count,
+                        }
+                        .into(),
+                    )
                     .await
                     .map_err(|error| {
                         format!("failed to notify pipeline for trailing danmu segment: {error}")
@@ -2127,10 +2136,13 @@ impl ActorRegistry {
                 }
                 self.deps
                     .pipeline_manager
-                    .handle_recorder_notification(PipelineNotification::DanmuCollectionStopped {
-                        session_id,
-                        total_count,
-                    })
+                    .handle_recorder_notification(
+                        PipelineNotification::DanmuCollectionStopped {
+                            session_id,
+                            total_count,
+                        }
+                        .into(),
+                    )
                     .await
                     .map_err(|error| format!("failed to apply danmu collection stop: {error}"))
             }

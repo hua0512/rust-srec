@@ -197,7 +197,7 @@ async fn migrate(path: &Path, url: &str) {
     // Convert proxy settings as if no proxy variables were set, so the
     // fresh database (and with it every outbound route) does not depend on
     // the developer's shell.
-    rust_srec::database::run_migrations_with_environment_proxy(&pool, false)
+    rust_srec::services::legacy_upgrade::run_migrations_with_environment_proxy(&pool, false)
         .await
         .expect("run migrations");
     // Closing the only connection checkpoints the WAL into the file, so the

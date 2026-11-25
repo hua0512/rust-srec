@@ -59,19 +59,7 @@ pub enum ReloadPublish {
     MetadataUpdated,
 }
 
-/// Parameters for partially updating a streamer.
-#[derive(Clone)]
-pub struct StreamerUpdateParams {
-    pub id: String,
-    pub name: Option<String>,
-    pub url: Option<String>,
-    /// Derived from `url` by the API layer, never supplied by clients.
-    pub platform_config_id: Option<String>,
-    pub template_config_id: Option<Option<String>>,
-    pub priority: Option<Priority>,
-    pub state: Option<StreamerState>,
-    pub streamer_specific_config: Option<Option<String>>,
-}
+pub use crate::domain::streamer::StreamerUpdateParams;
 
 impl<R> StreamerManager<R>
 where
@@ -79,7 +67,18 @@ where
 {
     /// Create a new StreamerManager.
     pub fn new(repo: Arc<R>, broadcaster: ConfigEventBroadcaster) -> Self {
-        let committed = repo.bind_committed_state(broadcaster.clone());
+        let init_broadcaster = broadcaster.clone();
+        let committed = repo
+            .get_or_init_commit_owner(Box::new(move |write_pool| {
+                Arc::new(CommittedStreamerState::new(
+                    Arc::new(crate::database::CommittedWriter::for_invalidation(
+                        write_pool,
+                        Arc::new(crate::utils::task_supervisor::TaskSupervisor::new()),
+                    )),
+                    init_broadcaster,
+                ))
+            }))
+            .and_then(|owner| owner.as_any_arc().downcast::<CommittedStreamerState>().ok());
         let cache = committed
             .as_ref()
             .map(|state| state.cache.clone())

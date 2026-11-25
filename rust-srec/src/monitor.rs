@@ -21,5 +21,5 @@ pub(crate) use detector::{CheckContext, DetectionResult};
 pub use detector::{FilterReason, LiveStatus, StreamDetector, StreamInfo};
 pub use events::MonitorEvent;
 pub use rate_limiter::{RateLimiter, RateLimiterConfig, RateLimiterManager};
+pub(crate) use types::batch_detection_enabled;
 pub use types::{InfraBlockReason, StreamMonitorConfig};
-pub(crate) use types::{batch_detection_enabled, runtime_instance_id};

@@ -39,7 +39,6 @@ use crate::api::proto::{
     upload_progress_to_proto,
 };
 use crate::api::server::AppState;
-use crate::database::repositories::config::SqlxConfigRepository;
 use crate::database::repositories::streamer::SqlxStreamerRepository;
 use crate::domain::streamer::{CheckOutcome, CheckRecord};
 use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent, DownloadTerminalEvent};
@@ -52,7 +51,7 @@ pub struct DownloadRouteState {
     check_history_broadcaster: crate::monitor::CheckHistoryBroadcaster,
     upload_status_broadcaster: crate::pipeline::UploadStatusBroadcaster,
     /// Source of the snapshot's `uploads` and `jobs` slices (`list_active_jobs`).
-    pipeline_manager: std::sync::Arc<PipelineManager<SqlxConfigRepository, SqlxStreamerRepository>>,
+    pipeline_manager: std::sync::Arc<PipelineManager>,
     streamer_avatar: StreamerAvatarLookup,
     credential_blocks: std::sync::Arc<crate::credentials::CredentialBlocks>,
     /// Wakes when the accounts needing attention may have changed.
@@ -207,7 +206,7 @@ async fn download_progress_ws(
 /// Best-effort: a repository error degrades to an empty slice / zero rather
 /// than failing the snapshot — download state is still worth delivering.
 async fn snapshot_jobs(
-    pipeline_manager: &PipelineManager<SqlxConfigRepository, SqlxStreamerRepository>,
+    pipeline_manager: &PipelineManager,
     streamer_avatar: &StreamerAvatarLookup,
 ) -> SnapshotJobs {
     let active = pipeline_manager

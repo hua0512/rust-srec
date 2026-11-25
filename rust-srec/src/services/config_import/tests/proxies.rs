@@ -310,7 +310,7 @@ fn bundles_without_saved_proxies_keep_the_shape_older_releases_read() {
 
     // Reading it back restores the same routes.
     let mut restored: ConfigExport = serde_json::from_value(value).unwrap();
-    crate::database::legacy_proxy_upgrade::upgrade_bundle(&mut restored, &[], true).unwrap();
+    crate::services::legacy_upgrade::proxies::upgrade_bundle(&mut restored, &[], true).unwrap();
     assert_eq!(
         restored.global_config.proxy_route,
         Some(BackupRoute::System)

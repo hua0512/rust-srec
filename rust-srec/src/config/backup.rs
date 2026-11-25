@@ -444,7 +444,7 @@ impl ConfigExport {
         &mut self,
         mut map: impl FnMut(&mut serde_json::Value) -> Result<(), E>,
     ) -> Result<(), E> {
-        use crate::pipeline::step_routes::{Layout, pipeline_routes_mut, preset_route_mut};
+        use crate::domain::step_routes::{Layout, pipeline_routes_mut, preset_route_mut};
         fn pipelines(
             documents: [&mut Option<serde_json::Value>; 3],
         ) -> impl Iterator<Item = (Layout, &mut serde_json::Value)> {

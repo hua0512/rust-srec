@@ -13,11 +13,11 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use jiff::Timestamp;
 use parking_lot::RwLock;
 use reqwest::Client;
 use serde::Serialize;
 
+pub use super::RefreshedCredentials;
 use super::platforms::{
     BigoProvider, BilibiliProvider, DouyuProvider, SoopProvider, TwitchProvider, WeiboProvider,
 };
@@ -54,26 +54,6 @@ pub enum AccountStatus {
     /// The account holds nothing the provider can check, so requests using it
     /// are no different from anonymous ones.
     Unverifiable,
-}
-
-/// Replacement material from a successful refresh. Absent tokens keep the
-/// profile's current ones.
-#[derive(Clone)]
-pub struct RefreshedCredentials {
-    pub cookies: String,
-    pub refresh_token: Option<String>,
-    pub access_token: Option<String>,
-    /// Expected expiration time, if known.
-    pub expires_at: Option<Timestamp>,
-}
-
-impl std::fmt::Debug for RefreshedCredentials {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RefreshedCredentials")
-            .field("material", &"[redacted]")
-            .field("expires_at", &self.expires_at)
-            .finish()
-    }
 }
 
 /// A started QR login: the code to show and the handle to poll it with.
@@ -226,8 +206,18 @@ pub fn register_provider_for_process(
     if registered.iter().any(|(name, _)| *name == platform) {
         return Err(DuplicateProvider(platform));
     }
+    let capabilities = provider.capabilities();
+    let accounts_optional = provider.accounts_optional();
     // Lookups hand out `&'static` providers, so a registration is never freed.
     let provider: &'static Arc<dyn CredentialProvider> = Box::leak(Box::new(provider));
+    crate::domain::credential::register_platform_account_policy(
+        &platform,
+        crate::domain::credential::PlatformAccountPolicy {
+            token_only: capabilities.token_only,
+            reauth_login: capabilities.reauth_login,
+            accounts_optional,
+        },
+    );
     registered.push((platform, provider.as_ref()));
     Ok(())
 }
@@ -259,56 +249,5 @@ pub fn provider(platform: &str) -> &'static dyn CredentialProvider {
         &WeiboProvider
     } else {
         &CookieProvider
-    }
-}
-
-/// Configuration keys that are account login on `platform` rather than
-/// content settings. Elsewhere `username`/`password` are room passwords.
-pub fn login_fields(platform: &str) -> &'static [&'static str] {
-    if provider(platform).capabilities().reauth_login {
-        &["username", "password"]
-    } else {
-        &[]
-    }
-}
-
-/// The automatic sign-in login in `config`, when `platform` supports one and
-/// both fields are present.
-pub(crate) fn platform_reauth_extra(
-    platform: &str,
-    config: Option<&serde_json::Value>,
-) -> Option<serde_json::Value> {
-    if !provider(platform).capabilities().reauth_login {
-        return None;
-    }
-    let field = |name: &str| {
-        config?
-            .get(name)
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-    };
-    Some(serde_json::json!({
-        "username": field("username")?,
-        "password": field("password")?,
-    }))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn reauth_login_needs_both_fields_on_a_platform_that_supports_it() {
-        let login = serde_json::json!({"username": " user ", "password": "pass"});
-        assert_eq!(
-            platform_reauth_extra("soop", Some(&login)),
-            Some(serde_json::json!({"username": "user", "password": "pass"}))
-        );
-        assert_eq!(platform_reauth_extra("bigo", Some(&login)), None);
-        assert_eq!(
-            platform_reauth_extra("soop", Some(&serde_json::json!({"username": "user"}))),
-            None
-        );
     }
 }

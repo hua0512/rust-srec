@@ -1,46 +1,21 @@
 //! Committed streamer rows and the runtime's immutable metadata snapshots.
 
+use std::any::Any;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use dashmap::DashMap;
 use futures::future::BoxFuture;
 use parking_lot::RwLock;
-use sqlx::SqliteConnection;
+use sqlx::{SqliteConnection, SqlitePool};
 
 use super::StreamerMetadata;
 use crate::Result;
 use crate::config::{ConfigEventBroadcaster, ConfigUpdateEvent};
+pub(crate) use crate::database::repositories::streamer::{
+    StateChange, StatePublication, StreamerCommitOwner, StreamerTxOp,
+};
 use crate::database::{CommittedWriter, models::StreamerDbModel};
-
-#[derive(Clone, Copy)]
-pub(crate) enum StatePublication {
-    Silent,
-    StateOnly,
-    Metadata,
-    Manager,
-    Deleted,
-}
-
-pub(crate) struct StateChange<T> {
-    pub value: T,
-    pub rows: Vec<StreamerDbModel>,
-    pub removed: Vec<String>,
-    /// Streamers whose account selection changed. The selection is stored
-    /// outside the row, so an identical row does not mean an unchanged
-    /// configuration.
-    pub reconfigured: Vec<String>,
-}
-
-impl<T> StateChange<T> {
-    pub(crate) fn row(value: T, row: Option<StreamerDbModel>) -> Self {
-        Self {
-            value,
-            rows: row.into_iter().collect(),
-            removed: Vec::new(),
-            reconfigured: Vec::new(),
-        }
-    }
-}
 
 type RemovalCallback = Arc<dyn Fn(&str) + Send + Sync>;
 
@@ -272,6 +247,26 @@ impl CommittedStreamerState {
             },
         )
         .await
+    }
+}
+
+#[async_trait]
+impl StreamerCommitOwner for CommittedStreamerState {
+    fn require_same_pool(&self, pool: &SqlitePool) -> Result<()> {
+        self.writer.require_same_pool(pool)
+    }
+
+    async fn commit_streamer_write(
+        &self,
+        label: &'static str,
+        publication: StatePublication,
+        operation: StreamerTxOp,
+    ) -> Result<Option<StreamerDbModel>> {
+        self.transaction(label, publication, operation).await
+    }
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
     }
 }
 

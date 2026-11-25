@@ -21,10 +21,7 @@ use super::{
 };
 use crate::Result;
 use crate::database::models::job::LogEntry as DbLogEntry;
-use crate::database::models::{
-    JobExecutionLogDbModel, JobStatus, MediaFileType, MediaOutputDbModel, Pagination,
-    UploadRecordDbModel,
-};
+use crate::database::models::{JobExecutionLogDbModel, JobStatus, Pagination, UploadRecordDbModel};
 use crate::database::repositories::JobRepository;
 use crate::pipeline::processors::{UploadItemStatus, UploadResultItem, utils as processor_utils};
 use crate::pipeline::progress::{
@@ -395,7 +392,7 @@ impl JobQueue {
 
     /// Persist thumbnail output to media_outputs table.
     pub(super) async fn persist_thumbnail_output(&self, session_id: &str, output_path: &str) {
-        let Some(repo) = self.session_repo.get() else {
+        let Some(port) = self.session_port.get() else {
             return;
         };
 
@@ -408,52 +405,29 @@ impl JobQueue {
             return;
         }
 
-        // Best-effort dedupe: repeated retries/completions should not create duplicate rows.
-        // (Schema does not enforce uniqueness on file_path.)
-        if let Ok(existing) = repo.get_media_outputs_for_session(session_id).await {
-            let output_key = if cfg!(windows) {
-                output_path.to_ascii_lowercase()
-            } else {
-                output_path.to_string()
-            };
-
-            if existing.iter().any(|row| {
-                row.file_type == MediaFileType::Thumbnail.as_str() && {
-                    let row_key = if cfg!(windows) {
-                        row.file_path.to_ascii_lowercase()
-                    } else {
-                        row.file_path.clone()
-                    };
-                    row_key == output_key
-                }
-            }) {
-                return;
-            }
-        }
-
         // Get file size
         let size_bytes = tokio::fs::metadata(output_path)
             .await
             .map(|m| m.len() as i64)
             .unwrap_or(0);
 
-        let output = MediaOutputDbModel::new(
-            session_id,
-            output_path,
-            MediaFileType::Thumbnail,
-            size_bytes,
-        );
-
-        if let Err(e) = repo.create_media_output(&output).await {
-            warn!(
-                "Failed to persist thumbnail output for session {}: {}",
-                session_id, e
-            );
-        } else {
-            info!(
-                "Persisted thumbnail output for session {}: {}",
-                session_id, output_path
-            );
+        match port
+            .record_thumbnail_output(session_id, output_path, size_bytes)
+            .await
+        {
+            Ok(true) => {
+                info!(
+                    "Persisted thumbnail output for session {}: {}",
+                    session_id, output_path
+                );
+            }
+            Ok(false) => {}
+            Err(e) => {
+                warn!(
+                    "Failed to persist thumbnail output for session {}: {}",
+                    session_id, e
+                );
+            }
         }
     }
 

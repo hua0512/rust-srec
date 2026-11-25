@@ -151,9 +151,8 @@ async fn recovery_confirmation_includes_video_segments_beyond_the_old_cap() {
             &format!("clip-{index}.flv"),
         ));
     }
-    let manager: PipelineManager =
-        PipelineManager::with_repository(PipelineManagerConfig::default(), jobs)
-            .with_session_repository(sessions);
+    let manager = PipelineManager::with_repository(PipelineManagerConfig::default(), jobs)
+        .with_session_port(session_port(sessions));
     let report = manager.recover_jobs_with_status().await.unwrap();
     assert!(report.complete);
     manager

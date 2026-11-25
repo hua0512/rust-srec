@@ -1,9 +1,10 @@
 use super::*;
-use crate::credentials::{CredentialBinding, CredentialIdentity, ResolvedCredentialPolicy};
-use crate::database::repositories::{SessionLifecycleRepository, StartSessionInputs};
+use crate::database::repositories::SessionTxOps;
+use crate::domain::credential::{CredentialBinding, CredentialIdentity, ResolvedCredentialPolicy};
+use crate::domain::proxy::{ProxyError, ProxyRoute};
 
 #[tokio::test]
-async fn session_binding_and_outbox_are_atomic_revision_checked_and_secret_free() {
+async fn session_binding_is_revision_and_epoch_checked() {
     let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
         .await
         .unwrap();
@@ -24,7 +25,7 @@ async fn session_binding_and_outbox_are_atomic_revision_checked_and_secret_free(
                 access_token: None,
                 reauth_config: None,
             },
-            &crate::proxies::ProxyRoute::Inherit,
+            &ProxyRoute::Inherit,
         )
         .await
         .unwrap();
@@ -37,6 +38,21 @@ async fn session_binding_and_outbox_are_atomic_revision_checked_and_secret_free(
         &selection,
     )
     .await;
+    let session_id = "session-1";
+    {
+        let mut tx = begin_immediate(&pool).await.unwrap();
+        SessionTxOps::create_session(
+            &mut tx,
+            session_id,
+            "recording",
+            "Recording",
+            jiff::Timestamp::now(),
+            "Live",
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+    }
     let binding = CredentialBinding {
         identity: CredentialIdentity::Profile {
             profile_id: profile.id.clone(),
@@ -45,57 +61,45 @@ async fn session_binding_and_outbox_are_atomic_revision_checked_and_secret_free(
         policy: ResolvedCredentialPolicy::new(owner.id().into(), owner, selection).unwrap(),
         epoch: 0,
     };
-    let inputs = StartSessionInputs {
-        credential_binding: Some(binding.clone()),
-        streamer_id: "recording".into(),
-        streamer_name: "Recording".into(),
-        streamer_url: "https://www.huya.com/recording".into(),
-        current_avatar: None,
-        new_avatar: None,
-        title: "Live".into(),
-        category: None,
-        streams: Vec::new(),
-        media_headers: Some(std::collections::HashMap::from([(
-            "Cookie".into(),
-            "secret-sentinel".into(),
-        )])),
-        media_extras: Some(std::collections::HashMap::from([(
-            "session_cookies".into(),
-            "secret-sentinel".into(),
-        )])),
-        now: jiff::Timestamp::now(),
-    };
-    let lifecycle = SessionLifecycleRepository::new(pool.clone());
-    let mut forged = inputs.clone();
-    forged.credential_binding.as_mut().unwrap().identity = CredentialIdentity::Anonymous;
-    forged.credential_binding.as_mut().unwrap().revision = 0;
-    assert!(
-        lifecycle.start_or_resume(forged).await.is_err(),
-        "anonymous identity cannot accompany fixed policy"
-    );
-    let mut forged = inputs.clone();
-    forged.credential_binding.as_mut().unwrap().policy.selection = CredentialSelection::None;
-    assert!(
-        lifecycle.start_or_resume(forged).await.is_err(),
-        "copied generation cannot authorize altered policy content"
-    );
-    let outcome = lifecycle.start_or_resume(inputs.clone()).await.unwrap();
+    let mut forged = binding.clone();
+    forged.identity = CredentialIdentity::Anonymous;
+    forged.revision = 0;
+    {
+        let mut conn = pool.acquire().await.unwrap();
+        assert!(
+            commit_session_binding(&mut conn, session_id, "recording", &forged, false)
+                .await
+                .is_err(),
+            "anonymous identity cannot accompany fixed policy"
+        );
+    }
+    let mut forged = binding.clone();
+    forged.policy.selection = CredentialSelection::None;
+    {
+        let mut conn = pool.acquire().await.unwrap();
+        assert!(
+            commit_session_binding(&mut conn, session_id, "recording", &forged, false)
+                .await
+                .is_err(),
+            "copied generation cannot authorize altered policy content"
+        );
+    }
+    {
+        let mut tx = begin_immediate(&pool).await.unwrap();
+        let committed = commit_session_binding(&mut tx, session_id, "recording", &binding, false)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(committed.epoch, 1);
+    }
     let raw: String =
         sqlx::query_scalar("SELECT credential_binding FROM live_sessions WHERE id = ?")
-            .bind(outcome.session_id())
+            .bind(session_id)
             .fetch_one(&pool)
             .await
             .unwrap();
     let mut saved: CredentialBinding = serde_json::from_str(&raw).unwrap();
     assert_eq!(saved.epoch, 1);
-    let payload: String = sqlx::query_scalar(
-        "SELECT payload FROM monitor_event_outbox WHERE streamer_id = 'recording'",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert!(!payload.contains("secret-sentinel"));
-    assert!(payload.contains(&profile.id));
     assert!(profiles.delete(&profile.id, 1).await.is_err());
     let updated = profiles
         .update(
@@ -113,33 +117,32 @@ async fn session_binding_and_outbox_are_atomic_revision_checked_and_secret_free(
         )
         .await
         .unwrap();
-    assert!(lifecycle.start_or_resume(inputs).await.is_err());
+    {
+        let mut conn = pool.acquire().await.unwrap();
+        assert!(
+            commit_session_binding(&mut conn, session_id, "recording", &binding, false)
+                .await
+                .is_err()
+        );
+    }
     saved.revision = updated.revision as u64;
-    let changed = lifecycle
-        .commit_credential_binding(
-            outcome.session_id().into(),
-            "recording".into(),
-            saved.clone(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(changed.epoch, 2);
-    assert!(
-        lifecycle
-            .commit_credential_binding(outcome.session_id().into(), "recording".into(), saved)
+    let changed = {
+        let mut tx = begin_immediate(&pool).await.unwrap();
+        let changed = commit_session_binding(&mut tx, session_id, "recording", &saved, true)
             .await
-            .is_err()
-    );
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM monitor_event_outbox WHERE streamer_id='recording'",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(
-        count, 1,
-        "stale handoff must roll back all session and outbox changes"
-    );
+            .unwrap();
+        tx.commit().await.unwrap();
+        changed
+    };
+    assert_eq!(changed.epoch, 2);
+    {
+        let mut conn = pool.acquire().await.unwrap();
+        assert!(
+            commit_session_binding(&mut conn, session_id, "recording", &saved, true)
+                .await
+                .is_err()
+        );
+    }
 }
 
 /// Weibo checks work without an account, so a recording under a fixed
@@ -166,7 +169,7 @@ async fn a_fixed_selection_records_without_its_account_where_accounts_are_option
                 access_token: None,
                 reauth_config: None,
             },
-            &crate::proxies::ProxyRoute::Inherit,
+            &ProxyRoute::Inherit,
         )
         .await
         .unwrap();
@@ -179,29 +182,29 @@ async fn a_fixed_selection_records_without_its_account_where_accounts_are_option
         &selection,
     )
     .await;
-    let inputs = StartSessionInputs {
-        credential_binding: Some(CredentialBinding {
-            identity: CredentialIdentity::Anonymous,
-            revision: 0,
-            policy: ResolvedCredentialPolicy::new(owner.id().into(), owner, selection).unwrap(),
-            epoch: 0,
-        }),
-        streamer_id: "recording".into(),
-        streamer_name: "Recording".into(),
-        streamer_url: "https://weibo.com/u/1000000001".into(),
-        current_avatar: None,
-        new_avatar: None,
-        title: "Live".into(),
-        category: None,
-        streams: Vec::new(),
-        media_headers: None,
-        media_extras: None,
-        now: jiff::Timestamp::now(),
+    let binding = CredentialBinding {
+        identity: CredentialIdentity::Anonymous,
+        revision: 0,
+        policy: ResolvedCredentialPolicy::new(owner.id().into(), owner, selection).unwrap(),
+        epoch: 0,
     };
-    SessionLifecycleRepository::new(pool.clone())
-        .start_or_resume(inputs)
+    let mut tx = begin_immediate(&pool).await.unwrap();
+    SessionTxOps::create_session(
+        &mut tx,
+        "weibo-session",
+        "recording",
+        "Recording",
+        jiff::Timestamp::now(),
+        "Live",
+    )
+    .await
+    .unwrap();
+    let committed = commit_session_binding(&mut tx, "weibo-session", "recording", &binding, false)
         .await
         .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(committed.epoch, 1);
+    assert_eq!(committed.identity, CredentialIdentity::Anonymous);
 }
 
 #[tokio::test]
@@ -226,7 +229,7 @@ async fn cancelling_profile_request_after_commit_does_not_skip_publication() {
                     access_token: None,
                     reauth_config: None,
                 },
-                &crate::proxies::ProxyRoute::Inherit,
+                &ProxyRoute::Inherit,
             )
             .await
             .unwrap();
@@ -342,7 +345,7 @@ async fn an_account_route_is_kept_replaced_or_removed_and_starts_a_new_revision(
                 Some(&pinned("missing")),
             )
             .await,
-        Err(Error::Proxy(crate::proxies::ProxyError::Missing(_)))
+        Err(Error::Proxy(ProxyError::Missing(_)))
     ));
     assert_eq!(
         profiles.get(&profile.id).await.unwrap().route().unwrap(),

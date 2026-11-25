@@ -1,9 +1,16 @@
 use super::*;
+use crate::config::ConfigService;
 use crate::database::models::{
     DagExecutionDbModel, DagExecutionListSummary, DagStepExecutionDbModel, DagStepWithJob,
-    DanmuStatisticsDbModel, JobDbModel, JobExecutionLogDbModel, LiveSessionDbModel,
+    DanmuStatisticsDbModel, JobDbModel, JobExecutionLogDbModel, LiveSessionDbModel, MediaFileType,
     MediaOutputDbModel, MediaOutputTypeSummary, OutputFilters, ReadyStep, SessionFilters,
     SessionSegmentDbModel, SessionSegmentLifecycle, SessionSegmentSplitReason,
+};
+use crate::database::repositories::SessionRepository;
+use crate::database::repositories::config::{ConfigRepository, SqlxConfigRepository};
+use crate::database::repositories::streamer::{SqlxStreamerRepository, StreamerRepository};
+use crate::services::pipeline_ports::{
+    ConfigServicePipelineConfigPort, DatabasePipelineSessionPort,
 };
 use async_trait::async_trait;
 use std::cmp::Reverse;
@@ -11,6 +18,33 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
+
+fn session_port(sessions: Arc<dyn SessionRepository>) -> Arc<dyn PipelineSessionPort> {
+    Arc::new(DatabasePipelineSessionPort::new(sessions))
+}
+
+fn config_port(
+    config_service: Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
+) -> Arc<dyn SessionPipelineConfigPort> {
+    Arc::new(ConfigServicePipelineConfigPort::new(config_service))
+}
+
+fn wired_ports(
+    sessions: Arc<dyn SessionRepository>,
+    streamers: Arc<dyn StreamerRepository>,
+    config_service: Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
+) -> (
+    Arc<dyn PipelineSessionPort>,
+    Arc<dyn SessionPipelineConfigPort>,
+) {
+    let cfg = config_port(config_service);
+    let sess: Arc<dyn PipelineSessionPort> = Arc::new(
+        DatabasePipelineSessionPort::new(sessions)
+            .with_streamer_repository(streamers)
+            .with_config_port(cfg.clone()),
+    );
+    (sess, cfg)
+}
 
 mod danmu_recovery;
 
@@ -1814,7 +1848,7 @@ async fn test_cancel_pipeline_cancels_dag_and_releases_session_complete() {
     let job_repo = Arc::new(TestJobRepository::new());
     let manager: PipelineManager =
         PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo.clone())
-            .with_session_repository(session_repo)
+            .with_session_port(session_port(session_repo))
             .with_dag_repository(dag_repo.clone());
 
     let session_id = "cancel-pipeline-session".to_string();
@@ -2569,7 +2603,7 @@ async fn test_recovery_ignores_historical_ended_sessions() {
     let job_repo = Arc::new(TestJobRepository::new());
     let manager: PipelineManager =
         PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
-            .with_session_repository(session_repo.clone())
+            .with_session_port(session_port(session_repo.clone()))
             .with_dag_repository(dag_repo.clone());
 
     manager.recover_pipeline_coordination().await.unwrap();
@@ -2623,14 +2657,11 @@ async fn recovery_recreates_missing_segment_dag_once_after_artifact_persistence(
     session_repo.insert_segment(test_segment(session_id, 0, "/persisted.flv"));
     let dag_repo = Arc::new(TestDagRepository::new());
     let job_repo = Arc::new(TestJobRepository::new());
-    let manager = PipelineManager::<SqlxConfigRepository, SqlxStreamerRepository>::with_repository(
-        PipelineManagerConfig::default(),
-        job_repo,
-    )
-    .with_session_repository(session_repo)
-    .with_streamer_repository(streamer_repo)
-    .with_config_service(config_service)
-    .with_dag_repository(dag_repo.clone());
+    let (sess_port, cfg_port) = wired_ports(session_repo, streamer_repo, config_service);
+    let manager = PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
+        .with_session_port(sess_port)
+        .with_config_port(cfg_port)
+        .with_dag_repository(dag_repo.clone());
 
     manager.recover_pipeline_coordination().await.unwrap();
     manager.recover_pipeline_coordination().await.unwrap();
@@ -2667,14 +2698,11 @@ async fn recovery_recreates_missing_session_complete_dag_with_durable_marker() {
     session_repo.insert_segment(test_segment(session_id, 0, "/persisted.flv"));
     let dag_repo = Arc::new(TestDagRepository::new());
     let job_repo = Arc::new(TestJobRepository::new());
-    let manager = PipelineManager::<SqlxConfigRepository, SqlxStreamerRepository>::with_repository(
-        PipelineManagerConfig::default(),
-        job_repo,
-    )
-    .with_session_repository(session_repo)
-    .with_streamer_repository(streamer_repo)
-    .with_config_service(config_service)
-    .with_dag_repository(dag_repo.clone());
+    let (sess_port, cfg_port) = wired_ports(session_repo, streamer_repo, config_service);
+    let manager = PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
+        .with_session_port(sess_port)
+        .with_config_port(cfg_port)
+        .with_dag_repository(dag_repo.clone());
 
     manager.recover_pipeline_coordination().await.unwrap();
     manager.recover_pipeline_coordination().await.unwrap();
@@ -2724,13 +2752,13 @@ async fn recovery_finishes_an_ended_session_reached_only_through_an_in_flight_da
     );
     let in_flight_id = in_flight.id.clone();
     dag_repo.insert(in_flight);
-    let manager = PipelineManager::<SqlxConfigRepository, SqlxStreamerRepository>::with_repository(
+    let (sess_port, cfg_port) = wired_ports(session_repo, streamer_repo, config_service);
+    let manager = PipelineManager::with_repository(
         PipelineManagerConfig::default(),
         Arc::new(TestJobRepository::new()),
     )
-    .with_session_repository(session_repo)
-    .with_streamer_repository(streamer_repo)
-    .with_config_service(config_service)
+    .with_session_port(sess_port)
+    .with_config_port(cfg_port)
     .with_dag_repository(dag_repo.clone());
 
     manager.recover_pipeline_coordination().await.unwrap();
@@ -3424,20 +3452,17 @@ async fn manager_with_failing_config() -> (
 
     let manager = PipelineManager::with_repository(PipelineManagerConfig::default(), jobs)
         .with_dag_repository(dags.clone())
-        .with_session_repository(sessions.clone())
-        .with_config_service(config_service);
+        .with_session_port(session_port(sessions.clone()))
+        .with_config_port(config_port(config_service));
     (manager, dags, sessions)
 }
 
-fn session_ended(
-    session_id: &str,
-    cause: crate::session::TerminalCause,
-) -> crate::recorder::PipelineNotification {
+fn session_ended(session_id: &str, cause: crate::session::TerminalCause) -> PipelineNotification {
     let should_run_session_complete = cause.should_run_session_complete_pipeline();
-    crate::recorder::PipelineNotification::SessionEnded {
+    PipelineNotification::SessionEnded {
         streamer_id: "streamer".to_string(),
         session_id: session_id.to_string(),
-        cause,
+        cause: cause.as_str().to_owned(),
         should_run_session_complete,
     }
 }
@@ -3518,16 +3543,14 @@ async fn session_end_uses_the_captured_configuration_when_the_config_lookup_fail
 async fn session_end_stays_unsettled_when_no_configuration_was_ever_resolved() {
     let (manager, _dags, sessions) = manager_with_failing_config().await;
     manager
-        .handle_recorder_notification(
-            crate::recorder::PipelineNotification::VideoSegmentCompleted {
-                streamer_id: "streamer".to_string(),
-                session_id: "session".to_string(),
-                path: PathBuf::from("/recordings/seg1.flv"),
-                // Segment 0 would also start the automatic thumbnail DAG.
-                segment_index: 1,
-                auto_thumbnail_candidate: false,
-            },
-        )
+        .handle_recorder_notification(PipelineNotification::VideoSegmentCompleted {
+            streamer_id: "streamer".to_string(),
+            session_id: "session".to_string(),
+            path: PathBuf::from("/recordings/seg1.flv"),
+            // Segment 0 would also start the automatic thumbnail DAG.
+            segment_index: 1,
+            auto_thumbnail_candidate: false,
+        })
         .await
         .unwrap();
 

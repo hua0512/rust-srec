@@ -963,6 +963,64 @@ pub enum PipelineNotification {
     },
 }
 
+impl From<PipelineNotification> for crate::pipeline::PipelineNotification {
+    fn from(notification: PipelineNotification) -> Self {
+        match notification {
+            PipelineNotification::VideoSegmentCompleted {
+                session_id,
+                streamer_id,
+                segment_index,
+                path,
+                auto_thumbnail_candidate,
+            } => Self::VideoSegmentCompleted {
+                session_id,
+                streamer_id,
+                segment_index,
+                path,
+                auto_thumbnail_candidate,
+            },
+            PipelineNotification::DanmuCollectionStarted {
+                session_id,
+                streamer_id,
+            } => Self::DanmuCollectionStarted {
+                session_id,
+                streamer_id,
+            },
+            PipelineNotification::DanmuSegmentCompleted {
+                session_id,
+                streamer_id,
+                segment_index,
+                path,
+                message_count,
+            } => Self::DanmuSegmentCompleted {
+                session_id,
+                streamer_id,
+                segment_index,
+                path,
+                message_count,
+            },
+            PipelineNotification::DanmuCollectionStopped {
+                session_id,
+                total_count,
+            } => Self::DanmuCollectionStopped {
+                session_id,
+                total_count,
+            },
+            PipelineNotification::SessionEnded {
+                session_id,
+                streamer_id,
+                cause,
+                should_run_session_complete,
+            } => Self::SessionEnded {
+                session_id,
+                streamer_id,
+                cause: cause.as_str().to_owned(),
+                should_run_session_complete,
+            },
+        }
+    }
+}
+
 /// Why a streamer actor terminated.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ActorStopReason {

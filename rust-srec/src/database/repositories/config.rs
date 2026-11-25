@@ -12,12 +12,12 @@ use std::sync::{Arc, OnceLock};
 
 use super::credential_selections::{self, StoredSelection};
 use super::proxies::{self, RouteOwner};
-use crate::credentials::{CredentialOwner, CredentialSelection};
 use crate::database::models::{
     EngineConfigurationDbModel, GlobalConfigDbModel, PlatformConfigDbModel, RetentionDays,
     TemplateConfigDbModel,
 };
-use crate::proxies::{ProxyRoute, ResolvedRoute, SystemProxy};
+use crate::domain::credential::{CredentialOwner, CredentialSelection};
+use crate::domain::proxy::{ProxyRoute, ResolvedRoute, SystemProxy};
 use crate::{Error, Result};
 
 fn validate_global_retention(config: &GlobalConfigDbModel) -> Result<()> {

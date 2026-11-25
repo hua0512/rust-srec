@@ -2,11 +2,9 @@
 //!
 //! Two entry points:
 //!
-//! - [`SessionEventTxOps::insert`] — transaction-scoped helper, called from
-//!   inside [`crate::database::repositories::SessionTxOps`] /
-//!   [`crate::database::repositories::SessionLifecycleRepository`] so the event
-//!   row is written in the same `BEGIN IMMEDIATE` boundary as the
-//!   `live_sessions` row it describes.
+//! - [`SessionEventTxOps::insert`] — transaction-scoped helper, called inside
+//!   a recording session transaction so the event row is written in the same
+//!   `BEGIN IMMEDIATE` boundary as the `live_sessions` row it describes.
 //! - [`SessionEventRepository`] — standalone trait for non-tx writes
 //!   (best-effort persistence of in-memory transitions like
 //!   `hysteresis_entered`) and for the read path used by the API.
@@ -27,7 +25,7 @@ use crate::Result;
 use crate::database::WritePool;
 use crate::database::models::SessionEventDbModel;
 use crate::database::retry::retry_on_sqlite_busy;
-use crate::session::SessionEvent;
+use crate::domain::session::SessionEvent;
 
 const INSERT_SQL: &str = r#"
     INSERT INTO session_events (session_id, streamer_id, kind, occurred_at, payload)

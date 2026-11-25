@@ -151,7 +151,7 @@ impl ImportSnapshot {
         config: &mut ConfigExport,
         mode: ImportMode,
     ) -> Result<(), ConfigurationImportError> {
-        crate::database::legacy_credential_upgrade::upgrade_bundle(config, |streamer| {
+        crate::services::legacy_upgrade::credentials::upgrade_bundle(config, |streamer| {
             mode == ImportMode::Merge
                 && self.streamer_for_update(&streamer.url).is_some_and(|row| {
                     self.selected_streamers.contains(&row.id)
@@ -162,8 +162,12 @@ impl ImportSnapshot {
                 })
         })?;
         let legacy = config.version.starts_with("0.");
-        if legacy || crate::database::legacy_proxy_upgrade::bundle_has_legacy_settings(config) {
-            crate::database::legacy_proxy_upgrade::upgrade_bundle(config, &self.proxies, legacy)?;
+        if legacy || crate::services::legacy_upgrade::proxies::bundle_has_legacy_settings(config) {
+            crate::services::legacy_upgrade::proxies::upgrade_bundle(
+                config,
+                &self.proxies,
+                legacy,
+            )?;
         }
         config.validate_credential_graph()?;
         Ok(())

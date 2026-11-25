@@ -1,11 +1,11 @@
 use super::super::credential_selections;
 use super::super::proxies::StepDocument;
 use super::super::row_write::{Mutation, RowWrite, WriteMode};
-use crate::credentials::{CredentialOwner, CredentialSelection};
 use crate::database::models::{
     EngineConfigurationDbModel, GlobalConfigDbModel, PlatformConfigDbModel, TemplateConfigDbModel,
 };
-use crate::pipeline::step_routes::Layout;
+use crate::domain::credential::{CredentialOwner, CredentialSelection};
+use crate::domain::step_routes::Layout;
 
 pub(crate) async fn write_global(
     connection: &mut sqlx::SqliteConnection,

@@ -6,7 +6,7 @@ use jiff::Timestamp;
 use tracing::warn;
 
 use super::{Job, JobExecutionInfo, JobQueue};
-use crate::database::models::{JobDbModel, JobStatus, TitleEntry};
+use crate::database::models::{JobDbModel, JobStatus};
 use crate::pipeline::manifest::PipelineInputManifest;
 use crate::utils::json::{self, JsonContext};
 
@@ -14,76 +14,71 @@ impl JobQueue {
     /// Resolve missing metadata (streamer_name, session_title, session_start) for a job.
     ///
     /// This is useful for jobs recovered from the database where metadata
-    /// is not persisted. It looks up the streamer and session repositories.
+    /// is not persisted. It looks up metadata via the configured session port.
     /// Anything resolved is written back to the job row's `state` column so
     /// the values survive later deletion of the backing streamer/session rows
     /// (a retry re-reads the job from the DB via `db_model_to_job`).
     pub async fn resolve_job_metadata(&self, job: &mut Job) {
         let mut backfilled = false;
 
-        // Only resolve if we have a streamer_id and name is missing
-        if job.streamer_name.is_none()
-            && !job.streamer_id.is_empty()
-            && let Some(streamer_repo) = self.streamer_repo.get()
-        {
-            match streamer_repo.get_streamer(&job.streamer_id).await {
-                Ok(streamer) => {
-                    tracing::debug!(
-                        job_id = %job.id,
-                        streamer_id = %job.streamer_id,
-                        streamer_name = %streamer.name,
-                        "Resolved streamer_name from repository"
-                    );
-                    job.streamer_name = Some(streamer.name);
-                    backfilled = true;
-                }
-                Err(e) => {
-                    tracing::debug!(
-                        job_id = %job.id,
-                        streamer_id = %job.streamer_id,
-                        error = %e,
-                        "Failed to lookup streamer_name"
-                    );
-                }
-            }
-        }
-
-        // Only resolve if we have a session_id and session metadata is missing
-        if (job.session_title.is_none() || job.session_start.is_none())
-            && !job.session_id.is_empty()
-            && let Some(session_repo) = self.session_repo.get()
-        {
-            match session_repo.get_session(&job.session_id).await {
-                Ok(session) => {
-                    if job.session_start.is_none() {
-                        job.session_start =
-                            Some(crate::database::time::ms_to_datetime(session.start_time));
+        if let Some(session_port) = self.session_port.get() {
+            // Only resolve if we have a streamer_id and name is missing
+            if job.streamer_name.is_none() && !job.streamer_id.is_empty() {
+                match session_port.get_streamer_meta(&job.streamer_id).await {
+                    Ok(Some(meta)) => {
+                        tracing::debug!(
+                            job_id = %job.id,
+                            streamer_id = %job.streamer_id,
+                            streamer_name = %meta.name,
+                            "Resolved streamer_name from session port"
+                        );
+                        job.streamer_name = Some(meta.name);
                         backfilled = true;
                     }
+                    Ok(None) => {}
+                    Err(e) => {
+                        tracing::debug!(
+                            job_id = %job.id,
+                            streamer_id = %job.streamer_id,
+                            error = %e,
+                            "Failed to lookup streamer_name"
+                        );
+                    }
+                }
+            }
 
-                    // Parse titles JSON and get the most recent one
-                    if job.session_title.is_none()
-                        && let Some(titles_json) = session.titles
-                        && let Ok(entries) = serde_json::from_str::<Vec<TitleEntry>>(&titles_json)
-                        && let Some(last_entry) = entries.last()
-                    {
+            // Only resolve if we have a session_id and session metadata is missing
+            if (job.session_title.is_none() || job.session_start.is_none())
+                && !job.session_id.is_empty()
+            {
+                match session_port.get_session_meta(&job.session_id).await {
+                    Ok(Some(meta)) => {
+                        if job.session_start.is_none() {
+                            job.session_start = Some(meta.started_at);
+                            backfilled = true;
+                        }
+                        if job.session_title.is_none()
+                            && let Some(title) = meta.title
+                        {
+                            tracing::debug!(
+                                job_id = %job.id,
+                                session_id = %job.session_id,
+                                session_title = %title,
+                                "Resolved session_title from session port"
+                            );
+                            job.session_title = Some(title);
+                            backfilled = true;
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
                         tracing::debug!(
                             job_id = %job.id,
                             session_id = %job.session_id,
-                            session_title = %last_entry.title,
-                            "Resolved session_title from repository"
+                            error = %e,
+                            "Failed to lookup session_title"
                         );
-                        job.session_title = Some(last_entry.title.clone());
-                        backfilled = true;
                     }
-                }
-                Err(e) => {
-                    tracing::debug!(
-                        job_id = %job.id,
-                        session_id = %job.session_id,
-                        error = %e,
-                        "Failed to lookup session_title"
-                    );
                 }
             }
         }

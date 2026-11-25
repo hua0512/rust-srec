@@ -12,7 +12,6 @@ use axum::http::StatusCode;
 use axum::routing::post;
 use axum::{Json, Router};
 use jiff::Timestamp;
-use rust_srec::database::maintenance::{MaintenanceConfig, MaintenanceScheduler};
 use rust_srec::database::models::{
     ChannelType, NotificationChannelDbModel, StreamerDbModel, WebhookChannelSettings,
 };
@@ -28,6 +27,7 @@ use rust_srec::notification::{
     OutboxDrainReport,
 };
 use rust_srec::recorder::{OutboxEvent, StreamOnlineKind};
+use rust_srec::services::maintenance::{MaintenanceConfig, MaintenanceScheduler};
 use serde_json::Value;
 use sqlx::SqlitePool;
 use tokio::net::TcpListener;
@@ -76,6 +76,44 @@ async fn insert_streamer(pool: &SqlitePool, id: &str, name: &str) {
     streamer.id = id.to_owned();
     SqlxStreamerRepository::new(pool.clone(), pool.clone())
         .create_streamer(&streamer)
+        .await
+        .unwrap();
+}
+
+async fn enqueue_legacy_event(
+    tx: &mut sqlx::SqliteConnection,
+    streamer_id: &str,
+    event: &MonitorEvent,
+) {
+    let event_type = match event {
+        MonitorEvent::StreamerLive { .. } => "StreamerLive",
+        MonitorEvent::StreamerOffline { .. } => "StreamerOffline",
+        MonitorEvent::FatalError { .. } => "FatalError",
+        MonitorEvent::TransientError { .. } => "TransientError",
+        MonitorEvent::ChecksFailing { .. } => "ChecksFailing",
+        MonitorEvent::ChecksRestored { .. } => "ChecksRestored",
+        MonitorEvent::StateChanged { .. } => "StateChanged",
+    };
+    let payload = serde_json::to_string(event).unwrap();
+    MonitorOutboxTxOps::enqueue_raw(
+        tx,
+        Some(streamer_id),
+        event_type,
+        &payload,
+        rust_srec::database::time::now_ms(),
+    )
+    .await
+    .unwrap();
+}
+
+async fn enqueue_outbox_event(
+    tx: &mut sqlx::SqliteConnection,
+    streamer_id: Option<&str>,
+    event: &OutboxEvent,
+    created_at_ms: i64,
+) {
+    let payload = serde_json::to_string(event).unwrap();
+    MonitorOutboxTxOps::enqueue_raw(tx, streamer_id, event.event_type(), &payload, created_at_ms)
         .await
         .unwrap();
 }
@@ -460,7 +498,7 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
         let mut tx = rust_srec::database::begin_immediate(&pool).await.unwrap();
 
         // 1. Legacy non-notifying StreamerLive -> no-op
-        MonitorOutboxTxOps::enqueue_event(
+        enqueue_legacy_event(
             &mut tx,
             "s-active",
             &MonitorEvent::StreamerLive {
@@ -478,11 +516,10 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
                 timestamp: Timestamp::from_millisecond(base_ms + 1).unwrap(),
             },
         )
-        .await
-        .unwrap();
+        .await;
 
         // 2. Legacy alertable FatalError -> delivered (#1)
-        MonitorOutboxTxOps::enqueue_event(
+        enqueue_legacy_event(
             &mut tx,
             "s-active",
             &MonitorEvent::FatalError {
@@ -494,11 +531,10 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
                 timestamp: Timestamp::from_millisecond(base_ms + 2).unwrap(),
             },
         )
-        .await
-        .unwrap();
+        .await;
 
         // 3. V2 StreamOnline -> delivered (#2)
-        MonitorOutboxTxOps::enqueue_outbox_event(
+        enqueue_outbox_event(
             &mut tx,
             Some("s-active"),
             &OutboxEvent::StreamOnline {
@@ -512,11 +548,10 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
             },
             base_ms + 3,
         )
-        .await
-        .unwrap();
+        .await;
 
         // 4-6. Legacy non-notifying StateChanged / StreamerOffline / TransientError -> no-op
-        MonitorOutboxTxOps::enqueue_event(
+        enqueue_legacy_event(
             &mut tx,
             "s-active",
             &MonitorEvent::StateChanged {
@@ -528,9 +563,8 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
                 timestamp: Timestamp::from_millisecond(base_ms + 4).unwrap(),
             },
         )
-        .await
-        .unwrap();
-        MonitorOutboxTxOps::enqueue_event(
+        .await;
+        enqueue_legacy_event(
             &mut tx,
             "s-active",
             &MonitorEvent::StreamerOffline {
@@ -540,9 +574,8 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
                 timestamp: Timestamp::from_millisecond(base_ms + 5).unwrap(),
             },
         )
-        .await
-        .unwrap();
-        MonitorOutboxTxOps::enqueue_event(
+        .await;
+        enqueue_legacy_event(
             &mut tx,
             "s-active",
             &MonitorEvent::TransientError {
@@ -553,8 +586,7 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
                 timestamp: Timestamp::from_millisecond(base_ms + 6).unwrap(),
             },
         )
-        .await
-        .unwrap();
+        .await;
 
         // 7. Malformed poison JSON row -> skipped so head-of-line progression continues
         sqlx::query(
@@ -567,7 +599,7 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
         .unwrap();
 
         // 8. Legacy ChecksFailing for soon-deleted streamer -> delivered (#3)
-        MonitorOutboxTxOps::enqueue_event(
+        enqueue_legacy_event(
             &mut tx,
             "s-deleted",
             &MonitorEvent::ChecksFailing {
@@ -579,11 +611,10 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
                 timestamp: Timestamp::from_millisecond(base_ms + 8).unwrap(),
             },
         )
-        .await
-        .unwrap();
+        .await;
 
         // 9. V2 ChecksFailing -> delivered (#4)
-        MonitorOutboxTxOps::enqueue_outbox_event(
+        enqueue_outbox_event(
             &mut tx,
             Some("s-active"),
             &OutboxEvent::ChecksFailing {
@@ -596,11 +627,10 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
             },
             base_ms + 9,
         )
-        .await
-        .unwrap();
+        .await;
 
         // 10. V2 FatalError -> delivered (#5)
-        MonitorOutboxTxOps::enqueue_outbox_event(
+        enqueue_outbox_event(
             &mut tx,
             Some("s-active"),
             &OutboxEvent::FatalError {
@@ -613,11 +643,10 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
             },
             base_ms + 10,
         )
-        .await
-        .unwrap();
+        .await;
 
         // 11. V2 StreamOffline for soon-deleted streamer -> delivered (#6)
-        MonitorOutboxTxOps::enqueue_outbox_event(
+        enqueue_outbox_event(
             &mut tx,
             Some("s-deleted"),
             &OutboxEvent::StreamOffline {
@@ -629,11 +658,10 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
             },
             base_ms + 11,
         )
-        .await
-        .unwrap();
+        .await;
 
         // 12. V2 ChecksRestored -> delivered (#7)
-        MonitorOutboxTxOps::enqueue_outbox_event(
+        enqueue_outbox_event(
             &mut tx,
             Some("s-active"),
             &OutboxEvent::ChecksRestored {
@@ -643,11 +671,10 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
             },
             base_ms + 12,
         )
-        .await
-        .unwrap();
+        .await;
 
         // 13. Legacy ChecksRestored -> delivered (#8)
-        MonitorOutboxTxOps::enqueue_event(
+        enqueue_legacy_event(
             &mut tx,
             "s-active",
             &MonitorEvent::ChecksRestored {
@@ -656,8 +683,7 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
                 timestamp: Timestamp::from_millisecond(base_ms + 13).unwrap(),
             },
         )
-        .await
-        .unwrap();
+        .await;
 
         tx.commit().await.unwrap();
 
@@ -821,7 +847,7 @@ async fn drainer_preserves_head_of_line_on_shutdown_cancellation_and_dead_letter
         let t1 = 1_735_200_000_000i64;
         let mut tx = rust_srec::database::begin_immediate(&pool).await.unwrap();
         for (offset, title) in [(0, "First"), (1000, "Second"), (2000, "Third")] {
-            MonitorOutboxTxOps::enqueue_outbox_event(
+            enqueue_outbox_event(
                 &mut tx,
                 Some("s1"),
                 &OutboxEvent::StreamOnline {
@@ -835,8 +861,7 @@ async fn drainer_preserves_head_of_line_on_shutdown_cancellation_and_dead_letter
                 },
                 t1 + offset,
             )
-            .await
-            .unwrap();
+            .await;
         }
         tx.commit().await.unwrap();
 
@@ -940,7 +965,7 @@ async fn drainer_preserves_head_of_line_on_shutdown_cancellation_and_dead_letter
         let t2 = 1_735_200_060_000i64;
         let mut tx = rust_srec::database::begin_immediate(&pool).await.unwrap();
         for (offset, msg) in [(0, "dead-letter-1"), (1000, "dead-letter-2")] {
-            MonitorOutboxTxOps::enqueue_outbox_event(
+            enqueue_outbox_event(
                 &mut tx,
                 Some("s1"),
                 &OutboxEvent::FatalError {
@@ -953,8 +978,7 @@ async fn drainer_preserves_head_of_line_on_shutdown_cancellation_and_dead_letter
                 },
                 t2 + offset,
             )
-            .await
-            .unwrap();
+            .await;
         }
         tx.commit().await.unwrap();
 

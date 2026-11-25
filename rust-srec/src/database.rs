@@ -1,13 +1,10 @@
 //! Database module for rust-srec.
 //!
 //! This module provides the persistence layer using SQLite with sqlx.
-//! It includes connection pool management, models, repositories, and maintenance.
+//! It includes connection pool management, models, and repositories.
 
 pub(crate) mod committed_writer;
 pub mod filter_store;
-pub(crate) mod legacy_credential_upgrade;
-pub(crate) mod legacy_proxy_upgrade;
-pub mod maintenance;
 pub mod models;
 pub mod repositories;
 pub mod retry;
@@ -16,9 +13,6 @@ pub(crate) use committed_writer::CommittedWriter;
 
 #[cfg(test)]
 pub(crate) mod test_support;
-
-// Re-export commonly used types
-pub use maintenance::{MaintenanceConfig, MaintenanceScheduler};
 
 use std::str::FromStr;
 use std::time::Duration;
@@ -277,29 +271,16 @@ pub async fn init_database_pools(database_url: &str) -> Result<(DbPool, WritePoo
     Ok((pool, write_pool))
 }
 
+/// Apply SQLite schema migrations.
+///
+/// Startup paths that also run application-level data conversions use
+/// `services::legacy_upgrade::run_migrations`.
 pub async fn run_migrations(pool: &DbPool) -> crate::Result<()> {
-    // Unit tests convert as if no proxy variables were set, whatever the
-    // developer's shell exports.
-    let environment_proxy = !cfg!(test) && crate::proxies::SystemProxy::current().detected();
-    run_migrations_with_environment_proxy(pool, environment_proxy).await
-}
-
-/// [`run_migrations`] with `environment_proxy` standing for whether proxy
-/// environment variables are set, which the proxy settings conversion reads.
-#[doc(hidden)]
-pub async fn run_migrations_with_environment_proxy(
-    pool: &DbPool,
-    environment_proxy: bool,
-) -> crate::Result<()> {
     #[cfg(test)]
-    let publish_template = if !environment_proxy {
-        match test_migration_template::try_restore_or_check_fresh(pool).await {
-            test_migration_template::Lookup::Restored => return Ok(()),
-            test_migration_template::Lookup::FreshEmpty => true,
-            test_migration_template::Lookup::Ineligible => false,
-        }
-    } else {
-        false
+    let publish_template = match test_migration_template::try_restore_or_check_fresh(pool).await {
+        test_migration_template::Lookup::Restored => return Ok(()),
+        test_migration_template::Lookup::FreshEmpty => true,
+        test_migration_template::Lookup::Ineligible => false,
     };
 
     tracing::info!("Running database migrations...");
@@ -309,10 +290,6 @@ pub async fn run_migrations_with_environment_proxy(
         .run(pool)
         .await
         .map_err(sqlx::Error::from)?;
-    // Data conversions that need application logic run once the schema they
-    // target exists; each owns a marker table installed by its migration.
-    legacy_credential_upgrade::run(pool).await?;
-    legacy_proxy_upgrade::run(pool, environment_proxy).await?;
 
     #[cfg(test)]
     if publish_template {

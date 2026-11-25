@@ -92,12 +92,3 @@ pub(crate) fn batch_detection_enabled(platform_extras: Option<&serde_json::Value
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false)
 }
-
-/// Process-lifetime identifier stamped onto outbox rows written by
-/// [`crate::database::repositories::SessionLifecycleRepository`].
-pub(crate) fn runtime_instance_id() -> &'static str {
-    static INSTANCE_ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    INSTANCE_ID
-        .get_or_init(|| uuid::Uuid::new_v4().to_string())
-        .as_str()
-}

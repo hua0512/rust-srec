@@ -14,7 +14,6 @@ use crate::Result;
 use crate::api::server::ApiServerConfig;
 use crate::config::{ConfigEventBroadcaster, ConfigService};
 use crate::danmu::DanmuService;
-use crate::database::maintenance::MaintenanceScheduler;
 use crate::database::repositories::NotificationRepository;
 use crate::database::repositories::{
     config::SqlxConfigRepository, filter::SqlxFilterRepository, session::SqlxSessionRepository,
@@ -26,6 +25,7 @@ use crate::metrics::HealthChecker;
 use crate::notification::NotificationService;
 use crate::notification::web_push::WebPushService;
 use crate::pipeline::{PipelineManager, PipelineManagerConfig};
+use crate::services::maintenance::MaintenanceScheduler;
 use crate::streamer::StreamerManager;
 use crate::utils::task_supervisor::TaskSupervisor;
 

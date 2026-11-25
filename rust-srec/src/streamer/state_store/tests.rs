@@ -5,10 +5,7 @@ use tokio::sync::Notify;
 
 use super::*;
 use crate::database::committed_writer::{CommitPhase, CommitTestGate};
-use crate::database::repositories::{
-    SessionLifecycleRepository, SqlxStreamerRepository, StartSessionInputs, StreamerRepository,
-    StreamerTxOps,
-};
+use crate::database::repositories::{SqlxStreamerRepository, StreamerRepository, StreamerTxOps};
 use crate::domain::StreamerState;
 use crate::streamer::{StreamerManager, manager::StreamerUpdateParams};
 use crate::utils::task_supervisor::TaskSupervisor;
@@ -34,7 +31,7 @@ async fn fixture() -> Fixture {
         ConfigEventBroadcaster::new(),
     ));
     let repository = Arc::new(
-        SqlxStreamerRepository::new(pool.clone(), pool.clone()).with_committed_state(store.clone()),
+        SqlxStreamerRepository::new(pool.clone(), pool.clone()).with_commit_owner(store.clone()),
     );
     let manager = Arc::new(StreamerManager::new(
         repository.clone(),
@@ -257,19 +254,15 @@ async fn rejected_url_update_preserves_both_indexes_and_success_replaces_only_it
     );
 }
 
-fn start() -> StartSessionInputs {
-    StartSessionInputs {
-        credential_binding: None,
+fn start_op() -> crate::recorder::DbCommitOp {
+    crate::recorder::DbCommitOp::StartOrResumeSession {
         streamer_id: "state-test".into(),
         streamer_name: "Original".into(),
-        streamer_url: "https://example.test/original".into(),
-        current_avatar: None,
-        new_avatar: Some("avatar".into()),
         title: "Title".into(),
         category: None,
-        streams: Vec::new(),
-        media_headers: None,
-        media_extras: None,
+        current_avatar: None,
+        new_avatar: Some("avatar".into()),
+        credential_binding: None,
         now: jiff::Timestamp::now(),
     }
 }
@@ -277,11 +270,19 @@ fn start() -> StartSessionInputs {
 #[tokio::test]
 async fn lifecycle_fault_rolls_back_streamer_session_and_outbox_then_publishes_full_success() {
     let f = fixture().await;
-    let lifecycle =
-        SessionLifecycleRepository::new(f.pool.clone()).with_committed_state(f.store.clone());
+    let store = crate::recorder::RecorderStore::with_committed_state(
+        f.pool.clone(),
+        f.pool.clone(),
+        f.store.clone(),
+    )
+    .unwrap();
     let original = f.manager.get_streamer_snapshot("state-test").unwrap();
     sqlx::query("CREATE TRIGGER reject_state_outbox BEFORE INSERT ON monitor_event_outbox BEGIN SELECT RAISE(ABORT, 'outbox fault'); END").execute(&f.pool).await.unwrap();
-    assert!(lifecycle.start_or_resume(start()).await.is_err());
+    assert!(
+        crate::recorder::RecorderStorePort::commit(&store, start_op())
+            .await
+            .is_err()
+    );
     assert!(Arc::ptr_eq(
         &original,
         &f.manager.get_streamer_snapshot("state-test").unwrap()
@@ -292,7 +293,9 @@ async fn lifecycle_fault_rolls_back_streamer_session_and_outbox_then_publishes_f
         .execute(&f.pool)
         .await
         .unwrap();
-    lifecycle.start_or_resume(start()).await.unwrap();
+    crate::recorder::RecorderStorePort::commit(&store, start_op())
+        .await
+        .unwrap();
     let current = f.manager.get_streamer_snapshot("state-test").unwrap();
     assert_eq!(current.state, StreamerState::Live);
     assert_eq!(current.avatar_url.as_deref(), Some("avatar"));
@@ -303,8 +306,12 @@ async fn lifecycle_fault_rolls_back_streamer_session_and_outbox_then_publishes_f
 async fn retired_and_disabled_rows_reject_stale_lifecycle_and_monitor_mutations() {
     for retired in [false, true] {
         let f = fixture().await;
-        let lifecycle =
-            SessionLifecycleRepository::new(f.pool.clone()).with_committed_state(f.store.clone());
+        let store = crate::recorder::RecorderStore::with_committed_state(
+            f.pool.clone(),
+            f.pool.clone(),
+            f.store.clone(),
+        )
+        .unwrap();
         if retired {
             f.manager.mark_deleting("state-test").await.unwrap();
         } else {
@@ -313,8 +320,10 @@ async fn retired_and_disabled_rows_reject_stale_lifecycle_and_monitor_mutations(
             f.manager.partial_update_streamer(update).await.unwrap();
         }
         assert!(matches!(
-            lifecycle.start_or_resume(start()).await.unwrap(),
-            crate::database::repositories::StartSessionOutcome::SuppressedInactive { .. }
+            crate::recorder::RecorderStorePort::commit(&store, start_op())
+                .await
+                .unwrap(),
+            crate::recorder::DbCommitOutcome::SessionStartSuppressed { .. }
         ));
         let skipped = f
             .store
@@ -350,7 +359,7 @@ async fn committed_hot_write_does_not_need_the_repository_read_pool() {
         .unwrap();
     read.close().await;
     let repository = Arc::new(
-        SqlxStreamerRepository::new(read, f.pool.clone()).with_committed_state(f.store.clone()),
+        SqlxStreamerRepository::new(read, f.pool.clone()).with_commit_owner(f.store.clone()),
     );
     let manager = StreamerManager::new(repository, f.store.cache.broadcaster.clone());
     manager
@@ -519,7 +528,7 @@ async fn mismatched_repository_pool_cannot_write_through_another_owner() {
         .await
         .unwrap();
     let repository =
-        SqlxStreamerRepository::new(other.clone(), other).with_committed_state(f.store.clone());
+        SqlxStreamerRepository::new(other.clone(), other).with_commit_owner(f.store.clone());
     assert!(matches!(
         repository.update_streamer_state("state-test", "LIVE").await,
         Err(crate::Error::Configuration(_))

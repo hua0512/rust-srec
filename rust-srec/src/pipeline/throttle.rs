@@ -101,18 +101,7 @@ pub enum ThrottleEvent {
     },
 }
 
-/// Applies a temporary reduction while preserving the configured download limit.
-pub trait DownloadLimitAdjuster: Send + Sync {
-    /// Apply a factor, or release the reduction with None. Return the configured
-    /// and effective normal-slot limits from the same serialized update.
-    fn set_throttle_factor(&self, factor: Option<f32>) -> (usize, usize);
-}
-
-impl DownloadLimitAdjuster for crate::downloader::DownloadManager {
-    fn set_throttle_factor(&self, factor: Option<f32>) -> (usize, usize) {
-        self.set_download_throttle(factor)
-    }
-}
+pub use crate::domain::processor::DownloadLimitAdjuster;
 
 /// Forced task aborts must release the reduction just like cooperative shutdown.
 struct ThrottleReset<'a> {
