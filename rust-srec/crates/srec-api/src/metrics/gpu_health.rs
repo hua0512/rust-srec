@@ -13,7 +13,7 @@
 //! `Failed to initialize NVML: Unknown Error`.
 //!
 //! The monitor mirrors the architecture of the output-root write gate
-//! ([`crate::downloader::OutputRootGate`]):
+//! ([`srec_recorder::downloader::OutputRootGate`]):
 //!
 //! - Lock-free `AtomicU8` for the `Healthy` / `Unhealthy` / `Unknown` state
 //!   so transition detection is a single `compare_exchange`.
@@ -58,7 +58,7 @@ const MAX_DIAG_CHARS: usize = 256;
 /// probe is a `nvidia-smi` fork+exec (~50–200 ms).
 const MIN_INTERVAL_SECS: u64 = 1;
 /// Default probe interval. Matches
-/// [`crate::downloader::DEFAULT_GATE_COOLDOWN_SECS`] so operators only
+/// [`srec_recorder::downloader::DEFAULT_GATE_COOLDOWN_SECS`] so operators only
 /// need to remember one cadence.
 pub const DEFAULT_PROBE_INTERVAL_SECS: u64 = 30;
 /// Component name used in `/api/health`. Must match the frontend

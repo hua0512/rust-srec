@@ -113,7 +113,7 @@ pub struct ApiServices {
     /// Download manager
     pub download_manager: Arc<DownloadManager>,
     /// Read-pool query facade for UI/MCP filtered listing, search, and summary endpoints.
-    pub(crate) queries: crate::api::queries::ApiQueries,
+    pub queries: crate::api::queries::ApiQueries,
     /// Session repository for session and output queries
     pub session_repository: Arc<dyn SessionRepository>,
     /// Session-event repository for the session-detail timeline.
@@ -143,32 +143,31 @@ pub struct ApiServices {
     /// Single-use download tokens for log archives.
     pub logging_download_tokens: Arc<DashMap<String, LoggingArchiveGrant>>,
     /// Shared capacity and streaming archive generation for log downloads.
-    pub(crate) logging_archives: Arc<crate::api::routes::logging::LogArchiveService>,
+    pub logging_archives: Arc<crate::api::routes::logging::LogArchiveService>,
     /// Credential managers for account validation, refresh and capability checks.
     pub credential_service: Arc<CredentialProviderRegistry>,
-    pub(crate) platform_admission: Arc<crate::credentials::PlatformAdmission>,
-    pub(crate) credential_profiles:
+    pub platform_admission: Arc<crate::credentials::PlatformAdmission>,
+    pub credential_profiles:
         Arc<crate::database::repositories::credential_profiles::CredentialProfileRepository>,
-    pub(crate) credential_login_sessions:
-        Arc<crate::credentials::login_sessions::CredentialLoginSessions>,
-    pub(crate) credential_execution: Arc<crate::credentials::CredentialExecutionService>,
+    pub credential_login_sessions: Arc<crate::credentials::login_sessions::CredentialLoginSessions>,
+    pub credential_execution: Arc<crate::credentials::CredentialExecutionService>,
     /// Saved proxies and their effects on resolved routes.
-    pub(crate) proxies: Arc<crate::proxies::ProxyService>,
+    pub proxies: Arc<crate::proxies::ProxyService>,
     /// Streamers whose latest credential acquisition found no usable account.
-    pub(crate) credential_blocks: Arc<crate::credentials::CredentialBlocks>,
+    pub credential_blocks: Arc<crate::credentials::CredentialBlocks>,
     /// Bigo's live-notification listener, for its status.
-    pub(crate) bigo_notifications: Arc<crate::monitor::BigoNotifications>,
-    pub(crate) playback_contexts: Arc<crate::api::playback_context::PlaybackContextService>,
+    pub bigo_notifications: Arc<crate::monitor::BigoNotifications>,
+    pub playback_contexts: Arc<crate::api::playback_context::PlaybackContextService>,
     /// Shared stateless extractor runner (pooled HTTP clients and proxy/tunnel setup).
-    pub(crate) extractor_runner: Arc<crate::recorder::PlatformExtractorRunner>,
+    pub extractor_runner: Arc<crate::recorder::PlatformExtractorRunner>,
     /// Rooms recordings are collecting, which live danmu sockets follow.
-    pub(crate) danmu_taps: Arc<crate::danmu::DanmuTaps>,
+    pub danmu_taps: Arc<crate::danmu::DanmuTaps>,
     /// Transactional configuration export/import port implemented at the application layer.
-    pub(crate) config_backup: Arc<dyn crate::api::backup::ConfigBackupPort>,
+    pub config_backup: Arc<dyn crate::api::backup::ConfigBackupPort>,
     /// Recording control-plane registry. Routes reach it for streamer deletion,
     /// which stands down the streamer actor, download, danmu, and pipeline
     /// owners before the `streamers` row can be removed.
-    pub(crate) actor_registry: Arc<crate::recorder::ActorRegistry>,
+    pub actor_registry: Arc<crate::recorder::ActorRegistry>,
 }
 
 /// Shared application state.

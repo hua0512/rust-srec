@@ -5,7 +5,7 @@ use crate::api::auth_store::{
 };
 use sqlx::{SqlitePool, migrate::Migrator, sqlite::SqlitePoolOptions};
 
-static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
+static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
 const SESSION_MIGRATION: i64 = 20260908010000;
 const PASSWORD: &str = "OriginalPass123";
 

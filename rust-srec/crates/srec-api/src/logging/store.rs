@@ -136,7 +136,7 @@ struct OpenLogFile {
     file: File,
 }
 
-pub(crate) struct LogStore {
+pub struct LogStore {
     directory: PathBuf,
     policy: LogPolicy,
     truncated_records: AtomicU64,
@@ -161,7 +161,7 @@ impl LogStore {
         }
     }
 
-    pub(crate) fn from_env(directory: PathBuf) -> crate::Result<Self> {
+    pub fn from_env(directory: PathBuf) -> crate::Result<Self> {
         Ok(Self::new(directory, LogPolicy::from_env()?))
     }
 
@@ -452,7 +452,7 @@ impl LogStore {
 
     /// Panic-path ownership must never wait behind the logging worker or another
     /// process. The panic hook falls back to stderr if this attempt cannot write.
-    pub(crate) fn try_append_emergency(&self, record: &str) -> io::Result<()> {
+    pub fn try_append_emergency(&self, record: &str) -> io::Result<()> {
         self.append(record.as_bytes(), Timestamp::now(), true)
     }
 }

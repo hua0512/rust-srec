@@ -820,8 +820,11 @@ fn extract_file_refs(src_root: &Path, file: &Path, skip_cfg_test: bool) -> Extra
 struct AnalyzedFile {
     display_path: String,
     slot: ModuleSlot,
-    /// True when the file lives in `rust-srec/src/` so its `crate::...` paths
-    /// resolve against `slot_for_module_path`.
+    /// True when `crate::...` paths in this file resolve against
+    /// `slot_for_module_path` (root `rust-srec/src/` and `crates/srec-api/src/`,
+    /// where `logging` and `metrics` sit beside `api`/`mcp`).
+    check_internal_paths: bool,
+    /// True when the file lives in `rust-srec/src/`.
     is_root_crate: bool,
     refs: ExtractedRefs,
 }
@@ -835,6 +838,7 @@ fn component_for_external_crate(ident: &str) -> Option<Component> {
         "srec_notify" => Some(Component::Notify),
         "srec_pipeline" => Some(Component::Pipeline),
         "srec_recorder" => Some(Component::Recorder),
+        "srec_api" => Some(Component::Api),
         "rust_srec" => Some(Component::AppEntry),
         _ => None,
     }
@@ -873,6 +877,46 @@ fn analyze_extracted_crate(
         out.push(AnalyzedFile {
             display_path: format!("{display_prefix}/{rel}"),
             slot: ModuleSlot::Layer(component),
+            check_internal_paths: false,
+            is_root_crate: false,
+            refs,
+        });
+    }
+}
+
+fn analyze_srec_api_crate(crate_dir: &Path, out: &mut Vec<AnalyzedFile>) {
+    let src_root = crate_dir.join("src");
+    let mut files = Vec::new();
+    rust_files(&src_root, &mut files);
+    files.sort();
+    assert!(
+        !files.is_empty(),
+        "expected Rust source files under {}",
+        src_root.display()
+    );
+
+    let cfg_test_submodules = collect_cfg_test_submodule_paths(&src_root, &files);
+    for file in files {
+        if is_named_test_source(&file) || is_cfg_test_submodule(&file, &cfg_test_submodules) {
+            continue;
+        }
+        let segs = file_module_segments(&src_root, &file);
+        let seg_refs: Vec<&str> = segs.iter().map(String::as_str).collect();
+        let component = match seg_refs.as_slice() {
+            ["logging", ..] => Component::Logging,
+            ["metrics", ..] => Component::Metrics,
+            _ => Component::Api,
+        };
+        let rel = file
+            .strip_prefix(&src_root)
+            .unwrap_or(&file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let refs = extract_file_refs(&src_root, &file, true);
+        out.push(AnalyzedFile {
+            display_path: format!("crates/srec-api/src/{rel}"),
+            slot: ModuleSlot::Layer(component),
+            check_internal_paths: true,
             is_root_crate: false,
             refs,
         });
@@ -891,7 +935,7 @@ fn production_source_files() -> Vec<AnalyzedFile> {
     let mut unmapped = Vec::new();
     let mut analyzed = Vec::new();
 
-    // Scan extracted Layer 0, Layer 1, and Layer 2 workspace crates directly.
+    // Scan extracted Layer 0, Layer 1, Layer 2, and Layer 3 workspace crates directly.
     // `srec-core` includes its unit tests so domain and utility tests stay
     // storage-free as well.
     analyze_extracted_crate(
@@ -943,6 +987,7 @@ fn production_source_files() -> Vec<AnalyzedFile> {
         false,
         &mut analyzed,
     );
+    analyze_srec_api_crate(&manifest_dir.join("crates/srec-api"), &mut analyzed);
 
     for file in files {
         let segs = file_module_segments(&src_root, &file);
@@ -968,6 +1013,7 @@ fn production_source_files() -> Vec<AnalyzedFile> {
         analyzed.push(AnalyzedFile {
             display_path: rel,
             slot,
+            check_internal_paths: true,
             is_root_crate: true,
             refs,
         });
@@ -1054,7 +1100,7 @@ fn production_modules_respect_acyclic_layered_dag() {
 
     let mut violations = Vec::new();
     for entry in &analyzed {
-        if entry.is_root_crate {
+        if entry.check_internal_paths {
             for internal_path in &entry.refs.internal_paths {
                 let segs: Vec<&str> = internal_path.iter().map(String::as_str).collect();
                 let Some(target_slot) = slot_for_module_path(&segs) else {
@@ -1242,6 +1288,17 @@ fn heavy_external_dependencies_stay_within_target_crates() {
 }
 
 fn manifest_dependency_names(manifest_path: &Path) -> BTreeSet<String> {
+    manifest_dependency_names_filtered(manifest_path, true)
+}
+
+fn manifest_production_dependency_names(manifest_path: &Path) -> BTreeSet<String> {
+    manifest_dependency_names_filtered(manifest_path, false)
+}
+
+fn manifest_dependency_names_filtered(
+    manifest_path: &Path,
+    include_dev_and_build: bool,
+) -> BTreeSet<String> {
     let contents = fs::read_to_string(manifest_path)
         .unwrap_or_else(|e| panic!("read {}: {e}", manifest_path.display()));
     let mut deps = BTreeSet::new();
@@ -1254,11 +1311,12 @@ fn manifest_dependency_names(manifest_path: &Path) -> BTreeSet<String> {
         if line.starts_with('[') && line.ends_with(']') {
             let header = &line[1..line.len() - 1];
             in_deps = header == "dependencies"
-                || header == "dev-dependencies"
-                || header == "build-dependencies"
                 || header.ends_with(".dependencies")
-                || header.ends_with(".dev-dependencies")
-                || header.ends_with(".build-dependencies");
+                || (include_dev_and_build
+                    && (header == "dev-dependencies"
+                        || header == "build-dependencies"
+                        || header.ends_with(".dev-dependencies")
+                        || header.ends_with(".build-dependencies")));
             continue;
         }
         if in_deps && let Some((key, _)) = line.split_once('=') {
@@ -1281,6 +1339,7 @@ fn extracted_layer0_manifests_isolate_forbidden_dependencies() {
         "srec-notify",
         "srec-pipeline",
         "srec-recorder",
+        "srec-api",
         "axum",
         "utoipa",
         "utoipa-swagger-ui",
@@ -1339,6 +1398,7 @@ fn extracted_layer1_manifests_isolate_forbidden_dependencies() {
         "rust-srec",
         "srec-pipeline",
         "srec-recorder",
+        "srec-api",
         "platforms-parser",
         "axum",
         "utoipa",
@@ -1438,6 +1498,7 @@ fn extracted_layer2_manifests_isolate_forbidden_dependencies() {
         "srec-recorder",
         "srec-engines",
         "srec-notify",
+        "srec-api",
         "platforms-parser",
         "mesio",
         "mesio-engine",
@@ -1478,6 +1539,7 @@ fn extracted_layer2_manifests_isolate_forbidden_dependencies() {
         "srec-pipeline",
         "srec-processors",
         "srec-notify",
+        "srec-api",
         "zip",
         "tar",
         "axum",
@@ -1507,6 +1569,103 @@ fn extracted_layer2_manifests_isolate_forbidden_dependencies() {
     assert!(
         violations.is_empty(),
         "extracted Layer 2 Cargo.toml files violated dependency isolation:\n{}",
+        violations.join("\n")
+    );
+}
+
+#[test]
+fn extracted_layer3_and_root_manifests_isolate_forbidden_dependencies() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut violations = Vec::new();
+
+    // `srec-api` must never depend on root `rust-srec` (even in dev-dependencies).
+    let api_all_deps = manifest_dependency_names(&manifest_dir.join("crates/srec-api/Cargo.toml"));
+    if api_all_deps.contains("rust-srec") {
+        violations.push("crates/srec-api/Cargo.toml must not depend on `rust-srec`".to_owned());
+    }
+
+    // `srec-api` production dependencies must not absorb Layer 1 exclusive crates.
+    let api_prod_deps =
+        manifest_production_dependency_names(&manifest_dir.join("crates/srec-api/Cargo.toml"));
+    for forbidden in [
+        "mesio",
+        "mesio-engine",
+        "flv",
+        "flv-fix",
+        "hls",
+        "hls-fix",
+        "zip",
+        "tar",
+        "lettre",
+        "p256",
+        "aes-gcm",
+        "hkdf",
+        "rust-i18n",
+        "prost-build",
+        "protox",
+    ] {
+        if api_prod_deps.contains(forbidden) {
+            violations.push(format!(
+                "crates/srec-api/Cargo.toml [dependencies] must not depend on `{forbidden}`"
+            ));
+        }
+    }
+
+    // Root `rust-srec` production `[dependencies]` stays a thin composition shell:
+    // API, MCP, OpenAPI, auth crypto, Protobuf, archive, notification, and media
+    // engine crates are owned exclusively by their respective workspace crates.
+    let root_prod_deps = manifest_production_dependency_names(&manifest_dir.join("Cargo.toml"));
+    for forbidden in [
+        "axum",
+        "tower",
+        "tower-http",
+        "utoipa",
+        "utoipa-swagger-ui",
+        "rmcp",
+        "schemars",
+        "jsonwebtoken",
+        "argon2",
+        "prost",
+        "prost-build",
+        "protox",
+        "tracing-appender",
+        "tracing-subscriber",
+        "arc-swap",
+        "lettre",
+        "p256",
+        "aes-gcm",
+        "hkdf",
+        "rust-i18n",
+        "mesio",
+        "mesio-engine",
+        "flv",
+        "flv-fix",
+        "hls",
+        "hls-fix",
+        "zip",
+        "tar",
+    ] {
+        if root_prod_deps.contains(forbidden) {
+            violations.push(format!(
+                "rust-srec/Cargo.toml [dependencies] must not depend directly on `{forbidden}`"
+            ));
+        }
+    }
+
+    for extracted_module in ["api", "mcp", "logging", "metrics"] {
+        let src_dir = manifest_dir.join("src");
+        if src_dir.join(format!("{extracted_module}.rs")).exists()
+            || src_dir.join(extracted_module).exists()
+        {
+            violations.push(format!(
+                "rust-srec/src/{extracted_module} must remain extracted in crates/srec-api"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "Layer 3 (srec-api) and Layer 4 (rust-srec) manifest isolation violated:\n{}",
         violations.join("\n")
     );
 }
@@ -1550,6 +1709,7 @@ fn desktop_tauri_accesses_backend_only_through_facade() {
             "srec_notify",
             "srec_pipeline",
             "srec_recorder",
+            "srec_api",
         ] {
             if refs.external_roots.contains(internal_crate) {
                 violations.push(format!(
@@ -1571,6 +1731,7 @@ fn desktop_tauri_accesses_backend_only_through_facade() {
         "srec-notify",
         "srec-pipeline",
         "srec-recorder",
+        "srec-api",
     ] {
         if tauri_deps.contains(internal_crate) {
             violations.push(format!(

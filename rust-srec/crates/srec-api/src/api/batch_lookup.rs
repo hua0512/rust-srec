@@ -49,15 +49,14 @@ where
     collected
 }
 
-#[cfg(test)]
-pub(crate) mod tests {
-    use super::*;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support {
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     };
 
-    pub(crate) async fn fixture() -> (sqlx::SqlitePool, Arc<AtomicUsize>) {
+    pub async fn fixture() -> (sqlx::SqlitePool, Arc<AtomicUsize>) {
         let queries = Arc::new(AtomicUsize::new(0));
         let opened = queries.clone();
         let reused = queries.clone();
@@ -100,6 +99,19 @@ pub(crate) mod tests {
         .unwrap();
         queries.store(0, Ordering::SeqCst);
         (pool, queries)
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    pub(crate) async fn fixture() -> (sqlx::SqlitePool, Arc<AtomicUsize>) {
+        test_support::fixture().await
     }
 
     #[tokio::test]

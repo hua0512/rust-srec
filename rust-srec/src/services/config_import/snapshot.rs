@@ -299,7 +299,7 @@ pub(super) fn validate_import(
     }
     if let Some(directive) = config.global_config.log_filter_directive.as_deref() {
         validate_non_empty("global log_filter_directive", directive)?;
-        tracing_subscriber::EnvFilter::try_new(directive).map_err(|error| {
+        crate::logging::validate_filter_directive(directive).map_err(|error| {
             validation_error(format!(
                 "Invalid log_filter_directive '{directive}': {error}"
             ))

@@ -113,8 +113,8 @@ impl AuthService {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn with_login_rate_limiter(mut self, login_rate_limiter: LoginRateLimiter) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_login_rate_limiter(mut self, login_rate_limiter: LoginRateLimiter) -> Self {
         self.login_rate_limiter = login_rate_limiter;
         self
     }

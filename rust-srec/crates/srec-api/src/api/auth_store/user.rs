@@ -84,7 +84,7 @@ pub(crate) async fn write_user(
     row.execute(connection).await
 }
 
-pub(crate) async fn import_user(
+pub async fn import_user(
     connection: &mut sqlx::SqliteConnection,
     model: &UserDbModel,
 ) -> std::result::Result<(), sqlx::Error> {

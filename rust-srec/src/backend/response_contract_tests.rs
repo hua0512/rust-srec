@@ -19,7 +19,7 @@ use crate::database::repositories::{
     DagRepository, JobRepository, SessionRepository, SqlxDagRepository, SqlxJobRepository,
 };
 
-use super::build_api_state;
+use crate::api::bootstrap::build_api_state;
 use crate::services::ServiceContainer;
 
 async fn application() -> (ServiceContainer, Router, tempfile::TempDir) {

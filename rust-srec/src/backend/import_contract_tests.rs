@@ -8,7 +8,7 @@ use crate::config::ConfigUpdateEvent;
 use crate::config::backup::{ConfigExport, ImportMode, JobPresetExport};
 use crate::database::models::StreamerDbModel;
 
-use super::build_api_state;
+use crate::api::bootstrap::build_api_state;
 use crate::services::ServiceContainer;
 
 #[tokio::test]

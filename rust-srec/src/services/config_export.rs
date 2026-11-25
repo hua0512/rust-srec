@@ -557,7 +557,7 @@ mod tests {
             StreamerRepository,
         };
         use std::sync::atomic::Ordering;
-        let (pool, queries) = crate::api::batch_lookup::tests::fixture().await;
+        let (pool, queries) = crate::api::batch_lookup::test_support::fixture().await;
         let streamer_repo = SqlxStreamerRepository::new(pool.clone(), pool.clone());
         let notification_repo = SqlxNotificationRepository::new(pool.clone(), pool.clone());
         let filter_repo = SqlxFilterRepository::new(pool.clone(), pool.clone());

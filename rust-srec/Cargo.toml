@@ -11,75 +11,46 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
-arc-swap = { workspace = true }
-axum = { workspace = true }
-serde = { workspace = true }
-uuid = { workspace = true }
-jiff = { workspace = true, features = ["tzdb-bundle-always"] }
-bytes = { workspace = true }
-tokio = { workspace = true }
-tokio-util = { workspace = true }
-futures = { workspace = true }
 anyhow = { workspace = true }
-serde_json = { workspace = true }
 async-trait = { workspace = true }
-reqwest = { workspace = true }
-sqlx = { workspace = true }
-url = { workspace = true }
-base64 = { workspace = true }
-rustls = { workspace = true }
-
-# Caching
 dashmap = { workspace = true }
+dotenvy = { workspace = true }
+futures = { workspace = true }
+jiff = { workspace = true, features = ["tzdb-bundle-always"] }
+mimalloc = { workspace = true }
 parking_lot = { workspace = true }
-
-# Logging
-tracing = { workspace = true }
-tracing-appender = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["ansi", "parking_lot"] }
-
-sysinfo = { workspace = true }
-
-# Workspace crates
-
+pipeline-common = { path = "../crates/pipeline-common" }
+platforms-parser = { path = "../crates/platforms" }
+process-utils = { path = "../crates/process-utils" }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+srec-api = { workspace = true }
 srec-core = { workspace = true }
 srec-notify = { workspace = true }
 srec-pipeline = { workspace = true }
 srec-processors = { workspace = true }
 srec-recorder = { workspace = true }
 srec-sqlite = { workspace = true }
-pipeline-common = { path = "../crates/pipeline-common" }
-platforms-parser = { path = "../crates/platforms" }
-process-utils = { path = "../crates/process-utils" }
-thiserror = { workspace = true }
-dotenvy = { workspace = true }
-rand = { workspace = true }
-regex = { workspace = true }
-tower = { workspace = true }
-tower-http = { workspace = true }
-
-# OpenAPI / Swagger
-utoipa = { workspace = true }
-utoipa-swagger-ui = { workspace = true }
-
-# MCP server (streamable HTTP endpoint at /api/mcp)
-rmcp = { workspace = true }
-schemars = { workspace = true }
-jsonwebtoken = { workspace = true }
-mimalloc = { workspace = true }
-
-# Cryptography for password hashing and token generation
-argon2 = { workspace = true }
-sha2 = { workspace = true }
-hex = { workspace = true }
-
-# Protocol Buffers
-prost = { workspace = true }
-
-# Filesystem (used at runtime by the output-root write gate's startup probe)
+sysinfo = { workspace = true }
 tempfile = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
+axum = { workspace = true }
+base64 = { workspace = true }
+bytes = { workspace = true }
+jsonwebtoken = { workspace = true }
+prost = { workspace = true }
+rand = { workspace = true }
+regex = { workspace = true }
+srec-api = { workspace = true, features = ["test-support"] }
 srec-engines = { workspace = true, features = ["test-support"] }
 srec-pipeline = { workspace = true, features = ["test-support"] }
 srec-recorder = { workspace = true, features = ["test-support"] }
@@ -87,14 +58,16 @@ srec-sqlite = { workspace = true, features = ["test-support"] }
 syn = { version = "3", features = ["full", "visit"] }
 tokio = { workspace = true, features = ["test-util"] }
 tokio-tungstenite = { workspace = true }
-prost-build = { workspace = true }
-protox = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+tracing-appender = { workspace = true }
+tracing-subscriber = { workspace = true }
+utoipa = { workspace = true }
 zip = { workspace = true }
-
 
 [features]
 default = []
-static-ssl = ["platforms-parser/static-ssl", "srec-recorder/static-ssl"]
+static-ssl = ["platforms-parser/static-ssl", "srec-recorder/static-ssl", "srec-api/static-ssl"]
 
 # Opt-in: enable native-tls fallback for legacy endpoints (e.g. Douyu CDN / danmu).
-tls-native-fallback = ["platforms-parser/tls-native-fallback", "srec-recorder/tls-native-fallback"]
+tls-native-fallback = ["platforms-parser/tls-native-fallback", "srec-recorder/tls-native-fallback", "srec-api/tls-native-fallback"]

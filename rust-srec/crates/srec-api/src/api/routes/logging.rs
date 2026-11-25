@@ -25,7 +25,7 @@ use std::time::Duration;
 use utoipa::ToSchema;
 
 mod archive;
-pub(crate) use archive::LogArchiveService;
+pub use archive::LogArchiveService;
 
 use crate::api::auth_request::{
     AccessPolicy, authorize_request, revalidate, run_authenticated_session,

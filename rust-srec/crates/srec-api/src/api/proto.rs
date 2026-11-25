@@ -242,17 +242,17 @@ pub fn create_snapshot_message(
 mod tests {
     use super::*;
 
-    const REGENERATE: &str = "UPDATE_GENERATED_PROTOS=1 cargo nextest run --locked -p rust-srec --lib -E 'test(generated_protos)'";
+    const REGENERATE: &str = "UPDATE_GENERATED_PROTOS=1 cargo nextest run --locked -p srec-api --lib -E 'test(generated_protos)'";
 
-    /// The committed protobuf modules must match what `proto/` generates, so a
-    /// schema edit cannot ship without its code. Setting
+    /// The committed protobuf modules must match what `rust-srec/proto/`
+    /// generates, so a schema edit cannot ship without its code. Setting
     /// `UPDATE_GENERATED_PROTOS` rewrites the committed files instead.
     #[test]
     fn generated_protos_are_current() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let schemas = protox::compile(
             ["download_progress.proto", "log_event.proto"],
-            [root.join("proto")],
+            [root.join("../../proto")],
         )
         .expect("compile proto schemas");
         let requests = schemas

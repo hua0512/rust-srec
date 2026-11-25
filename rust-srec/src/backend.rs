@@ -41,6 +41,15 @@ use crate::services::container::{DEFAULT_CACHE_TTL, DEFAULT_EVENT_CAPACITY};
 pub use crate::services::legacy_upgrade::run_migrations;
 pub use crate::utils::http_client::install_rustls_provider;
 
+#[cfg(test)]
+mod bootstrap_tests;
+#[cfg(test)]
+mod import_contract_tests;
+#[cfg(test)]
+mod response_contract_tests;
+#[cfg(test)]
+mod timezone_import_tests;
+
 fn map_auth_import_error(error: AuthImportError) -> ConfigurationImportError {
     match error {
         AuthImportError::Validation(message) => ConfigurationImportError::Validation(message),
@@ -109,7 +118,7 @@ impl ConfigBackupPort for BackendConfigBackup {
         self.export_service
             .export(user_exports)
             .await
-            .map_err(ConfigBackupError::Other)
+            .map_err(|error| ConfigBackupError::Other(error.into()))
     }
 
     async fn import_config(
@@ -336,7 +345,7 @@ impl ServiceContainer {
     /// This should be called after `initialize()` and runs the server in the background.
     pub async fn start_api_server(&self) -> Result<()> {
         let runtime = build_api_runtime(&self.core, self.config_backup.clone())?;
-        self.api.start_api_server(runtime).await
+        self.api.start_api_server(runtime).await.map_err(Into::into)
     }
 
     /// Initialize and start the API server, returning the resolved bind address.
@@ -345,7 +354,10 @@ impl ServiceContainer {
     /// actual port is only known after binding.
     pub async fn start_api_server_bound(&self) -> Result<SocketAddr> {
         let runtime = build_api_runtime(&self.core, self.config_backup.clone())?;
-        self.api.start_api_server_bound(runtime).await
+        self.api
+            .start_api_server_bound(runtime)
+            .await
+            .map_err(Into::into)
     }
 
     /// Initialize and start the API server, returning the resolved bind
@@ -362,24 +374,31 @@ impl ServiceContainer {
         self.api
             .start_api_server_bound_with_jwt_secret(runtime, jwt_secret)
             .await
+            .map_err(Into::into)
     }
 
     /// Issue a local desktop session for the active admin user when the
     /// loopback desktop app operates without password sign-in.
     pub async fn issue_local_desktop_session(&self) -> Result<(String, AuthResponse)> {
-        self.api.issue_local_desktop_session().await
+        self.api
+            .issue_local_desktop_session()
+            .await
+            .map_err(Into::into)
     }
 
     /// The account local desktop sessions are issued for, or `None` when
     /// there is no active admin.
     pub async fn local_desktop_account(&self) -> Result<Option<LocalDesktopAccount>> {
-        self.api.local_desktop_account().await
+        self.api.local_desktop_account().await.map_err(Into::into)
     }
 
     /// Replace the initial password of the local desktop account. Fails once
     /// that account has a password of its own.
     pub async fn set_local_desktop_password(&self, new_password: &str) -> Result<()> {
-        self.api.set_local_desktop_password(new_password).await
+        self.api
+            .set_local_desktop_password(new_password)
+            .await
+            .map_err(Into::into)
     }
 
     /// Restore previously persisted local desktop `(session_id, user_id)` pairs
@@ -402,7 +421,10 @@ impl ServiceContainer {
         &self,
         extra_sessions: &[(String, String)],
     ) -> Result<usize> {
-        self.api.revoke_local_desktop_sessions(extra_sessions).await
+        self.api
+            .revoke_local_desktop_sessions(extra_sessions)
+            .await
+            .map_err(Into::into)
     }
 }
 

@@ -6,12 +6,14 @@
 //! - Coordinated file byte/count limits and seven-day maximum log age
 //! - Local timezone timestamps for logs
 
+use std::collections::HashSet;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use jiff::{Timestamp, Zoned};
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
@@ -28,8 +30,176 @@ use tracing_subscriber::{
 use crate::utils::fs;
 use crate::utils::shared_event::{SharedEvent, SharedEventSender, publish_shared};
 
-pub(crate) mod store;
+pub mod store;
 use store::{LogStore, LogWriter};
+
+/// Internal backend crate targets governed by the user-facing `rust_srec` filter prefix.
+///
+/// Users, persisted database configs, `RUST_LOG`, and the web UI configure `rust_srec=<level>`
+/// for the application as a whole. Expanding `rust_srec` to these extracted workspace crates
+/// preserves that single-target contract without exposing internal crate boundaries.
+const INTERNAL_CRATE_TARGETS: &[&str] = &[
+    "srec_core",
+    "srec_sqlite",
+    "srec_processors",
+    "srec_engines",
+    "srec_notify",
+    "srec_pipeline",
+    "srec_recorder",
+    "srec_api",
+];
+
+/// Module prefixes that moved from root `rust_srec::*` into extracted workspace crates.
+/// Ordered longest-prefix-first so nested submodules match before their parent module.
+const LEGACY_MODULE_ALIASES: &[(&str, &[&str])] = &[
+    (
+        "rust_srec::pipeline::processors",
+        &["srec_processors::processors"],
+    ),
+    ("rust_srec::downloader::engine", &["srec_engines"]),
+    ("rust_srec::domain", &["srec_core::domain"]),
+    ("rust_srec::utils", &["srec_core::utils"]),
+    ("rust_srec::database", &["srec_sqlite"]),
+    ("rust_srec::pipeline", &["srec_pipeline", "srec_processors"]),
+    ("rust_srec::notification", &["srec_notify"]),
+    ("rust_srec::config", &["srec_recorder::config"]),
+    ("rust_srec::credentials", &["srec_recorder::credentials"]),
+    ("rust_srec::danmu", &["srec_recorder::danmu"]),
+    (
+        "rust_srec::downloader",
+        &["srec_recorder::downloader", "srec_engines"],
+    ),
+    ("rust_srec::monitor", &["srec_recorder::monitor"]),
+    ("rust_srec::proxies", &["srec_recorder::proxies"]),
+    ("rust_srec::recorder", &["srec_recorder::recorder"]),
+    ("rust_srec::session", &["srec_recorder::session"]),
+    ("rust_srec::streamer", &["srec_recorder::streamer"]),
+    ("rust_srec::api", &["srec_api::api"]),
+    ("rust_srec::logging", &["srec_api::logging"]),
+    ("rust_srec::mcp", &["srec_api::mcp"]),
+    ("rust_srec::metrics", &["srec_api::metrics"]),
+];
+
+fn split_directives(directive: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut bracket_depth: usize = 0;
+    let mut brace_depth: usize = 0;
+
+    for (idx, ch) in directive.char_indices() {
+        match ch {
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth = bracket_depth.saturating_sub(1),
+            '{' => brace_depth += 1,
+            '}' => brace_depth = brace_depth.saturating_sub(1),
+            ',' if bracket_depth == 0 && brace_depth == 0 => {
+                let token = directive[start..idx].trim();
+                if !token.is_empty() {
+                    parts.push(token);
+                }
+                start = idx + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+
+    let tail = directive[start..].trim();
+    if !tail.is_empty() {
+        parts.push(tail);
+    }
+
+    parts
+}
+
+fn split_target_and_rest(token: &str) -> (&str, &str) {
+    match token.find(['=', '[']) {
+        Some(idx) => (&token[..idx], &token[idx..]),
+        None => (token, ""),
+    }
+}
+
+fn match_legacy_module_alias(target: &str) -> Option<(&'static [&'static str], &str)> {
+    LEGACY_MODULE_ALIASES
+        .iter()
+        .find_map(|(old_prefix, new_prefixes)| {
+            target.strip_prefix(old_prefix).and_then(|subpath| {
+                if subpath.is_empty() || subpath.starts_with("::") {
+                    Some((*new_prefixes, subpath))
+                } else {
+                    None
+                }
+            })
+        })
+}
+
+fn expand_filter_directive(directive: &str) -> String {
+    let tokens = split_directives(directive);
+    if tokens.is_empty() {
+        return directive.to_string();
+    }
+
+    // Track internal crates explicitly targeted at crate root (directly or via a
+    // crate-root legacy module alias) so umbrella `rust_srec=<level>` expansion
+    // never overwrites a more specific directive regardless of order.
+    let mut overridden_internal_crates: HashSet<&str> = HashSet::new();
+    for &token in &tokens {
+        let (target, rest) = split_target_and_rest(token);
+        if rest.starts_with('[') {
+            continue;
+        }
+        if INTERNAL_CRATE_TARGETS.contains(&target) {
+            overridden_internal_crates.insert(target);
+        } else if let Some((new_prefixes, subpath)) = match_legacy_module_alias(target)
+            && subpath.is_empty()
+        {
+            for &new_prefix in new_prefixes {
+                if !new_prefix.contains("::") {
+                    overridden_internal_crates.insert(new_prefix);
+                }
+            }
+        }
+    }
+
+    let mut expanded = Vec::with_capacity(tokens.len() + INTERNAL_CRATE_TARGETS.len());
+    for token in tokens {
+        let (target, rest) = split_target_and_rest(token);
+        if target == "rust_srec" {
+            expanded.push(token.to_string());
+            for &crate_target in INTERNAL_CRATE_TARGETS {
+                if rest.starts_with('[') || !overridden_internal_crates.contains(crate_target) {
+                    expanded.push(format!("{crate_target}{rest}"));
+                }
+            }
+        } else if let Some((new_prefixes, subpath)) = match_legacy_module_alias(target) {
+            expanded.push(token.to_string());
+            for (idx, &new_prefix) in new_prefixes.iter().enumerate() {
+                if subpath.is_empty() || idx == 0 {
+                    expanded.push(format!("{new_prefix}{subpath}{rest}"));
+                }
+            }
+        } else {
+            expanded.push(token.to_string());
+        }
+    }
+
+    expanded.join(",")
+}
+
+fn build_effective_env_filter(
+    directive: &str,
+) -> std::result::Result<EnvFilter, tracing_subscriber::filter::ParseError> {
+    // Validate the user's raw directive first so syntax errors report against their input.
+    EnvFilter::try_new(directive)?;
+    let expanded = expand_filter_directive(directive);
+    EnvFilter::try_new(expanded)
+}
+
+/// Validate a tracing `EnvFilter` directive string without applying it.
+pub fn validate_filter_directive(directive: &str) -> std::result::Result<(), String> {
+    build_effective_env_filter(directive)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
 
 /// Default log filter directive.
 pub const DEFAULT_LOG_FILTER: &str = "rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info";
@@ -66,6 +236,7 @@ pub struct LogEvent {
 /// Logging configuration with reloadable filter and broadcast capability.
 pub struct LoggingConfig {
     handle: FilterHandle,
+    configured_filter: RwLock<String>,
     log_tx: broadcast::Sender<LogEvent>,
     shared_log_tx: Arc<SharedEventSender<LogEvent>>,
     log_dir: PathBuf,
@@ -73,8 +244,8 @@ pub struct LoggingConfig {
 }
 
 impl LoggingConfig {
-    #[cfg(test)]
-    pub(crate) fn for_route_tests(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_route_tests(
         log_dir: PathBuf,
     ) -> (Self, reload::Layer<EnvFilter, tracing_subscriber::Registry>) {
         let (layer, handle) = reload::Layer::new(EnvFilter::new("info"));
@@ -83,6 +254,7 @@ impl LoggingConfig {
         (
             Self::new(
                 handle,
+                "info".to_string(),
                 sender,
                 Arc::new(SharedEventSender::new(LOG_BROADCAST_CAPACITY)),
                 log_dir,
@@ -95,6 +267,7 @@ impl LoggingConfig {
     /// Create a new logging configuration.
     fn new(
         handle: FilterHandle,
+        configured_filter: String,
         log_tx: broadcast::Sender<LogEvent>,
         shared_log_tx: Arc<SharedEventSender<LogEvent>>,
         log_dir: PathBuf,
@@ -102,6 +275,7 @@ impl LoggingConfig {
     ) -> Self {
         Self {
             handle,
+            configured_filter: RwLock::new(configured_filter),
             log_tx,
             shared_log_tx,
             log_dir,
@@ -109,11 +283,9 @@ impl LoggingConfig {
         }
     }
 
-    /// Get the current filter directive string.
+    /// Get the current user-facing filter directive string.
     pub fn get_filter(&self) -> String {
-        self.handle
-            .with_current(|filter| filter.to_string())
-            .unwrap_or_default()
+        self.configured_filter.read().clone()
     }
 
     /// Set a new filter directive.
@@ -124,13 +296,14 @@ impl LoggingConfig {
     /// # Returns
     /// Error if the directive is invalid.
     pub fn set_filter(&self, directive: &str) -> crate::Result<()> {
-        let new_filter = EnvFilter::try_new(directive)
+        let new_filter = build_effective_env_filter(directive)
             .map_err(|e| crate::Error::Other(format!("Invalid filter directive: {}", e)))?;
 
         self.handle
             .reload(new_filter)
             .map_err(|e| crate::Error::Other(format!("Failed to reload filter: {}", e)))?;
 
+        *self.configured_filter.write() = directive.to_string();
         info!(directive = %directive, "Log filter updated");
         Ok(())
     }
@@ -166,7 +339,7 @@ impl LoggingConfig {
         });
     }
 
-    pub(crate) async fn run_retention_cleanup(&self, cancel_token: CancellationToken) {
+    pub async fn run_retention_cleanup(&self, cancel_token: CancellationToken) {
         let cleanup_interval = Duration::from_secs(24 * 60 * 60);
 
         loop {
@@ -284,8 +457,18 @@ pub fn init_logging(log_dir: &str) -> crate::Result<(Arc<LoggingConfig>, WorkerG
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
     // Create reloadable filter
-    let initial_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(DEFAULT_LOG_FILTER));
+    let (initial_directive, initial_filter) = std::env::var(EnvFilter::DEFAULT_ENV)
+        .ok()
+        .and_then(|raw| {
+            build_effective_env_filter(&raw)
+                .ok()
+                .map(|filter| (raw, filter))
+        })
+        .unwrap_or_else(|| {
+            let filter = build_effective_env_filter(DEFAULT_LOG_FILTER)
+                .unwrap_or_else(|_| EnvFilter::new(DEFAULT_LOG_FILTER));
+            (DEFAULT_LOG_FILTER.to_string(), filter)
+        });
     let (filter_layer, filter_handle) = reload::Layer::new(initial_filter);
 
     // Create broadcast channel for log streaming
@@ -318,6 +501,7 @@ pub fn init_logging(log_dir: &str) -> crate::Result<(Arc<LoggingConfig>, WorkerG
 
     let config = Arc::new(LoggingConfig::new(
         filter_handle,
+        initial_directive,
         log_tx,
         shared_log_tx,
         log_path,
@@ -355,6 +539,68 @@ pub fn available_modules() -> Vec<(&'static str, &'static str)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rust_srec_filter_covers_extracted_crates_and_respects_specific_overrides() {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, filter_layer) = LoggingConfig::for_route_tests(dir.path().to_owned());
+        let mut rx = config.subscribe();
+        let drain = |rx: &mut broadcast::Receiver<LogEvent>| {
+            while rx.try_recv().is_ok() {}
+        };
+        let subscriber = tracing_subscriber::registry()
+            .with(filter_layer)
+            .with(BroadcastLayer {
+                tx: config.log_tx.clone(),
+                shared_tx: config.shared_log_tx.clone(),
+            });
+
+        tracing::subscriber::with_default(subscriber, || {
+            config.set_filter(DEFAULT_LOG_FILTER).unwrap();
+            assert_eq!(config.get_filter(), DEFAULT_LOG_FILTER);
+            drain(&mut rx);
+
+            tracing::info!(target: "srec_api::api::routes::config", "api info");
+            tracing::debug!(target: "srec_api::api::routes::config", "api debug filtered");
+            tracing::info!(target: "srec_recorder::downloader::manager", "recorder info");
+
+            let first = rx.try_recv().unwrap();
+            assert_eq!(first.target, "srec_api::api::routes::config");
+            assert_eq!(first.message, "api info");
+            let second = rx.try_recv().unwrap();
+            assert_eq!(second.target, "srec_recorder::downloader::manager");
+            assert_eq!(second.message, "recorder info");
+            assert!(rx.try_recv().is_err());
+
+            // Specific internal crate override wins regardless of order against umbrella `rust_srec`.
+            config.set_filter("srec_api=debug,rust_srec=warn").unwrap();
+            assert_eq!(config.get_filter(), "srec_api=debug,rust_srec=warn");
+            drain(&mut rx);
+            tracing::debug!(target: "srec_api::api::routes::config", "api debug allowed");
+            tracing::info!(target: "srec_recorder::monitor", "recorder info filtered");
+            let event = rx.try_recv().unwrap();
+            assert_eq!(event.message, "api debug allowed");
+            assert!(rx.try_recv().is_err());
+
+            // Legacy `rust_srec::<module>` targets map to extracted crates even when listed first.
+            config
+                .set_filter("rust_srec::pipeline=debug,rust_srec::api=debug,rust_srec=warn")
+                .unwrap();
+            assert_eq!(
+                config.get_filter(),
+                "rust_srec::pipeline=debug,rust_srec::api=debug,rust_srec=warn"
+            );
+            drain(&mut rx);
+            tracing::debug!(target: "srec_pipeline::manager", "pipeline debug");
+            tracing::debug!(target: "srec_processors::processors::remux", "processor debug");
+            tracing::debug!(target: "srec_api::api::routes::config", "api subtarget debug");
+            tracing::info!(target: "srec_api::logging", "sibling logging info filtered");
+            assert_eq!(rx.try_recv().unwrap().message, "pipeline debug");
+            assert_eq!(rx.try_recv().unwrap().message, "processor debug");
+            assert_eq!(rx.try_recv().unwrap().message, "api subtarget debug");
+            assert!(rx.try_recv().is_err());
+        });
+    }
 
     #[test]
     fn broadcast_formats_only_for_connected_receivers() {
@@ -415,6 +661,7 @@ mod tests {
         let store = Arc::new(LogStore::new(dir.path().to_owned(), Default::default()));
         let config = LoggingConfig::new(
             handle,
+            "info".to_string(),
             tx,
             Arc::new(SharedEventSender::new(LOG_BROADCAST_CAPACITY)),
             dir.path().to_owned(),

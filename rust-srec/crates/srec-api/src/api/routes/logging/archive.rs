@@ -22,12 +22,18 @@ const CHUNK_SIZE: usize = 64 * 1024;
 const BUFFERED_CHUNKS: usize = 4;
 
 /// Owns the archive download capacity shared by all logging routes.
-pub(crate) struct LogArchiveService {
+pub struct LogArchiveService {
     slots: Arc<Semaphore>,
 }
 
+impl Default for LogArchiveService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LogArchiveService {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             slots: Arc::new(Semaphore::new(MAX_CONCURRENT_ARCHIVES)),
         }

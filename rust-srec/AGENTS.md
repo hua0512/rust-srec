@@ -1,36 +1,40 @@
 # Backend AGENTS.md
 
-These backend-specific rules apply to `src/`, `migrations/`, `proto/`, and backend build/deployment files in this package. The frontend, docs, and desktop wrapper use their own nested rules plus the repository-wide guidance; backend service conventions do not apply to their unrelated work.
+These backend-specific rules apply to `src/`, `crates/srec-*`, `migrations/`, `proto/`, and backend build/deployment files in this package. The frontend, docs, and desktop wrapper use their own nested rules plus the repository-wide guidance; backend service conventions do not apply to their unrelated work.
 
 ## OVERVIEW
-Production-ready recorder backend (REST API + scheduler + pipeline + SQLite).
+Production-ready recorder backend (REST API + MCP + actor-based recorder control plane + post-processing pipeline + SQLite), split into layered internal workspace crates under `crates/srec-*` and composed by the thin root crate `rust-srec`.
 
 ## STRUCTURE
-- `src/api/`: Axum server, JWT auth, and route handlers.
-- `src/scheduler/`: Streamer monitoring and job management.
-- `src/pipeline/`: Post-processing DAG logic (segment, session completion).
-- `src/downloader/`: Manager for `ffmpeg`, `streamlink`, and `mesio` engines.
-- `src/database/`: SQLx repositories and models; migrations are in `migrations/`.
-- `src/notification/`: Event-driven notifications; channel implementations live in `channels/`, browser push in `web_push/`.
-- `src/credentials/`: Platform-specific credential/cookie management.
+- `crates/srec-core/` (Layer 0): Storage-free domain value objects, shared ports, proxy value types, engine configs, processor contracts, and utilities.
+- `crates/srec-sqlite/` (Layer 0): SQLite connection pools, `CommittedWriter`, retry/time helpers, base models/repositories, and schema migration runner (`migrations/` stays at `rust-srec/migrations/`).
+- `crates/srec-engines/` (Layer 1): Download engines (`ffmpeg`, `streamlink`, `mesio`) and danmu runner.
+- `crates/srec-processors/` (Layer 1): Post-processing operators and BaiduPCS-Go runner (no SQLite dependency).
+- `crates/srec-notify/` (Layer 1): Event-driven notification channels, Web Push (VAPID), backend `locales/`, and durable outbox drainer.
+- `crates/srec-pipeline/` (Layer 2): Post-processing DAG scheduler, job queue, worker pools, throttling, and pipeline repositories.
+- `crates/srec-recorder/` (Layer 2): Recording control plane (FSM, per-streamer actors, prober, batch precheck, Bigo notifications), download orchestration, danmu service, credentials, proxies, config service, and streamer state.
+- `crates/srec-api/` (Layer 3): Axum REST/WebSocket server, Protobuf generated types (`proto/` stays at `rust-srec/proto/`), OpenAPI/Swagger, MCP server (`mcp/`), auth store/service, CQRS read queries, playback contexts, dynamic logging, and health metrics.
+- `src/` (Layer 4, thin root `rust-srec`): `ServiceContainer` wiring, `ConfigBackupPort` export/import, maintenance scheduler, legacy startup upgrades, `StoredLoginAuthenticator`, process supervision (`runtime/`), desktop/server facade (`backend.rs`, `server.rs`), and binaries (`main.rs`, `bin/rust-srec-vapid.rs`).
 
 ## WHERE TO LOOK
-- `src/pipeline/manager.rs`: Pipeline execution engine (hotspot).
-- `src/api/routes/pipeline.rs`: Pipeline control endpoints (hotspot).
-- `src/services/container.rs`: Central `ServiceContainer` state.
+- `crates/srec-pipeline/src/manager.rs`: Pipeline execution engine (hotspot).
+- `crates/srec-api/src/api/routes/pipeline.rs`: Pipeline control endpoints (hotspot).
+- `crates/srec-recorder/src/recorder/`: Streamer FSM, actor runtime, prober, registry, and store.
+- `src/services/container.rs`: Central `ServiceContainer` wiring.
+- `src/backend.rs`: Public backend integration facade for the server binary and `src-tauri`.
 - `src/main.rs`: Entry point and service initialization sequence.
 - `migrations/`: SQL schema versions (run automatically on startup).
-- `proto/`: Protobuf definitions for logging and progress events.
+- `proto/`: Protobuf definitions for logging and progress events (regenerated via `-p srec-api`).
 - `docker-compose.yml`: Local containerized environment setup.
 
 ## CONVENTIONS
 - **State**: Use `Arc<ServiceContainer>` for shared ownership across services.
-- **API State**: `AppState` (`src/api/server.rs`) is the shared context for Axum routes.
-- **Errors**: Propagate to `crate::error::Error`; handle API-specific errors in `src/api/error.rs`.
+- **API State**: `AppState` (`crates/srec-api/src/api/server.rs`) is the shared context for Axum routes.
+- **Errors**: Propagate domain/crate errors to each crate's error type (and `crate::error::Error` in root `rust-srec`); handle HTTP-specific errors in `crates/srec-api/src/api/error.rs`.
 - **Migrations**: New schema changes go in new files in `migrations/`; never edit a shipped one — sqlx checksums applied migrations and any change breaks startup on existing installs, so correct it with another new file.
 - **Table rebuilds**: Follow the [table rebuild procedure](../CONTRIBUTING.md#sqlite-table-rebuilds) for any migration that rebuilds a table. Rebuilding `streamers`, `template_config`, `platform_config` or `credential_profiles` always needs its `-- no-transaction` / `PRAGMA foreign_keys=OFF` form; inside SQLx's default transaction the rebuild deletes or fails on the account selections that reference those tables.
 
-- **Pipeline step inputs**: the DAG gives each step the merged *outputs* of the steps it `depends_on` (`ready_steps` in `src/database/repositories/dag.rs`). Transform steps output only their new file (remux returns no passthrough), rclone copy/sync pass their inputs through, and rclone move outputs nothing. So a `delete` step after a transform deletes the converted result, not the recording. To delete the source after converting, use the transform's own flag (`remove_input_on_success`, `delete_source_xml_on_success`, `delete_source_videos_on_success`); the workflow editor warns about the other pattern (`components/pipeline/workflows/delete-warning.ts`).
+- **Pipeline step inputs**: the DAG gives each step the merged *outputs* of the steps it `depends_on` (`ready_steps` in `crates/srec-pipeline/src/repositories/dag.rs`). Transform steps output only their new file (remux returns no passthrough), rclone copy/sync pass their inputs through, and rclone move outputs nothing. So a `delete` step after a transform deletes the converted result, not the recording. To delete the source after converting, use the transform's own flag (`remove_input_on_success`, `delete_source_xml_on_success`, `delete_source_videos_on_success`); the workflow editor warns about the other pattern (`components/pipeline/workflows/delete-warning.ts`).
 
 ## TESTING
 Pin each behavior at the highest layer that can reach it without the public network:

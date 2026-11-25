@@ -5,6 +5,7 @@ members = [
     "mesio-cli",
     "strev-cli",
     "rust-srec",
+    "rust-srec/crates/srec-api",
     "rust-srec/crates/srec-core",
     "rust-srec/crates/srec-engines",
     "rust-srec/crates/srec-notify",
@@ -88,6 +89,7 @@ hex = "0.4.3"
 flate2 = { version = "1.1.10", features = ["zlib-rs"], default-features = false }
 url = "2.5.8"
 percent-encoding = "2.3.2"
+srec-api = { path = "rust-srec/crates/srec-api" }
 srec-core = { path = "rust-srec/crates/srec-core" }
 srec-engines = { path = "rust-srec/crates/srec-engines" }
 srec-notify = { path = "rust-srec/crates/srec-notify" }

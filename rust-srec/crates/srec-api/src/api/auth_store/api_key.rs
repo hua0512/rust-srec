@@ -129,20 +129,20 @@ impl ApiKeyRepository for SqlxApiKeyRepository {
 
 /// In-memory `ApiKeyRepository` shared by unit tests across the API layer
 /// (`api::auth_service`, `api::middleware::auth`, `api::routes::auth`).
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Default)]
 pub struct InMemoryApiKeyRepository {
     keys: std::sync::Mutex<Vec<ApiKeyDbModel>>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl InMemoryApiKeyRepository {
     fn lock(&self) -> std::sync::MutexGuard<'_, Vec<ApiKeyDbModel>> {
         self.keys.lock().expect("test repository mutex poisoned")
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[async_trait]
 impl ApiKeyRepository for InMemoryApiKeyRepository {
     async fn create(&self, key: &ApiKeyDbModel) -> Result<()> {
