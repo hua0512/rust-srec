@@ -473,7 +473,10 @@ impl DownloadManager {
             );
             engines.insert(
                 EngineType::Mesio,
-                Arc::new(MesioEngine::new()) as Arc<dyn DownloadEngine>,
+                Arc::new(
+                    MesioEngine::new()
+                        .with_native_flv_opener(Arc::new(super::bigo_native::BigoNativeFlvOpener)),
+                ) as Arc<dyn DownloadEngine>,
             );
         }
 

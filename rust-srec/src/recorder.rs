@@ -22,11 +22,11 @@ pub use ports::{
     ActorStopReason, AttemptStartFailure, AttemptStartSpec, DanmuCloseSegmentSpec,
     DanmuSegmentRecord, DanmuStopKind, DanmuStopResult, DbCommitFailure, DbCommitOp,
     DbCommitOutcome, INTERACTIVE_RETIREMENT, InitialStreamerSnapshot, LiveProbePayload,
-    OBSERVE_RETIREMENT, OutboxEvent, PipelineNotification, ProbeFailure, ProbePurpose,
-    ProbeRequest, ProbeStatus, RecorderDanmuPort, RecorderDownloadPort, RecorderPipelinePort,
-    RecorderProberPort, RecorderRuntimeSink, RecorderStorePort, ResolvedActorConfig,
-    RetirementBounds, SessionStartDisposition, StreamOnlineKind, StreamerRetirement,
-    StreamerRuntimeView, VideoSegmentRecord, should_spawn_actor,
+    OBSERVE_RETIREMENT, OutboxEvent, PipelineDrainStatus, PipelineNotification, ProbeFailure,
+    ProbePurpose, ProbeRequest, ProbeStatus, RecorderDanmuPort, RecorderDownloadPort,
+    RecorderPipelinePort, RecorderProberPort, RecorderRuntimeSink, RecorderStorePort,
+    ResolvedActorConfig, RetirementBounds, SessionStartDisposition, StreamOnlineKind,
+    StreamerRetirement, StreamerRuntimeView, VideoSegmentRecord, should_spawn_actor,
 };
 pub use prober::{PlatformExtractorRunner, RecorderProber, RecorderProberDependencies};
 pub use registry::{ActorRegistry, ActorRegistryDependencies};

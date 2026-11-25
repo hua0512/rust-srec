@@ -30,10 +30,9 @@ use super::super::utils::sanitize_engine_message;
 use super::classify_download_error;
 use super::config::build_hls_config;
 use super::helpers::{self, DownloadStats};
-use crate::database::models::engine::MesioEngineConfig;
-use crate::downloader::EngineEndSignal;
+use crate::domain::engine_config::MesioEngineConfig;
 use crate::downloader::engine::traits::{
-    DownloadFailureKind, DownloadHandle, EngineStartError, SegmentEvent,
+    DownloadFailureKind, DownloadHandle, EngineEndSignal, EngineStartError, SegmentEvent,
 };
 
 /// A protocol whose sessions deliver fMP4/TS `HlsData` and are written by

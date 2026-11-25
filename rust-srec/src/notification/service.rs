@@ -31,6 +31,7 @@ use crate::Result;
 use crate::database::models::NotificationChannelDbModel;
 use crate::database::models::NotificationEventLogDbModel;
 use crate::database::repositories::NotificationRepository;
+use crate::domain::notification::{RuntimeAlert, RuntimeAlertSink};
 use crate::domain::proxy::ProxyRouteResolver;
 use crate::utils::task_supervisor::TaskSupervisor;
 
@@ -865,6 +866,49 @@ pub struct NotificationStats {
     pub channel_count: usize,
     /// Circuit breaker states (channel_key -> is_open).
     pub circuit_breakers: HashMap<String, bool>,
+}
+
+impl RuntimeAlertSink for NotificationService {
+    fn emit(self: Arc<Self>, alert: RuntimeAlert) {
+        let event = match alert {
+            RuntimeAlert::Credential(event) => NotificationEvent::Credential { event },
+            RuntimeAlert::PlatformThrottled {
+                platform,
+                route,
+                proxy_name,
+                retry_at,
+                timestamp,
+            } => NotificationEvent::PlatformThrottled {
+                platform,
+                route,
+                proxy_name,
+                retry_at,
+                timestamp,
+            },
+            RuntimeAlert::OutputPathInaccessible {
+                path,
+                error_kind,
+                timestamp,
+            } => NotificationEvent::OutputPathInaccessible {
+                path,
+                error_kind,
+                timestamp,
+            },
+            RuntimeAlert::BigoNotificationsFailing {
+                problem,
+                message,
+                timestamp,
+            } => NotificationEvent::BigoNotificationsFailing {
+                problem,
+                message,
+                timestamp,
+            },
+            RuntimeAlert::BigoNotificationsRestored { problem, timestamp } => {
+                NotificationEvent::BigoNotificationsRestored { problem, timestamp }
+            }
+        };
+        self.dispatch_notification(event);
+    }
 }
 
 #[cfg(test)]

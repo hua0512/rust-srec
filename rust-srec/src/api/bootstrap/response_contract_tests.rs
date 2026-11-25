@@ -33,11 +33,13 @@ async fn application() -> (ServiceContainer, Router, tempfile::TempDir) {
         crate::logging::LoggingConfig::for_route_tests(directory.path().to_path_buf());
     assert!(container.logging_config.set(Arc::new(logging)).is_ok());
     let mut state = build_api_state(
-        &container,
-        crate::backend::build_config_backup(&container),
+        crate::backend::build_api_runtime(
+            &container,
+            crate::backend::build_config_backup(&container),
+        )
+        .unwrap(),
         None,
-    )
-    .unwrap();
+    );
     state.web_push_service = None;
     let application = crate::api::routes::create_router(state).layer(Extension(Claims {
         sub: "contract-user".to_owned(),

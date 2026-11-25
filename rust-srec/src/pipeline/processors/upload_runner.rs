@@ -20,9 +20,9 @@ use super::utils::{
     parse_size_to_bytes, parse_speed_to_bytes_per_sec, run_logged_command,
     run_logged_command_until,
 };
-use crate::pipeline::job_queue::{JobLogEntry, LogLevel};
-use crate::pipeline::progress::{
-    JobPhase, JobProgressSnapshot, ProgressKind, ProgressReporter, progress_file_name,
+use crate::domain::processor::{
+    JobLogEntry, JobPhase, JobProgressSnapshot, LogLevel, ProgressKind, ProgressReporter,
+    progress_file_name,
 };
 
 // Output markers printed by BaiduPCS-Go (hardcoded constants in its

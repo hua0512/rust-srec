@@ -379,7 +379,8 @@ impl ServiceContainer {
             .with_routes(Arc::new(crate::proxies::ServiceRoutes::new(pool.clone())));
         let notification_service = Arc::new(notification_service);
         notification_service.start_web_push_worker();
-        credential_service.set_notification_service(Arc::clone(&notification_service));
+        credential_service.set_notification_service(Arc::clone(&notification_service)
+            as Arc<dyn crate::domain::notification::RuntimeAlertSink>);
 
         // Stored Baidu Netdisk login material, installed process-wide so the
         // /api/tools/baidupcs routes and BaiduPcsProcessor's automatic
@@ -398,7 +399,10 @@ impl ServiceContainer {
         // Build the output-root write gate AFTER both StreamerManager
         // and NotificationService are available.
         let output_root_gate = OutputRootGate::new(
-            Arc::downgrade(&notification_service),
+            Some(Arc::downgrade(&notification_service)
+                as std::sync::Weak<
+                    dyn crate::domain::notification::RuntimeAlertSink,
+                >),
             build_output_root_gate_recovery_hook(streamer_manager.clone(), task_supervisor.clone()),
             parse_output_roots_env(),
             Duration::from_secs(DEFAULT_GATE_COOLDOWN_SECS),
@@ -469,13 +473,18 @@ impl ServiceContainer {
                 })
             },
         ));
+        let recorder_pipeline_port: Arc<dyn crate::recorder::RecorderPipelinePort> = Arc::new(
+            crate::services::pipeline_ports::PipelineManagerRecorderPort::new(
+                pipeline_manager.clone(),
+            ),
+        );
         let actor_registry =
             crate::recorder::ActorRegistry::new(crate::recorder::ActorRegistryDependencies {
                 store: recorder_store.clone(),
                 prober: recorder_prober,
                 download_manager: download_manager.clone(),
                 danmu_service: danmu_service.clone(),
-                pipeline_manager: pipeline_manager.clone(),
+                pipeline: recorder_pipeline_port,
                 streamer_manager: streamer_manager.clone(),
                 config_service: config_service.clone(),
                 check_interval_ms: global_config.streamer_check_delay_ms as u64,

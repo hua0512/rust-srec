@@ -441,7 +441,7 @@ impl Processor for MetadataProcessor {
                 };
                 output
                     .logs
-                    .push(crate::pipeline::job_queue::JobLogEntry::info(message));
+                    .push(crate::domain::processor::JobLogEntry::info(message));
             }
         }
         Ok(output)

@@ -20,7 +20,7 @@ use super::classify_download_error;
 use super::config::build_dash_config;
 use super::helpers::DownloadStats;
 use super::hls_downloader::{HlsDownloader, SegmentedProtocol, SessionLifecycle};
-use crate::database::models::engine::MesioEngineConfig;
+use crate::domain::engine_config::MesioEngineConfig;
 use crate::downloader::engine::traits::{DownloadFailureKind, DownloadHandle, EngineStartError};
 
 /// MPEG-DASH download orchestrator.

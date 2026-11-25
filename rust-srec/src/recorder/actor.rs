@@ -30,11 +30,10 @@ use crate::danmu::DanmuService;
 use crate::database::repositories::config::SqlxConfigRepository;
 use crate::database::repositories::streamer::SqlxStreamerRepository;
 use crate::downloader::{DownloadManager, RecorderFeedbackPermit};
-use crate::pipeline::PipelineManager;
 use crate::recorder::fsm::{FsmInput, StepContext, StreamerFsm};
 use crate::recorder::ports::{
     ActorStopReason, DbCommitFailure, DbCommitOutcome, InitialStreamerSnapshot, ProbeFailure,
-    ProbeStatus, RecorderStorePort, StreamerRuntimeView,
+    ProbeStatus, RecorderPipelinePort, RecorderStorePort, StreamerRuntimeView,
 };
 use crate::recorder::prober::RecorderProber;
 use crate::recorder::store::RecorderStore;
@@ -88,7 +87,7 @@ pub(crate) struct ActorRuntimeDeps {
     pub prober: Arc<RecorderProber>,
     pub download_manager: Arc<DownloadManager>,
     pub danmu_service: Arc<DanmuService>,
-    pub pipeline_manager: Arc<PipelineManager>,
+    pub pipeline: Arc<dyn RecorderPipelinePort>,
     pub streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
     pub config_service: Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
     pub leases: Arc<StartupLeaseRegistry>,

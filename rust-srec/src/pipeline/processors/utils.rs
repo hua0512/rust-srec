@@ -19,8 +19,9 @@ use super::traits::{JobLogSink, ProcessorContext};
 use super::upload_runner::{
     BAIDUPCS_BAR_END, UploadTracker, consume_baidupcs_stream, consume_rclone_stderr,
 };
-use crate::pipeline::job_queue::{JobLogEntry, LogLevel};
-use crate::pipeline::{JobPhase, JobProgressSnapshot, ProgressKind, ProgressReporter};
+use crate::domain::processor::{
+    JobLogEntry, JobPhase, JobProgressSnapshot, LogLevel, ProgressKind, ProgressReporter,
+};
 
 const LOG_CHANNEL_CAPACITY: usize = 1024;
 const MAX_LOG_ENTRIES: usize = 2000;

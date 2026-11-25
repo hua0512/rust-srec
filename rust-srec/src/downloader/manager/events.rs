@@ -2,68 +2,11 @@
 
 use jiff::Timestamp;
 
+pub use crate::downloader::engine::EngineEndSignal;
 use crate::downloader::engine::{
     DownloadFailureKind, DownloadProgress, DownloadProtocol, DownloadStatus, EngineType,
     IoErrorKindSer,
 };
-
-/// How the engine observed the end of a stream when emitting
-/// [`DownloadTerminalEvent::Completed`].
-///
-/// Different signals carry different confidence about whether the upstream
-/// stream is *actually* over vs. whether we just got disconnected and the
-/// streamer will reappear with a fresh URL.
-///
-/// Consumers ([`crate::recorder::StreamerFsm`]) use this to choose
-/// between firing the session-complete pipeline immediately and entering a
-/// hysteresis quiet-period that absorbs reconnects.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum EngineEndSignal {
-    /// HLS playlist contained `#EXT-X-ENDLIST`. The platform itself marked
-    /// the stream as complete — definitively over.
-    HlsEndlist,
-    /// The DASH presentation was static, or its MPD turned static or gained
-    /// an end, and every segment was recorded. Definitively over, like
-    /// [`Self::HlsEndlist`].
-    DashEnd,
-    /// Connection closed cleanly with no explicit end marker. Could be EOF,
-    /// could be a reconnect-friendly drop. Ambiguous; the lifecycle should
-    /// hold the session in hysteresis to absorb a possible resume.
-    ///
-    /// Used by mesio FLV (TCP close), mesio HLS without `#EXT-X-ENDLIST`,
-    /// and any other engine that observes a clean disconnect without a
-    /// platform-asserted end marker.
-    CleanDisconnect,
-    /// Subprocess (ffmpeg / streamlink) exited with status 0. Ambiguous —
-    /// could be EOF, could be the process being killed cleanly externally.
-    SubprocessExitZero,
-    /// Engine doesn't expose a finer signal. Treat as non-authoritative
-    /// (default for back-fill / unknown engines).
-    #[default]
-    Unknown,
-}
-
-impl EngineEndSignal {
-    /// Short, stable label for logging / metrics.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::HlsEndlist => "hls_endlist",
-            Self::DashEnd => "dash_end",
-            Self::CleanDisconnect => "clean_disconnect",
-            Self::SubprocessExitZero => "subprocess_exit_zero",
-            Self::Unknown => "unknown",
-        }
-    }
-
-    /// Whether the signal is the platform asserting the stream is over,
-    /// rather than a disconnect that a reconnect may follow.
-    pub fn is_authoritative(&self) -> bool {
-        match self {
-            Self::HlsEndlist | Self::DashEnd => true,
-            Self::CleanDisconnect | Self::SubprocessExitZero | Self::Unknown => false,
-        }
-    }
-}
 
 /// Reason why a download was stopped.
 ///

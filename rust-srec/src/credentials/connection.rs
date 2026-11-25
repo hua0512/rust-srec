@@ -3,9 +3,8 @@
 //! Each call goes through the route resolved for it, so a check, refresh or
 //! sign-in reaches the platform from the address the account uses.
 
-use platforms_parser::proxy::ProxyTarget;
-
 use super::CredentialProvider;
+use crate::domain::proxy::ProxyTarget;
 use crate::proxies::ProxyError;
 use crate::utils::http_client::{ClientCache, apply_proxy, build_client, install_rustls_provider};
 

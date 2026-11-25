@@ -210,7 +210,7 @@ async fn streamer_response(
 
 /// A URL's platform and the `platform_config` row it belongs to.
 struct ResolvedPlatform {
-    /// The name as reported by [`StreamerUrl::platform`] (capitalised, e.g. `Bilibili`), or
+    /// The name as reported by [`crate::streamer::detect_platform_name`] (capitalised, e.g. `Bilibili`), or
     /// [`STREAMLINK_PLATFORM`]. Differs in case from `config.platform_name`, which is stored
     /// lowercase.
     name: String,
@@ -275,7 +275,7 @@ async fn resolve_platform_for_url(
     config_service: &StreamerConfigService,
     probe_streamlink: bool,
 ) -> ApiResult<Option<ResolvedPlatform>> {
-    let mut name = url.platform().map(str::to_string);
+    let mut name = crate::streamer::detect_platform_name(url).map(str::to_string);
     if name.is_none() && !probe_streamlink {
         return Ok(None);
     }
@@ -299,7 +299,7 @@ async fn resolve_platform_for_url(
 
 /// Pick the platform config for a detected platform name.
 ///
-/// [`StreamerUrl::platform`] reports capitalised names (`Bilibili`) while `platform_name` is
+/// [`crate::streamer::detect_platform_name`] reports capitalised names (`Bilibili`) while `platform_name` is
 /// seeded lowercase, so the comparison must ignore case. `platform_name` is `UNIQUE`, so at most
 /// one row can match.
 fn find_platform_config(

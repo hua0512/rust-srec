@@ -3,10 +3,9 @@
 use std::error::Error as _;
 use std::time::{Duration, Instant};
 
-use platforms_parser::proxy::ProxyTarget;
 use serde::Serialize;
 
-use super::ProxyEndpoint;
+use super::{ProxyEndpoint, ProxyTarget};
 
 /// Bound on one check, connection included.
 pub const PROBE_TIMEOUT: Duration = Duration::from_secs(10);

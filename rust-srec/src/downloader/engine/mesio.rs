@@ -30,16 +30,17 @@
 //! engine wrappers keep user-visible recording progress on the writer pipeline
 //! so byte accounting follows the actual persisted output.
 
-mod bigo_downloader;
 pub mod config;
 mod dash_downloader;
 mod engine;
 mod flv_downloader;
 mod helpers;
 mod hls_downloader;
+mod native_flv;
 
 pub use engine::MesioEngine;
 pub use helpers::DownloadStats;
+pub use native_flv::{NativeFlvOpener, NativeFlvStream, NativeStreamError};
 
 use crate::downloader::engine::traits::DownloadFailureKind;
 use mesio::DownloadError;

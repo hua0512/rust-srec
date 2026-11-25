@@ -18,8 +18,7 @@ use super::paths::{CasePolicy, lexical_absolute, spelling_equal};
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::{get_extension, is_video, parse_config_or_default};
 use crate::Result;
-use crate::pipeline::job_queue::JobLogEntry;
-use crate::pipeline::manifest::PipelineInputManifest;
+use crate::domain::processor::{JobLogEntry, PipelineInputManifest};
 
 fn default_true() -> bool {
     true

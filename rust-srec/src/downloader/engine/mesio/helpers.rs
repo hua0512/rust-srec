@@ -313,11 +313,11 @@ pub(super) struct WriterSettleContext<'a> {
     /// keys the same root the ffmpeg and streamlink stderr readers key.
     pub output_dir: &'a Path,
     /// How this download ended from the engine's POV — see
-    /// [`crate::downloader::EngineEndSignal`]. Callers pass `CleanDisconnect`
+    /// [`crate::downloader::engine::EngineEndSignal`]. Callers pass `CleanDisconnect`
     /// for mesio FLV's TCP-close path, `HlsEndlist` for HLS when the
     /// playlist contained `#EXT-X-ENDLIST`, and `DashEnd` for DASH when the
     /// presentation ended.
-    pub engine_signal: crate::downloader::EngineEndSignal,
+    pub engine_signal: crate::downloader::engine::EngineEndSignal,
 }
 
 /// Await the writer and pipeline tasks, emit terminal events, and return

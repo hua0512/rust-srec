@@ -2,6 +2,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use argon2::password_hash::phc::PasswordHash;
+
 use crate::config::backup::{ImportMode, UserExport};
 
 use super::models::UserDbModel;
@@ -83,6 +85,26 @@ fn validate_against_existing(
             return Err(AuthImportError::Validation(format!(
                 "Imported user '{}' has an email already assigned to another user",
                 user.username,
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Validate password hashes of imported user records before starting a
+/// database transaction.
+pub fn validate_user_exports(users: &[UserExport]) -> Result<(), AuthImportError> {
+    for user in users {
+        let parsed = PasswordHash::new(&user.password_hash).map_err(|error| {
+            AuthImportError::Validation(format!(
+                "Invalid password hash for user '{}': {}",
+                user.username, error
+            ))
+        })?;
+        if parsed.algorithm.as_str() != "argon2id" {
+            return Err(AuthImportError::Validation(format!(
+                "Password hash for user '{}' must use Argon2id",
+                user.username
             )));
         }
     }

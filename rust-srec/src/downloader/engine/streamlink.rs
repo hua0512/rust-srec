@@ -20,7 +20,7 @@ use super::utils::{
     EngineVersion, FfmpegEvents, FfmpegSource, PROCESS_CLEANUP_TIMEOUT, RecordingExit,
     redact_download_process_args, sanitize_engine_message, settle_engine_tasks,
 };
-use crate::database::models::engine::StreamlinkEngineConfig;
+use crate::domain::engine_config::StreamlinkEngineConfig;
 
 /// Cap for Streamlink's own exit before forcing containment. Used after FFmpeg
 /// exits and after a stop request, where the remaining shared stop budget can

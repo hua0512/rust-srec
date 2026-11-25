@@ -25,7 +25,6 @@ use tracing_subscriber::{
     util::SubscriberInitExt,
 };
 
-use crate::database::repositories::{ConfigRepository, StreamerRepository};
 use crate::utils::fs;
 use crate::utils::shared_event::{SharedEvent, SharedEventSender, publish_shared};
 
@@ -199,28 +198,16 @@ impl LoggingConfig {
         }
     }
 
-    /// Apply persisted log filter from the config service.
+    /// Apply a persisted log filter directive if non-empty.
     ///
-    /// Loads the `log_filter_directive` from the database and applies it.
-    /// Logs warnings on errors but doesn't fail.
-    pub async fn apply_persisted_filter<C, S>(
-        &self,
-        config_service: &Arc<crate::config::ConfigService<C, S>>,
-    ) where
-        C: ConfigRepository + Send + Sync + 'static,
-        S: StreamerRepository + Send + Sync + 'static,
-    {
-        match config_service.get_global_config().await {
-            Ok(global_config) if !global_config.log_filter_directive.is_empty() => {
-                match self.set_filter(&global_config.log_filter_directive) {
-                    Ok(()) => {
-                        info!(filter = %global_config.log_filter_directive, "Applied persisted log filter")
-                    }
-                    Err(e) => warn!("Failed to apply persisted log filter: {}", e),
-                }
-            }
-            Ok(_) => {} // Empty filter directive, use default
-            Err(e) => warn!("Failed to load persisted log filter: {}", e),
+    /// Logs a warning on invalid directives rather than failing startup.
+    pub fn apply_persisted_filter_directive(&self, directive: &str) {
+        if directive.is_empty() {
+            return;
+        }
+        match self.set_filter(directive) {
+            Ok(()) => info!(filter = %directive, "Applied persisted log filter"),
+            Err(e) => warn!("Failed to apply persisted log filter: {}", e),
         }
     }
 }

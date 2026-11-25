@@ -28,7 +28,9 @@ pub mod utils;
 pub use ass_burnin::{AssBurnInConfig, AssBurnInProcessor, AssMatchStrategy};
 pub use audio_extract::AudioExtractProcessor;
 pub use baidupcs::{BaiduPcsConfig, BaiduPcsPolicy, BaiduPcsProcessor};
-pub use compression::CompressionProcessor;
+pub use compression::{
+    CompressionProcessor, ZipArchiveEntry, ZipArchiveError, write_streaming_zip,
+};
 pub use copy_move::{CopyMoveConfig, CopyMoveOperation, CopyMoveProcessor};
 pub use danmaku_factory::{DanmakuFactoryConfig, DanmakuFactoryProcessor};
 pub use delete::DeleteProcessor;

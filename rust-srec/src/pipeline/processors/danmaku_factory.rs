@@ -18,9 +18,9 @@ use super::paths::{CasePolicy, lexical_absolute, spelling_equal};
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::parse_config_or_default;
 use crate::Result;
-use crate::pipeline::job_queue::JobLogEntry;
-use crate::pipeline::manifest::PipelineInputManifest;
-use crate::pipeline::{JobProgressSnapshot, ProgressKind};
+use crate::domain::processor::{
+    JobLogEntry, JobProgressSnapshot, PipelineInputManifest, ProgressKind,
+};
 
 fn default_true() -> bool {
     true

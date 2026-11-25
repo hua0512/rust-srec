@@ -5,13 +5,15 @@ use jiff::Timestamp;
 use parking_lot::RwLock;
 use pipeline_common::SplitReason;
 use pipeline_common::config::PipelineConfig;
-use platforms_parser::proxy::ProxyTarget;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
+
+use crate::domain::credential::CredentialBinding;
+use crate::domain::proxy::ProxyTarget;
 
 /// Type of download engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
@@ -97,7 +99,7 @@ impl DownloadProtocol {
 #[derive(Clone)]
 pub struct DownloadConfig {
     pub managed_credentials: bool,
-    pub credential_binding: Option<crate::credentials::CredentialBinding>,
+    pub credential_binding: Option<CredentialBinding>,
     /// Stream URL to download.
     pub url: String,
     /// Output directory.
@@ -697,6 +699,56 @@ fn io_error_kind_in_chain(err: &(dyn std::error::Error + 'static)) -> Option<std
 }
 
 /// Events emitted by download engines.
+/// How the engine observed the end of a stream when emitting
+/// [`SegmentEvent::DownloadCompleted`].
+///
+/// Different signals carry different confidence about whether the upstream
+/// stream is *actually* over vs. whether we just got disconnected and the
+/// streamer will reappear with a fresh URL.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum EngineEndSignal {
+    /// HLS playlist contained `#EXT-X-ENDLIST`. The platform itself marked
+    /// the stream as complete — definitively over.
+    HlsEndlist,
+    /// The DASH presentation was static, or its MPD turned static or gained
+    /// an end, and every segment was recorded. Definitively over, like
+    /// [`Self::HlsEndlist`].
+    DashEnd,
+    /// Connection closed cleanly with no explicit end marker. Could be EOF,
+    /// could be a reconnect-friendly drop. Ambiguous; the lifecycle should
+    /// hold the session in hysteresis to absorb a possible resume.
+    CleanDisconnect,
+    /// Subprocess (ffmpeg / streamlink) exited with status 0. Ambiguous —
+    /// could be EOF, could be the process being killed cleanly externally.
+    SubprocessExitZero,
+    /// Engine doesn't expose a finer signal. Treat as non-authoritative
+    /// (default for back-fill / unknown engines).
+    #[default]
+    Unknown,
+}
+
+impl EngineEndSignal {
+    /// Short, stable label for logging / metrics.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::HlsEndlist => "hls_endlist",
+            Self::DashEnd => "dash_end",
+            Self::CleanDisconnect => "clean_disconnect",
+            Self::SubprocessExitZero => "subprocess_exit_zero",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    /// Whether the signal is the platform asserting the stream is over,
+    /// rather than a disconnect that a reconnect may follow.
+    pub fn is_authoritative(&self) -> bool {
+        match self {
+            Self::HlsEndlist | Self::DashEnd => true,
+            Self::CleanDisconnect | Self::SubprocessExitZero | Self::Unknown => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum SegmentEvent {
     /// A new segment has started recording.
@@ -722,7 +774,7 @@ pub enum SegmentEvent {
         total_bytes: u64,
         total_duration_secs: f64,
         total_segments: u32,
-        engine_signal: crate::downloader::EngineEndSignal,
+        engine_signal: EngineEndSignal,
     },
     /// Download failed.
     DownloadFailed {

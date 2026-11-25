@@ -262,7 +262,7 @@ impl AudioExtractProcessor {
         // One csv line per selected stream, `codec_name,codec_type`; a build
         // that omits the codec name still identifies the stream by its type.
         Ok(output.logs.iter().find_map(|entry| {
-            if entry.level != crate::pipeline::job_queue::LogLevel::Info {
+            if entry.level != crate::domain::processor::LogLevel::Info {
                 return None;
             }
             let fields: Vec<&str> = entry.message.trim().split(',').collect();

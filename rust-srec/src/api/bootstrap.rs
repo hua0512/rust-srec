@@ -1,5 +1,5 @@
 //! API server bootstrapping, authentication mode validation, and local desktop
-//! session management hosted on top of [`crate::services::ServiceContainer`].
+//! session management.
 
 use std::{
     net::{IpAddr, SocketAddr},
@@ -7,7 +7,8 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use dashmap::DashMap;
+use sqlx::SqlitePool;
+use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use crate::Result;
@@ -15,11 +16,10 @@ use crate::api::auth_service::{AuthConfig, AuthResponse, AuthService, LocalDeskt
 use crate::api::auth_store::{
     SqlxApiKeyRepository, SqlxRefreshTokenRepository, SqlxUserRepository,
 };
-use crate::api::backup::ConfigBackupPort;
 use crate::api::jwt::JwtService;
-use crate::api::playback_context::PlaybackContextService;
 use crate::api::server::{ApiServer, ApiServerConfig, ApiServices, AppState};
-use crate::services::ServiceContainer;
+use crate::notification::web_push::WebPushService;
+use crate::utils::task_supervisor::TaskSupervisor;
 
 #[cfg(test)]
 mod import_contract_tests;
@@ -77,65 +77,32 @@ fn validate_auth_mode(
     Ok(ApiAuthMode::Disabled)
 }
 
-/// Assemble the Axum [`AppState`] from a core [`ServiceContainer`], a
-/// [`ConfigBackupPort`], and an optional [`AuthService`], installing the API
-/// layer's WebSocket Protobuf encoders on the shared broadcasters.
+/// Runtime dependencies injected into [`ApiServerHost`] by the application
+/// composition shell.
+pub(crate) struct ApiServerRuntime {
+    pub pool: SqlitePool,
+    pub write_pool: SqlitePool,
+    pub services: ApiServices,
+    pub web_push_service: Option<Arc<WebPushService>>,
+    pub cancellation_token: CancellationToken,
+    pub task_supervisor: Arc<TaskSupervisor>,
+}
+
+/// Assemble the Axum [`AppState`] from [`ApiServerRuntime`] and an optional
+/// [`AuthService`], installing the API layer's WebSocket Protobuf encoders on
+/// the shared broadcasters.
 pub(crate) fn build_api_state(
-    container: &ServiceContainer,
-    config_backup: Arc<dyn ConfigBackupPort>,
+    runtime: ApiServerRuntime,
     auth_service: Option<Arc<AuthService>>,
-) -> Result<AppState> {
-    let logging_config = container.logging_config.get().cloned().ok_or_else(|| {
-        crate::Error::ApiError(
-            "Logging configuration must be initialized before starting the API".to_string(),
-        )
-    })?;
-
-    let services = ApiServices {
-        config_service: container.config_service.clone(),
-        streamer_manager: container.streamer_manager.clone(),
-        pipeline_manager: container.pipeline_manager.clone(),
-        download_manager: container.download_manager.clone(),
-        queries: crate::api::queries::ApiQueries::new(container.pool.clone()),
-        session_repository: container.session_repository.clone(),
-        session_event_repository: container.session_event_repository.clone(),
-        streamer_check_history_repository: container.streamer_check_history_repository.clone(),
-        check_history_broadcaster: container.check_history_broadcaster.clone(),
-        upload_status_broadcaster: container.upload_status_broadcaster.clone(),
-        upload_record_repository: container.upload_record_repository.clone(),
-        filter_repository: container.filter_repository.clone(),
-        health_checker: container.health_checker.clone(),
-        streamer_repository: container.streamer_repository.clone(),
-        pipeline_preset_repository: container.pipeline_preset_repository.clone(),
-        notification_repository: container.notification_repository.clone(),
-        notification_service: container.notification_service.clone(),
-        logging_config,
-        logging_download_tokens: Arc::new(DashMap::new()),
-        logging_archives: Arc::new(crate::api::routes::logging::LogArchiveService::new()),
-        credential_service: container.credential_service.clone(),
-        platform_admission: container.platform_admission.clone(),
-        credential_profiles: container.credential_profiles.clone(),
-        credential_execution: container.credential_execution.clone(),
-        proxies: container.proxies.clone(),
-        credential_blocks: container.credential_blocks().clone(),
-        bigo_notifications: container.bigo_notifications.clone(),
-        playback_contexts: Arc::new(PlaybackContextService::default()),
-        extractor_runner: container.extractor_runner.clone(),
-        danmu_taps: container.danmu_service.taps(),
-        credential_login_sessions: container.credential_login_sessions.clone(),
-        config_backup,
-        actor_registry: container.actor_registry.clone(),
-    };
-
-    let mut state = AppState::new(services);
+) -> AppState {
+    let mut state = AppState::new(runtime.services);
     if let Some(auth_service) = auth_service {
         state = state.with_auth_service(auth_service);
     }
-    if let Some(web_push_service) = container.web_push_service.clone() {
+    if let Some(web_push_service) = runtime.web_push_service {
         state = state.with_web_push_service(web_push_service);
     }
-
-    Ok(state)
+    state
 }
 
 /// API-layer host state owned by the top-level backend facade.
@@ -174,24 +141,24 @@ impl ApiServerHost {
     /// logs.
     async fn bind_and_spawn_api_server(
         &self,
-        container: &ServiceContainer,
-        config_backup: Arc<dyn ConfigBackupPort>,
+        runtime: ApiServerRuntime,
         auth_service: Option<Arc<AuthService>>,
         bridge_task: &'static str,
         server_task: &'static str,
     ) -> Result<SocketAddr> {
-        let state = build_api_state(container, config_backup, auth_service.clone())?;
+        let cancel_token = runtime.cancellation_token.clone();
+        let task_supervisor = runtime.task_supervisor.clone();
+        let state = build_api_state(runtime, auth_service.clone());
         if let Some(auth_service) = auth_service
             && self.auth_service.set(auth_service).is_err()
         {
             warn!("API server started more than once; local desktop sessions use the first one");
         }
         let server = ApiServer::new(self.api_server_config.clone(), state);
-        let cancel_token = container.cancellation_token.clone();
 
         // Link server shutdown to container shutdown
         let server_cancel = server.cancel_token();
-        container.task_supervisor.spawn(bridge_task, async move {
+        task_supervisor.spawn(bridge_task, async move {
             cancel_token.cancelled().await;
             server_cancel.cancel();
         });
@@ -199,12 +166,9 @@ impl ApiServerHost {
         let (listener, local_addr) = server.bind().await?;
         info!("Starting API server on http://{}", local_addr);
 
-        if !container
-            .task_supervisor
-            .spawn_critical(server_task, async move {
-                server.run_with_listener(listener).await
-            })
-        {
+        if !task_supervisor.spawn_critical(server_task, async move {
+            server.run_with_listener(listener).await
+        }) {
             return Err(crate::Error::Other(format!(
                 "{server_task} task was rejected during shutdown"
             )));
@@ -216,23 +180,18 @@ impl ApiServerHost {
     /// Build the user/token/API-key backed authentication service.
     fn database_auth_service(
         &self,
-        container: &ServiceContainer,
+        pool: &SqlitePool,
+        write_pool: &SqlitePool,
         jwt: Arc<JwtService>,
         auth_config: AuthConfig,
     ) -> AuthService {
         let service = AuthService::new(
-            Arc::new(SqlxUserRepository::new(
-                container.pool.clone(),
-                container.write_pool.clone(),
-            )),
+            Arc::new(SqlxUserRepository::new(pool.clone(), write_pool.clone())),
             Arc::new(SqlxRefreshTokenRepository::new(
-                container.pool.clone(),
-                container.write_pool.clone(),
+                pool.clone(),
+                write_pool.clone(),
             )),
-            Arc::new(SqlxApiKeyRepository::new(
-                container.pool.clone(),
-                container.write_pool.clone(),
-            )),
+            Arc::new(SqlxApiKeyRepository::new(pool.clone(), write_pool.clone())),
             jwt,
             auth_config,
         );
@@ -244,21 +203,15 @@ impl ApiServerHost {
     }
 
     /// Initialize and start the API server.
-    pub(crate) async fn start_api_server(
-        &self,
-        container: &ServiceContainer,
-        config_backup: Arc<dyn ConfigBackupPort>,
-    ) -> Result<()> {
-        self.start_api_server_bound(container, config_backup)
-            .await?;
+    pub(crate) async fn start_api_server(&self, runtime: ApiServerRuntime) -> Result<()> {
+        self.start_api_server_bound(runtime).await?;
         Ok(())
     }
 
     /// Initialize and start the API server, returning the resolved bind address.
     pub(crate) async fn start_api_server_bound(
         &self,
-        container: &ServiceContainer,
-        config_backup: Arc<dyn ConfigBackupPort>,
+        runtime: ApiServerRuntime,
     ) -> Result<SocketAddr> {
         let auth_config = self.auth_config.clone();
 
@@ -274,7 +227,12 @@ impl ApiServerHost {
 
         let auth_service = match (auth_mode, jwt_service) {
             (ApiAuthMode::Enabled, Some(jwt)) => {
-                let auth_svc = self.database_auth_service(container, jwt, auth_config);
+                let auth_svc = self.database_auth_service(
+                    &runtime.pool,
+                    &runtime.write_pool,
+                    jwt,
+                    auth_config,
+                );
                 info!("AuthService initialized with user database authentication");
                 Some(Arc::new(auth_svc))
             }
@@ -292,22 +250,15 @@ impl ApiServerHost {
             }
         };
 
-        self.bind_and_spawn_api_server(
-            container,
-            config_backup,
-            auth_service,
-            "API shutdown bridge",
-            "API server",
-        )
-        .await
+        self.bind_and_spawn_api_server(runtime, auth_service, "API shutdown bridge", "API server")
+            .await
     }
 
     /// Initialize and start the API server, returning the resolved bind address, using a
     /// caller-provided JWT secret.
     pub(crate) async fn start_api_server_bound_with_jwt_secret(
         &self,
-        container: &ServiceContainer,
-        config_backup: Arc<dyn ConfigBackupPort>,
+        runtime: ApiServerRuntime,
         jwt_secret: String,
     ) -> Result<SocketAddr> {
         let auth_config = self.auth_config.clone();
@@ -323,7 +274,12 @@ impl ApiServerHost {
             .map_err(|e| crate::Error::Configuration(e.to_string()))?,
         );
 
-        let auth_svc = self.database_auth_service(container, jwt_service, auth_config);
+        let auth_svc = self.database_auth_service(
+            &runtime.pool,
+            &runtime.write_pool,
+            jwt_service,
+            auth_config,
+        );
         info!(
             issuer = %issuer,
             audience = %audience,
@@ -331,8 +287,7 @@ impl ApiServerHost {
         );
 
         self.bind_and_spawn_api_server(
-            container,
-            config_backup,
+            runtime,
             Some(Arc::new(auth_svc)),
             "desktop API shutdown bridge",
             "desktop API server",
@@ -477,8 +432,11 @@ mod tests {
         .with_login_rate_limiter(LoginRateLimiter::new(5, 1, Duration::from_secs(60), 8));
         let address = host
             .bind_and_spawn_api_server(
-                &container,
-                crate::backend::build_config_backup(&container),
+                crate::backend::build_api_runtime(
+                    &container,
+                    crate::backend::build_config_backup(&container),
+                )
+                .unwrap(),
                 Some(Arc::new(auth)),
                 "test bridge",
                 "test server",
@@ -521,8 +479,11 @@ mod tests {
         let (container, host, _pool) = served_test_container(directory.path(), true).await;
         let address = host
             .start_api_server_bound_with_jwt_secret(
-                &container,
-                crate::backend::build_config_backup(&container),
+                crate::backend::build_api_runtime(
+                    &container,
+                    crate::backend::build_config_backup(&container),
+                )
+                .unwrap(),
                 "local-desktop-mode-test-secret-with-entropy".to_owned(),
             )
             .await
@@ -553,10 +514,14 @@ mod tests {
     async fn served_test_container(
         log_dir: &std::path::Path,
         local_desktop_mode: bool,
-    ) -> (ServiceContainer, ApiServerHost, sqlx::SqlitePool) {
+    ) -> (
+        crate::services::ServiceContainer,
+        ApiServerHost,
+        sqlx::SqlitePool,
+    ) {
         use std::time::Duration;
 
-        use crate::services::ServiceContainerConfig;
+        use crate::services::{ServiceContainer, ServiceContainerConfig};
 
         let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
             .await

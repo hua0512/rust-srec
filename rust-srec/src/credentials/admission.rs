@@ -7,8 +7,8 @@ use std::time::Duration;
 use platforms_parser::extractor::error::ExtractorError;
 use tokio::time::Instant;
 
+use crate::domain::notification::{RuntimeAlert, RuntimeAlertSink};
 use crate::monitor::{RateLimiterConfig, RateLimiterManager, StreamMonitorConfig};
-use crate::notification::{NotificationEvent, NotificationService};
 
 use crate::proxies::{ResolvedRoute, RouteKey};
 
@@ -65,7 +65,7 @@ pub struct PlatformAdmission {
     backoff: dashmap::DashMap<(String, RouteKey), Instant>,
     /// Display names for notifications; unregistered platforms show their ID.
     platform_names: dashmap::DashMap<String, String>,
-    notification_service: OnceLock<Arc<NotificationService>>,
+    alert_sink: OnceLock<Arc<dyn RuntimeAlertSink>>,
 }
 
 impl PlatformAdmission {
@@ -74,7 +74,7 @@ impl PlatformAdmission {
             limiter,
             backoff: dashmap::DashMap::new(),
             platform_names: dashmap::DashMap::new(),
-            notification_service: OnceLock::new(),
+            alert_sink: OnceLock::new(),
         }
     }
 
@@ -105,8 +105,8 @@ impl PlatformAdmission {
 
     /// Backoffs are reported once when they start; extensions of an active
     /// backoff are not re-announced.
-    pub fn set_notification_service(&self, service: Arc<NotificationService>) {
-        let _ = self.notification_service.set(service);
+    pub fn set_notification_service(&self, sink: Arc<dyn RuntimeAlertSink>) {
+        let _ = self.alert_sink.set(sink);
     }
 
     pub async fn admit(
@@ -210,13 +210,13 @@ impl PlatformAdmission {
             backoff_secs = duration.as_secs(),
             "Platform throttled; pausing its requests on this route"
         );
-        if let Some(service) = self.notification_service.get() {
+        if let Some(sink) = self.alert_sink.get() {
             let platform = self
                 .platform_names
                 .get(platform_id)
                 .map_or_else(|| platform_id.to_owned(), |name| name.clone());
             let now = jiff::Timestamp::now();
-            service.dispatch_notification(NotificationEvent::PlatformThrottled {
+            sink.clone().emit(RuntimeAlert::PlatformThrottled {
                 platform,
                 route: route.kind().as_str().to_owned(),
                 proxy_name: route.proxy_name().map(str::to_owned),
@@ -245,6 +245,7 @@ impl PlatformAdmission {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::notification::{NotificationEvent, NotificationService};
     use crate::proxies::{ProxyEndpoint, ProxyName, ProxyTarget, RouteSource};
 
     fn direct() -> ResolvedRoute {

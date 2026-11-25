@@ -271,7 +271,7 @@ async fn actor_commit_survives_caller_drop_and_stays_nonblocking_during_gated_wr
         );
 
         deliver_pipeline_notification(
-            &harness.registry.deps.pipeline_manager,
+            harness.registry.deps.pipeline.as_ref(),
             &harness.registry.deps.download_manager,
             &harness.registry.deps.leases,
             PipelineNotification::SessionEnded {

@@ -98,10 +98,7 @@ impl std::fmt::Debug for ProxyUpdate {
             .field("name", &self.name)
             .field(
                 "url",
-                &self
-                    .url
-                    .as_deref()
-                    .map(platforms_parser::proxy::redacted_url),
+                &self.url.as_deref().map(crate::domain::proxy::redacted_url),
             )
             .field("username", &self.username.as_ref().map(Option::is_some))
             .field("password", &self.password.as_ref().map(|_| "[redacted]"))

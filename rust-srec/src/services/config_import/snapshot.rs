@@ -2,8 +2,6 @@
 
 use std::collections::{HashMap, HashSet};
 
-use argon2::password_hash::phc::PasswordHash;
-
 use super::{ConfigurationImportError, profiles, proxies, validation, validation_error};
 use crate::config::backup::{
     ConfigExport, ImportMode, NotificationChannelExport, PipelinePresetExport,
@@ -531,18 +529,6 @@ pub(super) fn validate_import(
             if user.roles.is_empty() || user.roles.iter().any(|role| role.trim().is_empty()) {
                 return validation(format!(
                     "User '{}' must have at least one non-empty role",
-                    user.username
-                ));
-            }
-            let parsed = PasswordHash::new(&user.password_hash).map_err(|error| {
-                validation_error(format!(
-                    "Invalid password hash for user '{}': {}",
-                    user.username, error
-                ))
-            })?;
-            if parsed.algorithm.as_str() != "argon2id" {
-                return validation(format!(
-                    "Password hash for user '{}' must use Argon2id",
                     user.username
                 ));
             }

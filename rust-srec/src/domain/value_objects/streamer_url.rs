@@ -1,6 +1,5 @@
 //! Streamer URL value object.
 
-use platforms_parser::extractor::factory::platform_name_for_url;
 use serde::{Deserialize, Serialize};
 
 use crate::Error;
@@ -35,11 +34,6 @@ impl StreamerUrl {
     /// Get the URL as a string slice.
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-
-    /// Get the platform name from the URL.
-    pub fn platform(&self) -> Option<&'static str> {
-        platform_name_for_url(&self.0)
     }
 
     /// Extract the channel/room identifier from the URL.
@@ -128,43 +122,5 @@ mod tests {
     fn test_url_normalization() {
         let url = StreamerUrl::new("https://WWW.TWITCH.TV/Streamer123/").unwrap();
         assert_eq!(url.as_str(), "https://www.twitch.tv/Streamer123");
-    }
-
-    /// The name is matched against `platform_config.platform_name` and decides which row a new
-    /// streamer is stored under, so a URL must keep resolving to the same name.
-    #[test]
-    fn each_builtin_platform_url_reports_its_platform_name() {
-        let cases = [
-            ("https://www.huya.com/660000", Some("Huya")),
-            ("https://live.douyin.com/123456789", Some("Douyin")),
-            ("https://www.douyu.com/9999", Some("Douyu")),
-            ("https://www.pandalive.co.kr/play/someone", Some("PandaTV")),
-            ("https://weibo.com/u/1234567890", Some("Weibo")),
-            ("https://www.twitch.tv/someone", Some("Twitch")),
-            ("https://xhslink.com/m/844vKmW30jz", Some("RedBook")),
-            ("https://live.bilibili.com/4063253", Some("Bilibili")),
-            ("https://picarto.tv/someone", Some("Picarto")),
-            ("https://www.tiktok.com/@someone/live", Some("TikTok")),
-            ("https://twitcasting.tv/someone", Some("Twitcasting")),
-            ("https://live.acfun.cn/live/123456", Some("Acfun")),
-            ("https://play.sooplive.co.kr/someone/123", Some("SOOP")),
-            ("https://www.bigo.tv/123456", Some("Bigo")),
-            ("https://WWW.TWITCH.TV/Someone/", Some("Twitch")),
-            ("https://LIVE.BILIBILI.COM/4063253", Some("Bilibili")),
-            ("https://Play.SoopLive.co.kr/someone", Some("SOOP")),
-            ("https://XHSLINK.COM/o/share123", Some("RedBook")),
-            // A link to another platform in the query keeps the URL's own platform.
-            (
-                "https://www.douyu.com/9999?from=https://live.bilibili.com/4063253",
-                Some("Douyu"),
-            ),
-            ("https://www.xiaohongshu.com/user/profile/6260c44f", None),
-            ("https://example.com/someone", None),
-        ];
-
-        for (url, expected) in cases {
-            let parsed = StreamerUrl::new(url).unwrap();
-            assert_eq!(parsed.platform(), expected, "{url}");
-        }
     }
 }

@@ -677,61 +677,19 @@ pub enum PipelineNotification {
     },
 }
 
-impl From<PipelineNotification> for crate::pipeline::PipelineNotification {
-    fn from(notification: PipelineNotification) -> Self {
-        match notification {
-            PipelineNotification::VideoSegmentCompleted {
-                session_id,
-                streamer_id,
-                segment_index,
-                path,
-                auto_thumbnail_candidate,
-            } => Self::VideoSegmentCompleted {
-                session_id,
-                streamer_id,
-                segment_index,
-                path,
-                auto_thumbnail_candidate,
-            },
-            PipelineNotification::DanmuCollectionStarted {
-                session_id,
-                streamer_id,
-            } => Self::DanmuCollectionStarted {
-                session_id,
-                streamer_id,
-            },
-            PipelineNotification::DanmuSegmentCompleted {
-                session_id,
-                streamer_id,
-                segment_index,
-                path,
-                message_count,
-            } => Self::DanmuSegmentCompleted {
-                session_id,
-                streamer_id,
-                segment_index,
-                path,
-                message_count,
-            },
-            PipelineNotification::DanmuCollectionStopped {
-                session_id,
-                total_count,
-            } => Self::DanmuCollectionStopped {
-                session_id,
-                total_count,
-            },
-            PipelineNotification::SessionEnded {
-                session_id,
-                streamer_id,
-                cause,
-                should_run_session_complete,
-            } => Self::SessionEnded {
-                session_id,
-                streamer_id,
-                cause: cause.as_str().to_owned(),
-                should_run_session_complete,
-            },
-        }
+/// Result of attempting to drain outstanding pipeline work for a streamer.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct PipelineDrainStatus {
+    /// Number of ended sessions for this streamer whose pipeline is still unsettled.
+    pub unsettled_sessions: usize,
+    /// Number of outstanding pipeline jobs for this streamer.
+    pub outstanding_jobs: u64,
+}
+
+impl PipelineDrainStatus {
+    /// Whether all pipeline work for this streamer has settled.
+    pub fn is_drained(&self) -> bool {
+        self.unsettled_sessions == 0 && self.outstanding_jobs == 0
     }
 }
 
@@ -830,10 +788,17 @@ pub trait RecorderDanmuPort: Send + Sync {
     ) -> crate::Result<DanmuStopResult>;
 }
 
-/// Narrow async port for forwarding post-commit pipeline notifications.
+/// Narrow async port for forwarding post-commit pipeline notifications and
+/// draining streamer post-processing work during retirement.
 #[async_trait]
 pub trait RecorderPipelinePort: Send + Sync {
     async fn notify(&self, notification: PipelineNotification) -> crate::Result<()>;
+
+    async fn drain_for_streamer(
+        &self,
+        streamer_id: &str,
+        timeout: Duration,
+    ) -> crate::Result<PipelineDrainStatus>;
 }
 
 /// Read-only runtime view publisher.

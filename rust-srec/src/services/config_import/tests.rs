@@ -246,7 +246,7 @@ fn validation_rejects_non_argon2id_password_hashes() {
     config.users.push(user);
 
     assert!(matches!(
-        validate_import(&config, ImportMode::Merge),
+        test_auth_import().validate_user_exports(&config.users),
         Err(ConfigurationImportError::Validation(message))
             if message.contains("Invalid password hash")
     ));

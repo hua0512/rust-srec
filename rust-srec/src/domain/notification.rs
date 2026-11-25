@@ -1,10 +1,51 @@
 //! Pure notification and outbox domain value objects shared across layers.
 
+use std::sync::Arc;
+
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
 use crate::domain::StreamerState;
+use crate::domain::credential::CredentialEvent;
 use crate::domain::streamer::FatalErrorType;
+
+/// Runtime alerts emitted by recording, credential, and filesystem subsystems
+/// without depending on the notification delivery layer.
+#[derive(Debug, Clone)]
+pub enum RuntimeAlert {
+    /// Credential lifecycle event (refresh, invalidation, expiry, save failure).
+    Credential(CredentialEvent),
+    /// A platform throttled requests on one route.
+    PlatformThrottled {
+        platform: String,
+        route: String,
+        proxy_name: Option<String>,
+        retry_at: Timestamp,
+        timestamp: Timestamp,
+    },
+    /// Recording output path became unwritable at the filesystem boundary.
+    OutputPathInaccessible {
+        path: String,
+        error_kind: String,
+        timestamp: Timestamp,
+    },
+    /// Bigo live push notifications stopped arriving or stayed disconnected.
+    BigoNotificationsFailing {
+        problem: BigoNotificationProblem,
+        message: Option<String>,
+        timestamp: Timestamp,
+    },
+    /// Bigo live push notifications recovered from a previously alerted problem.
+    BigoNotificationsRestored {
+        problem: BigoNotificationProblem,
+        timestamp: Timestamp,
+    },
+}
+
+/// Sink for fire-and-forget runtime alerts emitted by lower layers.
+pub trait RuntimeAlertSink: Send + Sync {
+    fn emit(self: Arc<Self>, alert: RuntimeAlert);
+}
 
 /// What stopped Bigo live notifications.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

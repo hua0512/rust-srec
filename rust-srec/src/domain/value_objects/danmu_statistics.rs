@@ -1,6 +1,5 @@
 //! User-facing settings for danmu statistics aggregation.
 
-use platforms_parser::danmaku::StatisticsConfig;
 use serde::{Deserialize, Serialize};
 
 /// How a session's danmu statistics are aggregated.
@@ -47,16 +46,15 @@ pub struct DanmuStatisticsConfig {
 
 impl Default for DanmuStatisticsConfig {
     fn default() -> Self {
-        let aggregator = StatisticsConfig::default();
         Self {
             enabled: true,
-            top_talkers: aggregator.top_talkers,
-            top_words: aggregator.top_words,
-            top_gifts: aggregator.top_gifts,
-            talker_capacity: aggregator.talker_capacity,
-            word_capacity: aggregator.word_capacity,
-            gift_capacity: aggregator.gift_capacity,
-            rate_bucket_secs: aggregator.rate_bucket_secs,
+            top_talkers: 100,
+            top_words: 50,
+            top_gifts: 20,
+            talker_capacity: 2048,
+            word_capacity: 2048,
+            gift_capacity: 256,
+            rate_bucket_secs: 10,
             extra_stop_words: Vec::new(),
         }
     }
@@ -114,20 +112,6 @@ impl DanmuStatisticsConfig {
         self.extra_stop_words.retain(|word| !word.is_empty());
 
         self
-    }
-
-    /// The aggregator's view of these settings.
-    pub fn to_aggregator_config(&self) -> StatisticsConfig {
-        StatisticsConfig {
-            top_talkers: self.top_talkers,
-            top_words: self.top_words,
-            top_gifts: self.top_gifts,
-            talker_capacity: self.talker_capacity,
-            word_capacity: self.word_capacity,
-            gift_capacity: self.gift_capacity,
-            rate_bucket_secs: self.rate_bucket_secs,
-            extra_stop_words: self.extra_stop_words.clone(),
-        }
     }
 }
 

@@ -30,7 +30,14 @@ async fn public_timezone_import_rolls_back_or_invalidates_filter_snapshots_after
         let container=ServiceContainer::new(pool.clone(),pool.clone()).await.unwrap();
         let (logging,_layer)=crate::logging::LoggingConfig::for_route_tests(directory.path().to_owned());
         assert!(container.logging_config.set(Arc::new(logging)).is_ok());
-        let state=build_api_state(&container, crate::backend::build_config_backup(&container), None).unwrap();
+        let state = build_api_state(
+            crate::backend::build_api_runtime(
+                &container,
+                crate::backend::build_config_backup(&container),
+            )
+            .unwrap(),
+            None,
+        );
         let mut owner=StreamerDbModel::new("Timezone import","https://example.test/timezone-import","platform-huya");
         owner.state="DISABLED".into();
         state.streamer_repository.create_streamer(&owner).await.unwrap();

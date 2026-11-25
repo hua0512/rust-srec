@@ -12,7 +12,7 @@ use tracing::{debug, info, warn};
 
 use crate::config::ConfigService;
 use crate::database::repositories::{SqlxConfigRepository, SqlxStreamerRepository};
-use crate::downloader::{DownloadManager, OutputRootGate};
+use crate::downloader::{DownloadManager, IoErrorKindSer, OutputRootGate, RootHealthState};
 use crate::metrics::{
     ComponentHealth, DiskUsage, HealthChecker, HealthProbe, SystemMetricsSnapshot,
 };
@@ -173,6 +173,49 @@ impl HealthProbe for DiskSpaceProbe {
     }
 }
 
+/// Build a single aggregated [`ComponentHealth`] entry for the output-root
+/// write gate, exposed under `"output-root"` in [`crate::metrics::SystemHealth::components`].
+pub(super) fn check_output_root_gate(gate: &OutputRootGate) -> ComponentHealth {
+    let snapshot = gate.snapshot();
+    let degraded: Vec<_> = snapshot
+        .iter()
+        .filter(|r| r.state == RootHealthState::Degraded)
+        .collect();
+
+    if degraded.is_empty() {
+        return ComponentHealth::healthy("output-root");
+    }
+
+    let mut lines: Vec<String> = Vec::with_capacity(degraded.len());
+    for r in &degraded {
+        let (kind, _msg) = r
+            .last_error
+            .as_ref()
+            .map_or((IoErrorKindSer::Other, String::new()), |(k, m)| {
+                (*k, m.clone())
+            });
+        let age = r
+            .seconds_since_last_attempt
+            .map(|s| format!("{}s ago", s))
+            .unwrap_or_else(|| "unknown".to_string());
+        lines.push(format!(
+            "{} (kind={}, rejected={}, last_attempt={})",
+            r.root.display(),
+            kind.as_str(),
+            r.rejected_count,
+            age
+        ));
+    }
+    ComponentHealth::degraded(
+        "output-root",
+        format!(
+            "{} output root(s) unwritable: {}",
+            degraded.len(),
+            lines.join("; ")
+        ),
+    )
+}
+
 struct OutputRootProbe {
     gate: Arc<OutputRootGate>,
 }
@@ -188,7 +231,7 @@ impl HealthProbe for OutputRootProbe {
     }
 
     async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
-        HealthChecker::check_output_root_gate(&self.gate)
+        check_output_root_gate(&self.gate)
     }
 }
 
@@ -836,8 +879,7 @@ impl ServiceContainer {
         // Output-root write gate health check. Aggregated: one
         // "output-root" component whose status reflects the worst state
         // across all tracked roots, with a detailed message listing each
-        // Degraded root by kind and age. See
-        // `HealthChecker::check_output_root_gate` for the shape.
+        // Degraded root by kind and age. See `check_output_root_gate` for the shape.
         self.health_checker
             .register_probe(Arc::new(OutputRootProbe {
                 gate: self.output_root_gate.clone(),

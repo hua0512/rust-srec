@@ -17,13 +17,50 @@ use mesio::{
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use tracing::debug;
 
-use crate::database::models::engine::{
+use crate::domain::engine_config::{
     MesioDashAudioQuality, MesioDashConfig, MesioDashLiveStart, MesioDashVideoQuality,
-    MesioEngineConfig, MesioGapSkipStrategy, MesioHlsVariantSelectionPolicy,
-    MesioHttpVersionPreference,
+    MesioEngineConfig, MesioFlvFixConfig, MesioGapSkipStrategy, MesioHlsVariantSelectionPolicy,
+    MesioHttpVersionPreference, MesioSequenceHeaderChangeMode,
 };
+use crate::domain::proxy::{ProxyEndpoint, ProxyTarget};
 use crate::downloader::engine::traits::DownloadConfig;
-use crate::proxies::{ProxyEndpoint, ProxyTarget};
+
+/// Apply user-configured [`MesioFlvFixConfig`] overrides onto `cfg`.
+pub fn apply_flv_fix_config(opts: &MesioFlvFixConfig, cfg: &mut flv_fix::FlvPipelineConfig) {
+    if let Some(mode) = opts.sequence_header_change_mode {
+        cfg.sequence_header_change_mode = match mode {
+            MesioSequenceHeaderChangeMode::Crc32 => flv_fix::SequenceHeaderChangeMode::Crc32,
+            MesioSequenceHeaderChangeMode::SemanticSignature => {
+                flv_fix::SequenceHeaderChangeMode::SemanticSignature
+            }
+        };
+    }
+
+    if let Some(value) = opts.drop_duplicate_sequence_headers {
+        cfg.drop_duplicate_sequence_headers = value;
+    }
+
+    if let Some(value) = opts.duplicate_tag_filtering {
+        cfg.duplicate_tag_filtering = value;
+    }
+
+    if let Some(ref override_cfg) = opts.duplicate_tag_filter_config {
+        let mut c = cfg.duplicate_tag_filter_config.clone();
+        if let Some(value) = override_cfg.window_capacity_tags {
+            c.window_capacity_tags = value;
+        }
+        if let Some(value) = override_cfg.window_capacity_bytes {
+            c.window_capacity_bytes = value;
+        }
+        if let Some(value) = override_cfg.replay_backjump_threshold_ms {
+            c.replay_backjump_threshold_ms = value;
+        }
+        if let Some(value) = override_cfg.enable_replay_offset_matching {
+            c.enable_replay_offset_matching = value;
+        }
+        cfg.duplicate_tag_filter_config = c;
+    }
+}
 
 /// Build HLS configuration from rust-srec DownloadConfig using HlsProtocolBuilder.
 ///
@@ -851,5 +888,85 @@ mod tests {
                 "{dash}"
             );
         }
+    }
+
+    #[test]
+    fn test_mesio_flv_fix_config_apply() {
+        let json = r#"
+        {
+          "flv_fix": {
+            "sequence_header_change_mode": "semantic_signature",
+            "drop_duplicate_sequence_headers": true,
+            "duplicate_tag_filtering": true,
+            "duplicate_tag_filter_config": {
+              "window_capacity_tags": 123,
+              "window_capacity_bytes": 1048576,
+              "replay_backjump_threshold_ms": 5000,
+              "enable_replay_offset_matching": true
+            }
+          }
+        }"#;
+        let parsed: MesioEngineConfig = serde_json::from_str(json).unwrap();
+        let opts = parsed.flv_fix.unwrap();
+
+        let mut cfg = flv_fix::FlvPipelineConfig::default();
+        apply_flv_fix_config(&opts, &mut cfg);
+
+        assert_eq!(
+            cfg.sequence_header_change_mode,
+            flv_fix::SequenceHeaderChangeMode::SemanticSignature
+        );
+        assert!(cfg.drop_duplicate_sequence_headers);
+        assert!(cfg.duplicate_tag_filtering);
+        assert_eq!(cfg.duplicate_tag_filter_config.window_capacity_tags, 123);
+        assert_eq!(
+            cfg.duplicate_tag_filter_config.window_capacity_bytes,
+            1048576
+        );
+        assert_eq!(
+            cfg.duplicate_tag_filter_config.replay_backjump_threshold_ms,
+            5000
+        );
+        assert!(
+            cfg.duplicate_tag_filter_config
+                .enable_replay_offset_matching
+        );
+    }
+
+    #[test]
+    fn mesio_dash_defaults_match_the_engine() {
+        let ours = MesioDashConfig::default();
+        let engine = mesio::DashConfig::default();
+        let ms = |value: u64| std::time::Duration::from_millis(value);
+        assert_eq!(engine.selection.video, mesio::dash::VideoSelection::Highest);
+        assert_eq!(ours.video_quality, MesioDashVideoQuality::Highest);
+        assert_eq!(engine.selection.audio, mesio::dash::AudioSelection::Highest);
+        assert_eq!(ours.audio_quality, MesioDashAudioQuality::Highest);
+        assert_eq!(ours.audio_language, engine.selection.audio_language);
+        assert_eq!(ours.include_video, engine.selection.include_video);
+        assert_eq!(ours.include_audio, engine.selection.include_audio);
+        assert_eq!(
+            ours.download_concurrency,
+            engine.scheduler.download_concurrency
+        );
+        assert_eq!(ms(ours.manifest_timeout_ms), engine.manifest.fetch_timeout);
+        assert_eq!(
+            ms(ours.min_refresh_interval_ms),
+            engine.manifest.min_refresh_interval
+        );
+        assert_eq!(
+            ours.max_refresh_retries,
+            engine.manifest.max_refresh_retries
+        );
+        assert_eq!(
+            ms(ours.segment_timeout_ms),
+            engine.fetcher.segment_download_timeout
+        );
+        assert_eq!(ours.max_segment_retries, engine.fetcher.max_segment_retries);
+        assert_eq!(
+            engine.live_start,
+            mesio::dash::LiveStartPolicy::PresentationDelay(None)
+        );
+        assert_eq!(ours.live_start, MesioDashLiveStart::Auto);
     }
 }

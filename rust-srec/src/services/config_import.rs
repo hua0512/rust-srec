@@ -81,6 +81,10 @@ struct CommittedImport {
 /// writes.
 #[async_trait::async_trait]
 pub(crate) trait AuthImportTxPort: Send + Sync {
+    /// Validate imported user credentials (such as PHC password hash format)
+    /// prior to opening the import transaction.
+    fn validate_user_exports(&self, users: &[UserExport]) -> Result<(), ConfigurationImportError>;
+
     /// Validate imported user IDs and emails against persisted `users` rows
     /// inside `tx` before any configuration table is modified.
     async fn validate_users_tx(
@@ -146,6 +150,9 @@ impl ConfigurationImportService {
         on_users_committed: Option<Box<dyn FnOnce() + Send + 'static>>,
     ) -> Result<ConfigurationImportOutcome, ConfigurationImportError> {
         validate_import(&config, mode)?;
+        if includes_imported_users(&config) {
+            self.auth_import.validate_user_exports(&config.users)?;
+        }
 
         let state = self.streamer_manager.committed_state().ok_or_else(|| {
             ConfigurationImportError::from(crate::Error::Configuration(

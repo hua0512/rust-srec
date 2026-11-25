@@ -14,10 +14,10 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use super::config::build_flv_config;
+use super::config::{apply_flv_fix_config, build_flv_config};
 use super::helpers::{self, DownloadStats};
-use crate::database::models::engine::MesioEngineConfig;
-use crate::downloader::engine::traits::{DownloadHandle, EngineStartError};
+use crate::domain::engine_config::MesioEngineConfig;
+use crate::downloader::engine::traits::{DownloadHandle, EngineEndSignal, EngineStartError};
 
 /// FLV-specific download orchestrator.
 ///
@@ -112,7 +112,7 @@ impl FlvDownloader {
         let (tx, writer_rx, processing_tasks) = if processing {
             let mut flv_pipeline_config = FlvPipelineConfig::default();
             if let Some(ref opts) = self.engine_config.flv_fix {
-                opts.apply_to(&mut flv_pipeline_config);
+                apply_flv_fix_config(opts, &mut flv_pipeline_config);
             }
 
             // Manual split needs the pipeline, so only this mode enables it.
@@ -178,7 +178,7 @@ impl FlvDownloader {
                 // — could be EOF, could be the streamer's network blipping.
                 // SessionLifecycle treats this as ambiguous and enters
                 // hysteresis to absorb a possible reconnect.
-                engine_signal: crate::downloader::EngineEndSignal::CleanDisconnect,
+                engine_signal: EngineEndSignal::CleanDisconnect,
             },
         )
         .await

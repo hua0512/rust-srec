@@ -27,10 +27,12 @@ mod traits;
 pub mod utils;
 
 pub use ffmpeg::FfmpegEngine;
-pub use mesio::{DownloadStats, MesioEngine, config};
+pub use mesio::{
+    DownloadStats, MesioEngine, NativeFlvOpener, NativeFlvStream, NativeStreamError, config,
+};
 pub use streamlink::StreamlinkEngine;
 pub use traits::{
     DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadInfo,
-    DownloadProgress, DownloadProtocol, DownloadStatus, EngineStartError, EngineType,
-    IoErrorKindSer, SegmentEvent, SegmentInfo,
+    DownloadProgress, DownloadProtocol, DownloadStatus, EngineEndSignal, EngineStartError,
+    EngineType, IoErrorKindSer, SegmentEvent, SegmentInfo,
 };

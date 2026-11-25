@@ -1,4 +1,4 @@
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use std::time::Duration;
 
 use super::ServiceContainer;
@@ -15,7 +15,7 @@ async fn fixture() -> ServiceContainer {
     crate::database::run_migrations(&pool).await.unwrap();
     let mut container = ServiceContainer::new(pool.clone(), pool).await.unwrap();
     container.output_root_gate = crate::downloader::OutputRootGate::new(
-        Weak::new(),
+        None,
         Arc::new(|_| {}),
         vec![],
         Duration::from_secs(30),

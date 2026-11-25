@@ -6,11 +6,16 @@
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
-use crate::domain::{Priority, StreamerState};
+use crate::domain::{Priority, StreamerState, StreamerUrl};
 
 pub(crate) use crate::domain::streamer::{
     DEFAULT_OFFLINE_CHECK_COUNT, DEFAULT_OFFLINE_CHECK_DELAY_MS,
 };
+
+/// Detect the built-in platform name for a validated streamer URL.
+pub fn detect_platform_name(url: &StreamerUrl) -> Option<&'static str> {
+    platforms_parser::extractor::factory::platform_name_for_url(url.as_str())
+}
 const MIN_DOWNLOAD_FAILURE_THRESHOLD: u32 = 2;
 
 /// Derives the consecutive download-failure threshold from the effective
@@ -243,6 +248,44 @@ mod tests {
         assert_eq!(download_failure_threshold(3), 3);
         assert_eq!(download_failure_threshold(5), 5);
         assert_eq!(download_failure_threshold(u32::MAX), i32::MAX);
+    }
+
+    /// The name is matched against `platform_config.platform_name` and decides which row a new
+    /// streamer is stored under, so a URL must keep resolving to the same name.
+    #[test]
+    fn each_builtin_platform_url_reports_its_platform_name() {
+        let cases = [
+            ("https://www.huya.com/660000", Some("Huya")),
+            ("https://live.douyin.com/123456789", Some("Douyin")),
+            ("https://www.douyu.com/9999", Some("Douyu")),
+            ("https://www.pandalive.co.kr/play/someone", Some("PandaTV")),
+            ("https://weibo.com/u/1234567890", Some("Weibo")),
+            ("https://www.twitch.tv/someone", Some("Twitch")),
+            ("https://xhslink.com/m/844vKmW30jz", Some("RedBook")),
+            ("https://live.bilibili.com/4063253", Some("Bilibili")),
+            ("https://picarto.tv/someone", Some("Picarto")),
+            ("https://www.tiktok.com/@someone/live", Some("TikTok")),
+            ("https://twitcasting.tv/someone", Some("Twitcasting")),
+            ("https://live.acfun.cn/live/123456", Some("Acfun")),
+            ("https://play.sooplive.co.kr/someone/123", Some("SOOP")),
+            ("https://www.bigo.tv/123456", Some("Bigo")),
+            ("https://WWW.TWITCH.TV/Someone/", Some("Twitch")),
+            ("https://LIVE.BILIBILI.COM/4063253", Some("Bilibili")),
+            ("https://Play.SoopLive.co.kr/someone", Some("SOOP")),
+            ("https://XHSLINK.COM/o/share123", Some("RedBook")),
+            // A link to another platform in the query keeps the URL's own platform.
+            (
+                "https://www.douyu.com/9999?from=https://live.bilibili.com/4063253",
+                Some("Douyu"),
+            ),
+            ("https://www.xiaohongshu.com/user/profile/6260c44f", None),
+            ("https://example.com/someone", None),
+        ];
+
+        for (url, expected) in cases {
+            let parsed = StreamerUrl::new(url).unwrap();
+            assert_eq!(detect_platform_name(&parsed), expected, "{url}");
+        }
     }
 
     mod deprecated_compatibility {

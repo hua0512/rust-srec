@@ -50,7 +50,8 @@ pub use processors::{
     BaiduPcsProcessor, ConfirmedUpload, CopyMoveConfig, CopyMoveOperation, CopyMoveProcessor,
     DanmakuFactoryConfig, DanmakuFactoryProcessor, ExecuteCommandProcessor, LocalFileFingerprint,
     Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, RcloneProcessor,
-    RemuxProcessor, ThumbnailProcessor, UploadItemStatus, UploadResultItem,
+    RemuxProcessor, ThumbnailProcessor, UploadItemStatus, UploadResultItem, ZipArchiveEntry,
+    ZipArchiveError, write_streaming_zip,
 };
 pub use progress::{JobPhase, JobProgressSnapshot, ProgressKind, ProgressReporter};
 pub(crate) use staged_outputs::{StagedOutputRecorder, is_temp_path_for, remove_leftover};

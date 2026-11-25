@@ -14,6 +14,7 @@ pub use api_key::InMemoryApiKeyRepository;
 pub use api_key::{ApiKeyRepository, SqlxApiKeyRepository};
 pub(crate) use import::{
     AuthImportError, apply_auth_import_tx, export_users, validate_auth_import_tx,
+    validate_user_exports,
 };
 pub use models::{
     ApiKeyAccessLevel, ApiKeyDbModel, AuthSessionDbModel, RefreshTokenDbModel, UserDbModel,

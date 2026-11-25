@@ -10,5 +10,5 @@ pub(crate) mod state_store;
 pub use state_store::CommittedStreamerState;
 
 pub use manager::StreamerManager;
-pub use metadata::StreamerMetadata;
 pub(crate) use metadata::download_failure_threshold;
+pub use metadata::{StreamerMetadata, detect_platform_name};

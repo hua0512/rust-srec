@@ -16,8 +16,9 @@ use super::{
     OutputRecordReader, is_segment_start, observe_segment_event_send, output_io_error_kind,
     parse_opened_path, parse_progress, sanitize_engine_message,
 };
-use crate::downloader::EngineEndSignal;
-use crate::downloader::engine::{DownloadFailureKind, IoErrorKindSer, SegmentEvent, SegmentInfo};
+use crate::downloader::engine::{
+    DownloadFailureKind, EngineEndSignal, IoErrorKindSer, SegmentEvent, SegmentInfo,
+};
 
 #[derive(Clone, Copy)]
 pub(crate) enum FfmpegSource {

@@ -100,10 +100,12 @@ impl DownloadManager {
                     let base = self
                         .load_engine_config_or_default::<MesioEngineConfig>(target_id)
                         .await?;
-                    Arc::new(MesioEngine::with_config(Self::apply_override(
-                        base,
-                        override_config,
-                    )?))
+                    Arc::new(
+                        MesioEngine::with_config(Self::apply_override(base, override_config)?)
+                            .with_native_flv_opener(Arc::new(
+                                crate::downloader::bigo_native::BigoNativeFlvOpener,
+                            )),
+                    )
                 }
             };
 
@@ -144,9 +146,15 @@ impl DownloadManager {
                                 )?)
                                 .await,
                             ),
-                            EngineType::Mesio => Arc::new(MesioEngine::with_config(
-                                parse_engine_config("mesio", &config.config)?,
-                            )),
+                            EngineType::Mesio => Arc::new(
+                                MesioEngine::with_config(parse_engine_config(
+                                    "mesio",
+                                    &config.config,
+                                )?)
+                                .with_native_flv_opener(
+                                    Arc::new(crate::downloader::bigo_native::BigoNativeFlvOpener),
+                                ),
+                            ),
                         };
                         return Ok((engine, engine_type, key));
                     }

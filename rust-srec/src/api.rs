@@ -14,6 +14,7 @@ pub(crate) mod cors;
 pub(crate) mod error;
 pub(crate) mod extract;
 pub(crate) mod jwt;
+pub(crate) mod live_danmu;
 pub(crate) mod middleware;
 pub(crate) mod models;
 pub(crate) mod openapi;

@@ -2,7 +2,7 @@ use super::*;
 use axum::body::to_bytes;
 use futures::StreamExt;
 use rand::{Rng, SeedableRng};
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 use std::time::Duration;
 use tempfile::TempDir;
 use zip::{HasZipMetadata, ZipArchive};

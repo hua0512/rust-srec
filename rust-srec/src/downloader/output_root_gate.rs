@@ -21,8 +21,8 @@
 //! - **One notification per transition.** The CAS that flips state from
 //!   `Healthy → Degraded` is the same atomic that decides who emits the
 //!   notification. No double-fire even under massive concurrent failure.
-//! - **No Arc cycles.** The gate holds [`Weak<NotificationService>`] and
-//!   upgrades per emit, so gate/service lifetimes stay independent.
+//! - **No Arc cycles.** The gate holds an optional [`Weak<dyn RuntimeAlertSink>`]
+//!   and upgrades per emit, so gate/service lifetimes stay independent.
 //!
 //! ## What the gate does NOT do
 //!
@@ -54,9 +54,8 @@ use dashmap::DashMap;
 use parking_lot::Mutex;
 use tracing::{debug, info, warn};
 
+use crate::domain::notification::{RuntimeAlert, RuntimeAlertSink};
 use crate::downloader::engine::IoErrorKindSer;
-use crate::notification::events::NotificationEvent;
-use crate::notification::service::NotificationService;
 
 /// Default cooldown between probe attempts on a degraded root.
 ///
@@ -159,7 +158,7 @@ impl RootEntry {
 /// [`crate::downloader::manager::DownloadManager`] and share via `Arc`.
 pub struct OutputRootGate {
     roots: DashMap<PathBuf, Arc<RootEntry>>,
-    notification_service: Weak<NotificationService>,
+    alert_sink: Option<Weak<dyn RuntimeAlertSink>>,
     recovery_hook: RecoveryHook,
     configured_roots: Vec<PathBuf>,
     cooldown: Duration,
@@ -173,7 +172,7 @@ impl OutputRootGate {
     /// back to a 2-component heuristic. Paths are normalized before being
     /// stored so `/rec`, `/rec/`, and `/rec/./` all hash to the same key.
     pub fn new(
-        notification_service: Weak<NotificationService>,
+        alert_sink: Option<Weak<dyn RuntimeAlertSink>>,
         recovery_hook: RecoveryHook,
         configured_roots: Vec<PathBuf>,
         cooldown: Duration,
@@ -184,7 +183,7 @@ impl OutputRootGate {
             .collect();
         Arc::new(Self {
             roots: DashMap::new(),
-            notification_service,
+            alert_sink,
             recovery_hook,
             configured_roots: normalized,
             cooldown,
@@ -368,14 +367,13 @@ impl OutputRootGate {
     }
 
     fn spawn_notification(&self, root: &Path, kind: IoErrorKindSer) {
-        let weak = self.notification_service.clone();
         let path_str = root.display().to_string();
         let kind_str = kind.as_str().to_string();
-        let Some(service) = weak.upgrade() else {
-            debug!("NotificationService dropped before gate notification could fire");
+        let Some(sink) = self.alert_sink.as_ref().and_then(Weak::upgrade) else {
+            debug!("Alert sink absent or dropped before gate notification could fire");
             return;
         };
-        service.dispatch_notification(NotificationEvent::OutputPathInaccessible {
+        sink.emit(RuntimeAlert::OutputPathInaccessible {
             path: path_str,
             error_kind: kind_str,
             timestamp: jiff::Timestamp::now(),
@@ -598,7 +596,7 @@ mod tests {
 
     fn make_gate(cooldown_secs: u64) -> Arc<OutputRootGate> {
         OutputRootGate::new(
-            Weak::new(),
+            None,
             no_op_hook(),
             vec![],
             Duration::from_secs(cooldown_secs),

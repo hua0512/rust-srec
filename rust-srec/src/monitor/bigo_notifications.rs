@@ -53,7 +53,7 @@ use crate::config::{ConfigService, ConfigUpdateEvent};
 use crate::credentials::{CredentialExecutionService, CredentialValidity, OperationDeadline};
 use crate::database::repositories::config::SqlxConfigRepository;
 use crate::database::repositories::streamer::SqlxStreamerRepository;
-use crate::notification::{BigoNotificationProblem, NotificationEvent, NotificationService};
+use crate::domain::notification::{BigoNotificationProblem, RuntimeAlert, RuntimeAlertSink};
 use crate::proxies::ResolvedRoute;
 use crate::streamer::StreamerManager;
 use crate::streamer::platform_metadata::StoredPlatformMetadata;
@@ -331,7 +331,7 @@ pub(crate) struct BigoNotificationDeps {
     pub streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
     pub credentials: Arc<CredentialExecutionService>,
     pub feedback: Arc<dyn BigoCheckTrigger>,
-    pub notifications: Arc<NotificationService>,
+    pub notifications: Arc<dyn RuntimeAlertSink>,
 }
 
 /// Live notifications for Bigo streamers; see the module documentation.
@@ -351,7 +351,7 @@ pub struct BigoNotifications {
     /// [`STATUS_PUBLISH_INTERVAL`].
     changes: watch::Sender<u64>,
     /// Where alerts go; set when the listener starts.
-    alerts: OnceLock<Arc<NotificationService>>,
+    alerts: OnceLock<Arc<dyn RuntimeAlertSink>>,
 }
 
 impl Default for BigoNotifications {
@@ -403,7 +403,7 @@ impl BigoNotifications {
                 missed = NOT_ARRIVING_AFTER,
                 "BIGO sent no live notification for the latest Bigo stream starts, so Bigo streamers are polled until one arrives; check that the notification account is not signed in to the BIGO app and that its live notifications are on"
             );
-            self.alert(NotificationEvent::BigoNotificationsFailing {
+            self.alert(RuntimeAlert::BigoNotificationsFailing {
                 problem: BigoNotificationProblem::NotArriving,
                 message: None,
                 timestamp: Timestamp::now(),
@@ -457,10 +457,10 @@ impl BigoNotifications {
         }
     }
 
-    /// Sends `event` to the notification channels.
-    fn alert(&self, event: NotificationEvent) {
-        if let Some(service) = self.alerts.get() {
-            service.dispatch_notification(event);
+    /// Sends `alert` to the runtime alert sink.
+    fn alert(&self, alert: RuntimeAlert) {
+        if let Some(sink) = self.alerts.get() {
+            sink.clone().emit(alert);
         }
     }
 
@@ -478,7 +478,7 @@ impl BigoNotifications {
             message = message.as_deref().unwrap_or_default(),
             "Bigo live notifications have been disconnected for a while; Bigo streamers are polled meanwhile"
         );
-        self.alert(NotificationEvent::BigoNotificationsFailing {
+        self.alert(RuntimeAlert::BigoNotificationsFailing {
             problem: BigoNotificationProblem::Disconnected,
             message,
             timestamp: Timestamp::now(),
@@ -493,7 +493,7 @@ impl BigoNotifications {
         let alerted = self.listener.lock().up();
         if alerted && connected {
             info!("Bigo live notifications reconnected");
-            self.alert(NotificationEvent::BigoNotificationsRestored {
+            self.alert(RuntimeAlert::BigoNotificationsRestored {
                 problem: BigoNotificationProblem::Disconnected,
                 timestamp: Timestamp::now(),
             });
@@ -946,7 +946,7 @@ impl BigoNotifications {
                         self.schedule.notify_one();
                         if restored {
                             info!("BIGO sends live notifications again, so Bigo streamers use them again");
-                            self.alert(NotificationEvent::BigoNotificationsRestored {
+                            self.alert(RuntimeAlert::BigoNotificationsRestored {
                                 problem: BigoNotificationProblem::NotArriving,
                                 timestamp: Timestamp::now(),
                             });
@@ -1108,9 +1108,9 @@ async fn account_cookies(deps: &BigoNotificationDeps, profile_id: &str) -> Resul
 fn native_route(route: &ResolvedRoute) -> Result<Route, Ended> {
     let client = crate::credentials::provider_client(&route.target)
         .map_err(|error| Ended::Failed(error.to_string()))?;
-    let proxy = route
-        .danmu_proxy(crate::proxies::SystemProxy::current())
-        .map_err(|error| Ended::Failed(error.to_string()))?;
+    let proxy =
+        crate::proxies::danmu_proxy_for_route(route, crate::proxies::SystemProxy::current())
+            .map_err(|error| Ended::Failed(error.to_string()))?;
     Ok(Route { client, proxy })
 }
 

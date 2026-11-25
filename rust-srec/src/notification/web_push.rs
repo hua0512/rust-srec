@@ -8,7 +8,6 @@ use base64::Engine as _;
 use dashmap::DashMap;
 use futures::stream::{self, StreamExt};
 use hkdf::Hkdf;
-use mesio::redact::redact_url_for_log;
 use p256::ecdh::EphemeralSecret;
 use p256::ecdsa::SigningKey;
 use p256::ecdsa::signature::Signer;
@@ -25,6 +24,7 @@ use url::Url;
 
 use crate::domain::proxy::{ProxyRoute, ProxyTarget, SystemProxy};
 use crate::utils::http_client::{ClientCache, apply_proxy, build_client, install_rustls_provider};
+use crate::utils::url::redact_url_for_log;
 
 /// Telemetry sink for browser push delivery outcomes.
 pub trait WebPushMetrics: Send + Sync {

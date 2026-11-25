@@ -29,7 +29,6 @@ use crate::downloader::{
     DownloadStopCause, RecorderDownloadFeedback, RecorderFeedbackPermit,
 };
 use crate::monitor::BigoCheckTrigger;
-use crate::pipeline::PipelineManager;
 use crate::recorder::actor::effects::{
     close_danmu_segment, delete_discarded_files, deliver_pipeline_notification, start_danmu_segment,
 };
@@ -41,9 +40,9 @@ use crate::recorder::fsm::segment::{
 };
 use crate::recorder::ports::{
     ActorStopReason, DanmuCloseSegmentSpec, DanmuSegmentRecord, DanmuStopResult, DbCommitOp,
-    DbCommitOutcome, InitialStreamerSnapshot, PipelineNotification, RecorderStorePort,
-    ResolvedActorConfig, RetirementBounds, StreamerRetirement, StreamerRuntimeView,
-    VideoSegmentRecord, should_spawn_actor,
+    DbCommitOutcome, InitialStreamerSnapshot, PipelineNotification, RecorderPipelinePort,
+    RecorderStorePort, ResolvedActorConfig, RetirementBounds, StreamerRetirement,
+    StreamerRuntimeView, VideoSegmentRecord, should_spawn_actor,
 };
 use crate::recorder::prober::RecorderProber;
 use crate::recorder::store::{PostPublicationChangeSet, PostPublicationListener, RecorderStore};
@@ -204,7 +203,7 @@ pub struct ActorRegistryDependencies {
     pub prober: Arc<RecorderProber>,
     pub download_manager: Arc<DownloadManager>,
     pub danmu_service: Arc<DanmuService>,
-    pub pipeline_manager: Arc<PipelineManager>,
+    pub pipeline: Arc<dyn RecorderPipelinePort>,
     pub streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
     pub config_service: Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
     pub check_interval_ms: u64,
@@ -246,7 +245,7 @@ impl ActorRegistry {
             prober: deps.prober,
             download_manager: deps.download_manager,
             danmu_service: deps.danmu_service,
-            pipeline_manager: deps.pipeline_manager,
+            pipeline: deps.pipeline,
             streamer_manager: deps.streamer_manager,
             config_service: deps.config_service,
             leases,
@@ -622,7 +621,7 @@ impl ActorRegistry {
                     ..
                 }) => {
                     deliver_pipeline_notification(
-                        &self.deps.pipeline_manager,
+                        self.deps.pipeline.as_ref(),
                         &self.deps.download_manager,
                         &self.deps.leases,
                         PipelineNotification::SessionEnded {
@@ -873,7 +872,7 @@ impl ActorRegistry {
         {
             Ok(DbCommitOutcome::CredentialRetirementEnded { ended: true, .. }) => {
                 deliver_pipeline_notification(
-                    &self.deps.pipeline_manager,
+                    self.deps.pipeline.as_ref(),
                     &self.deps.download_manager,
                     &self.deps.leases,
                     PipelineNotification::SessionEnded {
@@ -985,7 +984,7 @@ impl ActorRegistry {
         }
         match self
             .deps
-            .pipeline_manager
+            .pipeline
             .drain_for_streamer(streamer_id, pipeline_bound)
             .await
         {
@@ -993,8 +992,7 @@ impl ActorRegistry {
             Ok(drain) => {
                 outstanding.push(format!(
                     "pipeline work: {} unsettled sessions, {} jobs",
-                    drain.sessions.len(),
-                    drain.jobs
+                    drain.unsettled_sessions, drain.outstanding_jobs
                 ));
             }
             Err(error) => {
@@ -1869,17 +1867,14 @@ impl ActorRegistry {
             .map_err(|error| format!("failed to persist trailing video segment: {error}"))?;
 
         self.deps
-            .pipeline_manager
-            .handle_recorder_notification(
-                PipelineNotification::VideoSegmentCompleted {
-                    session_id: session_id.to_owned(),
-                    streamer_id: streamer_id.to_owned(),
-                    segment_index,
-                    path: Path::new(&segment_path).to_path_buf(),
-                    auto_thumbnail_candidate: segment_index == 0,
-                }
-                .into(),
-            )
+            .pipeline
+            .notify(PipelineNotification::VideoSegmentCompleted {
+                session_id: session_id.to_owned(),
+                streamer_id: streamer_id.to_owned(),
+                segment_index,
+                path: Path::new(&segment_path).to_path_buf(),
+                auto_thumbnail_candidate: segment_index == 0,
+            })
             .await
             .map_err(|error| format!("failed to notify pipeline for trailing segment: {error}"))?;
         Ok(())
@@ -1931,14 +1926,11 @@ impl ActorRegistry {
                     return res;
                 }
                 self.deps
-                    .pipeline_manager
-                    .handle_recorder_notification(
-                        PipelineNotification::DanmuCollectionStarted {
-                            session_id,
-                            streamer_id,
-                        }
-                        .into(),
-                    )
+                    .pipeline
+                    .notify(PipelineNotification::DanmuCollectionStarted {
+                        session_id,
+                        streamer_id,
+                    })
                     .await
                     .map_err(|error| format!("failed to apply danmu collection start: {error}"))
             }
@@ -2018,17 +2010,14 @@ impl ActorRegistry {
                     })?;
 
                 self.deps
-                    .pipeline_manager
-                    .handle_recorder_notification(
-                        PipelineNotification::DanmuSegmentCompleted {
-                            session_id,
-                            streamer_id,
-                            segment_index,
-                            path: output_path,
-                            message_count,
-                        }
-                        .into(),
-                    )
+                    .pipeline
+                    .notify(PipelineNotification::DanmuSegmentCompleted {
+                        session_id,
+                        streamer_id,
+                        segment_index,
+                        path: output_path,
+                        message_count,
+                    })
                     .await
                     .map_err(|error| {
                         format!("failed to notify pipeline for trailing danmu segment: {error}")
@@ -2135,14 +2124,11 @@ impl ActorRegistry {
                     return res;
                 }
                 self.deps
-                    .pipeline_manager
-                    .handle_recorder_notification(
-                        PipelineNotification::DanmuCollectionStopped {
-                            session_id,
-                            total_count,
-                        }
-                        .into(),
-                    )
+                    .pipeline
+                    .notify(PipelineNotification::DanmuCollectionStopped {
+                        session_id,
+                        total_count,
+                    })
                     .await
                     .map_err(|error| format!("failed to apply danmu collection stop: {error}"))
             }

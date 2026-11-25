@@ -14,13 +14,12 @@ use tracing::{debug, warn};
 
 use crate::danmu::{CollectionStopReason, DanmuService};
 use crate::downloader::{DownloadManager, DownloadStopCause};
-use crate::pipeline::PipelineManager;
 use crate::recorder::actor::{ActorMessage, ActorRuntimeDeps};
 use crate::recorder::fsm::{FsmEffect, FsmInput};
 use crate::recorder::ports::{
     ActorStopReason, DanmuCloseSegmentSpec, DanmuSegmentRecord, DanmuStopKind, DanmuStopResult,
-    DbCommitOp, PipelineNotification, ProbeRequest, RecorderStorePort, StreamerRuntimeView,
-    VideoSegmentRecord,
+    DbCommitOp, PipelineNotification, ProbeRequest, RecorderPipelinePort, RecorderStorePort,
+    StreamerRuntimeView, VideoSegmentRecord,
 };
 
 use super::startup_task::{StartupTaskDeps, spawn_startup_task};
@@ -138,7 +137,7 @@ pub(super) fn dispatch_effects(
     if has_async_io {
         let store = deps.store.clone();
         let danmu_service = deps.danmu_service.clone();
-        let pipeline_manager = deps.pipeline_manager.clone();
+        let pipeline = deps.pipeline.clone();
         let download_manager = deps.download_manager.clone();
         let leases = deps.leases.clone();
         effects_tasks.spawn(async move {
@@ -179,7 +178,7 @@ pub(super) fn dispatch_effects(
             }
             for notification in deferred_pipeline {
                 deliver_pipeline_notification(
-                    &pipeline_manager,
+                    pipeline.as_ref(),
                     &download_manager,
                     &leases,
                     notification,
@@ -281,7 +280,7 @@ pub(super) fn dispatch_segment_completed_effects(
     let signals = dispatch_effects(streamer_id, remaining, deps, actor_tx, effects_tasks);
     let store = deps.store.clone();
     let danmu_service = deps.danmu_service.clone();
-    let pipeline_manager = deps.pipeline_manager.clone();
+    let pipeline = deps.pipeline.clone();
     let download_manager = deps.download_manager.clone();
     let leases = deps.leases.clone();
 
@@ -308,7 +307,7 @@ pub(super) fn dispatch_segment_completed_effects(
         }
         for notification in pipeline_notifs {
             if let Err(error) = deliver_pipeline_notification_result(
-                &pipeline_manager,
+                pipeline.as_ref(),
                 &download_manager,
                 &leases,
                 notification,
@@ -360,7 +359,7 @@ pub(super) fn dispatch_danmu_fifo_effects(
     }
 
     let store = deps.store.clone();
-    let pipeline_manager = deps.pipeline_manager.clone();
+    let pipeline = deps.pipeline.clone();
     let download_manager = deps.download_manager.clone();
     let leases = deps.leases.clone();
 
@@ -376,7 +375,7 @@ pub(super) fn dispatch_danmu_fifo_effects(
         }
         for notification in pipeline_notifs {
             if let Err(error) = deliver_pipeline_notification_result(
-                &pipeline_manager,
+                pipeline.as_ref(),
                 &download_manager,
                 &leases,
                 notification,
@@ -520,25 +519,20 @@ pub(crate) async fn delete_discarded_files(video_path: Option<&str>, danmu_path:
 }
 
 pub(crate) async fn deliver_pipeline_notification(
-    pipeline_manager: &PipelineManager,
+    pipeline: &dyn RecorderPipelinePort,
     download_manager: &DownloadManager,
     leases: &super::startup_task::StartupLeaseRegistry,
     notification: PipelineNotification,
 ) {
-    if let Err(error) = deliver_pipeline_notification_result(
-        pipeline_manager,
-        download_manager,
-        leases,
-        notification,
-    )
-    .await
+    if let Err(error) =
+        deliver_pipeline_notification_result(pipeline, download_manager, leases, notification).await
     {
         warn!(%error, "Failed to deliver recorder pipeline notification");
     }
 }
 
 async fn deliver_pipeline_notification_result(
-    pipeline_manager: &PipelineManager,
+    pipeline: &dyn RecorderPipelinePort,
     download_manager: &DownloadManager,
     leases: &super::startup_task::StartupLeaseRegistry,
     notification: PipelineNotification,
@@ -552,9 +546,7 @@ async fn deliver_pipeline_notification_result(
         download_manager.clear_session_segment_index(session_id);
         leases.clear_session(streamer_id, session_id);
     }
-    pipeline_manager
-        .handle_recorder_notification(notification.into())
-        .await
+    pipeline.notify(notification).await
 }
 
 impl ActorRuntimeDeps {

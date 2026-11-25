@@ -53,7 +53,7 @@ mod config {
 
 /// Exponential back-off before reconnect `attempt` (counted from 1), doubling
 /// from `RECONNECT_BASE_DELAY_MS` up to `RECONNECT_MAX_DELAY_MS`.
-pub(super) fn reconnect_delay(attempt: u32) -> Duration {
+pub(crate) fn reconnect_delay(attempt: u32) -> Duration {
     let shift = attempt.saturating_sub(1).min(5);
     let millis = config::RECONNECT_BASE_DELAY_MS
         .saturating_mul(1_u64 << shift)

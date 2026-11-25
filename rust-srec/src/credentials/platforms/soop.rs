@@ -153,7 +153,7 @@ mod tests {
         assert_eq!(
             SoopProvider
                 .check(
-                    &provider_client(&platforms_parser::proxy::ProxyTarget::Direct).unwrap(),
+                    &provider_client(&crate::domain::proxy::ProxyTarget::Direct).unwrap(),
                     &material(" ", Some(login.clone()))
                 )
                 .await
@@ -163,7 +163,7 @@ mod tests {
         assert_eq!(
             SoopProvider
                 .check(
-                    &provider_client(&platforms_parser::proxy::ProxyTarget::Direct).unwrap(),
+                    &provider_client(&crate::domain::proxy::ProxyTarget::Direct).unwrap(),
                     &material("", None)
                 )
                 .await

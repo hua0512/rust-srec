@@ -13,7 +13,7 @@ use tracing::{debug, error, info, warn};
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::parse_config_or_default;
 use crate::Result;
-use crate::pipeline::job_queue::JobLogEntry;
+use crate::domain::processor::JobLogEntry;
 
 /// Default maximum retry attempts for locked files.
 fn default_max_retries() -> u32 {
@@ -78,7 +78,7 @@ impl DeleteProcessor {
         &self,
         path: &Path,
         config: &DeleteConfig,
-        logs: &mut Vec<crate::pipeline::job_queue::JobLogEntry>,
+        logs: &mut Vec<crate::domain::processor::JobLogEntry>,
     ) -> crate::Result<()> {
         let mut last_error: Option<std::io::Error> = None;
 

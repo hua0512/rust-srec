@@ -1,4 +1,4 @@
-use std::io::{self, BufWriter, Read, Write};
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -10,10 +10,9 @@ use futures::Stream;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
 use tokio::task::JoinHandle;
 use tokio_util::sync::{CancellationToken, DropGuard};
-use zip::{ZipWriter, write::SimpleFileOptions};
 
-use crate::Error;
 use crate::api::error::ApiError;
+use crate::pipeline::{ZipArchiveEntry, ZipArchiveError, write_streaming_zip};
 
 use super::{LogFileInternal, scan_log_files_matching};
 
@@ -143,41 +142,23 @@ fn build_archive_zip(
     output: impl Write,
     cancellation: &CancellationToken,
 ) -> Result<(), ApiError> {
-    let output = BufWriter::with_capacity(CHUNK_SIZE, output);
-    let mut zip = ZipWriter::new_stream(output);
-    let options = SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated)
-        .large_file(true);
-    let mut buffer = [0u8; CHUNK_SIZE];
-
-    for file in files {
-        if cancellation.is_cancelled() {
-            return Err(ApiError::internal("Log archive download cancelled"));
+    let entries: Vec<ZipArchiveEntry> = files
+        .iter()
+        .map(|file| ZipArchiveEntry {
+            filename: file.filename.clone(),
+            path: file.path.clone(),
+            size_bytes: file.size_bytes,
+        })
+        .collect();
+    write_streaming_zip(&entries, output, cancellation).map_err(|error| match error {
+        ZipArchiveError::Cancelled => ApiError::internal("Log archive download cancelled"),
+        ZipArchiveError::Truncated => {
+            ApiError::internal("Log file was truncated during archive download")
         }
-        let input = std::fs::File::open(&file.path)
-            .map_err(|source| Error::io_path("open log archive input", &file.path, source))?;
-        // Snapshot each file's scanned length so a growing active log cannot extend the
-        // export indefinitely. ZIP64 remains enabled even for initially small log files.
-        let mut input = input.take(file.size_bytes);
-        zip.start_file(&file.filename, options)?;
-        while input.limit() > 0 {
-            if cancellation.is_cancelled() {
-                return Err(ApiError::internal("Log archive download cancelled"));
-            }
-            let read = input
-                .read(&mut buffer)
-                .map_err(|source| Error::io_path("read log archive input", &file.path, source))?;
-            if read == 0 {
-                return Err(ApiError::internal(
-                    "Log file was truncated during archive download",
-                ));
-            }
-            zip.write_all(&buffer[..read])?;
-        }
-    }
-
-    let mut output = zip.finish()?.into_inner();
-    output.flush().map_err(ApiError::from)
+        ZipArchiveError::Io(io_err) => ApiError::from(io_err),
+        ZipArchiveError::IoPath(err) => ApiError::from(err),
+        ZipArchiveError::Zip(_) => ApiError::internal("Archive operation failed"),
+    })
 }
 
 #[cfg(test)]

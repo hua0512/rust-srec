@@ -9,17 +9,23 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
+use dashmap::DashMap;
 use sqlx::SqlitePool;
 
 use crate::Result;
 pub use crate::api::auth_service::{AuthResponse, LocalDesktopAccount};
-use crate::api::auth_store::{AuthImportError, apply_auth_import_tx, validate_auth_import_tx};
+use crate::api::auth_store::{
+    AuthImportError, apply_auth_import_tx, validate_auth_import_tx, validate_user_exports,
+};
 use crate::api::backup::{ConfigBackupError, ConfigBackupImportOutcome, ConfigBackupPort};
-use crate::api::bootstrap::ApiServerHost;
+use crate::api::bootstrap::{ApiServerHost, ApiServerRuntime};
+use crate::api::playback_context::PlaybackContextService;
 pub use crate::api::server::ApiServerConfig;
+use crate::api::server::ApiServices;
 use crate::config::backup::{ConfigExport, ImportMode, ImportStats, UserExport};
 pub use crate::database::{init_database_pools, init_migration_pool, init_pool, init_write_pool};
-pub use crate::downloader::{DownloadManagerConfig, DownloadManagerEvent};
+pub use crate::domain::engine_config::{EngineType, FfmpegEngineConfig, StreamlinkEngineConfig};
+pub use crate::downloader::{DownloadManagerConfig, DownloadManagerEvent, DownloadProgressEvent};
 pub use crate::logging::init_logging;
 pub use crate::notification::{NotificationEvent, NotificationPriority};
 pub use crate::panic_hook::install as install_panic_hook;
@@ -46,6 +52,13 @@ struct BackendAuthImportTxPort;
 
 #[async_trait::async_trait]
 impl AuthImportTxPort for BackendAuthImportTxPort {
+    fn validate_user_exports(
+        &self,
+        users: &[UserExport],
+    ) -> std::result::Result<(), ConfigurationImportError> {
+        validate_user_exports(users).map_err(map_auth_import_error)
+    }
+
     async fn validate_users_tx(
         &self,
         tx: &mut sqlx::SqliteConnection,
@@ -150,6 +163,64 @@ pub(crate) fn build_config_backup(
     Arc::new(BackendConfigBackup {
         export_service,
         import_service,
+    })
+}
+
+/// Assemble the [`ApiServerRuntime`] handed to [`ApiServerHost`] from the core
+/// [`crate::services::ServiceContainer`].
+pub(crate) fn build_api_runtime(
+    container: &crate::services::ServiceContainer,
+    config_backup: Arc<dyn ConfigBackupPort>,
+) -> Result<ApiServerRuntime> {
+    let logging_config = container.logging_config.get().cloned().ok_or_else(|| {
+        crate::Error::ApiError(
+            "Logging configuration must be initialized before starting the API".to_string(),
+        )
+    })?;
+
+    let services = ApiServices {
+        config_service: container.config_service.clone(),
+        streamer_manager: container.streamer_manager.clone(),
+        pipeline_manager: container.pipeline_manager.clone(),
+        download_manager: container.download_manager.clone(),
+        queries: crate::api::queries::ApiQueries::new(container.pool.clone()),
+        session_repository: container.session_repository.clone(),
+        session_event_repository: container.session_event_repository.clone(),
+        streamer_check_history_repository: container.streamer_check_history_repository.clone(),
+        check_history_broadcaster: container.check_history_broadcaster.clone(),
+        upload_status_broadcaster: container.upload_status_broadcaster.clone(),
+        upload_record_repository: container.upload_record_repository.clone(),
+        filter_repository: container.filter_repository.clone(),
+        health_checker: container.health_checker.clone(),
+        streamer_repository: container.streamer_repository.clone(),
+        pipeline_preset_repository: container.pipeline_preset_repository.clone(),
+        notification_repository: container.notification_repository.clone(),
+        notification_service: container.notification_service.clone(),
+        logging_config,
+        logging_download_tokens: Arc::new(DashMap::new()),
+        logging_archives: Arc::new(crate::api::routes::logging::LogArchiveService::new()),
+        credential_service: container.credential_service.clone(),
+        platform_admission: container.platform_admission.clone(),
+        credential_profiles: container.credential_profiles.clone(),
+        credential_execution: container.credential_execution.clone(),
+        proxies: container.proxies.clone(),
+        credential_blocks: container.credential_blocks().clone(),
+        bigo_notifications: container.bigo_notifications.clone(),
+        playback_contexts: Arc::new(PlaybackContextService::default()),
+        extractor_runner: container.extractor_runner.clone(),
+        danmu_taps: container.danmu_service.taps(),
+        credential_login_sessions: container.credential_login_sessions.clone(),
+        config_backup,
+        actor_registry: container.actor_registry.clone(),
+    };
+
+    Ok(ApiServerRuntime {
+        pool: container.pool.clone(),
+        write_pool: container.write_pool.clone(),
+        services,
+        web_push_service: container.web_push_service.clone(),
+        cancellation_token: container.cancellation_token.clone(),
+        task_supervisor: container.task_supervisor.clone(),
     })
 }
 
@@ -264,9 +335,8 @@ impl ServiceContainer {
     /// Initialize and start the API server.
     /// This should be called after `initialize()` and runs the server in the background.
     pub async fn start_api_server(&self) -> Result<()> {
-        self.api
-            .start_api_server(&self.core, self.config_backup.clone())
-            .await
+        let runtime = build_api_runtime(&self.core, self.config_backup.clone())?;
+        self.api.start_api_server(runtime).await
     }
 
     /// Initialize and start the API server, returning the resolved bind address.
@@ -274,9 +344,8 @@ impl ServiceContainer {
     /// This is required when binding to port `0` (ephemeral port), where the
     /// actual port is only known after binding.
     pub async fn start_api_server_bound(&self) -> Result<SocketAddr> {
-        self.api
-            .start_api_server_bound(&self.core, self.config_backup.clone())
-            .await
+        let runtime = build_api_runtime(&self.core, self.config_backup.clone())?;
+        self.api.start_api_server_bound(runtime).await
     }
 
     /// Initialize and start the API server, returning the resolved bind
@@ -289,12 +358,9 @@ impl ServiceContainer {
         &self,
         jwt_secret: String,
     ) -> Result<SocketAddr> {
+        let runtime = build_api_runtime(&self.core, self.config_backup.clone())?;
         self.api
-            .start_api_server_bound_with_jwt_secret(
-                &self.core,
-                self.config_backup.clone(),
-                jwt_secret,
-            )
+            .start_api_server_bound_with_jwt_secret(runtime, jwt_secret)
             .await
     }
 

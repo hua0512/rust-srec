@@ -1169,18 +1169,20 @@ async fn run_startup_task(
         return;
     }
 
-    let danmu_proxy = match route.danmu_proxy(crate::proxies::SystemProxy::current()) {
-        Ok(proxy) => proxy,
-        Err(error) => {
-            warn!(%session_id, %error, "Danmu not collected: its proxy cannot be used");
-            let _ = actor_tx.send(ActorMessage::Input(FsmInput::DanmuCollectionStopped {
-                session_id,
-                total_count: 0,
-                result: DanmuStopResult::NotRegistered,
-            }));
-            return;
-        }
-    };
+    let danmu_proxy =
+        match crate::proxies::danmu_proxy_for_route(&route, crate::proxies::SystemProxy::current())
+        {
+            Ok(proxy) => proxy,
+            Err(error) => {
+                warn!(%session_id, %error, "Danmu not collected: its proxy cannot be used");
+                let _ = actor_tx.send(ActorMessage::Input(FsmInput::DanmuCollectionStopped {
+                    session_id,
+                    total_count: 0,
+                    result: DanmuStopResult::NotRegistered,
+                }));
+                return;
+            }
+        };
 
     if deps.danmu_service.is_collecting(&session_id) {
         if !deps

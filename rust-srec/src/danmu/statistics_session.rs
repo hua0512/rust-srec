@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use platforms_parser::danmaku::{DanmuMessage, DanmuStatistics, StatisticsAggregator};
+use platforms_parser::danmaku::{
+    DanmuMessage, DanmuStatistics, StatisticsAggregator, StatisticsConfig,
+};
 use tracing::warn;
 
 use crate::database::models::{DanmuRateEntry, GiftTallyEntry, TopTalkerEntry, WordFrequencyEntry};
@@ -9,6 +11,19 @@ use crate::domain::DanmuStatisticsConfig;
 
 use super::checkpoint;
 use super::lifecycle::CollectionExitReason;
+
+fn to_aggregator_config(config: &DanmuStatisticsConfig) -> StatisticsConfig {
+    StatisticsConfig {
+        top_talkers: config.top_talkers,
+        top_words: config.top_words,
+        top_gifts: config.top_gifts,
+        talker_capacity: config.talker_capacity,
+        word_capacity: config.word_capacity,
+        gift_capacity: config.gift_capacity,
+        rate_bucket_secs: config.rate_bucket_secs,
+        extra_stop_words: config.extra_stop_words.clone(),
+    }
+}
 
 /// Owns aggregation, publication, and restart checkpoint policy for one collection.
 pub(crate) struct StatisticsSession {
@@ -31,7 +46,7 @@ impl StatisticsSession {
         let aggregator = checkpoint::load_or_new(
             repository.as_ref(),
             &session_id,
-            config.to_aggregator_config(),
+            to_aggregator_config(&config),
         )
         .await;
         let resumed_total = aggregator.total_count();
@@ -181,5 +196,24 @@ async fn persist_statistics(
 
     if let Err(error) = repo.upsert_danmu_statistics(&model).await {
         warn!(session_id, %error, "Failed to persist danmu statistics");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn danmu_statistics_defaults_match_aggregator() {
+        let converted = to_aggregator_config(&DanmuStatisticsConfig::default());
+        let expected = StatisticsConfig::default();
+        assert_eq!(converted.top_talkers, expected.top_talkers);
+        assert_eq!(converted.top_words, expected.top_words);
+        assert_eq!(converted.top_gifts, expected.top_gifts);
+        assert_eq!(converted.talker_capacity, expected.talker_capacity);
+        assert_eq!(converted.word_capacity, expected.word_capacity);
+        assert_eq!(converted.gift_capacity, expected.gift_capacity);
+        assert_eq!(converted.rate_bucket_secs, expected.rate_bucket_secs);
+        assert_eq!(converted.extra_stop_words, expected.extra_stop_words);
     }
 }

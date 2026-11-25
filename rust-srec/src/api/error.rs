@@ -397,15 +397,6 @@ impl From<tokio::task::JoinError> for ApiError {
     }
 }
 
-impl From<zip::result::ZipError> for ApiError {
-    fn from(error: zip::result::ZipError) -> Self {
-        match error {
-            zip::result::ZipError::Io(error) => Self::from(error),
-            _ => Self::internal("Archive operation failed"),
-        }
-    }
-}
-
 impl From<axum::http::header::InvalidHeaderValue> for ApiError {
     fn from(_: axum::http::header::InvalidHeaderValue) -> Self {
         Self::internal("Response header could not be encoded")

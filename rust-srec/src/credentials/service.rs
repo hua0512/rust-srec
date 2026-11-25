@@ -10,7 +10,7 @@ use std::sync::{Arc, OnceLock};
 
 use tracing::warn;
 
-use crate::notification::{NotificationEvent, NotificationService};
+use crate::domain::notification::{RuntimeAlert, RuntimeAlertSink};
 
 use super::provider::CredentialProvider;
 use super::{CredentialEvent, CredentialProfile, CredentialScope, PlatformAdmission};
@@ -24,7 +24,7 @@ pub struct CredentialProviderRegistry {
     /// Test replacements for the built-in providers, by lowercase platform name.
     #[cfg(test)]
     providers: HashMap<String, Arc<dyn CredentialProvider>>,
-    notification_service: OnceLock<Arc<NotificationService>>,
+    alert_sink: OnceLock<Arc<dyn RuntimeAlertSink>>,
     /// Profiles whose latest session-cookie save failed. A failure repeats on
     /// every live check, so it is announced once until a save succeeds.
     session_save_failures: dashmap::DashSet<String>,
@@ -45,7 +45,7 @@ impl CredentialProviderRegistry {
             platform_providers: false,
             #[cfg(test)]
             providers: HashMap::new(),
-            notification_service: OnceLock::new(),
+            alert_sink: OnceLock::new(),
             session_save_failures: dashmap::DashSet::new(),
         }
     }
@@ -82,11 +82,11 @@ impl CredentialProviderRegistry {
         }
     }
 
-    /// Wire a NotificationService to emit CredentialEvents as NotificationEvents.
-    pub fn set_notification_service(&self, service: Arc<NotificationService>) {
-        self.admission.set_notification_service(service.clone());
-        if self.notification_service.set(service).is_err() {
-            warn!("Credential notification service is already configured");
+    /// Wire a [`RuntimeAlertSink`] to emit credential and throttling alerts.
+    pub fn set_notification_service(&self, sink: Arc<dyn RuntimeAlertSink>) {
+        self.admission.set_notification_service(sink.clone());
+        if self.alert_sink.set(sink).is_err() {
+            warn!("Credential notification sink is already configured");
         }
     }
 
@@ -102,7 +102,7 @@ impl CredentialProviderRegistry {
     }
 
     pub(crate) fn maybe_notify_credential_event(&self, event: CredentialEvent) {
-        let Some(service) = self.notification_service.get().cloned() else {
+        let Some(sink) = self.alert_sink.get().cloned() else {
             return;
         };
 
@@ -119,7 +119,7 @@ impl CredentialProviderRegistry {
             }
         }
 
-        service.dispatch_notification(NotificationEvent::Credential { event });
+        sink.clone().emit(RuntimeAlert::Credential(event));
     }
 
     /// Session cookies minted during extraction (e.g. SOOP reactive login)
@@ -158,6 +158,7 @@ impl CredentialProviderRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::notification::{NotificationEvent, NotificationService};
 
     #[tokio::test]
     async fn repeated_session_save_failures_notify_once_until_a_save_succeeds() {

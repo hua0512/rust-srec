@@ -2,17 +2,240 @@
 //! process-environment helpers shared across storage, downloaders, and upload
 //! processors.
 
+use std::fmt;
 use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
-use platforms_parser::danmaku::{DanmakuError, DanmuProxy};
-use platforms_parser::proxy::redacted_url;
-pub use platforms_parser::proxy::{ProxyEndpoint, ProxyTarget};
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 
 use crate::Result;
 use crate::domain::step_routes::StepUser;
+
+// ============================================================================
+// Core proxy endpoint & target value objects
+// ============================================================================
+
+/// Every proxy variable a process that connects directly must not inherit.
+pub const PROXY_ENVIRONMENT: [&str; 8] = [
+    "HTTP_PROXY",
+    "http_proxy",
+    "HTTPS_PROXY",
+    "https_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+    "NO_PROXY",
+    "no_proxy",
+];
+
+/// Bytes escaped in a login written into a proxy URL: everything except
+/// ASCII letters, digits and `*-._`.
+const LOGIN_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'*')
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_');
+
+/// `scheme://host[:port]` of a proxy URL, without its login, path or query,
+/// or a placeholder when it does not parse. Safe to log.
+pub fn redacted_url(url: &str) -> String {
+    url::Url::parse(url.trim())
+        .ok()
+        .and_then(|url| {
+            let host = url.host_str().filter(|host| !host.is_empty())?.to_owned();
+            Some(match url.port() {
+                Some(port) => format!("{}://{host}:{port}", url.scheme()),
+                None => format!("{}://{host}", url.scheme()),
+            })
+        })
+        .unwrap_or_else(|| "[unparsed]".to_owned())
+}
+
+/// A proxy address with its optional login. `Debug` never shows the login.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct ProxyEndpoint {
+    /// `http`, `https`, `socks5` or `socks5h` URL. A login belongs in the
+    /// fields below.
+    pub url: String,
+    pub username: Option<String>,
+    pub password: Option<String>,
+}
+
+impl fmt::Debug for ProxyEndpoint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProxyEndpoint")
+            .field("url", &redacted_url(&self.url))
+            .field("authenticated", &self.login().is_some())
+            .finish()
+    }
+}
+
+impl ProxyEndpoint {
+    pub fn new(url: impl Into<String>, login: Option<(String, String)>) -> Self {
+        let (username, password) =
+            login.map_or((None, None), |(user, pass)| (Some(user), Some(pass)));
+        Self {
+            url: url.into(),
+            username,
+            password,
+        }
+    }
+
+    /// An endpoint from a URL that may carry a percent-encoded login, as
+    /// proxy environment variables do. The login moves into the fields; a
+    /// URL that does not parse is kept as written for the client to reject.
+    pub fn from_url(url: &str) -> Self {
+        let url = url.trim();
+        let Ok(mut parsed) = url::Url::parse(url) else {
+            return Self::new(url, None);
+        };
+        if parsed.username().is_empty() && parsed.password().is_none() {
+            return Self::new(url, None);
+        }
+        let decode = |part: &str| percent_decode_str(part).decode_utf8_lossy().into_owned();
+        let login = (
+            decode(parsed.username()),
+            decode(parsed.password().unwrap_or_default()),
+        );
+        if parsed.set_username("").is_err() || parsed.set_password(None).is_err() {
+            return Self::new(url, None);
+        }
+        Self::new(parsed.as_str(), Some(login))
+    }
+
+    /// The login sent to the proxy. Only a complete pair is sent.
+    pub fn login(&self) -> Option<(&str, &str)> {
+        self.username.as_deref().zip(self.password.as_deref())
+    }
+
+    /// The proxy for every request scheme of a `reqwest` client, with its
+    /// login.
+    pub fn reqwest_proxy(&self) -> std::result::Result<reqwest::Proxy, UnusableProxy> {
+        let url = self.url_with_login();
+        let url = url.trim();
+        if url::Url::parse(url)
+            .is_ok_and(|url| url.has_host() && !SUPPORTED_SCHEMES.contains(&url.scheme()))
+        {
+            return Err(UnsupportedProxyScheme.into());
+        }
+        reqwest::Proxy::all(url).map_err(|error| UnusableProxy::Url(error.without_url()))
+    }
+
+    /// The URL with the login percent-encoded into it, for clients and
+    /// programs that take the proxy as one URL. A URL that does not parse is
+    /// returned as written for the client to reject.
+    pub fn url_with_login(&self) -> String {
+        let Some((username, password)) = self.login() else {
+            return self.url.clone();
+        };
+        let Ok(mut url) = url::Url::parse(self.url.trim()) else {
+            return self.url.clone();
+        };
+        let username = utf8_percent_encode(username, LOGIN_ENCODE_SET).to_string();
+        let password = utf8_percent_encode(password, LOGIN_ENCODE_SET).to_string();
+        if url.set_username(&username).is_err() || url.set_password(Some(&password)).is_err() {
+            return self.url.clone();
+        }
+        url.into()
+    }
+}
+
+/// A `reqwest` proxy no request gets through: requests fail before leaving
+/// the host. Clients use it when the proxy they were given is unusable, so
+/// they fail rather than connect without it.
+pub fn unroutable_proxy() -> reqwest::Proxy {
+    reqwest::Proxy::custom(|_| Some("http://unroutable.invalid:9".to_owned()))
+}
+
+/// A proxy of a scheme that the client or program given it cannot use.
+#[derive(Debug, thiserror::Error)]
+#[error("can only use http, https and SOCKS5 proxies; choose another proxy")]
+pub struct UnsupportedProxyScheme;
+
+/// Why an endpoint cannot be the proxy of a `reqwest` client. The message
+/// never quotes the proxy URL, so it can be shown and logged.
+#[derive(Debug, thiserror::Error)]
+pub enum UnusableProxy {
+    #[error(transparent)]
+    Scheme(#[from] UnsupportedProxyScheme),
+    /// The client's own rejection, held without the URL.
+    #[error(transparent)]
+    Url(reqwest::Error),
+}
+
+/// How requests reach an upstream server.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ProxyTarget {
+    /// No proxy, ignoring the proxy environment variables too.
+    Direct,
+    /// The proxy the environment configures, if any, as each client or
+    /// process reads it.
+    System,
+    /// Through this proxy.
+    Explicit(ProxyEndpoint),
+}
+
+impl ProxyTarget {
+    /// The explicit proxy, if any.
+    pub fn endpoint(&self) -> Option<&ProxyEndpoint> {
+        match self {
+            Self::Explicit(endpoint) => Some(endpoint),
+            Self::Direct | Self::System => None,
+        }
+    }
+
+    /// Whether a program that speaks only `schemes` to a proxy can use this
+    /// target. Direct and system targets always qualify; an explicit proxy
+    /// does when its URL uses one of the schemes.
+    pub fn supports_schemes(&self, schemes: &[&str]) -> bool {
+        self.endpoint().is_none_or(|endpoint| {
+            url::Url::parse(endpoint.url.trim()).is_ok_and(|url| schemes.contains(&url.scheme()))
+        })
+    }
+
+    /// Removes the proxy environment variables from a process that connects
+    /// directly, so it connects directly whatever the environment says.
+    /// Other targets leave the environment alone: an explicit proxy is passed
+    /// as an argument, which the programs prefer over the environment.
+    pub fn apply_environment(&self, command: &mut Command) {
+        if *self == Self::Direct {
+            remove_proxy_environment(command);
+        }
+    }
+
+    /// Sets up the proxy environment of a program that reads its proxy only
+    /// from `HTTP_PROXY` and `HTTPS_PROXY`, as Go programs such as rclone and
+    /// BaiduPCS-Go do.
+    pub fn set_environment(
+        &self,
+        command: &mut Command,
+    ) -> std::result::Result<(), UnsupportedProxyScheme> {
+        match self {
+            Self::System => {}
+            Self::Direct => remove_proxy_environment(command),
+            Self::Explicit(endpoint) => {
+                if !self.supports_schemes(&SUPPORTED_SCHEMES) {
+                    return Err(UnsupportedProxyScheme);
+                }
+                let url = endpoint.url_with_login();
+                let url = match url.strip_prefix("socks5h://") {
+                    Some(rest) => format!("socks5://{rest}"),
+                    None => url,
+                };
+                remove_proxy_environment(command);
+                command.env("HTTP_PROXY", &url).env("HTTPS_PROXY", &url);
+            }
+        }
+        Ok(())
+    }
+}
+
+fn remove_proxy_environment(command: &mut Command) {
+    for name in PROXY_ENVIRONMENT {
+        command.env_remove(name);
+    }
+}
 
 // ============================================================================
 // Endpoint rules
@@ -367,32 +590,19 @@ impl SystemProxy {
         }
     }
 
-    /// The tunnel raw connections (danmu, Bigo's native stream) take on
-    /// `target`; `None` connects directly.
-    pub fn danmu_proxy_for(
-        &self,
-        target: &ProxyTarget,
-    ) -> std::result::Result<Option<DanmuProxy>, DanmakuError> {
-        match target {
-            ProxyTarget::Direct => Ok(None),
-            ProxyTarget::System => self.danmu_proxy(),
-            ProxyTarget::Explicit(endpoint) => DanmuProxy::new(endpoint.clone()).map(Some),
-        }
+    /// Primary environment proxy URL (including any login), if detected.
+    pub fn primary_url(&self) -> Option<&str> {
+        self.url.as_deref()
+    }
+
+    /// Environment `NO_PROXY` / `no_proxy` directive, if set.
+    pub fn no_proxy(&self) -> Option<&str> {
+        self.no_proxy.as_deref()
     }
 
     /// Every proxy the environment's variables name, with its login.
     pub fn endpoints(&self) -> impl Iterator<Item = ProxyEndpoint> + '_ {
         self.urls.iter().map(|url| ProxyEndpoint::from_url(url))
-    }
-
-    /// The danmu tunnel for the environment's proxy; `None` when none is set.
-    pub fn danmu_proxy(&self) -> std::result::Result<Option<DanmuProxy>, DanmakuError> {
-        self.url
-            .as_deref()
-            .map(|url| {
-                DanmuProxy::parse(url).map(|proxy| proxy.with_no_proxy(self.no_proxy.clone()))
-            })
-            .transpose()
     }
 }
 
@@ -586,14 +796,6 @@ impl ResolvedRoute {
     /// The saved proxy's name, for logs and notifications.
     pub fn proxy_name(&self) -> Option<&str> {
         self.proxy.as_ref().map(|proxy| proxy.name.as_str())
-    }
-
-    /// The proxy danmu connections use.
-    pub fn danmu_proxy(
-        &self,
-        system: &SystemProxy,
-    ) -> std::result::Result<Option<DanmuProxy>, DanmakuError> {
-        system.danmu_proxy_for(&self.target)
     }
 }
 
@@ -906,41 +1108,6 @@ mod tests {
         assert_eq!(
             ResolvedRoute::system(RouteSource::Global, &set).key,
             RouteKey::System
-        );
-    }
-
-    #[test]
-    fn danmu_follows_the_route() {
-        let none = SystemProxy::default();
-        let set = SystemProxy::from_lookup(|name| match name {
-            "HTTPS_PROXY" => Some("proxy.example:3128".to_owned()),
-            "NO_PROXY" => Some("internal.example".to_owned()),
-            _ => None,
-        });
-        assert!(
-            ResolvedRoute::direct(RouteSource::Global)
-                .danmu_proxy(&set)
-                .unwrap()
-                .is_none()
-        );
-        let system = ResolvedRoute::system(RouteSource::Global, &set);
-        assert!(system.danmu_proxy(&none).unwrap().is_none());
-        let proxy = system.danmu_proxy(&set).unwrap().unwrap();
-        assert!(proxy.bypasses("chat.internal.example"));
-        assert!(!proxy.bypasses("danmu.example"));
-
-        let explicit = ResolvedRoute {
-            target: ProxyTarget::Explicit(ProxyEndpoint::new(
-                "socks5h://proxy.example:1080",
-                Some(("user".into(), "p@ss".into())),
-            )),
-            ..ResolvedRoute::default()
-        };
-        let proxy = explicit.danmu_proxy(&none).unwrap().unwrap();
-        assert!(!proxy.bypasses("danmu.example"));
-        assert_eq!(
-            format!("{proxy:?}"),
-            "DanmuProxy(socks5h://proxy.example:1080)"
         );
     }
 

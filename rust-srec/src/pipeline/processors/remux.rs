@@ -12,7 +12,7 @@ use super::traits::{
 };
 use super::utils::{get_extension, is_media, parse_config_or_default};
 use crate::Result;
-use crate::pipeline::job_queue::JobLogEntry;
+use crate::domain::processor::JobLogEntry;
 
 use super::paths::{remux_command_path as make_absolute, remux_comparison_key as comparison_key};
 

@@ -17,9 +17,8 @@ pub use platforms_parser::danmaku::{
 mod checkpoint;
 pub mod events;
 mod lifecycle;
-pub(crate) mod live;
-mod room;
-mod runner;
+pub(crate) mod room;
+pub(crate) mod runner;
 pub mod service;
 mod statistics_session;
 mod tap;

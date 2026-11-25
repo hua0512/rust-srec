@@ -6,7 +6,7 @@ use super::ProcessorOutput;
 use super::outputs::{OutputBatch, accumulate_media_output};
 use super::planning::OutputPlan;
 use crate::Result;
-use crate::pipeline::ProgressReporter;
+use crate::domain::processor::ProgressReporter;
 
 #[async_trait]
 pub(super) trait MediaItem: Sync {

@@ -1,5 +1,16 @@
 //! URL helpers.
 
+use url::Url;
+
+/// Log only the origin. Paths and even query keys can contain signed material.
+/// Relative and malformed URIs have no safe origin to retain.
+pub fn redact_url_for_log(input: &str) -> String {
+    match Url::parse(input) {
+        Ok(url) if url.has_host() => format!("{}/[redacted]", url.origin().ascii_serialization()),
+        _ => "[redacted URI]".to_owned(),
+    }
+}
+
 /// Extracts the `host[:port]` part from an absolute http(s) URL.
 ///
 /// Returns `None` when the URL is not absolute http(s) or has no host.

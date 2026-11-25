@@ -17,10 +17,10 @@ use tokio::sync::{Semaphore, SemaphorePermit, broadcast};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 
-use super::room::{DanmuRoom, resolve_room};
-use super::runner::reconnect_delay;
-use super::tap::DanmuTaps;
-use crate::proxies::{ResolvedRoute, SystemProxy};
+use crate::danmu::DanmuTaps;
+use crate::danmu::room::{DanmuRoom, resolve_room};
+use crate::danmu::runner::reconnect_delay;
+use crate::proxies::{ResolvedRoute, SystemProxy, danmu_proxy_for_route};
 
 /// Live danmu sockets open at once, across all principals. Each may hold a
 /// platform connection, so the cap bounds outbound connections too.
@@ -121,13 +121,10 @@ pub(crate) struct Admitted {
 /// slot is held whether the socket follows a recording through `taps` or
 /// connects on its own.
 pub(crate) fn admit(target: &LiveDanmuTarget, taps: Arc<DanmuTaps>) -> Result<Admitted, Refusal> {
-    let proxy = target
-        .route
-        .danmu_proxy(SystemProxy::current())
-        .map_err(|error| {
-            warn!(%error, "live danmu refused: its proxy cannot be used");
-            Refusal::Unavailable
-        })?;
+    let proxy = danmu_proxy_for_route(&target.route, SystemProxy::current()).map_err(|error| {
+        warn!(%error, "live danmu refused: its proxy cannot be used");
+        Refusal::Unavailable
+    })?;
     let permit = SOCKETS.try_acquire().map_err(|_| Refusal::TooManySockets)?;
     Ok(Admitted {
         room: DanmuRoom {

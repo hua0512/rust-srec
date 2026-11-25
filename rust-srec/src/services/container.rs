@@ -531,6 +531,18 @@ impl ServiceContainer {
         self.download_manager.subscribe()
     }
 
+    /// Load the persisted `log_filter_directive` from global configuration and
+    /// apply it to `logging_config`. Logs warnings on errors without failing startup.
+    pub async fn apply_persisted_log_filter(&self, logging_config: &LoggingConfig) {
+        match self.config_service.get_global_config().await {
+            Ok(global_config) => {
+                logging_config
+                    .apply_persisted_filter_directive(&global_config.log_filter_directive);
+            }
+            Err(e) => warn!("Failed to load persisted log filter: {}", e),
+        }
+    }
+
     /// Set the logging configuration
     pub fn set_logging_config(&self, config: Arc<LoggingConfig>) {
         if self.logging_config.set(config.clone()).is_err() {

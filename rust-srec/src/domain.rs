@@ -4,6 +4,7 @@
 //! storage-free contracts shared across layers.
 
 pub mod credential;
+pub mod engine_config;
 pub mod filename;
 pub mod filter;
 pub mod notification;

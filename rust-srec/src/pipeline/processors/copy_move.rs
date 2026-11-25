@@ -27,9 +27,8 @@ use super::traits::{
     Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, TimeAnchor,
 };
 use crate::Result;
-use crate::pipeline::job_queue::JobLogEntry;
-use crate::pipeline::progress::{
-    JobProgressSnapshot, ProgressKind, ProgressReporter, progress_file_name,
+use crate::domain::processor::{
+    JobLogEntry, JobProgressSnapshot, ProgressKind, ProgressReporter, progress_file_name,
 };
 use crate::utils::text::format_bytes;
 

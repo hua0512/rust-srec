@@ -64,7 +64,7 @@ pub(super) async fn serve(
         .expect("point recordings at the test output directory");
 
     let logging = logging();
-    logging.apply_persisted_filter(config).await;
+    container.apply_persisted_log_filter(&logging).await;
     container.set_logging_config(logging);
     container.initialize().await.expect("initialize services");
     let address = container

@@ -8,6 +8,7 @@
 //! - Supporting priority-based download scheduling
 //! - Stream selection based on quality, format, and CDN preferences
 
+mod bigo_native;
 pub mod engine;
 
 mod manager;

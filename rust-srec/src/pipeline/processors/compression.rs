@@ -22,10 +22,90 @@ use super::outputs::OutputBatch;
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::parse_config_or_default;
 use crate::Result;
-use crate::pipeline::job_queue::JobLogEntry;
-use crate::pipeline::progress::{
-    JobProgressSnapshot, ProgressKind, ProgressReporter, progress_file_name,
+use crate::domain::processor::{
+    JobLogEntry, JobProgressSnapshot, ProgressKind, ProgressReporter, progress_file_name,
 };
+
+/// One bounded file entry streamed into a ZIP archive.
+#[derive(Debug, Clone)]
+pub struct ZipArchiveEntry {
+    pub filename: String,
+    pub path: PathBuf,
+    pub size_bytes: u64,
+}
+
+/// Failure modes for [`write_streaming_zip`].
+#[derive(Debug, thiserror::Error)]
+pub enum ZipArchiveError {
+    #[error("Archive download cancelled")]
+    Cancelled,
+    #[error("Input file was truncated during archive creation")]
+    Truncated,
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    IoPath(crate::Error),
+    #[error("Archive operation failed: {0}")]
+    Zip(String),
+}
+
+/// Stream a snapshot of bounded files into `output` as a deflated ZIP64 archive.
+pub fn write_streaming_zip(
+    entries: &[ZipArchiveEntry],
+    output: impl std::io::Write,
+    cancellation: &CancellationToken,
+) -> std::result::Result<(), ZipArchiveError> {
+    const STREAM_CHUNK_SIZE: usize = 64 * 1024;
+    let output = BufWriter::with_capacity(STREAM_CHUNK_SIZE, output);
+    let mut zip = ZipWriter::new_stream(output);
+    let options = SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .large_file(true);
+    let mut buffer = [0u8; STREAM_CHUNK_SIZE];
+
+    let map_zip_err = |err: zip::result::ZipError| match err {
+        zip::result::ZipError::Io(io_err) => ZipArchiveError::Io(io_err),
+        other => ZipArchiveError::Zip(other.to_string()),
+    };
+
+    for file in entries {
+        if cancellation.is_cancelled() {
+            return Err(ZipArchiveError::Cancelled);
+        }
+        let input = File::open(&file.path).map_err(|source| {
+            ZipArchiveError::IoPath(crate::Error::io_path(
+                "open log archive input",
+                &file.path,
+                source,
+            ))
+        })?;
+        // Snapshot each file's scanned length so a growing active log cannot extend the
+        // export indefinitely. ZIP64 remains enabled even for initially small log files.
+        let mut input = input.take(file.size_bytes);
+        zip.start_file(&file.filename, options)
+            .map_err(map_zip_err)?;
+        while input.limit() > 0 {
+            if cancellation.is_cancelled() {
+                return Err(ZipArchiveError::Cancelled);
+            }
+            let read = input.read(&mut buffer).map_err(|source| {
+                ZipArchiveError::IoPath(crate::Error::io_path(
+                    "read log archive input",
+                    &file.path,
+                    source,
+                ))
+            })?;
+            if read == 0 {
+                return Err(ZipArchiveError::Truncated);
+            }
+            std::io::Write::write_all(&mut zip, &buffer[..read])?;
+        }
+    }
+
+    let mut output = zip.finish().map_err(map_zip_err)?.into_inner();
+    std::io::Write::flush(&mut output)?;
+    Ok(())
+}
 
 /// Default compression level (6 is a good balance between speed and compression).
 fn default_compression_level() -> u8 {
@@ -676,7 +756,7 @@ impl Processor for CompressionProcessor {
             })();
 
             if outcome.is_err()
-                && let Err(err) = crate::pipeline::remove_leftover(&staged_path)
+                && let Err(err) = crate::domain::processor::remove_leftover(&staged_path)
             {
                 warn!(
                     path = %staged_path.display(),

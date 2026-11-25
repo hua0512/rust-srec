@@ -14,8 +14,8 @@ use platforms_parser::media::MediaInfo;
 use serde::Serialize;
 use tokio::time::Instant;
 
+use crate::api::live_danmu::LiveDanmuTarget;
 use crate::credentials::{CredentialBinding, CredentialOwner, CredentialSnapshot};
-use crate::danmu::live::LiveDanmuTarget;
 
 const MAX_CONTEXTS: usize = 1024;
 pub(crate) const MAX_PLAYBACK_STREAMS: usize = 128;

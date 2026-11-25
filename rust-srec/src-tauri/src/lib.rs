@@ -5,8 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
-use rust_srec::backend;
-use rust_srec::downloader::DownloadProgressEvent;
+use rust_srec::backend::{self, DownloadProgressEvent};
 use tauri::{Emitter, Listener, Manager};
 
 mod boot_error;
@@ -475,9 +474,7 @@ async fn run_desktop_backend_init(
         }
     }
 
-    logging_config
-        .apply_persisted_filter(container.config_service())
-        .await;
+    container.apply_persisted_log_filter(&logging_config).await;
     container.set_logging_config(logging_config);
 
     // Publish the phase before the cancellation check. The exit path cancels

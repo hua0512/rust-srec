@@ -14,10 +14,10 @@ use tracing::{debug, warn};
 use crate::api::auth_service::AuthPrincipal;
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::extract::{ApiJson, ApiQuery};
+use crate::api::live_danmu::{self as live, LiveDanmuTarget};
 use crate::api::models::{ParseUrlRequest, ParseUrlResponse};
 use crate::api::server::AppState;
 use crate::credentials::OperationDeadline;
-use crate::danmu::live::{self, LiveDanmuTarget};
 
 #[derive(Clone)]
 pub struct ParseRouteState {
@@ -336,7 +336,7 @@ async fn managed_config(
             Err(_) if requested_profile.is_none() => return Ok(None),
             Err(_) => return Err(ApiError::validation("Invalid source URL")),
         };
-        let Some(name) = page.platform() else {
+        let Some(name) = crate::streamer::detect_platform_name(&page) else {
             if requested_profile.is_some() {
                 return Err(ApiError::validation(
                     "A profile requires an identified platform",
@@ -967,7 +967,7 @@ async fn resolve_url_owner(
     use crate::domain::value_objects::StreamerUrl;
     let platform = match StreamerUrl::new(url)
         .ok()
-        .and_then(|url| url.platform().map(str::to_owned))
+        .and_then(|url| crate::streamer::detect_platform_name(&url).map(str::to_owned))
     {
         Some(platform_name) => config_service
             .list_platform_configs()

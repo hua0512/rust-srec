@@ -1,11 +1,9 @@
 use std::collections::VecDeque;
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
 
-use platforms_parser::proxy::{ProxyTarget, redacted_url, unroutable_proxy};
-
-use crate::proxies::ProxyError;
 use tracing::{debug, warn};
+
+use crate::domain::proxy::{ProxyError, ProxyTarget, redacted_url, unroutable_proxy};
 
 pub fn install_rustls_provider() {
     static PROVIDER_INSTALLED: OnceLock<()> = OnceLock::new();
@@ -99,38 +97,6 @@ pub(crate) fn service_client(target: &ProxyTarget) -> Result<reqwest::Client, Pr
     static CLIENTS: ClientCache<ProxyTarget> = ClientCache::new(16);
     CLIENTS.get_or_try_build(target, || {
         build_client(apply_proxy(reqwest::Client::builder(), target))
-    })
-}
-
-/// Build a `reqwest::Client` configured like `platforms-parser`'s default client,
-/// but with rust-srec proxy semantics applied. Fails when no client on the
-/// route can be built: a default client would ignore the route.
-pub fn build_platforms_client(
-    proxy: &ProxyTarget,
-    request_timeout: Duration,
-    pool_max_idle_per_host: usize,
-) -> Result<reqwest::Client, ProxyError> {
-    install_rustls_provider();
-
-    let mut builder = platforms_parser::extractor::create_client_builder(None);
-
-    if request_timeout > Duration::ZERO {
-        builder = builder.timeout(request_timeout);
-    }
-
-    if pool_max_idle_per_host > 0 {
-        builder = builder.pool_max_idle_per_host(pool_max_idle_per_host);
-    }
-
-    builder = apply_proxy(builder, proxy);
-
-    builder.build().or_else(|error| {
-        warn!(
-            error = %error,
-            "Failed to create HTTP client via platforms-parser; falling back to reqwest defaults"
-        );
-        // The fallback keeps the route.
-        build_client(apply_proxy(reqwest::Client::builder(), proxy))
     })
 }
 

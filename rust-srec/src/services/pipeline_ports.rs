@@ -2,6 +2,7 @@
 //! pipeline module's narrow ports.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use tracing::debug;
@@ -12,8 +13,12 @@ use crate::database::models::{
 };
 use crate::database::repositories::{ConfigRepository, SessionRepository, StreamerRepository};
 use crate::pipeline::{
-    PipelineSessionMeta, PipelineSessionPort, PipelineSessionSegment, PipelineSessionSummary,
-    PipelineStreamerMeta, SessionPipelineConfig, SessionPipelineConfigPort,
+    PipelineManager, PipelineNotification as EnginePipelineNotification, PipelineSessionMeta,
+    PipelineSessionPort, PipelineSessionSegment, PipelineSessionSummary, PipelineStreamerMeta,
+    SessionPipelineConfig, SessionPipelineConfigPort,
+};
+use crate::recorder::{
+    PipelineDrainStatus, PipelineNotification as RecorderPipelineNotification, RecorderPipelinePort,
 };
 use crate::{Error, Result};
 
@@ -298,5 +303,99 @@ impl PipelineSessionPort for DatabasePipelineSessionPort {
             name: streamer.name,
             platform,
         }))
+    }
+}
+
+/// Adapter implementing [`RecorderPipelinePort`] over [`PipelineManager`] so
+/// the recorder layer stays decoupled from the pipeline crate.
+pub(crate) struct PipelineManagerRecorderPort {
+    pipeline_manager: Arc<PipelineManager>,
+}
+
+impl PipelineManagerRecorderPort {
+    pub(crate) fn new(pipeline_manager: Arc<PipelineManager>) -> Self {
+        Self { pipeline_manager }
+    }
+}
+
+fn map_recorder_notification(
+    notification: RecorderPipelineNotification,
+) -> EnginePipelineNotification {
+    match notification {
+        RecorderPipelineNotification::VideoSegmentCompleted {
+            session_id,
+            streamer_id,
+            segment_index,
+            path,
+            auto_thumbnail_candidate,
+        } => EnginePipelineNotification::VideoSegmentCompleted {
+            session_id,
+            streamer_id,
+            segment_index,
+            path,
+            auto_thumbnail_candidate,
+        },
+        RecorderPipelineNotification::DanmuCollectionStarted {
+            session_id,
+            streamer_id,
+        } => EnginePipelineNotification::DanmuCollectionStarted {
+            session_id,
+            streamer_id,
+        },
+        RecorderPipelineNotification::DanmuSegmentCompleted {
+            session_id,
+            streamer_id,
+            segment_index,
+            path,
+            message_count,
+        } => EnginePipelineNotification::DanmuSegmentCompleted {
+            session_id,
+            streamer_id,
+            segment_index,
+            path,
+            message_count,
+        },
+        RecorderPipelineNotification::DanmuCollectionStopped {
+            session_id,
+            total_count,
+        } => EnginePipelineNotification::DanmuCollectionStopped {
+            session_id,
+            total_count,
+        },
+        RecorderPipelineNotification::SessionEnded {
+            session_id,
+            streamer_id,
+            cause,
+            should_run_session_complete,
+        } => EnginePipelineNotification::SessionEnded {
+            session_id,
+            streamer_id,
+            cause: cause.as_str().to_owned(),
+            should_run_session_complete,
+        },
+    }
+}
+
+#[async_trait]
+impl RecorderPipelinePort for PipelineManagerRecorderPort {
+    async fn notify(&self, notification: RecorderPipelineNotification) -> Result<()> {
+        self.pipeline_manager
+            .handle_recorder_notification(map_recorder_notification(notification))
+            .await
+    }
+
+    async fn drain_for_streamer(
+        &self,
+        streamer_id: &str,
+        timeout: Duration,
+    ) -> Result<PipelineDrainStatus> {
+        let drain = self
+            .pipeline_manager
+            .drain_for_streamer(streamer_id, timeout)
+            .await?;
+        Ok(PipelineDrainStatus {
+            unsettled_sessions: drain.sessions.len(),
+            outstanding_jobs: drain.jobs,
+        })
     }
 }

@@ -8,10 +8,9 @@ use std::time::Duration;
 
 use tokio_util::task::AbortOnDropHandle;
 
-use crate::downloader::EngineEndSignal;
 use crate::downloader::engine::{
-    DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, IoErrorKindSer,
-    SegmentEvent,
+    DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, EngineEndSignal,
+    IoErrorKindSer, SegmentEvent,
 };
 
 #[derive(Clone, Copy, Debug)]

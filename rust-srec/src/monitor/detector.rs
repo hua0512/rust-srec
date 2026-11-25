@@ -274,7 +274,7 @@ impl StreamDetector {
 
     pub(crate) fn client_for_proxy(&self, proxy: &ProxyTarget) -> Result<reqwest::Client> {
         Ok(self.client_cache.get_or_try_build(proxy, || {
-            crate::utils::http_client::build_platforms_client(
+            crate::proxies::build_platforms_client(
                 proxy,
                 self.request_timeout,
                 self.pool_max_idle_per_host,
@@ -359,12 +359,12 @@ impl StreamDetector {
         let merged_extras =
             Self::merge_selection_config_into_extras(platform_extras, selection_config);
 
-        let mut extractor_factory =
-            ExtractorFactory::new(self.client_for_proxy(proxy)?).with_proxy(proxy.clone());
+        let mut extractor_factory = ExtractorFactory::new(self.client_for_proxy(proxy)?)
+            .with_proxy(crate::proxies::to_platforms_target(proxy));
         // Bigo's native stream connects through the route's tunnel. A proxy
         // the tunnel cannot use leaves that stream out instead of connecting
         // directly.
-        match crate::proxies::SystemProxy::current().danmu_proxy_for(proxy) {
+        match crate::proxies::danmu_proxy_for(crate::proxies::SystemProxy::current(), proxy) {
             Ok(tunnel) => extractor_factory = extractor_factory.with_tunnel(tunnel),
             Err(error) => debug!(%error, "no tunnel for raw connections on this route"),
         }

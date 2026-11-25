@@ -19,8 +19,8 @@ use super::utils::{
     EngineVersion, FfmpegEvents, FfmpegSource, PROCESS_CLEANUP_TIMEOUT, RecordingExit,
     redact_download_process_args, settle_engine_tasks, terminate_and_reap,
 };
-use crate::database::models::engine::FfmpegEngineConfig;
-use crate::proxies::ProxyTarget;
+use crate::domain::engine_config::FfmpegEngineConfig;
+use crate::domain::proxy::ProxyTarget;
 
 enum FfmpegProcessExit {
     Status(Option<i32>),

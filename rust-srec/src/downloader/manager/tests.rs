@@ -1160,7 +1160,6 @@ fn manager_with_gate() -> (
     Arc<super::super::output_root_gate::OutputRootGate>,
 ) {
     use super::super::output_root_gate::{OutputRootGate, RecoveryHook};
-    use std::sync::Weak;
     use std::sync::atomic::AtomicUsize;
 
     let counter = Arc::new(AtomicUsize::new(0));
@@ -1169,7 +1168,7 @@ fn manager_with_gate() -> (
         c2.fetch_add(1, Ordering::SeqCst);
     });
     let gate = OutputRootGate::new(
-        Weak::new(),
+        None,
         hook,
         vec![],
         Duration::from_secs(1), // short cooldown for the test runner
@@ -1382,7 +1381,6 @@ async fn prepare_output_dir_recovers_after_path_becomes_valid() {
     let temp = tempfile::tempdir().expect("tempdir");
 
     use super::super::output_root_gate::{OutputRootGate, RecoveryHook};
-    use std::sync::Weak;
     use std::sync::atomic::AtomicUsize;
 
     let counter = Arc::new(AtomicUsize::new(0));
@@ -1392,7 +1390,7 @@ async fn prepare_output_dir_recovers_after_path_becomes_valid() {
     });
     let configured_root = temp.path().to_path_buf();
     let gate = OutputRootGate::new(
-        Weak::new(),
+        None,
         hook,
         vec![configured_root.clone()],
         Duration::from_secs(1),

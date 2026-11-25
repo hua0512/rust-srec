@@ -636,59 +636,6 @@ impl HealthChecker {
             ComponentHealth::healthy(format!("disk:{}", path))
         }
     }
-
-    /// Build a single aggregated `ComponentHealth` entry for the output-root
-    /// write gate, suitable for exposing under the name `"output-root"` in
-    /// [`SystemHealth::components`].
-    ///
-    /// Healthy if every tracked root is in the `Healthy` state (or the gate
-    /// has never recorded a failure). Degraded if any root is in `Degraded`
-    /// — in that case the message field lists each affected root with its
-    /// classified `io_kind` and the seconds-since-last-attempt, so users can
-    /// tell at a glance whether the degradation is fresh or stale.
-    ///
-    /// The aggregation is intentional: individual roots are ephemeral and
-    /// dynamically created by `record_failure`, so registering a per-root
-    /// health check upfront isn't possible. One aggregated entry with rich
-    /// message text gives users a single place to look in the UI.
-    pub fn check_output_root_gate(gate: &crate::downloader::OutputRootGate) -> ComponentHealth {
-        let snapshot = gate.snapshot();
-        let degraded: Vec<_> = snapshot
-            .iter()
-            .filter(|r| r.state == crate::downloader::RootHealthState::Degraded)
-            .collect();
-
-        if degraded.is_empty() {
-            return ComponentHealth::healthy("output-root");
-        }
-
-        let mut lines: Vec<String> = Vec::with_capacity(degraded.len());
-        for r in &degraded {
-            let (kind, _msg) = r.last_error.as_ref().map_or(
-                (crate::downloader::IoErrorKindSer::Other, String::new()),
-                |(k, m)| (*k, m.clone()),
-            );
-            let age = r
-                .seconds_since_last_attempt
-                .map(|s| format!("{}s ago", s))
-                .unwrap_or_else(|| "unknown".to_string());
-            lines.push(format!(
-                "{} (kind={}, rejected={}, last_attempt={})",
-                r.root.display(),
-                kind.as_str(),
-                r.rejected_count,
-                age
-            ));
-        }
-        ComponentHealth::degraded(
-            "output-root",
-            format!(
-                "{} output root(s) unwritable: {}",
-                degraded.len(),
-                lines.join("; ")
-            ),
-        )
-    }
 }
 
 impl Default for HealthChecker {
@@ -879,36 +826,5 @@ mod tests {
         let usage = DiskUsage::new("/rec", "/", 0, 0);
         assert_eq!(usage.used_bytes, 0);
         assert_eq!(usage.used_percent, 0.0);
-    }
-
-    // ---------- output-root gate aggregation ----------
-
-    #[tokio::test]
-    async fn check_output_root_gate_reports_healthy_after_recovery() {
-        let gate = crate::downloader::OutputRootGate::new(
-            std::sync::Weak::new(),
-            Arc::new(|_: &std::path::Path| {}),
-            vec![],
-            Duration::from_secs(30),
-        );
-        let err = std::io::Error::new(std::io::ErrorKind::StorageFull, "full");
-        gate.record_failure(std::path::Path::new("/rec/X"), &err);
-        let degraded = HealthChecker::check_output_root_gate(&gate);
-        assert_eq!(degraded.status, HealthStatus::Degraded);
-        // The message names the failing root and the kind of failure.
-        let message = degraded
-            .message
-            .expect("a degraded component explains why")
-            .replace('\\', "/");
-        assert!(message.contains("storage_full"), "{message}");
-        assert!(message.contains("/rec"), "{message}");
-
-        gate.mark_healthy(std::path::Path::new("/rec/X"));
-        // mark_healthy spawns a tokio task for the recovery hook; the state
-        // flip itself is synchronous so the snapshot is already Healthy.
-        assert_eq!(
-            HealthChecker::check_output_root_gate(&gate).status,
-            HealthStatus::Healthy
-        );
     }
 }
