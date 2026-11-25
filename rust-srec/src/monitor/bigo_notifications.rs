@@ -319,13 +319,25 @@ enum Settings {
     },
 }
 
+/// Callback used by [`BigoNotifications`] to request an immediate check for a
+/// streamer when a live push arrives.
+pub(crate) trait BigoCheckTrigger: Send + Sync {
+    fn request_check(&self, streamer_id: &str);
+}
+
+impl BigoCheckTrigger for Arc<SchedulerFeedback> {
+    fn request_check(&self, streamer_id: &str) {
+        SchedulerFeedback::request_check(self, streamer_id);
+    }
+}
+
 /// What the listener needs from the rest of the backend.
 #[derive(Clone)]
 pub(crate) struct BigoNotificationDeps {
     pub config_service: Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
     pub streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
     pub credentials: Arc<CredentialExecutionService>,
-    pub feedback: Arc<SchedulerFeedback>,
+    pub feedback: Arc<dyn BigoCheckTrigger>,
     pub notifications: Arc<NotificationService>,
 }
 

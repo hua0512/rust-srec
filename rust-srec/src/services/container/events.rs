@@ -43,9 +43,10 @@ impl ServiceContainer {
             download_manager: self.download_manager.clone(),
             pipeline_manager: self.pipeline_manager.clone(),
             runtime_coordinator: self.runtime_coordinator.clone(),
+            actor_registry: self.actor_registry.clone(),
             gpu_health_monitor: self.gpu_health_monitor.get().cloned(),
             logging_config: self.logging_config.clone(),
-            credential_blocks: self.stream_monitor.credential_blocks().clone(),
+            credential_blocks: self.credential_blocks().clone(),
         };
         let receiver = self.event_broadcaster.subscribe();
         let cancellation_token = self.cancellation_token.clone();
@@ -69,9 +70,10 @@ impl ServiceContainer {
             download_manager: self.download_manager.clone(),
             pipeline_manager: self.pipeline_manager.clone(),
             runtime_coordinator: self.runtime_coordinator.clone(),
+            actor_registry: self.actor_registry.clone(),
             gpu_health_monitor: self.gpu_health_monitor.get().cloned(),
             logging_config: self.logging_config.clone(),
-            credential_blocks: self.stream_monitor.credential_blocks().clone(),
+            credential_blocks: self.credential_blocks().clone(),
         }
         .handle_event(event)
         .await;
@@ -245,6 +247,7 @@ struct ConfigEventHandler {
     download_manager: Arc<DownloadManager>,
     pipeline_manager: Arc<PipelineManager>,
     runtime_coordinator: Arc<RuntimeCoordinator>,
+    actor_registry: Option<Arc<crate::recorder::ActorRegistry>>,
     gpu_health_monitor: Option<Arc<crate::metrics::GpuHealthMonitor>>,
     logging_config: Arc<std::sync::OnceLock<Arc<crate::logging::LoggingConfig>>>,
     /// Lifted here for streamers that stop being monitored: no later check
@@ -324,6 +327,10 @@ impl ConfigEventHandler {
     }
 
     async fn handle_event(&self, event: ConfigUpdateEvent) {
+        if let Some(registry) = self.actor_registry.as_ref() {
+            self.handle_event_actor_mode(registry, event).await;
+            return;
+        }
         match event {
             ConfigUpdateEvent::StreamerMetadataUpdated { streamer_id } => {
                 // Ensure merged config cache is not stale after streamer/template/platform changes.
@@ -541,6 +548,115 @@ impl ConfigEventHandler {
             }
             // Only the scheduler holds state that a cleared backoff invalidates.
             ConfigUpdateEvent::StreamerErrorCleared { .. } => {}
+        }
+    }
+
+    async fn handle_event_actor_mode(
+        &self,
+        registry: &Arc<crate::recorder::ActorRegistry>,
+        event: ConfigUpdateEvent,
+    ) {
+        match &event {
+            ConfigUpdateEvent::StreamerMetadataUpdated { streamer_id } => {
+                self.config_service.invalidate_streamer(streamer_id);
+                let inactive_or_missing = self
+                    .streamer_manager
+                    .get_streamer(streamer_id)
+                    .is_none_or(|metadata| !metadata.is_active());
+                if inactive_or_missing {
+                    self.credential_blocks.clear(streamer_id);
+                }
+                registry.handle_config_event(&event);
+            }
+            ConfigUpdateEvent::PlatformUpdated { .. }
+            | ConfigUpdateEvent::CredentialMaterialChanged { .. }
+            | ConfigUpdateEvent::TemplateUpdated { .. }
+            | ConfigUpdateEvent::StreamerErrorCleared { .. } => {
+                registry.handle_config_event(&event);
+            }
+            ConfigUpdateEvent::GlobalUpdated => {
+                debug!("Received global config update event (actor runtime)");
+                self.config_service.invalidate_all_filter_snapshots();
+                match self.config_service.get_global_config().await {
+                    Ok(global) => {
+                        let new_limit = (global.max_concurrent_downloads as i64).max(1) as usize;
+                        let old_limit = self.download_manager.max_concurrent_downloads();
+                        if new_limit != old_limit {
+                            self.download_manager
+                                .set_max_concurrent_downloads(new_limit);
+                            info!(
+                                "Updated download concurrency: max_concurrent_downloads {} -> {}",
+                                old_limit, new_limit
+                            );
+                        }
+
+                        let old_freshness = self.download_manager.queue_freshness_threshold_ms();
+                        let new_freshness = self
+                            .download_manager
+                            .set_queue_freshness_threshold_ms(global.queue_freshness_threshold_ms);
+                        if new_freshness != old_freshness {
+                            info!(
+                                "Updated queue-wait freshness threshold: {} ms -> {} ms",
+                                old_freshness, new_freshness
+                            );
+                        }
+
+                        if let Some(monitor) = self.gpu_health_monitor.as_ref() {
+                            monitor
+                                .set_interval(global.gpu_health_probe_interval_secs.max(0) as u64);
+                        }
+
+                        if let Some(logging) = self.logging_config.get()
+                            && !global.log_filter_directive.is_empty()
+                            && logging.get_filter() != global.log_filter_directive
+                            && let Err(error) = logging.set_filter(&global.log_filter_directive)
+                        {
+                            warn!(
+                                directive = %global.log_filter_directive,
+                                %error,
+                                "Failed to apply updated log filter directive"
+                            );
+                        }
+
+                        let cpu_jobs = autoscale_concurrency_limit(global.max_concurrent_cpu_jobs);
+                        let io_jobs = autoscale_concurrency_limit(global.max_concurrent_io_jobs);
+                        let uploads = autoscale_concurrency_limit(global.max_concurrent_uploads);
+                        self.pipeline_manager
+                            .set_worker_concurrency(cpu_jobs, io_jobs, uploads);
+                        registry.set_check_interval_ms(global.streamer_check_delay_ms as u64);
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to reload global config for download concurrency: {}",
+                            e
+                        );
+                    }
+                }
+                registry.handle_config_event(&event);
+            }
+            ConfigUpdateEvent::StreamerDeleted { streamer_id } => {
+                self.config_service.invalidate_streamer(streamer_id);
+                self.config_service.invalidate_filter_snapshots(streamer_id);
+                self.credential_blocks.clear(streamer_id);
+                registry.handle_config_event(&event);
+            }
+            ConfigUpdateEvent::EngineUpdated { engine_id } => {
+                debug!("Received engine config update event: {}", engine_id);
+            }
+            ConfigUpdateEvent::StreamerStateSyncedFromDb {
+                streamer_id,
+                is_active,
+            } => {
+                if !is_active {
+                    self.credential_blocks.clear(streamer_id);
+                }
+                registry.handle_config_event(&event);
+            }
+            ConfigUpdateEvent::StreamerFiltersUpdated { streamer_id } => {
+                self.config_service.invalidate_streamer(streamer_id);
+                self.config_service.invalidate_filter_snapshots(streamer_id);
+                registry.handle_config_event(&event);
+            }
         }
     }
 }

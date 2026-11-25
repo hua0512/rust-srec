@@ -239,6 +239,21 @@ impl ConfigurationImportService {
 
         self.config_service.notify_import_committed();
 
+        if let Some(committed_state) = self.streamer_manager.committed_state() {
+            let mut updated_streamers =
+                Vec::with_capacity(streamers.marked_deleted.len() + streamers.upserted.len());
+            updated_streamers.extend(streamers.marked_deleted.iter().cloned());
+            updated_streamers.extend(streamers.upserted.iter().cloned());
+            committed_state
+                .notify_post_publication(crate::recorder::PostPublicationChangeSet {
+                    updated_streamers,
+                    removed_streamers: Vec::new(),
+                    reconfigured_streamers: streamers.upserted.clone(),
+                    outbox_enqueued: false,
+                })
+                .await;
+        }
+
         for streamer_id in credential_retirement_streamers {
             self.runtime_coordinator
                 .settle_credential_retirement(&streamer_id)

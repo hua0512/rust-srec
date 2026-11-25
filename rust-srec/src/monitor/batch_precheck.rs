@@ -115,7 +115,7 @@ struct Member {
 }
 
 #[derive(Default)]
-pub(super) struct BatchAnswer {
+pub(crate) struct BatchAnswer {
     pub offline: bool,
     pub live_hint: Option<watch::Receiver<bool>>,
 }
@@ -231,7 +231,7 @@ impl BatchPrecheck {
     /// `max_keys`), and reads the new result. Polls of a chunk that is already refreshing wait for
     /// that refresh instead. A failed call backs the chunk off, and its polls answer `false` until
     /// the backoff ends.
-    pub(super) async fn check<F, Fut>(&self, poll: Poll<'_>, call: F) -> BatchAnswer
+    pub(crate) async fn check<F, Fut>(&self, poll: Poll<'_>, call: F) -> BatchAnswer
     where
         F: FnOnce(Vec<String>) -> Fut,
         Fut: Future<Output = crate::Result<BatchResult>>,

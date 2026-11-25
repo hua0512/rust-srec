@@ -157,7 +157,7 @@ pub struct RecorderStore {
     supervisor: Arc<TaskSupervisor>,
     leases: Arc<StreamerCommitLeases>,
     outbox_notify: Option<Arc<Notify>>,
-    post_publication: Option<Arc<dyn PostPublicationListener>>,
+    post_publication: Arc<parking_lot::RwLock<Option<Arc<dyn PostPublicationListener>>>>,
 }
 
 impl RecorderStore {
@@ -177,7 +177,7 @@ impl RecorderStore {
             supervisor,
             leases: Arc::new(StreamerCommitLeases::default()),
             outbox_notify: None,
-            post_publication: None,
+            post_publication: Arc::new(parking_lot::RwLock::new(None)),
         })
     }
 
@@ -202,7 +202,7 @@ impl RecorderStore {
             supervisor,
             leases: Arc::new(StreamerCommitLeases::default()),
             outbox_notify: None,
-            post_publication: None,
+            post_publication: Arc::new(parking_lot::RwLock::new(None)),
         };
         Ok((store, committed_state))
     }
@@ -213,9 +213,24 @@ impl RecorderStore {
         write_pool: WritePool,
         committed_state: Arc<CommittedStreamerState>,
     ) -> Result<Self> {
+        Self::with_committed_state_and_supervisor(
+            read_pool,
+            write_pool,
+            committed_state,
+            Arc::new(TaskSupervisor::for_committed_work()),
+        )
+    }
+
+    /// Construct a [`RecorderStore`] sharing an existing [`CommittedStreamerState`]
+    /// and caller-owned committed-write [`TaskSupervisor`].
+    pub(crate) fn with_committed_state_and_supervisor(
+        read_pool: DbPool,
+        write_pool: WritePool,
+        committed_state: Arc<CommittedStreamerState>,
+        supervisor: Arc<TaskSupervisor>,
+    ) -> Result<Self> {
         committed_state.writer.require_serialized()?;
         committed_state.writer.require_same_pool(&write_pool)?;
-        let supervisor = Arc::new(TaskSupervisor::for_committed_work());
         Ok(Self {
             read_pool,
             write_pool,
@@ -224,7 +239,7 @@ impl RecorderStore {
             supervisor,
             leases: Arc::new(StreamerCommitLeases::default()),
             outbox_notify: None,
-            post_publication: None,
+            post_publication: Arc::new(parking_lot::RwLock::new(None)),
         })
     }
 
@@ -237,11 +252,101 @@ impl RecorderStore {
     /// Attach a [`PostPublicationListener`] invoked strictly after commit,
     /// `StreamerCache` publication, write-connection release, and lease release.
     pub fn with_post_publication_listener(
-        mut self,
+        self,
         listener: Arc<dyn PostPublicationListener>,
     ) -> Self {
-        self.post_publication = Some(listener);
+        self.set_post_publication_listener(listener);
         self
+    }
+
+    /// Late-bind or replace the [`PostPublicationListener`] after construction.
+    pub fn set_post_publication_listener(&self, listener: Arc<dyn PostPublicationListener>) {
+        *self.post_publication.write() = Some(listener);
+    }
+
+    /// Read the active session's committed credential binding, if any.
+    pub async fn active_session_credential_binding(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<crate::credentials::CredentialBinding>> {
+        let raw: Option<Option<String>> = sqlx::query_scalar(
+            "SELECT credential_binding FROM live_sessions WHERE id = ? AND end_time IS NULL",
+        )
+        .bind(session_id)
+        .fetch_optional(&self.read_pool)
+        .await?;
+        let Some(Some(raw)) = raw else {
+            return Ok(None);
+        };
+        serde_json::from_str(&raw).map(Some).map_err(|error| {
+            Error::Database(format!("invalid session credential_binding: {error}"))
+        })
+    }
+
+    /// Read the newest active session and its credential binding for `streamer_id`.
+    pub async fn active_streamer_session_binding(
+        &self,
+        streamer_id: &str,
+    ) -> Result<Option<(String, Option<crate::credentials::CredentialBinding>)>> {
+        let row: Option<(String, Option<String>)> = sqlx::query_as(
+            "SELECT id, credential_binding FROM live_sessions \
+             WHERE streamer_id = ? AND end_time IS NULL \
+             ORDER BY start_time DESC LIMIT 1",
+        )
+        .bind(streamer_id)
+        .fetch_optional(&self.read_pool)
+        .await?;
+        let Some((session_id, raw)) = row else {
+            return Ok(None);
+        };
+        let binding = raw
+            .map(|raw| {
+                serde_json::from_str(&raw).map_err(|error| {
+                    Error::Database(format!("invalid session credential_binding: {error}"))
+                })
+            })
+            .transpose()?;
+        Ok(Some((session_id, binding)))
+    }
+
+    /// Find an active session bound to a retired credential profile for `streamer_id`.
+    pub async fn retiring_credential_session(
+        &self,
+        streamer_id: &str,
+    ) -> Result<Option<(String, crate::credentials::CredentialBinding)>> {
+        let row: Option<(String, String)> = sqlx::query_as(
+            "SELECT s.id, s.credential_binding \
+             FROM live_sessions s \
+             JOIN retirement_credential_profiles r \
+               ON r.profile_id = json_extract(s.credential_binding, '$.identity.profile_id') \
+             WHERE s.streamer_id = ? \
+               AND s.end_time IS NULL \
+               AND s.credential_binding IS NOT NULL \
+             ORDER BY s.start_time DESC LIMIT 1",
+        )
+        .bind(streamer_id)
+        .fetch_optional(&self.read_pool)
+        .await?;
+        let Some((session_id, raw)) = row else {
+            return Ok(None);
+        };
+        let binding = serde_json::from_str(&raw).map_err(|error| {
+            Error::Database(format!("invalid session credential_binding: {error}"))
+        })?;
+        Ok(Some((session_id, binding)))
+    }
+
+    /// Return the ID of any open (`end_time IS NULL`) session for `streamer_id`.
+    pub async fn active_session_id(&self, streamer_id: &str) -> Result<Option<String>> {
+        let id: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM live_sessions \
+             WHERE streamer_id = ? AND end_time IS NULL \
+             ORDER BY start_time DESC LIMIT 1",
+        )
+        .bind(streamer_id)
+        .fetch_optional(&self.read_pool)
+        .await?;
+        Ok(id)
     }
 
     /// Returns `true` while any database write lease is held or queued for `streamer_id`.
@@ -333,7 +438,7 @@ impl RecorderStore {
         let writer = self.writer.clone();
         let committed_state = self.committed_state.clone();
         let outbox_notify = self.outbox_notify.clone();
-        let post_publication = self.post_publication.clone();
+        let post_publication = self.post_publication.read().clone();
 
         own_operation(self.supervisor.clone(), async move {
             let (value, change_set) = retry_on_sqlite_busy(label, || {

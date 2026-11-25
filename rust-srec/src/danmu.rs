@@ -28,5 +28,6 @@ pub(crate) mod test_support;
 
 pub use events::DanmuEvent;
 pub use lifecycle::CollectionSpec;
+pub(crate) use lifecycle::CollectionStopReason;
 pub use service::DanmuService;
 pub use tap::DanmuTaps;

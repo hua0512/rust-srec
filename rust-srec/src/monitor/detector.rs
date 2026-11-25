@@ -272,7 +272,7 @@ impl StreamDetector {
         }
     }
 
-    pub(super) fn client_for_proxy(&self, proxy: &ProxyTarget) -> Result<reqwest::Client> {
+    pub(crate) fn client_for_proxy(&self, proxy: &ProxyTarget) -> Result<reqwest::Client> {
         Ok(self.client_cache.get_or_try_build(proxy, || {
             crate::utils::http_client::build_platforms_client(
                 proxy,

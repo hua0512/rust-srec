@@ -26,7 +26,10 @@ pub use output_root_gate::{
     RootHealth, RootHealthState,
 };
 
-pub(crate) use manager::{DownloadCoordinationReceiver, download_coordination_channel};
+pub(crate) use manager::{
+    DownloadCoordinationReceiver, PreflightFailure, RecorderDownloadFeedback,
+    RecorderFeedbackPermit, download_coordination_channel,
+};
 pub use manager::{
     DownloadManager, DownloadManagerConfig, DownloadManagerEvent, DownloadProgressEvent,
     DownloadRejectedKind, DownloadShutdownReport, DownloadStopCause, DownloadTerminalEvent,

@@ -255,6 +255,15 @@ pub struct ServiceContainer {
     /// Segment keys that should be discarded (min-size gate) to prevent danmu/xml and video
     /// from racing into the pipeline while being deleted.
     discarded_segment_keys: Arc<DashMap<(String, String), Instant>>,
+    /// Selected recording control plane (`Legacy` by default in production).
+    recorder_runtime: crate::recorder::RecorderRuntime,
+    /// Shared stateless extractor runner used by `/api/parse` and the actor prober.
+    pub(crate) extractor_runner: Arc<crate::recorder::PlatformExtractorRunner>,
+    /// Present only in [`crate::recorder::RecorderRuntime::Actor`] mode.
+    pub(crate) actor_registry: Option<Arc<crate::recorder::ActorRegistry>>,
+    /// Present only in [`crate::recorder::RecorderRuntime::Actor`] mode; moved into
+    /// its supervised task during [`Self::initialize`].
+    outbox_drainer: parking_lot::Mutex<Option<Arc<crate::notification::NotificationOutboxDrainer>>>,
     /// Sessions whose danmu link is currently down, and when it went down.
     ///
     /// `CollectionRunner` keeps reconnecting for the life of the session, so a
@@ -319,6 +328,25 @@ fn wire_check_history_pipeline(
 }
 
 impl ServiceContainer {
+    /// Active recording control plane mode for this container.
+    pub fn recorder_runtime(&self) -> crate::recorder::RecorderRuntime {
+        self.recorder_runtime
+    }
+
+    /// Active credential blocks store for the selected runtime mode.
+    pub(crate) fn credential_blocks(&self) -> &Arc<crate::credentials::CredentialBlocks> {
+        self.actor_registry
+            .as_ref()
+            .map(|registry| registry.prober().credential_blocks())
+            .unwrap_or_else(|| self.stream_monitor.credential_blocks())
+    }
+
+    /// Access the actor registry when running in [`crate::recorder::RecorderRuntime::Actor`] mode.
+    #[cfg(test)]
+    pub(crate) fn actor_registry(&self) -> Option<&Arc<crate::recorder::ActorRegistry>> {
+        self.actor_registry.as_ref()
+    }
+
     /// True only after initialization confirmed every persistent recovery phase.
     /// Resumed jobs need not finish: their durable ownership has been restored.
     pub(crate) fn startup_recovery_complete(&self) -> bool {
@@ -389,22 +417,41 @@ impl ServiceContainer {
         // Subscribe streamer manager to config events
         self.setup_config_event_subscriptions();
 
-        // Wire download events to pipeline manager
-        self.setup_download_event_subscriptions();
+        match self.recorder_runtime {
+            crate::recorder::RecorderRuntime::Legacy => {
+                // Wire download events to pipeline manager
+                self.setup_download_event_subscriptions();
 
-        // Wire download terminal events into SessionLifecycle so it can close
-        // the session row and emit SessionTransition::Ended for every
-        // terminal download outcome.
-        self.setup_session_lifecycle_subscriptions();
+                // Wire download terminal events into SessionLifecycle so it can close
+                // the session row and emit SessionTransition::Ended for every
+                // terminal download outcome.
+                self.setup_session_lifecycle_subscriptions();
 
-        // Wire monitor events to download manager and danmu service
-        self.setup_monitor_event_subscriptions();
+                // Wire monitor events to download manager and danmu service
+                self.setup_monitor_event_subscriptions();
 
-        // Wire danmu events to download manager for segment coordination
-        self.setup_danmu_event_subscriptions();
+                // Wire danmu events to download manager for segment coordination
+                self.setup_danmu_event_subscriptions();
 
-        // Wire notification service to system events
-        self.setup_notification_event_subscriptions();
+                // Wire notification service to system events
+                self.setup_notification_event_subscriptions();
+            }
+            crate::recorder::RecorderRuntime::Actor => {
+                if let Some(registry) = &self.actor_registry {
+                    if let Some(coordination_rx) = self.download_coordination_receiver.lock().take()
+                    {
+                        registry.spawn_download_bridges(coordination_rx, &self.task_supervisor);
+                    }
+                    if let Some(danmu_rx) = self.danmu_coordination_receiver.lock().take() {
+                        registry.spawn_danmu_bridge(danmu_rx, &self.task_supervisor);
+                    }
+                }
+                self.notification_service.start_actor_mode_event_listeners(
+                    self.download_manager.subscribe(),
+                    self.pipeline_manager.subscribe(),
+                );
+            }
+        }
 
         // Load notifications and discover output paths concurrently, both best-effort.
         // Health registration and the startup write probe share the same root snapshot.
@@ -446,21 +493,43 @@ impl ServiceContainer {
             });
         info!("Database maintenance scheduler started");
 
-        // Start scheduler in background
-        self.start_scheduler()?;
+        // Start the active recording control plane (either Legacy scheduler or Actor registry).
+        match self.recorder_runtime {
+            crate::recorder::RecorderRuntime::Legacy => {
+                self.start_scheduler()?;
+            }
+            crate::recorder::RecorderRuntime::Actor => {
+                if let Some(drainer) = self.outbox_drainer.lock().take() {
+                    self.task_supervisor
+                        .spawn("notification outbox drainer", async move {
+                            if let Err(error) = drainer.drain_until_wait().await {
+                                warn!(%error, "Initial notification outbox drain failed");
+                            }
+                            drainer.run().await;
+                        });
+                }
+                if let Some(registry) = &self.actor_registry {
+                    registry.start();
+                }
+                info!("Recorder actor registry started");
+            }
+        }
 
-        // After the scheduler, so `RuntimeCoordinator::retire_streamer` can get
-        // an answer from `SchedulerHandle::remove_streamer_awaitable` on its
-        // first pass instead of treating every actor as unobserved.
+        // After the control plane starts, so `RuntimeCoordinator::retire_streamer` can
+        // observe active actors on its first pass.
         self.spawn_streamer_reaper();
         self.spawn_login_session_pruning();
-        // After the scheduler, which owns the actors its pushes ask to check.
+        let bigo_feedback: Arc<dyn crate::monitor::BigoCheckTrigger> = match &self.actor_registry {
+            Some(registry) => registry.clone(),
+            None => Arc::new(self.scheduler_feedback.clone()),
+        };
+        // After the control plane starts, which owns the actors its pushes ask to check.
         self.bigo_notifications.spawn(
             crate::monitor::BigoNotificationDeps {
                 config_service: self.config_service.clone(),
                 streamer_manager: self.streamer_manager.clone(),
                 credentials: self.credential_execution.clone(),
-                feedback: self.scheduler_feedback.clone(),
+                feedback: bigo_feedback,
                 notifications: self.notification_service.clone(),
             },
             &self.task_supervisor,

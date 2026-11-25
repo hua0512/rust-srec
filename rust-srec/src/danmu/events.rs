@@ -166,8 +166,13 @@ pub(crate) enum CollectionCommand {
         /// The start time of this segment (for danmu timestamp offset calculation).
         start_time: Timestamp,
     },
-    /// End the current segment file
-    EndSegment { segment_id: String },
+    /// Close the current segment file, optionally deleting the XML file and
+    /// suppressing [`DanmuEvent::SegmentCompleted`] before acknowledging.
+    CloseSegment {
+        segment_id: String,
+        discard: bool,
+        ack: tokio::sync::oneshot::Sender<()>,
+    },
     /// Replace the account material and proxy the collection connects with.
     /// The runner reconnects at once when either differs from what is in use.
     UpdateAuthentication(DanmuAuthentication),

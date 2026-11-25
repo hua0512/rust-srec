@@ -97,13 +97,16 @@ async fn cancelling_a_stop_waiter_does_not_consume_the_followers_completion() {
 async fn cancelling_the_elected_sender_while_queue_full_still_signals_stop() {
     let service = DanmuService::new();
     let (done, _commands, token) = seed(&service);
+    let (ack_tx, _ack_rx) = oneshot::channel();
     service
         .collections
         .get(OLD)
         .unwrap()
         .command_tx
-        .try_send(CollectionCommand::EndSegment {
+        .try_send(CollectionCommand::CloseSegment {
             segment_id: "queued".to_owned(),
+            discard: false,
+            ack: ack_tx,
         })
         .unwrap();
     let mut sender = Box::pin(service.stop_collection(OLD));
@@ -129,13 +132,16 @@ async fn stop_timeouts_leave_late_completion_available_to_followers() {
         let service = DanmuService::new();
         let (done, _commands, token) = seed(&service);
         if full_queue {
+            let (ack_tx, _ack_rx) = oneshot::channel();
             service
                 .collections
                 .get(OLD)
                 .unwrap()
                 .command_tx
-                .try_send(CollectionCommand::EndSegment {
+                .try_send(CollectionCommand::CloseSegment {
                     segment_id: "queued".to_owned(),
+                    discard: false,
+                    ack: ack_tx,
                 })
                 .unwrap();
         }

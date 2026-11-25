@@ -188,6 +188,7 @@ impl Fixture {
                     admission: None,
                     required_event_sender: None,
                     task_supervisor: task_supervisor.clone(),
+                    spawn_outbox_publisher: true,
                 },
             )
             .unwrap(),
@@ -254,6 +255,7 @@ impl Fixture {
             session_lifecycle,
             task_supervisor,
             scheduler_handle: scheduler.handle(),
+            actor_registry: None,
         }));
         Self {
             coordinator,

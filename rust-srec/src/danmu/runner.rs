@@ -558,8 +558,14 @@ impl CollectionRunner {
                     .await?;
                 Ok(CommandResult::Continue)
             }
-            Some(CollectionCommand::EndSegment { segment_id }) => {
-                self.end_segment(&segment_id).await?;
+            Some(CollectionCommand::CloseSegment {
+                segment_id,
+                discard,
+                ack,
+            }) => {
+                let result = self.close_segment(&segment_id, discard).await;
+                let _ = ack.send(());
+                result?;
                 Ok(CommandResult::Continue)
             }
             // `run_loop` applies these itself because they replace the link.
@@ -577,8 +583,9 @@ impl CollectionRunner {
 
     /// Whether `handle_command` would take `current_writer` away from the
     /// segment it currently holds: `start_segment` finalizes any open writer
-    /// before opening the next one, while `end_segment` only acts when the id
-    /// matches. `Stop` and a closed channel leave the writer to `shutdown`.
+    /// before opening the next one, while a non-discarding `close_segment`
+    /// only acts when the id matches. Discarding closes drop buffered items,
+    /// and `Stop` / closed channel leave the writer to `shutdown`.
     fn command_closes_current_segment(&self, cmd: Option<&CollectionCommand>) -> bool {
         let Some((current_segment_id, _)) = &self.current_writer else {
             return false;
@@ -586,7 +593,11 @@ impl CollectionRunner {
 
         match cmd {
             Some(CollectionCommand::StartSegment { .. }) => true,
-            Some(CollectionCommand::EndSegment { segment_id }) => segment_id == current_segment_id,
+            Some(CollectionCommand::CloseSegment {
+                segment_id,
+                discard,
+                ..
+            }) => !discard && segment_id == current_segment_id,
             Some(CollectionCommand::UpdateAuthentication(_))
             | Some(CollectionCommand::Stop(_))
             | None => false,
@@ -636,14 +647,40 @@ impl CollectionRunner {
         Ok(())
     }
 
-    /// End a specific segment by ID.
-    async fn end_segment(&mut self, target_segment_id: &str) -> Result<()> {
+    /// Close a specific segment by ID, either finalizing and announcing it or
+    /// deleting its XML file and suppressing [`DanmuEvent::SegmentCompleted`].
+    async fn close_segment(&mut self, target_segment_id: &str, discard: bool) -> Result<()> {
         if let Some((current_id, _)) = &self.current_writer
             && current_id == target_segment_id
         {
-            // Flush buffer before finalizing
-            self.flush_buffer().await?;
-            self.finalize_current_segment().await?;
+            if discard {
+                self.message_buffer.clear();
+                if let Some((_, writer)) = self.current_writer.take() {
+                    let path = writer.output_path().to_path_buf();
+                    // Drop the writer before removing so open file handles close on Windows.
+                    drop(writer);
+                    match tokio::fs::remove_file(&path).await {
+                        Ok(()) => debug!(
+                            session_id = %self.session_id,
+                            segment_id = target_segment_id,
+                            path = %path.display(),
+                            "Deleted discarded danmu segment"
+                        ),
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                        Err(error) => warn!(
+                            session_id = %self.session_id,
+                            segment_id = target_segment_id,
+                            path = %path.display(),
+                            %error,
+                            "Failed to delete discarded danmu segment"
+                        ),
+                    }
+                }
+            } else {
+                // Flush buffer before finalizing
+                self.flush_buffer().await?;
+                self.finalize_current_segment().await?;
+            }
         }
         Ok(())
     }
@@ -860,12 +897,16 @@ mod tests {
         tokio::time::sleep(Duration::from_secs(config::RECONNECT_ALERT_AFTER_SECS + 60)).await;
 
         // Rotate to a second segment while the link is still down.
+        let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
         command_tx
-            .send(CollectionCommand::EndSegment {
+            .send(CollectionCommand::CloseSegment {
                 segment_id: "0".to_string(),
+                discard: false,
+                ack: ack_tx,
             })
             .await
             .expect("end first segment");
+        ack_rx.await.expect("close segment acknowledged");
         command_tx
             .send(CollectionCommand::StartSegment {
                 segment_id: "1".to_string(),
@@ -955,9 +996,12 @@ mod tests {
             .send(chat("queued-before-boundary"))
             .await
             .expect("queue old-segment message");
+        let (ack_tx, _ack_rx) = tokio::sync::oneshot::channel();
         command_tx
-            .send(CollectionCommand::EndSegment {
+            .send(CollectionCommand::CloseSegment {
                 segment_id: "seg-0".to_string(),
+                discard: false,
+                ack: ack_tx,
             })
             .await
             .expect("end first segment");
@@ -1324,5 +1368,81 @@ mod tests {
 
         assert_eq!(outcome.reason, CollectionExitReason::Cancelled);
         assert!(outcome.error.is_none());
+    }
+
+    /// Discarding a segment via `CloseSegment { discard: true, ack }` must drop
+    /// its writer and delete the XML file on disk, suppress `SegmentCompleted`,
+    /// and resolve the acknowledgement once cleanup has happened.
+    #[tokio::test(start_paused = true)]
+    async fn close_segment_discard_deletes_xml_suppresses_completion_and_acks() {
+        let (items_tx, items_rx) = mpsc::channel(8);
+        let provider = Arc::new(FakeProvider::new(vec![items_rx]));
+        let publisher = DanmuEventPublisher::new(16);
+        let mut events = publisher.subscribe();
+        let (runner, items) = runner_for(provider, publisher).await;
+        let (command_tx, command_rx) = mpsc::channel(8);
+        let path = temp_xml_path("discard-close");
+
+        let handle = tokio::spawn(runner.run(command_rx, items, CancellationToken::new()));
+
+        command_tx
+            .send(CollectionCommand::StartSegment {
+                segment_id: "0".to_string(),
+                output_path: path.clone(),
+                start_time: Timestamp::now(),
+            })
+            .await
+            .expect("start segment");
+        items_tx
+            .send(chat("discard-me"))
+            .await
+            .expect("send message");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
+        command_tx
+            .send(CollectionCommand::CloseSegment {
+                segment_id: "0".to_string(),
+                discard: true,
+                ack: ack_tx,
+            })
+            .await
+            .expect("close segment with discard");
+
+        tokio::time::timeout(Duration::from_secs(2), ack_rx)
+            .await
+            .expect("discard close must ack promptly")
+            .expect("ack channel must resolve");
+
+        assert!(
+            !path.exists(),
+            "discarded danmu XML file must be removed before ack"
+        );
+
+        command_tx
+            .send(CollectionCommand::Stop(CollectionStopReason::SessionEnded))
+            .await
+            .expect("stop runner");
+        let outcome = handle.await.expect("runner task");
+        assert!(outcome.error.is_none());
+
+        let mut saw_started = false;
+        let mut saw_completed = false;
+        while let Ok(event) = events.try_recv() {
+            match event {
+                DanmuEvent::SegmentStarted { segment_id, .. } if segment_id == "0" => {
+                    saw_started = true;
+                }
+                DanmuEvent::SegmentCompleted { segment_id, .. } if segment_id == "0" => {
+                    saw_completed = true;
+                }
+                _ => {}
+            }
+        }
+        assert!(saw_started, "expected SegmentStarted for segment 0");
+        assert!(
+            !saw_completed,
+            "discarded CloseSegment must suppress DanmuEvent::SegmentCompleted"
+        );
     }
 }

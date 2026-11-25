@@ -28,7 +28,9 @@ mod retirement;
 
 use download_pipeline::{PipelineExit, StreamerLivePayload, run_live_download_pipeline};
 
-pub(crate) use retirement::{INTERACTIVE_RETIREMENT, OBSERVE_RETIREMENT};
+pub(crate) use retirement::{
+    INTERACTIVE_RETIREMENT, OBSERVE_RETIREMENT, RetirementBounds, StreamerRetirement,
+};
 
 const MAX_CONCURRENT_CONFIG_REFRESHES: usize = 16;
 
@@ -128,6 +130,8 @@ pub(crate) struct RuntimeCoordinator {
     /// only way to observe a `StreamerActor`'s task actually leaving the runtime
     /// from off that loop.
     scheduler_handle: SchedulerHandle,
+    /// Present when running with [`crate::recorder::RecorderRuntime::Actor`].
+    actor_registry: Option<Arc<crate::recorder::ActorRegistry>>,
 }
 
 pub(super) struct RuntimeCoordinatorDependencies {
@@ -143,6 +147,7 @@ pub(super) struct RuntimeCoordinatorDependencies {
     pub session_lifecycle: Arc<SessionLifecycle>,
     pub task_supervisor: Arc<TaskSupervisor>,
     pub scheduler_handle: SchedulerHandle,
+    pub actor_registry: Option<Arc<crate::recorder::ActorRegistry>>,
 }
 
 impl RuntimeCoordinator {
@@ -160,6 +165,7 @@ impl RuntimeCoordinator {
             session_lifecycle,
             task_supervisor,
             scheduler_handle,
+            actor_registry,
         } = dependencies;
         Self {
             credential_diagnostics: DashMap::new(),
@@ -180,6 +186,7 @@ impl RuntimeCoordinator {
             session_lifecycle,
             task_supervisor,
             scheduler_handle,
+            actor_registry,
         }
     }
 
@@ -523,6 +530,10 @@ impl RuntimeCoordinator {
     /// Import retires authentication separately from the streamer row. Settle
     /// current work before its profile can be physically reaped.
     pub(crate) async fn settle_credential_retirement(&self, streamer_id: &str) {
+        if let Some(registry) = &self.actor_registry {
+            registry.settle_credential_retirement(streamer_id).await;
+            return;
+        }
         let (session_id, binding) = match self
             .stream_monitor
             .retiring_credential_session(streamer_id)

@@ -83,18 +83,34 @@ impl CollectionHandle {
             })
     }
 
-    /// End the current segment file (finalize XML).
+    /// End the current segment file (finalize XML and publish completion).
     pub async fn end_segment(&self, segment_id: &str) -> Result<()> {
+        self.close_segment(segment_id, false).await
+    }
+
+    /// Close the current segment file and wait for the runner's acknowledgement.
+    ///
+    /// When `discard` is `true`, the runner closes and deletes the `.xml` file
+    /// and suppresses [`DanmuEvent::SegmentCompleted`] before acknowledging.
+    pub async fn close_segment(&self, segment_id: &str, discard: bool) -> Result<()> {
+        let (ack_tx, ack_rx) = oneshot::channel();
         self.command_tx
-            .send(CollectionCommand::EndSegment {
+            .send(CollectionCommand::CloseSegment {
                 segment_id: segment_id.to_string(),
+                discard,
+                ack: ack_tx,
             })
             .await
             .map_err(|_| {
                 Error::from(platforms_parser::danmaku::DanmakuError::connection(
                     "Collection task not running",
                 ))
-            })
+            })?;
+        // If the runner exited concurrently before replying, treat the close
+        // handshake as settled; shutdown finalization or discard reverse-cleanup
+        // handles any resulting file state.
+        let _ = ack_rx.await;
+        Ok(())
     }
 
     /// Get the session ID.
@@ -568,6 +584,34 @@ impl DanmuService {
             )),
             CollectionStopOutcome::Unconfirmed(error) => Err(error),
         }
+    }
+
+    /// Request a stop with an explicit reason and report the structured stop outcome.
+    pub(crate) async fn stop_collection_with_outcome(
+        &self,
+        session_id: &str,
+        reason: CollectionStopReason,
+    ) -> crate::recorder::DanmuStopResult {
+        match self.stop_collection_with_reason(session_id, reason).await {
+            CollectionStopOutcome::Terminated { .. } => {
+                crate::recorder::DanmuStopResult::Terminated
+            }
+            CollectionStopOutcome::NotRegistered => crate::recorder::DanmuStopResult::NotRegistered,
+            CollectionStopOutcome::Unconfirmed(error) => {
+                crate::recorder::DanmuStopResult::Unconfirmed {
+                    error: error.to_string(),
+                }
+            }
+        }
+    }
+
+    /// Returns `true` while any danmu collector is registered for `streamer_id`.
+    pub(crate) fn has_active_collection_for_streamer(&self, streamer_id: &str) -> bool {
+        self.sessions_by_streamer.contains_key(streamer_id)
+            || self
+                .collections
+                .iter()
+                .any(|entry| entry.streamer_id == streamer_id)
     }
 
     /// Request a stop and report what it proved about the collector.

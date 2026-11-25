@@ -9,7 +9,6 @@ use axum::{
 };
 use platforms_parser::extractor::error::ExtractorError;
 use platforms_parser::extractor::factory::{ExtractorFactory, ExtractorSelection};
-use std::time::Duration;
 use tracing::{debug, warn};
 
 use crate::api::auth_service::AuthPrincipal;
@@ -19,7 +18,6 @@ use crate::api::models::{ParseUrlRequest, ParseUrlResponse};
 use crate::api::server::AppState;
 use crate::credentials::OperationDeadline;
 use crate::danmu::live::{self, LiveDanmuTarget};
-use crate::proxies::ProxyTarget;
 
 #[derive(Clone)]
 pub struct ParseRouteState {
@@ -38,6 +36,7 @@ pub struct ParseRouteState {
             crate::database::repositories::streamer::SqlxStreamerRepository,
         >,
     >,
+    extractor_runner: std::sync::Arc<crate::recorder::PlatformExtractorRunner>,
 }
 
 impl FromRef<AppState> for ParseRouteState {
@@ -49,6 +48,7 @@ impl FromRef<AppState> for ParseRouteState {
             admission: state.platform_admission.clone(),
             config_service: state.config_service.clone(),
             streamer_manager: state.streamer_manager.clone(),
+            extractor_runner: state.extractor_runner.clone(),
         }
     }
 }
@@ -255,7 +255,9 @@ async fn parse_one(
         }
         let (extractor_config, route) =
             resolve_url_config(state, &request.url, request.cookies.clone()).await?;
-        let extractor_factory = extractor_factory_for_proxy(&route.target)?;
+        let extractor_factory = state
+            .extractor_runner
+            .extractor_factory_for_proxy(&route.target)?;
         admit_parse(state, &extractor_config, &route, deadline).await?;
         let platform_id = extractor_config.platform_id.clone();
         let danmu_cookies = extractor_config.cookies.clone();
@@ -467,7 +469,9 @@ async fn extract_managed(
                     config.extras.clone(),
                     &snapshot.material,
                 );
-                let factory = extractor_factory_for_proxy(&snapshot.route.target);
+                let factory = state
+                    .extractor_runner
+                    .extractor_factory_for_proxy(&snapshot.route.target);
                 let selection = config.extractor;
                 async move {
                     let extractor = factory?
@@ -784,7 +788,9 @@ async fn resolve_one(
 
     let (extractor_config, route) =
         resolve_url_config(state, &request.url, request.cookies.clone()).await?;
-    let extractor_factory = extractor_factory_for_proxy(&route.target)?;
+    let extractor_factory = state
+        .extractor_runner
+        .extractor_factory_for_proxy(&route.target)?;
     admit_parse(state, &extractor_config, &route, deadline).await?;
 
     let platform_id = extractor_config.platform_id.clone();
@@ -919,13 +925,6 @@ async fn process_parse_request(
             ParseUrlResponse::failure(error_message)
         }
     }
-}
-
-fn extractor_factory_for_proxy(
-    proxy: &ProxyTarget,
-) -> Result<ExtractorFactory, crate::proxies::ProxyError> {
-    let client = crate::utils::http_client::build_platforms_client(proxy, Duration::ZERO, 0)?;
-    Ok(ExtractorFactory::new(client).with_proxy(proxy.clone()))
 }
 
 /// What configures a URL.
@@ -1284,6 +1283,7 @@ mod tests {
                 streamers,
                 ConfigEventBroadcaster::new(),
             )),
+            extractor_runner: Arc::new(crate::recorder::PlatformExtractorRunner::default()),
         }
     }
     const STREAMER_URL: &str = "https://live.bilibili.com/1";

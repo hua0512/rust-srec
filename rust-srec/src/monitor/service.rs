@@ -167,6 +167,9 @@ pub(crate) struct StreamMonitorRuntimeConfig {
     pub admission: Option<Arc<PlatformAdmission>>,
     pub required_event_sender: Option<mpsc::Sender<MonitorEventDelivery>>,
     pub task_supervisor: Arc<TaskSupervisor>,
+    /// Whether this monitor spawns the legacy `monitor_event_outbox` drainer.
+    /// Disabled when the recorder actor runtime owns outbox delivery.
+    pub spawn_outbox_publisher: bool,
 }
 
 impl Default for StreamMonitorConfig {
@@ -374,6 +377,7 @@ impl<
                 admission: None,
                 required_event_sender: None,
                 task_supervisor: Arc::new(TaskSupervisor::new()),
+                spawn_outbox_publisher: true,
             },
         )
     }
@@ -398,6 +402,7 @@ impl<
             admission,
             required_event_sender,
             task_supervisor,
+            spawn_outbox_publisher,
         } = runtime;
         let admission =
             admission.unwrap_or_else(|| Arc::new(PlatformAdmission::from_config(&config)));
@@ -435,7 +440,9 @@ impl<
             bigo_notifications: std::sync::OnceLock::new(),
         };
 
-        monitor.spawn_outbox_publisher(outbox_notify, cancellation, task_supervisor);
+        if spawn_outbox_publisher {
+            monitor.spawn_outbox_publisher(outbox_notify, cancellation, task_supervisor);
+        }
 
         Ok(monitor)
     }
@@ -1729,7 +1736,7 @@ impl InfraBlockReason {
 }
 
 /// The `batch_detection` platform option, off unless a configuration layer sets it to `true`.
-pub(super) fn batch_detection_enabled(platform_extras: Option<&serde_json::Value>) -> bool {
+pub(crate) fn batch_detection_enabled(platform_extras: Option<&serde_json::Value>) -> bool {
     platform_extras
         .and_then(|extras| extras.get("batch_detection"))
         .and_then(serde_json::Value::as_bool)

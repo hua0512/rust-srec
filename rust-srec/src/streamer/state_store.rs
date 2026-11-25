@@ -153,6 +153,7 @@ impl StreamerCache {
 pub struct CommittedStreamerState {
     pub(crate) writer: Arc<CommittedWriter>,
     pub(crate) cache: Arc<StreamerCache>,
+    post_publication: RwLock<Vec<Arc<dyn crate::recorder::PostPublicationListener>>>,
 }
 
 impl CommittedStreamerState {
@@ -169,6 +170,32 @@ impl CommittedStreamerState {
         Self {
             writer,
             cache: Arc::new(StreamerCache::new(broadcaster)),
+            post_publication: RwLock::new(Vec::new()),
+        }
+    }
+
+    /// Register an asynchronous listener invoked strictly after both
+    /// `StreamerCache::publication` and the SQLite write connection have been
+    /// released.
+    pub(crate) fn add_post_publication_listener(
+        &self,
+        listener: Arc<dyn crate::recorder::PostPublicationListener>,
+    ) {
+        self.post_publication.write().push(listener);
+    }
+
+    /// Notify registered post-publication listeners outside any cache lock or
+    /// database write transaction.
+    pub(crate) async fn notify_post_publication(
+        &self,
+        changes: crate::recorder::PostPublicationChangeSet,
+    ) {
+        if changes.is_empty() {
+            return;
+        }
+        let listeners = self.post_publication.read().clone();
+        for listener in listeners {
+            listener.on_published(changes.clone()).await;
         }
     }
 
@@ -199,12 +226,23 @@ impl CommittedStreamerState {
     {
         self.writer.require_serialized()?;
         let cache = self.cache.clone();
-        self.writer
+        let change = self
+            .writer
             .transaction(label, operation, move |change| {
                 cache.apply(change, publication)
             })
-            .await
-            .map(|change| change.value)
+            .await?;
+        let value = change.value;
+        if !matches!(publication, StatePublication::Silent) {
+            let change_set = crate::recorder::PostPublicationChangeSet {
+                updated_streamers: change.rows.into_iter().map(|row| row.id).collect(),
+                removed_streamers: change.removed,
+                reconfigured_streamers: change.reconfigured,
+                outbox_enqueued: false,
+            };
+            self.notify_post_publication(change_set).await;
+        }
+        Ok(value)
     }
 
     pub(crate) async fn reload(

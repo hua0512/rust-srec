@@ -268,3 +268,114 @@ async fn committed_reaping_invalidates_filters_only_after_delete_succeeds() {
             .await
     );
 }
+
+#[tokio::test]
+async fn actor_runtime_import_reconciles_streamers_after_commit_without_deadlock() {
+    use crate::database::committed_writer::{CommitPhase, CommitTestGate};
+    use crate::domain::StreamerState;
+    use crate::recorder::RecorderRuntime;
+
+    for phase in [CommitPhase::BeforeCommit, CommitPhase::AfterCommit] {
+        let directory = tempfile::tempdir().unwrap();
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        let container = ServiceContainer::with_config_and_runtime(
+            pool.clone(),
+            pool.clone(),
+            super::super::DEFAULT_CACHE_TTL,
+            super::super::DEFAULT_EVENT_CAPACITY,
+            RecorderRuntime::Actor,
+        )
+        .await
+        .unwrap();
+        let (logging, _layer) =
+            crate::logging::LoggingConfig::for_route_tests(directory.path().to_owned());
+        assert!(container.logging_config.set(Arc::new(logging)).is_ok());
+        let state = container.build_api_state(None).unwrap();
+        let registry = container.actor_registry().unwrap().clone();
+        registry.start();
+
+        let mut streamer = StreamerDbModel::new(
+            "Import Actor Streamer",
+            "https://example.test/import-actor",
+            "platform-huya",
+        );
+        streamer.state = StreamerState::Disabled.as_str().to_string();
+        state
+            .streamer_repository
+            .create_streamer(&streamer)
+            .await
+            .unwrap();
+        assert!(
+            !registry.has_actor(&streamer.id),
+            "disabled streamer must not spawn a resident actor"
+        );
+
+        let exported = crate::api::routes::export_import::export_config(State(state.clone()))
+            .await
+            .unwrap()
+            .into_response();
+        let bytes = axum::body::to_bytes(exported.into_body(), 4 * 1024 * 1024)
+            .await
+            .unwrap();
+        let mut config: ConfigExport = serde_json::from_slice(&bytes).unwrap();
+        config.users.clear();
+        config.streamers[0].name = "Activated By Import".into();
+        config.streamers[0].state = StreamerState::NotLive.as_str().to_string();
+
+        let writer = state
+            .streamer_manager
+            .committed_state()
+            .unwrap()
+            .writer
+            .clone();
+        let gate = Arc::new(CommitTestGate::default());
+        writer.set_commit_gate(phase, Some(gate.clone()));
+        let importer = state.configuration_import_service.clone();
+        let caller = tokio::spawn(async move { importer.import(config, ImportMode::Merge).await });
+
+        tokio::time::timeout(Duration::from_secs(2), gate.started.notified())
+            .await
+            .unwrap();
+        caller.abort();
+        assert!(matches!(caller.await, Err(error) if error.is_cancelled()));
+
+        writer.set_commit_gate(phase, None);
+        gate.release.notify_one();
+
+        // Post-publication batch listener must fire strictly after COMMIT + lock
+        // release and reconcile the activated streamer into a resident actor.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !registry.has_actor(&streamer.id) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("atomic import must reconcile active streamer into ActorRegistry without deadlock");
+
+        assert_eq!(
+            state
+                .streamer_manager
+                .get_streamer(&streamer.id)
+                .unwrap()
+                .name,
+            "Activated By Import"
+        );
+
+        registry
+            .shutdown_until(tokio::time::Instant::now() + Duration::from_secs(2))
+            .await;
+        container.stream_monitor.stop();
+        container.notification_service.stop().await;
+        container.pipeline_manager.stop().await;
+        container.cancellation_token.cancel();
+        assert!(
+            container
+                .task_supervisor
+                .shutdown(Duration::from_secs(1))
+                .await
+        );
+    }
+}

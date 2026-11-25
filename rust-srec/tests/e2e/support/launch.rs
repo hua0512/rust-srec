@@ -8,7 +8,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rust_srec::backend::{
-    self, ApiServerConfig, DownloadManagerConfig, ServiceContainer, ServiceContainerConfig,
+    self, ApiServerConfig, DownloadManagerConfig, RecorderRuntime, ServiceContainer,
+    ServiceContainerConfig,
 };
 
 use super::seed::Seed;
@@ -16,12 +17,30 @@ use super::{
     ConnectRecorder, JWT_SECRET, SHUTDOWN_GRACE_PERIOD, SHUTDOWN_TIMEOUT, TestApp, logging,
 };
 
+/// Test-only environment switch selecting which internal recorder runtime the
+/// E2E harness boots. Production binaries never read this variable.
+const RECORDER_RUNTIME_ENV: &str = "RUST_SREC_TEST_RECORDER_RUNTIME";
+
+pub(super) fn runtime_from_env() -> RecorderRuntime {
+    match std::env::var(RECORDER_RUNTIME_ENV) {
+        Ok(value) => match value.trim().to_ascii_lowercase().as_str() {
+            "" | "legacy" => RecorderRuntime::Legacy,
+            "actor" => RecorderRuntime::Actor,
+            other => {
+                panic!("invalid {RECORDER_RUNTIME_ENV}={other:?}; expected 'legacy' or 'actor'")
+            }
+        },
+        Err(_) => RecorderRuntime::Legacy,
+    }
+}
+
 /// Build, initialize and serve a backend on the migrated database at
 /// `database_url`, recording into `output_dir`.
 pub(super) async fn serve(
     database_url: &str,
     output_dir: &Path,
     downloads: DownloadManagerConfig,
+    runtime: RecorderRuntime,
 ) -> (Arc<ServiceContainer>, SocketAddr) {
     // Cadences the scenarios wait on, shortened from their production
     // seconds so a retry or a revoked socket settles well within `WAIT`.
@@ -31,7 +50,7 @@ pub(super) async fn serve(
         .await
         .expect("open the runtime pools");
 
-    let container = ServiceContainer::with_full_config(
+    let container = ServiceContainer::with_full_config_and_runtime(
         pool,
         write_pool,
         ServiceContainerConfig {
@@ -47,6 +66,7 @@ pub(super) async fn serve(
             },
             local_desktop_mode: false,
         },
+        runtime,
     )
     .await
     .expect("build the service container");
@@ -78,9 +98,27 @@ impl TestApp {
     /// Like [`Self::start_with`], with `downloads` as the download manager's
     /// settings, for its circuit breaker, which reads them once at startup.
     pub async fn start_with_downloads(seed: Seed, downloads: DownloadManagerConfig) -> Self {
+        Self::start_with_downloads_and_runtime(seed, downloads, runtime_from_env()).await
+    }
+
+    /// Like [`Self::start_with`], selecting an explicit internal
+    /// [`RecorderRuntime`] regardless of environment variables.
+    #[allow(dead_code)]
+    pub async fn start_with_runtime(seed: Seed, runtime: RecorderRuntime) -> Self {
+        Self::start_with_downloads_and_runtime(seed, DownloadManagerConfig::default(), runtime)
+            .await
+    }
+
+    /// Like [`Self::start_with_downloads`], selecting an explicit internal
+    /// [`RecorderRuntime`].
+    pub async fn start_with_downloads_and_runtime(
+        seed: Seed,
+        downloads: DownloadManagerConfig,
+        runtime: RecorderRuntime,
+    ) -> Self {
         let dead_end = ConnectRecorder::start().await;
         let sql = seed.sql(&dead_end);
-        Self::boot(&sql, Some(dead_end), true, downloads).await
+        Self::boot(&sql, Some(dead_end), true, downloads, runtime).await
     }
 
     /// Shut the backend down and start a new one on the same data directory,
@@ -98,6 +136,7 @@ impl TestApp {
             admin,
             output_dir,
             dead_end,
+            recorder_runtime,
             _data_dir,
         } = self;
         container
@@ -113,8 +152,13 @@ impl TestApp {
             .await
             .expect("run migrations");
         migration_pool.close().await;
-        let (container, address) =
-            serve(&database_url, &output_dir, DownloadManagerConfig::default()).await;
+        let (container, address) = serve(
+            &database_url,
+            &output_dir,
+            DownloadManagerConfig::default(),
+            recorder_runtime,
+        )
+        .await;
         Self {
             base_url: format!("http://{address}"),
             database_url,
@@ -123,6 +167,7 @@ impl TestApp {
             admin,
             output_dir,
             dead_end,
+            recorder_runtime,
             _data_dir,
         }
     }

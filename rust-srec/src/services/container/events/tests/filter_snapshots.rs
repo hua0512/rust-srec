@@ -106,8 +106,9 @@ async fn lagged_config_receiver_reconciles_snapshots_without_the_lost_filter_eve
             download_manager: container.download_manager.clone(),
             pipeline_manager: container.pipeline_manager.clone(),
             runtime_coordinator: container.runtime_coordinator.clone(),
+            actor_registry: container.actor_registry.clone(),
             gpu_health_monitor: None,
-            credential_blocks: container.stream_monitor.credential_blocks().clone(),
+            credential_blocks: container.credential_blocks().clone(),
             logging_config: Arc::new(std::sync::OnceLock::new()),
         };
         let (events, receiver) = broadcast::channel(1);

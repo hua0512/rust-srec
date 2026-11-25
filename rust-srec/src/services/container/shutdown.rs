@@ -144,6 +144,7 @@ impl ServiceContainer {
             aborted_timers,
             aborted_pipeline_tasks,
             aborted_background_tasks,
+            aborted_recorder_tasks,
             committed_writes_drained,
         ) = tokio::join!(
             self.download_manager.abort_attempts(schedule.hard_deadline),
@@ -151,6 +152,13 @@ impl ServiceContainer {
             self.session_lifecycle.abort_timers(schedule.hard_deadline),
             self.pipeline_manager.abort(schedule.hard_deadline),
             self.task_supervisor.abort_all(schedule.hard_deadline),
+            async {
+                if let Some(registry) = &self.actor_registry {
+                    registry.abort_all(schedule.hard_deadline).await
+                } else {
+                    0
+                }
+            },
             async {
                 // A timed-out retained drain leaves its tasks owned in place.
                 // Never abort COMMIT or postcommit publication.
@@ -173,6 +181,7 @@ impl ServiceContainer {
             hysteresis_timers = aborted_timers,
             pipeline_tasks = aborted_pipeline_tasks,
             background_tasks = aborted_background_tasks,
+            recorder_tasks = aborted_recorder_tasks,
             committed_writes_drained,
             "Aborted supervised work after the shutdown force deadline"
         );
@@ -304,9 +313,15 @@ impl ServiceContainer {
             debug!("Danmu coordination handler was not started; skipping its shutdown barrier");
         }
 
-        // Imports own runtime completion after releasing the writer, including
-        // session retirement. Drain them while lifecycle admission and required
-        // transition consumers are still open. Late writes are then rejected.
+        if let Some(registry) = &self.actor_registry
+            && !registry.shutdown_until(deadline).await
+        {
+            overruns.push("recorder actor registry exceeded the graceful deadline".into());
+        }
+
+        // Imports and recorder commits own completion after releasing the writer,
+        // including session retirement. Drain them while required consumers are
+        // settled; late writes are then rejected.
         if !self
             .committed_write_supervisor
             .drain_retained(deadline.saturating_duration_since(tokio::time::Instant::now()))

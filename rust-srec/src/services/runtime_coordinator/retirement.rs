@@ -99,6 +99,11 @@ impl RuntimeCoordinator {
         streamer_name: &str,
         bounds: RetirementBounds,
     ) -> StreamerRetirement {
+        if let Some(registry) = &self.actor_registry {
+            return registry
+                .retire_streamer(streamer_id, streamer_name, bounds)
+                .await;
+        }
         let mut retirement = StreamerRetirement::default();
 
         // The actor first: while it runs it can still observe the streamer live

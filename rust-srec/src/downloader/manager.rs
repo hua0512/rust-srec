@@ -8,10 +8,11 @@ mod events;
 #[cfg(test)]
 mod tests;
 
-use coordination::DownloadEventPublisher;
 pub(crate) use coordination::{
-    DownloadCoordinationReceiver, DownloadCoordinationSender, download_coordination_channel,
+    DownloadCoordinationReceiver, DownloadCoordinationSender, RecorderDownloadFeedback,
+    RecorderFeedbackPermit, download_coordination_channel,
 };
+use coordination::{DownloadEventPublisher, LifecycleFeedback};
 pub use events::{
     DownloadManagerEvent, DownloadProgressEvent, DownloadRejectedKind, DownloadShutdownReport,
     DownloadStopCause, DownloadTerminalEvent, EngineEndSignal,
@@ -273,6 +274,138 @@ pub struct PreflightRequest {
     pub engines_override: Option<serde_json::Value>,
 }
 
+/// Classified failure returned by [`DownloadManager::preflight_classified`].
+#[derive(Debug)]
+pub(crate) enum PreflightFailure {
+    /// Preflight already emitted a terminal `DownloadRejected` event through
+    /// the lifecycle feedback path; callers must not emit a duplicate rejection.
+    RejectedEmitted,
+    /// Lifecycle feedback capacity was full while trying to publish a rejection.
+    FeedbackBusy,
+    /// Non-rejection preflight failure (no terminal event was published).
+    Other(String),
+}
+
+impl DownloadManager {
+    /// Validate before acquiring a download slot, distinguishing rejections
+    /// that already emitted `DownloadTerminalEvent::Rejected` from other errors.
+    pub(crate) async fn preflight_classified(
+        &self,
+        req: PreflightRequest,
+    ) -> std::result::Result<EngineHandle, PreflightFailure> {
+        let _operation = self
+            .begin_operation()
+            .await
+            .map_err(|error| PreflightFailure::Other(error.to_string()))?;
+        let overrides = req.engines_override.as_ref();
+        let (engine, engine_type, engine_key) = self
+            .resolve_engine(req.engine_id.as_deref(), overrides)
+            .await
+            .map_err(|error| PreflightFailure::Other(error.to_string()))?;
+
+        let engine_key = engine_key.for_streamer(&req.streamer_id);
+
+        if !engine.wait_available().await {
+            return Err(PreflightFailure::Other(format!(
+                "Engine {} is not available",
+                engine_type
+            )));
+        }
+
+        if !self.circuit_breakers.is_allowed(&engine_key) {
+            warn!("Engine {} is disabled by circuit breaker", engine_key);
+            let cooldown_secs = self.config.read().circuit_breaker_cooldown_secs;
+
+            match self
+                .emit_rejected_admitted(
+                    req.streamer_id.clone(),
+                    req.streamer_name.clone(),
+                    req.session_id.clone(),
+                    format!("Circuit breaker open for engine {}", engine_key),
+                    Some(cooldown_secs),
+                    DownloadRejectedKind::CircuitBreaker,
+                )
+                .await
+            {
+                Ok(()) => return Err(PreflightFailure::RejectedEmitted),
+                Err(crate::Error::SchedulerFeedbackBusy { .. }) => {
+                    return Err(PreflightFailure::FeedbackBusy);
+                }
+                Err(error) => return Err(PreflightFailure::Other(error.to_string())),
+            }
+        }
+
+        if let Some(gate) = self.output_root_gate.get()
+            && let Err(blocked) = gate.check(&req.output_dir)
+        {
+            warn!(
+                root = %blocked.root.display(),
+                kind = blocked.kind.as_str(),
+                "Output root gate rejected download (Degraded); emitting DownloadRejected"
+            );
+            let cooldown = super::output_root_gate::DEFAULT_GATE_COOLDOWN_SECS;
+            match self
+                .emit_rejected_admitted(
+                    req.streamer_id.clone(),
+                    req.streamer_name.clone(),
+                    req.session_id.clone(),
+                    blocked.to_string(),
+                    Some(cooldown),
+                    DownloadRejectedKind::OutputRootUnavailable {
+                        path: blocked.root.clone(),
+                        io_kind: blocked.kind,
+                    },
+                )
+                .await
+            {
+                Ok(()) => return Err(PreflightFailure::RejectedEmitted),
+                Err(crate::Error::SchedulerFeedbackBusy { .. }) => {
+                    return Err(PreflightFailure::FeedbackBusy);
+                }
+                Err(error) => return Err(PreflightFailure::Other(error.to_string())),
+            }
+        }
+
+        if let Err(engine_err) = self.prepare_output_dir_for_path(&req.output_dir).await {
+            warn!(
+                "Failed to prepare output directory for streamer {}: {}",
+                req.streamer_id, engine_err
+            );
+            if let DownloadFailureKind::OutputRootUnavailable { io_kind } = engine_err.kind {
+                let path = self
+                    .output_root_gate
+                    .get()
+                    .map(|g| g.resolve_path(&req.output_dir))
+                    .unwrap_or_else(|| super::output_root_gate::resolve_root(&req.output_dir, &[]));
+                return match self
+                    .emit_rejected_admitted(
+                        req.streamer_id.clone(),
+                        req.streamer_name.clone(),
+                        req.session_id.clone(),
+                        engine_err.message.clone(),
+                        Some(super::output_root_gate::DEFAULT_GATE_COOLDOWN_SECS),
+                        DownloadRejectedKind::OutputRootUnavailable { path, io_kind },
+                    )
+                    .await
+                {
+                    Ok(()) => Err(PreflightFailure::RejectedEmitted),
+                    Err(crate::Error::SchedulerFeedbackBusy { .. }) => {
+                        Err(PreflightFailure::FeedbackBusy)
+                    }
+                    Err(error) => Err(PreflightFailure::Other(error.to_string())),
+                };
+            }
+            return Err(PreflightFailure::Other(engine_err.message));
+        }
+
+        Ok(EngineHandle {
+            engine,
+            engine_type,
+            engine_key,
+        })
+    }
+}
+
 /// Resolved engine handle returned by [`DownloadManager::preflight`]
 /// and consumed by [`DownloadManager::start_with_slot`].
 #[derive(Clone)]
@@ -368,8 +501,19 @@ impl DownloadManager {
         feedback.ensure_attempt_capacity(self.total_concurrent_slots());
         self.events
             .feedback
-            .set(feedback)
+            .set(LifecycleFeedback::Legacy(feedback))
             .map_err(|_| crate::Error::Other("scheduler feedback is already configured".to_owned()))
+    }
+
+    pub(crate) fn set_recorder_feedback(
+        &self,
+        feedback: Arc<dyn RecorderDownloadFeedback>,
+    ) -> Result<()> {
+        feedback.ensure_attempt_capacity(self.total_concurrent_slots());
+        self.events
+            .feedback
+            .set(LifecycleFeedback::Recorder(feedback))
+            .map_err(|_| crate::Error::Other("recorder feedback is already configured".to_owned()))
     }
 
     pub(crate) fn with_coordination_sender(mut self, sender: DownloadCoordinationSender) -> Self {
@@ -706,6 +850,20 @@ impl DownloadManager {
         engine: EngineHandle,
         cancel: &CancellationToken,
     ) -> Result<Option<String>> {
+        self.start_with_slot_tracked(slot, config, engine, cancel, |_| {})
+            .await
+    }
+
+    /// Start an acquired recording, invoking `on_download_id` synchronously inside
+    /// attempt admission before `DownloadStarted` is published or the engine runs.
+    pub(crate) async fn start_with_slot_tracked(
+        &self,
+        slot: SlotGuard,
+        config: DownloadConfig,
+        engine: EngineHandle,
+        cancel: &CancellationToken,
+        on_download_id: impl FnOnce(&str),
+    ) -> Result<Option<String>> {
         struct QueuedStartCleanup<'a> {
             manager: &'a DownloadManager,
             event: Option<DownloadProgressEvent>,
@@ -748,12 +906,13 @@ impl DownloadManager {
             }
         }
         let result = self
-            .start_download_with_engine_and_slot(
+            .start_download_with_engine_and_slot_tracked(
                 config,
                 engine.engine,
                 engine.engine_type,
                 engine.engine_key,
                 slot,
+                on_download_id,
             )
             .await;
         if result.is_ok() {
@@ -1191,6 +1350,38 @@ impl DownloadManager {
             // deep-clone the whole `DownloadConfig` per scanned entry.
             .find(|entry| entry.value().handle.config.read().streamer_id == streamer_id)
             .map(|entry| DownloadInfo::from(entry.value()))
+    }
+
+    /// Returns `true` while any download entry (including one already cancelling)
+    /// is still registered in `active_downloads` for `streamer_id`.
+    pub(crate) fn has_any_active_download_for_streamer(&self, streamer_id: &str) -> bool {
+        self.active_downloads
+            .iter()
+            .any(|entry| entry.value().handle.config.read().streamer_id == streamer_id)
+    }
+
+    /// Returns `true` while any pending queue entry belongs to `streamer_id`.
+    pub(crate) fn has_pending_for_streamer(&self, streamer_id: &str) -> bool {
+        self.queue
+            .snapshot_pending()
+            .iter()
+            .any(|entry| entry.streamer_id == streamer_id)
+    }
+
+    /// Return `(download_id, session_id)` for every active download entry belonging
+    /// to `streamer_id`, regardless of whether stop was already requested.
+    pub(crate) fn active_download_ids_for_streamer(
+        &self,
+        streamer_id: &str,
+    ) -> Vec<(String, String)> {
+        self.active_downloads
+            .iter()
+            .filter_map(|entry| {
+                let config = entry.value().handle.config.read();
+                (config.streamer_id == streamer_id)
+                    .then(|| (entry.key().clone(), config.session_id.clone()))
+            })
+            .collect()
     }
 
     /// Check if a streamer has an active download.

@@ -830,6 +830,18 @@ impl NotificationService {
         self.listen_for_session_transitions(session_rx);
     }
 
+    /// Start non-outbox listeners for the recorder actor runtime, where
+    /// `StreamOnline`, `StreamOffline`, `FatalError`, `ChecksFailing`, and
+    /// `ChecksRestored` are delivered durably via [`crate::notification::NotificationOutboxDrainer`].
+    pub(crate) fn start_actor_mode_event_listeners(
+        self: &Arc<Self>,
+        download_rx: broadcast::Receiver<DownloadManagerEvent>,
+        pipeline_rx: broadcast::Receiver<PipelineEvent>,
+    ) {
+        self.listen_for_download_events(download_rx);
+        self.listen_for_pipeline_events(pipeline_rx);
+    }
+
     /// Stop the notification service.
     pub async fn stop(&self) {
         info!("Stopping notification service");

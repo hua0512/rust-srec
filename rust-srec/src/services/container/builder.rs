@@ -61,10 +61,29 @@ impl ServiceContainer {
         cache_ttl: Duration,
         event_capacity: usize,
     ) -> Result<Self> {
+        Self::with_config_and_runtime(
+            pool,
+            write_pool,
+            cache_ttl,
+            event_capacity,
+            crate::recorder::RecorderRuntime::Legacy,
+        )
+        .await
+    }
+
+    /// Create a new service container with custom cache, event capacity, and recorder runtime.
+    pub(crate) async fn with_config_and_runtime(
+        pool: SqlitePool,
+        write_pool: SqlitePool,
+        cache_ttl: Duration,
+        event_capacity: usize,
+        recorder_runtime: crate::recorder::RecorderRuntime,
+    ) -> Result<Self> {
         Self::build(
             pool,
             write_pool,
             ServiceContainerConfig::standard(cache_ttl, event_capacity)?,
+            recorder_runtime,
         )
         .await
     }
@@ -82,13 +101,35 @@ impl ServiceContainer {
         write_pool: SqlitePool,
         config: ServiceContainerConfig,
     ) -> Result<Self> {
-        Self::build(pool, write_pool, config).await
+        Self::with_full_config_and_runtime(
+            pool,
+            write_pool,
+            config,
+            crate::recorder::RecorderRuntime::Legacy,
+        )
+        .await
+    }
+
+    /// Create a service container with custom subsystem configs and an explicit
+    /// internal [`crate::recorder::RecorderRuntime`] selection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the persisted global configuration cannot be loaded or initialized.
+    pub async fn with_full_config_and_runtime(
+        pool: SqlitePool,
+        write_pool: SqlitePool,
+        config: ServiceContainerConfig,
+        recorder_runtime: crate::recorder::RecorderRuntime,
+    ) -> Result<Self> {
+        Self::build(pool, write_pool, config, recorder_runtime).await
     }
 
     async fn build(
         pool: SqlitePool,
         write_pool: SqlitePool,
         options: ServiceContainerConfig,
+        recorder_runtime: crate::recorder::RecorderRuntime,
     ) -> Result<Self> {
         let ServiceContainerConfig {
             cache_ttl,
@@ -155,7 +196,7 @@ impl ServiceContainer {
                 cache,
                 event_broadcaster.clone(),
             )
-            .with_filter_store(filter_store),
+            .with_filter_store(filter_store.clone()),
         );
 
         let weak_config = Arc::downgrade(&config_service);
@@ -260,6 +301,11 @@ impl ServiceContainer {
 
         // Create stream monitor for real status detection
         let monitor_config = crate::monitor::StreamMonitorConfig::default();
+        let monitor_request_timeout = monitor_config.request_timeout;
+        let extractor_runner = Arc::new(crate::recorder::PlatformExtractorRunner::new(
+            monitor_config.request_timeout,
+            monitor_config.max_concurrent_requests,
+        ));
         let mut platform_admission =
             crate::credentials::PlatformAdmission::from_config(&monitor_config);
         for platform in config_service.list_platform_configs().await? {
@@ -280,6 +326,8 @@ impl ServiceContainer {
                 admission: Some(platform_admission.clone()),
                 required_event_sender: Some(required_monitor_event_sender),
                 task_supervisor: task_supervisor.clone(),
+                spawn_outbox_publisher: recorder_runtime
+                    == crate::recorder::RecorderRuntime::Legacy,
             },
         )?;
 
@@ -330,18 +378,6 @@ impl ServiceContainer {
         );
         download_manager
             .set_queue_freshness_threshold_ms(global_config.queue_freshness_threshold_ms);
-        let weak_monitor = Arc::downgrade(&stream_monitor);
-        download_manager.set_credential_start_validator(Arc::new(
-            move |session_id, streamer_id, binding| {
-                let monitor = weak_monitor.upgrade();
-                Box::pin(async move {
-                    let monitor = monitor.ok_or(crate::credentials::ProfileError::SourceChanged)?;
-                    monitor
-                        .validate_download_binding(&session_id, &streamer_id, &binding)
-                        .await
-                })
-            },
-        ));
         let download_manager_ms = download_manager_start.elapsed().as_millis();
 
         // Create job repository for pipeline persistence
@@ -522,17 +558,102 @@ impl ServiceContainer {
         let (check_history_writer, check_history_broadcaster, streamer_check_history_repository) =
             wire_check_history_pipeline(&pool, &write_pool, &cancellation_token, &task_supervisor);
 
-        // Create scheduler with StreamMonitor for real status checking
+        let (scheduler_check_history, prober_check_history) = match recorder_runtime {
+            crate::recorder::RecorderRuntime::Legacy => (Some(check_history_writer), None),
+            crate::recorder::RecorderRuntime::Actor => (None, Some(check_history_writer)),
+        };
+
+        // Create scheduler (started only in Legacy mode).
         let mut scheduler = Scheduler::with_monitor_history_and_config(
             streamer_manager.clone(),
             event_broadcaster.clone(),
             stream_monitor.clone(),
-            Some(check_history_writer),
+            scheduler_check_history,
             scheduler_config,
             cancellation_token.child_token(),
         )
         .with_config_repo(config_repo.clone());
-        scheduler.connect_download_manager(&download_manager)?;
+
+        let (actor_registry, outbox_drainer) = match recorder_runtime {
+            crate::recorder::RecorderRuntime::Legacy => {
+                scheduler.connect_download_manager(&download_manager)?;
+                let weak_monitor = Arc::downgrade(&stream_monitor);
+                download_manager.set_credential_start_validator(Arc::new(
+                    move |session_id, streamer_id, binding| {
+                        let monitor = weak_monitor.upgrade();
+                        Box::pin(async move {
+                            let monitor =
+                                monitor.ok_or(crate::credentials::ProfileError::SourceChanged)?;
+                            monitor
+                                .validate_download_binding(&session_id, &streamer_id, &binding)
+                                .await
+                        })
+                    },
+                ));
+                (None, None)
+            }
+            crate::recorder::RecorderRuntime::Actor => {
+                let drainer = Arc::new(crate::notification::NotificationOutboxDrainer::new(
+                    write_pool.clone(),
+                    notification_service.clone(),
+                    cancellation_token.child_token(),
+                ));
+                let recorder_store = Arc::new(
+                    crate::recorder::RecorderStore::with_committed_state_and_supervisor(
+                        pool.clone(),
+                        write_pool.clone(),
+                        committed_streamers.clone(),
+                        committed_write_supervisor.clone(),
+                    )?
+                    .with_outbox_notify(drainer.notifier()),
+                );
+                let recorder_prober = Arc::new(crate::recorder::RecorderProber::new(
+                    crate::recorder::RecorderProberDependencies {
+                        extractor_runner: extractor_runner.clone(),
+                        streamer_manager: streamer_manager.clone(),
+                        config_service: config_service.clone(),
+                        filter_store: filter_store.clone(),
+                        store: recorder_store.clone(),
+                        admission: platform_admission.clone(),
+                        execution_service: credential_execution.clone(),
+                        bigo_notifications: bigo_notifications.clone(),
+                        check_history_writer: prober_check_history,
+                        request_timeout: monitor_request_timeout,
+                    },
+                ));
+                let weak_prober = Arc::downgrade(&recorder_prober);
+                download_manager.set_credential_start_validator(Arc::new(
+                    move |session_id, streamer_id, binding| {
+                        let prober = weak_prober.upgrade();
+                        Box::pin(async move {
+                            let prober =
+                                prober.ok_or(crate::credentials::ProfileError::SourceChanged)?;
+                            prober
+                                .validate_download_binding(&session_id, &streamer_id, &binding)
+                                .await
+                        })
+                    },
+                ));
+                let registry = crate::recorder::ActorRegistry::new(
+                    crate::recorder::ActorRegistryDependencies {
+                        store: recorder_store.clone(),
+                        prober: recorder_prober,
+                        download_manager: download_manager.clone(),
+                        danmu_service: danmu_service.clone(),
+                        pipeline_manager: pipeline_manager.clone(),
+                        streamer_manager: streamer_manager.clone(),
+                        config_service: config_service.clone(),
+                        check_interval_ms: global_config.streamer_check_delay_ms as u64,
+                        root_cancel: cancellation_token.child_token(),
+                    },
+                );
+                download_manager.set_recorder_feedback(registry.download_feedback())?;
+                recorder_store.set_post_publication_listener(registry.clone());
+                committed_streamers.add_post_publication_listener(registry.clone());
+                (Some(registry), Some(drainer))
+            }
+        };
+
         let scheduler_handle = scheduler.handle();
         let scheduler_feedback = scheduler.reliable_feedback();
         let scheduler = parking_lot::Mutex::new(Some(scheduler));
@@ -554,29 +675,32 @@ impl ServiceContainer {
                     session_lifecycle: session_lifecycle.clone(),
                     task_supervisor: task_supervisor.clone(),
                     scheduler_handle: scheduler_handle.clone(),
+                    actor_registry: actor_registry.clone(),
                 },
             ),
         );
 
-        let weak_runtime = Arc::downgrade(&runtime_coordinator);
-        stream_monitor.set_pending_credential_recovery(Arc::new(move |streamer_id| {
-            let runtime = weak_runtime.upgrade();
-            Box::pin(async move {
-                if let Some(runtime) = runtime {
-                    runtime.resume_pending_credentials(&streamer_id).await;
-                }
-            })
-        }));
-        let weak_runtime = Arc::downgrade(&runtime_coordinator);
-        download_manager.set_credential_diagnostic(Arc::new(move |event| {
-            let runtime = weak_runtime.upgrade();
-            Box::pin(async move {
-                match runtime {
-                    Some(runtime) => runtime.diagnose_credential_attempt(event).await,
-                    None => None,
-                }
-            })
-        }));
+        if recorder_runtime == crate::recorder::RecorderRuntime::Legacy {
+            let weak_runtime = Arc::downgrade(&runtime_coordinator);
+            stream_monitor.set_pending_credential_recovery(Arc::new(move |streamer_id| {
+                let runtime = weak_runtime.upgrade();
+                Box::pin(async move {
+                    if let Some(runtime) = runtime {
+                        runtime.resume_pending_credentials(&streamer_id).await;
+                    }
+                })
+            }));
+            let weak_runtime = Arc::downgrade(&runtime_coordinator);
+            download_manager.set_credential_diagnostic(Arc::new(move |event| {
+                let runtime = weak_runtime.upgrade();
+                Box::pin(async move {
+                    match runtime {
+                        Some(runtime) => runtime.diagnose_credential_attempt(event).await,
+                        None => None,
+                    }
+                })
+            }));
+        }
 
         let configuration_import_service = Arc::new(
             crate::services::config_import::ConfigurationImportService::new(
@@ -675,6 +799,10 @@ impl ServiceContainer {
             local_desktop_mode,
             startup_recovery_complete: std::sync::atomic::AtomicBool::new(false),
             discarded_segment_keys: Arc::new(DashMap::new()),
+            recorder_runtime,
+            extractor_runner,
+            actor_registry,
+            outbox_drainer: parking_lot::Mutex::new(outbox_drainer),
             danmu_link_down: Arc::new(DashMap::new()),
         })
     }

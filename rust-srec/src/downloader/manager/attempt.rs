@@ -26,11 +26,10 @@ use crate::downloader::engine::{
 use crate::downloader::output_root_gate::OutputRootGate;
 use crate::downloader::queue::SlotGuard;
 use crate::downloader::resilience::{CircuitBreaker, EngineKey};
-use crate::scheduler::feedback::FeedbackPermit;
 use crate::utils::failure_samples::FailureSamples;
 use crate::utils::task_supervisor::{DrainedTasks, panic_payload_message};
 
-use super::coordination::DownloadEventPublisher;
+use super::coordination::{DownloadEventPublisher, ReservedPermit};
 use super::{
     ActiveDownload, AttemptPhase, CredentialDiagnostic, DownloadManager, DownloadManagerEvent,
     DownloadProgressEvent, DownloadStopCause, DownloadTerminalEvent, EngineEndSignal,
@@ -871,7 +870,7 @@ struct AttemptTask {
     finalizer: AttemptFinalizer,
     lifecycle_errors: Arc<Mutex<FailureSamples>>,
     credential_diagnostic: Option<CredentialDiagnostic>,
-    terminal_feedback: Option<FeedbackPermit>,
+    terminal_feedback: Option<ReservedPermit>,
     managed_credentials: bool,
 }
 
@@ -1024,13 +1023,14 @@ impl AttemptTask {
 }
 
 impl DownloadManager {
-    pub(super) async fn start_download_with_engine_and_slot(
+    pub(super) async fn start_download_with_engine_and_slot_tracked(
         &self,
         config: DownloadConfig,
         engine: Arc<dyn DownloadEngine>,
         engine_type: EngineType,
         engine_key: EngineKey,
         slot: SlotGuard,
+        on_download_id: impl FnOnce(&str),
     ) -> Result<String> {
         let (started_feedback, terminal_feedback) = self
             .events
@@ -1140,6 +1140,7 @@ impl DownloadManager {
         let admitted = self.attempts.spawn(
             download_id.clone(),
             || {
+                on_download_id(&download_id);
                 self.active_downloads
                     .insert(download_id.clone(), active_download);
                 self.events.observe_reserved(

@@ -157,6 +157,8 @@ pub struct ApiServices {
     /// Bigo's live-notification listener, for its status.
     pub(crate) bigo_notifications: Arc<crate::monitor::BigoNotifications>,
     pub(crate) playback_contexts: Arc<crate::services::playback_context::PlaybackContextService>,
+    /// Shared stateless extractor runner (pooled HTTP clients and proxy/tunnel setup).
+    pub(crate) extractor_runner: Arc<crate::recorder::PlatformExtractorRunner>,
     /// Rooms recordings are collecting, which live danmu sockets follow.
     pub(crate) danmu_taps: Arc<crate::danmu::DanmuTaps>,
     /// Validated, transactional configuration import application service.

@@ -1,13 +1,32 @@
 //! Single-streamer recording control plane.
 //!
-//! This module contains the pure synchronous [`StreamerFsm`] state machine and
-//! the narrow domain ports that separate recording control decisions from I/O,
-//! persistence, download engines, danmu collection, and post-processing.
+//! This module contains the pure synchronous [`StreamerFsm`] state machine,
+//! serialized SQLite [`RecorderStore`], [`PlatformExtractorRunner`] /
+//! [`RecorderProber`], non-blocking `StreamerActor`, and [`ActorRegistry`].
 
+pub mod actor;
 pub mod fsm;
 pub mod ports;
+pub mod prober;
+pub mod registry;
 pub mod store;
 
+/// Selects which recording control plane runs inside
+/// [`crate::services::ServiceContainer`].
+///
+/// Production builds default to [`Self::Legacy`]. [`Self::Actor`] enables the
+/// single-owner per-streamer actor runtime and durable
+/// [`crate::notification::NotificationOutboxDrainer`] for parity validation.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum RecorderRuntime {
+    /// Existing scheduler / monitor / session-lifecycle / runtime-coordinator path.
+    #[default]
+    Legacy,
+    /// Per-streamer `StreamerActor` + [`RecorderStore`] + [`crate::notification::NotificationOutboxDrainer`].
+    Actor,
+}
+
+pub use actor::startup_task::StartupLeaseRegistry;
 pub use fsm::{
     AttemptPhase, BlockedKind, DanmuSessionState, ErrorTracker, FilteredKind, FsmEffect, FsmInput,
     InFlightProbe, MonitorPhase, OfflineConfirmation, OpenSession, PendingDbKind, PendingDbOp,
@@ -24,4 +43,6 @@ pub use ports::{
     RetirementBounds, SessionStartDisposition, StreamOnlineKind, StreamerRuntimeView,
     VideoSegmentRecord, should_spawn_actor,
 };
+pub use prober::{PlatformExtractorRunner, RecorderProber, RecorderProberDependencies};
+pub use registry::{ActorRegistry, ActorRegistryDependencies};
 pub use store::{PostPublicationChangeSet, PostPublicationListener, RecorderStore};
