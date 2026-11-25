@@ -342,7 +342,7 @@ function SessionDetailPage() {
         <Skeleton className="h-12 w-full max-w-md rounded-full" />
         <Skeleton className="h-40 rounded-xl md:rounded-2xl" />
         <div className="grid grid-cols-1 @4xl:grid-cols-3 gap-8">
-          <Skeleton className="h-100 @4xl:col-span-2 rounded-xl md:rounded-2xl" />
+          <Skeleton className="aspect-video w-full @4xl:col-span-2 rounded-xl md:rounded-2xl" />
           <Skeleton className="h-100 rounded-xl md:rounded-2xl" />
         </div>
       </div>

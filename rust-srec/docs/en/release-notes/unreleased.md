@@ -97,6 +97,7 @@
 - Fixed the QR code login dialog staying open after a scan succeeded. It now closes automatically shortly after the account is saved.
 - Saving changes on a platform, template or engine settings page now keeps you on that page instead of returning to the list, so you can keep adjusting other tabs or settings and click **Back** when finished.
 - Updated the rust-srec logo and desktop icon across the web interface, desktop app and documentation, and switched the default theme preset to **Orange** (the previous neutral preset remains available as **Zinc** under **Theme → Theme Preset**).
+- Redesigned **Session Preview** on a session's **Overview** tab: the preview thumbnail now fills the frame cleanly without extra blank space above or below, shows the recording duration in the corner, and uses a clearer play button.
 
 ## Deployment and desktop
 

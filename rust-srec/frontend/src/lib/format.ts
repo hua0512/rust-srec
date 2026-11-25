@@ -89,6 +89,23 @@ export function formatDuration(
 }
 
 /**
+ * Format a duration in seconds as a clock timecode ("MM:SS" or "HH:MM:SS").
+ * Set `alwaysShowHours` to keep the leading "00:" for durations under an hour.
+ */
+export function formatTimecode(
+  seconds: number,
+  { alwaysShowHours = false }: { alwaysShowHours?: boolean } = {},
+): string {
+  const total = Number.isFinite(seconds) ? Math.max(0, Math.floor(seconds)) : 0;
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  const parts =
+    alwaysShowHours || hours > 0 ? [hours, minutes, secs] : [minutes, secs];
+  return parts.map((part) => String(part).padStart(2, '0')).join(':');
+}
+
+/**
  * Format bytes per second to human-readable speed (e.g., "1.5 MB/s")
  */
 export function formatSpeed(
