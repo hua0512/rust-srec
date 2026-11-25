@@ -1010,4 +1010,23 @@ mod tests {
         assert_ne!(bound_poll, recovery);
         assert_ne!(queue_start, recovery);
     }
+
+    #[test]
+    fn filter_snapshot_errors_map_to_transient_probe_failures() {
+        use crate::database::filter_store::FilterSnapshotError;
+
+        let errors = [
+            Error::FilterSnapshot(FilterSnapshotError::Repository(Arc::new(
+                srec_sqlite::DbError::DatabaseSqlx(sqlx::Error::RowNotFound),
+            ))),
+            Error::FilterSnapshot(FilterSnapshotError::Cancelled),
+            Error::FilterSnapshot(FilterSnapshotError::TimedOut),
+        ];
+        for error in errors {
+            assert!(matches!(
+                map_probe_failure(error),
+                ProbeFailure::Transient { .. }
+            ));
+        }
+    }
 }

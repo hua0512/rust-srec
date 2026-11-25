@@ -214,14 +214,14 @@ where
 
     /// Get the global configuration.
     pub async fn get_global_config(&self) -> Result<GlobalConfigDbModel> {
-        self.config_repo.get_global_config().await
+        Ok(self.config_repo.get_global_config().await?)
     }
 
     /// Short-lived snapshot for high-frequency readers. Administrative read-modify-write
     /// callers keep using get_global_config, which always reads the authoritative row.
     pub async fn get_cached_global_config(&self) -> Result<Arc<GlobalConfigDbModel>> {
         self.global_cache
-            .get_or_load(|| self.config_repo.get_global_config())
+            .get_or_load(|| async { Ok(self.config_repo.get_global_config().await?) })
             .await
     }
 
@@ -270,17 +270,17 @@ where
 
     /// Get a platform configuration by ID.
     pub async fn get_platform_config(&self, id: &str) -> Result<PlatformConfigDbModel> {
-        self.config_repo.get_platform_config(id).await
+        Ok(self.config_repo.get_platform_config(id).await?)
     }
 
     /// Get a platform configuration by name.
     pub async fn get_platform_config_by_name(&self, name: &str) -> Result<PlatformConfigDbModel> {
-        self.config_repo.get_platform_config_by_name(name).await
+        Ok(self.config_repo.get_platform_config_by_name(name).await?)
     }
 
     /// List all platform configurations.
     pub async fn list_platform_configs(&self) -> Result<Vec<PlatformConfigDbModel>> {
-        self.config_repo.list_platform_configs().await
+        Ok(self.config_repo.list_platform_configs().await?)
     }
 
     /// Create a new platform configuration.
@@ -348,7 +348,7 @@ where
         &self,
         platform_id: Option<&str>,
     ) -> Result<crate::proxies::ResolvedRoute> {
-        self.config_repo.resolve_scope_route(platform_id).await
+        Ok(self.config_repo.resolve_scope_route(platform_id).await?)
     }
 
     /// The route one scope stores.
@@ -356,7 +356,7 @@ where
         &self,
         owner: &crate::database::repositories::proxies::RouteOwner,
     ) -> Result<crate::proxies::ProxyRoute> {
-        self.config_repo.proxy_route_of(owner).await
+        Ok(self.config_repo.proxy_route_of(owner).await?)
     }
 
     /// The routes every scope of `kind`'s kind stores, by scope ID; absent
@@ -365,7 +365,7 @@ where
         &self,
         kind: &crate::database::repositories::proxies::RouteOwner,
     ) -> Result<std::collections::HashMap<String, crate::proxies::ProxyRoute>> {
-        self.config_repo.proxy_routes_of_kind(kind).await
+        Ok(self.config_repo.proxy_routes_of_kind(kind).await?)
     }
 
     /// The routes the given scopes of `kind`'s kind store, by scope ID;
@@ -375,7 +375,7 @@ where
         kind: &crate::database::repositories::proxies::RouteOwner,
         ids: &[&str],
     ) -> Result<std::collections::HashMap<String, crate::proxies::ProxyRoute>> {
-        self.config_repo.proxy_routes_of(kind, ids).await
+        Ok(self.config_repo.proxy_routes_of(kind, ids).await?)
     }
 
     /// A saved proxy changed: every resolved route may have.
@@ -390,7 +390,7 @@ where
     pub async fn list_credential_selections(
         &self,
     ) -> Result<Vec<crate::database::repositories::StoredSelection>> {
-        self.config_repo.list_credential_selections().await
+        Ok(self.config_repo.list_credential_selections().await?)
     }
 
     /// The account selections the given streamers store.
@@ -398,7 +398,10 @@ where
         &self,
         streamer_ids: &[&str],
     ) -> Result<Vec<crate::database::repositories::StoredSelection>> {
-        self.config_repo.selections_of_streamers(streamer_ids).await
+        Ok(self
+            .config_repo
+            .selections_of_streamers(streamer_ids)
+            .await?)
     }
 
     /// The account selections one platform, template or streamer stores.
@@ -406,24 +409,24 @@ where
         &self,
         owner: &crate::credentials::CredentialOwner,
     ) -> Result<Vec<crate::database::repositories::StoredSelection>> {
-        self.config_repo.credential_selections_for(owner).await
+        Ok(self.config_repo.credential_selections_for(owner).await?)
     }
 
     // ========== Template Config ==========
 
     /// Get a template configuration by ID.
     pub async fn get_template_config(&self, id: &str) -> Result<TemplateConfigDbModel> {
-        self.config_repo.get_template_config(id).await
+        Ok(self.config_repo.get_template_config(id).await?)
     }
 
     /// Get a template configuration by name.
     pub async fn get_template_config_by_name(&self, name: &str) -> Result<TemplateConfigDbModel> {
-        self.config_repo.get_template_config_by_name(name).await
+        Ok(self.config_repo.get_template_config_by_name(name).await?)
     }
 
     /// List all template configurations.
     pub async fn list_template_configs(&self) -> Result<Vec<TemplateConfigDbModel>> {
-        self.config_repo.list_template_configs().await
+        Ok(self.config_repo.list_template_configs().await?)
     }
 
     /// Clone a template and its local accounts in one committed operation.
@@ -524,12 +527,12 @@ where
 
     /// Get an engine configuration by ID.
     pub async fn get_engine_config(&self, id: &str) -> Result<EngineConfigurationDbModel> {
-        self.config_repo.get_engine_config(id).await
+        Ok(self.config_repo.get_engine_config(id).await?)
     }
 
     /// List all engine configurations.
     pub async fn list_engine_configs(&self) -> Result<Vec<EngineConfigurationDbModel>> {
-        self.config_repo.list_engine_configs().await
+        Ok(self.config_repo.list_engine_configs().await?)
     }
 
     /// Create a new engine configuration.

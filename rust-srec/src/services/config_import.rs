@@ -63,6 +63,18 @@ impl From<crate::Error> for ConfigurationImportError {
     }
 }
 
+impl From<srec_sqlite::DbError> for ConfigurationImportError {
+    fn from(error: srec_sqlite::DbError) -> Self {
+        Self::from(crate::Error::from(error))
+    }
+}
+
+impl From<srec_core::CoreError> for ConfigurationImportError {
+    fn from(error: srec_core::CoreError) -> Self {
+        Self::from(crate::Error::from(error))
+    }
+}
+
 struct CommittedImport {
     stats: ImportStats,
     streamers: StreamerImportDiff,
@@ -341,8 +353,8 @@ fn validation_error(message: impl Into<String>) -> ConfigurationImportError {
 }
 
 /// Database failures stay database errors; anything else rejects the bundle.
-fn write_error(error: crate::Error) -> ConfigurationImportError {
-    match error {
+fn write_error(error: impl Into<crate::Error>) -> ConfigurationImportError {
+    match error.into() {
         crate::Error::DatabaseSqlx(error) => ConfigurationImportError::Database(error),
         crate::Error::Proxy(error @ crate::proxies::ProxyError::Missing(_)) => {
             ConfigurationImportError::MissingProxy(error)

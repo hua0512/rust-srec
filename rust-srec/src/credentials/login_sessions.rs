@@ -412,9 +412,9 @@ impl CredentialLoginSessions {
         let profile = match changed {
             Ok(profile) => profile,
             Err(
-                Error::CredentialProfile(_)
-                | Error::NotFound { .. }
-                | Error::Proxy(crate::proxies::ProxyError::Missing(_)),
+                srec_sqlite::DbError::CredentialProfile(_)
+                | srec_sqlite::DbError::NotFound { .. }
+                | srec_sqlite::DbError::Proxy(crate::proxies::ProxyError::Missing(_)),
             ) => {
                 sqlx::query("UPDATE credential_login_sessions SET state = 'conflict', provider_auth_code = '' WHERE id = ?").bind(login_id).execute(&mut *tx).await?;
                 tx.commit().await?;
@@ -424,7 +424,7 @@ impl CredentialLoginSessions {
                     version: None,
                 });
             }
-            Err(error) => return Err(error),
+            Err(error) => return Err(error.into()),
         };
         sqlx::query("UPDATE credential_login_sessions SET state = 'completed', provider_auth_code = '', result_profile_id = ?, result_version = ?, completed_at = ?, expires_at = ? WHERE id = ?")
             .bind(&profile.id).bind(profile.version).bind(now).bind(now + RECEIPT_TTL_MS).bind(login_id).execute(&mut *tx).await?;

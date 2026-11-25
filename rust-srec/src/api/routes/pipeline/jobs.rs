@@ -1059,12 +1059,7 @@ async fn jobs_to_responses(state: &PipelineRouteState, jobs: Vec<Job>) -> Vec<Jo
                 .map(|streamer| (streamer.id, streamer.name))
                 .collect())
         },
-        |id| async move {
-            repository
-                .get_streamer(&id)
-                .await
-                .map(|streamer| streamer.name)
-        },
+        |id| async move { Ok(repository.get_streamer(&id).await?.name) },
     )
     .await;
     jobs.into_iter()

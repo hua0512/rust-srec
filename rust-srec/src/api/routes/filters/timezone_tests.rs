@@ -52,7 +52,7 @@ impl FilterRepository for PausedFilterRepository {
         self.inner.filter_snapshot_cache()
     }
 
-    async fn get_filter(&self, id: &str) -> crate::Result<FilterDbModel> {
+    async fn get_filter(&self, id: &str) -> srec_sqlite::DbResult<FilterDbModel> {
         let row = self.inner.get_filter(id).await?;
         if self.reads.fetch_add(1, Ordering::SeqCst) < self.paused_reads {
             self.observed.send(row.clone()).await.unwrap();
@@ -61,15 +61,18 @@ impl FilterRepository for PausedFilterRepository {
         Ok(row)
     }
 
-    async fn get_filters_for_streamer(&self, id: &str) -> crate::Result<Vec<FilterDbModel>> {
+    async fn get_filters_for_streamer(
+        &self,
+        id: &str,
+    ) -> srec_sqlite::DbResult<Vec<FilterDbModel>> {
         self.inner.get_filters_for_streamer(id).await
     }
 
-    async fn create_filter(&self, row: &FilterDbModel) -> crate::Result<()> {
+    async fn create_filter(&self, row: &FilterDbModel) -> srec_sqlite::DbResult<()> {
         self.inner.create_filter(row).await
     }
 
-    async fn update_filter(&self, row: &FilterDbModel) -> crate::Result<()> {
+    async fn update_filter(&self, row: &FilterDbModel) -> srec_sqlite::DbResult<()> {
         self.inner.update_filter(row).await
     }
 
@@ -78,18 +81,18 @@ impl FilterRepository for PausedFilterRepository {
         expected: &FilterDbModel,
         replacement: &FilterDbModel,
         on_commit: FilterCommitHook,
-    ) -> crate::Result<bool> {
+    ) -> srec_sqlite::DbResult<bool> {
         self.updates.fetch_add(1, Ordering::SeqCst);
         self.inner
             .update_filter_if_current(expected, replacement, on_commit)
             .await
     }
 
-    async fn delete_filter(&self, id: &str) -> crate::Result<()> {
+    async fn delete_filter(&self, id: &str) -> srec_sqlite::DbResult<()> {
         self.inner.delete_filter(id).await
     }
 
-    async fn delete_filters_for_streamer(&self, id: &str) -> crate::Result<()> {
+    async fn delete_filters_for_streamer(&self, id: &str) -> srec_sqlite::DbResult<()> {
         self.inner.delete_filters_for_streamer(id).await
     }
 }

@@ -276,20 +276,21 @@ mod tests {
         // Mirror the production contract: if SQLite rejects a row, the
         // live update would lie about durability. The drain task must
         // skip the broadcast on failure.
-        use crate::Result;
         use async_trait::async_trait;
 
         struct AlwaysFailRepo;
         #[async_trait]
         impl StreamerCheckHistoryRepository for AlwaysFailRepo {
-            async fn insert(&self, _: &StreamerCheckHistoryDbModel) -> Result<()> {
-                Err(crate::Error::Other("simulated DB failure".to_string()))
+            async fn insert(&self, _: &StreamerCheckHistoryDbModel) -> srec_sqlite::DbResult<()> {
+                Err(srec_sqlite::DbError::Other(
+                    "simulated DB failure".to_string(),
+                ))
             }
             async fn list_recent(
                 &self,
                 _: &str,
                 _: i64,
-            ) -> Result<Vec<StreamerCheckHistoryDbModel>> {
+            ) -> srec_sqlite::DbResult<Vec<StreamerCheckHistoryDbModel>> {
                 Ok(Vec::new())
             }
         }

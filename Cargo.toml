@@ -5,6 +5,8 @@ members = [
     "mesio-cli",
     "strev-cli",
     "rust-srec",
+    "rust-srec/crates/srec-core",
+    "rust-srec/crates/srec-sqlite",
     "rust-srec/src-tauri",
     "crates/flv",
     "crates/flv-fix",
@@ -80,6 +82,9 @@ sha2 = "0.11.1"
 hex = "0.4.3"
 flate2 = { version = "1.1.10", features = ["zlib-rs"], default-features = false }
 url = "2.5.8"
+percent-encoding = "2.3.2"
+srec-core = { path = "rust-srec/crates/srec-core" }
+srec-sqlite = { path = "rust-srec/crates/srec-sqlite" }
 anyhow = "1.0.104"
 tower-http = { version = "0.7.1", features = ["cors", "trace", "request-id", "fs"] }
 tempfile = "3.27.0"

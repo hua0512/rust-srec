@@ -33,7 +33,9 @@ async fn assert_context_publication_boundary(paired: bool, fail: bool) {
         }
         observed_at_publish.fetch_add(1, Ordering::SeqCst);
         if fail {
-            Err(Error::Database("injected publication failure".to_string()))
+            Err(DbError::Database(
+                "injected publication failure".to_string(),
+            ))
         } else {
             Ok(())
         }

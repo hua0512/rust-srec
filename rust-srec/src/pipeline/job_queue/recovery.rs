@@ -60,9 +60,10 @@ impl JobQueue {
 
     /// Read the current processing count without scanning completed job history.
     pub async fn count_processing_jobs(&self) -> Result<u64> {
-        self.job_repository
+        Ok(self
+            .job_repository
             .count_jobs_by_status(JobStatus::Processing)
-            .await
+            .await?)
     }
 
     /// Get job statistics.

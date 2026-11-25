@@ -130,7 +130,7 @@ async fn explicit_policy_reference_blocks_profile_delete_and_owner_delete_remove
     assert!(
         matches!(
             &error,
-            rust_srec::Error::CredentialProfile(rust_srec::credentials::ProfileError::Referenced(references))
+            rust_srec::database::DbError::CredentialProfile(rust_srec::credentials::ProfileError::Referenced(references))
                 if references.recordings.is_empty()
                     && references.selections.len() == 1
                     && references.selections[0].owner == owner

@@ -829,11 +829,11 @@ impl crate::baidupcs::BaiduPcsAuthenticator for MockAuthenticator {
         &self,
         _config_dir: Option<&str>,
         _material: &crate::baidupcs::LoginMaterial,
-    ) -> Result<()> {
+    ) -> srec_core::CoreResult<()> {
         Ok(())
     }
 
-    async fn delete_credentials(&self, _config_dir: Option<&str>) -> Result<()> {
+    async fn delete_credentials(&self, _config_dir: Option<&str>) -> srec_core::CoreResult<()> {
         Ok(())
     }
 
@@ -842,7 +842,7 @@ impl crate::baidupcs::BaiduPcsAuthenticator for MockAuthenticator {
         _binary_path: &str,
         _config_dir: Option<&str>,
         _proxy: &ProxyTarget,
-    ) -> Result<bool> {
+    ) -> srec_core::CoreResult<bool> {
         self.relogin_calls
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Ok(self.relogin_result)

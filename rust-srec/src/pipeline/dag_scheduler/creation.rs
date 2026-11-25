@@ -109,7 +109,7 @@ impl DagScheduler {
             if let Some(rollback) = rollback {
                 rollback();
             }
-            return Err(error);
+            return Err(error.into());
         }
         // Do not roll back on cancellation of an in-flight publication: commit may already
         // have succeeded without the caller observing it. Only a definite error rolls back.
@@ -318,12 +318,13 @@ impl DagScheduler {
             .create_job_for_step(step_execution_id, &job_db)
             .await
         {
-            let materialized_elsewhere = matches!(error, Error::InvalidStateTransition { .. })
-                && self
-                    .dag_repository
-                    .get_step(step_execution_id)
-                    .await
-                    .is_ok_and(|step| step.job_id.is_some());
+            let materialized_elsewhere =
+                matches!(error, srec_sqlite::DbError::InvalidStateTransition { .. })
+                    && self
+                        .dag_repository
+                        .get_step(step_execution_id)
+                        .await
+                        .is_ok_and(|step| step.job_id.is_some());
             if materialized_elsewhere {
                 warn!(
                     dag_id = %dag_id,
@@ -332,7 +333,7 @@ impl DagScheduler {
                 );
                 return Ok(None);
             }
-            return Err(error);
+            return Err(error.into());
         }
 
         // Add to job queue cache and notify workers

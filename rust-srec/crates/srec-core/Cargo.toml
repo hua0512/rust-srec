@@ -1,0 +1,39 @@
+[package]
+name = "srec-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Storage-free domain layer, shared ports, and core utilities for rust-srec"
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+hex = { workspace = true }
+jiff = { workspace = true, features = ["tzdb-bundle-always"] }
+jiff-cron = { workspace = true }
+parking_lot = { workspace = true }
+percent-encoding = { workspace = true }
+pipeline-common = { path = "../../../crates/pipeline-common" }
+rand = { workspace = true }
+regex = { workspace = true }
+reqwest = { workspace = true }
+rustls = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }

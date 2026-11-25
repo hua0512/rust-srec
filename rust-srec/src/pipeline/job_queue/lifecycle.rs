@@ -105,7 +105,7 @@ impl JobQueue {
 
     /// Count pending jobs, optionally filtered by job types.
     pub async fn count_pending_jobs(&self, job_types: Option<&[String]>) -> Result<u64> {
-        self.job_repository.count_pending_jobs(job_types).await
+        Ok(self.job_repository.count_pending_jobs(job_types).await?)
     }
 
     /// Mark a job as completed.
@@ -495,8 +495,8 @@ impl JobQueue {
                 }
                 Ok(Some(job))
             }
-            Err(Error::NotFound { .. }) => Ok(None),
-            Err(e) => Err(e),
+            Err(srec_sqlite::DbError::NotFound { .. }) => Ok(None),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -663,11 +663,11 @@ impl JobQueue {
                         _ => {}
                     }
                 }
-                Err(Error::NotFound { .. }) => {
+                Err(srec_sqlite::DbError::NotFound { .. }) => {
                     // Job doesn't exist, so deletion is trivially successful
                     return Ok(());
                 }
-                Err(e) => return Err(e),
+                Err(e) => return Err(e.into()),
             }
         }
 
@@ -911,7 +911,7 @@ impl JobQueue {
         .await;
         if let Err(error) = result {
             self.rollback_split_jobs(&created_job_ids).await;
-            return Err(error);
+            return Err(error.into());
         }
 
         // Remove cancellation token for original job

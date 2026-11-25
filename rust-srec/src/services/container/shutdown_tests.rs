@@ -418,6 +418,7 @@ async fn retained_drain_allows_only_its_own_nested_completion_after_a_hard_timeo
                                 |_| {},
                             )
                             .await
+                            .map_err(crate::Error::from)
                     })
                 },
             )

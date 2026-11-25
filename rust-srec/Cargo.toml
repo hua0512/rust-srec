@@ -27,7 +27,7 @@ async-trait = { workspace = true }
 reqwest = { workspace = true }
 sqlx = { workspace = true }
 url = { workspace = true }
-percent-encoding = "2.3.2"
+percent-encoding = { workspace = true }
 base64 = { workspace = true }
 rustls = { workspace = true }
 aes-gcm = { workspace = true }
@@ -47,6 +47,8 @@ sysinfo = { workspace = true }
 
 # Workspace crates
 
+srec-core = { workspace = true }
+srec-sqlite = { workspace = true }
 pipeline-common = { path = "../crates/pipeline-common" }
 flv = { path = "../crates/flv" }
 flv-fix = { path = "../crates/flv-fix", features = ["progress"] }
@@ -101,6 +103,7 @@ windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Secur
 libc = "0.2.190"
 
 [dev-dependencies]
+srec-sqlite = { workspace = true, features = ["test-support"] }
 m3u8-rs = { workspace = true }
 syn = { version = "3", features = ["full", "visit"] }
 tokio = { workspace = true, features = ["test-util"] }

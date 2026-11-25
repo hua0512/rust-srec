@@ -171,4 +171,153 @@ impl Error {
                 )
         )
     }
+
+    pub(crate) fn into_core_error(self) -> srec_core::CoreError {
+        match self {
+            Self::ManualSplit(e) => srec_core::CoreError::ManualSplit(e),
+            Self::SchedulerFeedbackBusy { streamer_id } => {
+                srec_core::CoreError::SchedulerFeedbackBusy { streamer_id }
+            }
+            Self::DatabaseSqlx(e) => srec_core::CoreError::Database(e.to_string()),
+            Self::FilterSnapshot(e) => srec_core::CoreError::Database(e.to_string()),
+            Self::Database(msg) => srec_core::CoreError::Database(msg),
+            Self::Serialization(e) => srec_core::CoreError::Serialization(e),
+            Self::InvalidStateTransition { from, to } => {
+                srec_core::CoreError::InvalidStateTransition { from, to }
+            }
+            Self::NotFound { entity_type, id } => {
+                srec_core::CoreError::NotFound { entity_type, id }
+            }
+            Self::Validation(msg) => srec_core::CoreError::Validation(msg),
+            Self::Conflict(msg) => srec_core::CoreError::Conflict(msg),
+            Self::DagAlreadyTerminal { dag_id } => {
+                srec_core::CoreError::DagAlreadyTerminal { dag_id }
+            }
+            Self::Configuration(msg) => srec_core::CoreError::Configuration(msg),
+            Self::Io(e) => srec_core::CoreError::Io(e),
+            Self::IoPath { op, path, source } => srec_core::CoreError::IoPath { op, path, source },
+            Self::Monitor(msg) => srec_core::CoreError::Monitor(msg),
+            Self::Extractor(e) => srec_core::CoreError::Other(e.to_string()),
+            Self::CredentialProfile(e) => srec_core::CoreError::CredentialProfile(e),
+            Self::CredentialUnavailable(e) => srec_core::CoreError::CredentialUnavailable(e),
+            Self::Proxy(e) => srec_core::CoreError::Proxy(e),
+            Self::PipelineError(msg) => srec_core::CoreError::PipelineError(msg),
+            Self::NonRetryablePipeline(msg) => srec_core::CoreError::NonRetryablePipeline(msg),
+            Self::ApiError(msg) => srec_core::CoreError::ApiError(msg),
+            Self::DanmakuError(e) => srec_core::CoreError::Other(e.to_string()),
+            Self::Other(msg) => srec_core::CoreError::Other(msg),
+            Self::NotificationDelivery { channel, message } => {
+                srec_core::CoreError::NotificationDelivery { channel, message }
+            }
+            Self::DuplicateUrl(url) => srec_core::CoreError::DuplicateUrl(url),
+            Self::PresetInUse {
+                change,
+                kind,
+                name,
+                users,
+            } => srec_core::CoreError::PresetInUse {
+                change,
+                kind,
+                name,
+                users,
+            },
+        }
+    }
+}
+
+impl From<srec_core::CoreError> for Error {
+    fn from(error: srec_core::CoreError) -> Self {
+        match error {
+            srec_core::CoreError::ManualSplit(e) => Self::ManualSplit(e),
+            srec_core::CoreError::SchedulerFeedbackBusy { streamer_id } => {
+                Self::SchedulerFeedbackBusy { streamer_id }
+            }
+            srec_core::CoreError::Database(msg) => Self::Database(msg),
+            srec_core::CoreError::Serialization(e) => Self::Serialization(e),
+            srec_core::CoreError::InvalidStateTransition { from, to } => {
+                Self::InvalidStateTransition { from, to }
+            }
+            srec_core::CoreError::NotFound { entity_type, id } => {
+                Self::NotFound { entity_type, id }
+            }
+            srec_core::CoreError::Validation(msg) => Self::Validation(msg),
+            srec_core::CoreError::Conflict(msg) => Self::Conflict(msg),
+            srec_core::CoreError::DagAlreadyTerminal { dag_id } => {
+                Self::DagAlreadyTerminal { dag_id }
+            }
+            srec_core::CoreError::Configuration(msg) => Self::Configuration(msg),
+            srec_core::CoreError::Io(e) => Self::Io(e),
+            srec_core::CoreError::IoPath { op, path, source } => Self::IoPath { op, path, source },
+            srec_core::CoreError::Monitor(msg) => Self::Monitor(msg),
+            srec_core::CoreError::CredentialProfile(e) => Self::CredentialProfile(e),
+            srec_core::CoreError::CredentialUnavailable(e) => Self::CredentialUnavailable(e),
+            srec_core::CoreError::Proxy(e) => Self::Proxy(e),
+            srec_core::CoreError::PipelineError(msg) => Self::PipelineError(msg),
+            srec_core::CoreError::NonRetryablePipeline(msg) => Self::NonRetryablePipeline(msg),
+            srec_core::CoreError::ApiError(msg) => Self::ApiError(msg),
+            srec_core::CoreError::Other(msg) => Self::Other(msg),
+            srec_core::CoreError::NotificationDelivery { channel, message } => {
+                Self::NotificationDelivery { channel, message }
+            }
+            srec_core::CoreError::DuplicateUrl(url) => Self::DuplicateUrl(url),
+            srec_core::CoreError::PresetInUse {
+                change,
+                kind,
+                name,
+                users,
+            } => Self::PresetInUse {
+                change,
+                kind,
+                name,
+                users,
+            },
+        }
+    }
+}
+
+impl From<srec_sqlite::DbError> for Error {
+    fn from(error: srec_sqlite::DbError) -> Self {
+        match error {
+            srec_sqlite::DbError::DatabaseSqlx(e) => Self::DatabaseSqlx(e),
+            srec_sqlite::DbError::FilterSnapshot(e) => Self::FilterSnapshot(e),
+            srec_sqlite::DbError::Database(msg) => Self::Database(msg),
+            srec_sqlite::DbError::Serialization(e) => Self::Serialization(e),
+            srec_sqlite::DbError::InvalidStateTransition { from, to } => {
+                Self::InvalidStateTransition { from, to }
+            }
+            srec_sqlite::DbError::NotFound { entity_type, id } => {
+                Self::NotFound { entity_type, id }
+            }
+            srec_sqlite::DbError::Validation(msg) => Self::Validation(msg),
+            srec_sqlite::DbError::Conflict(msg) => Self::Conflict(msg),
+            srec_sqlite::DbError::Configuration(msg) => Self::Configuration(msg),
+            srec_sqlite::DbError::Io(e) => Self::Io(e),
+            srec_sqlite::DbError::IoPath { op, path, source } => Self::IoPath { op, path, source },
+            srec_sqlite::DbError::CredentialProfile(e) => Self::CredentialProfile(e),
+            srec_sqlite::DbError::CredentialUnavailable(e) => Self::CredentialUnavailable(e),
+            srec_sqlite::DbError::Proxy(e) => Self::Proxy(e),
+            srec_sqlite::DbError::DuplicateUrl(url) => Self::DuplicateUrl(url),
+            srec_sqlite::DbError::PresetInUse {
+                change,
+                kind,
+                name,
+                users,
+            } => Self::PresetInUse {
+                change,
+                kind,
+                name,
+                users,
+            },
+            srec_sqlite::DbError::Other(msg) => Self::Other(msg),
+        }
+    }
+}
+
+impl srec_sqlite::retry::SqlxErrorRef for Error {
+    fn as_sqlx_error(&self) -> Option<&sqlx::Error> {
+        match self {
+            Self::DatabaseSqlx(err) => Some(err),
+            _ => None,
+        }
+    }
 }

@@ -254,7 +254,7 @@ impl MaintenanceRepository {
                         .bind(self.batch_size)
                         .execute(&self.write_pool)
                         .await?;
-                    Ok(result.rows_affected())
+                    Ok::<_, crate::Error>(result.rows_affected())
                 }) => result?,
             };
             total += result;

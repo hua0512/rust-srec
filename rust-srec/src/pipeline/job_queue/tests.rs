@@ -794,20 +794,26 @@ async fn due_retry_waits_for_the_failed_attempt_cleanup() {
 
     #[async_trait::async_trait]
     impl UploadRecordRepository for PausedUploads {
-        async fn upsert_records(&self, _records: &[UploadRecordDbModel]) -> Result<()> {
+        async fn upsert_records(
+            &self,
+            _records: &[UploadRecordDbModel],
+        ) -> srec_sqlite::DbResult<()> {
             self.entered.notify_one();
             self.release.notified().await;
             Ok(())
         }
 
-        async fn list_by_job(&self, _job_id: &str) -> Result<Vec<UploadRecordDbModel>> {
+        async fn list_by_job(
+            &self,
+            _job_id: &str,
+        ) -> srec_sqlite::DbResult<Vec<UploadRecordDbModel>> {
             Ok(Vec::new())
         }
 
         async fn list_by_session_local_paths(
             &self,
             _output_keys: &[(String, String)],
-        ) -> Result<Vec<UploadRecordDbModel>> {
+        ) -> srec_sqlite::DbResult<Vec<UploadRecordDbModel>> {
             Ok(Vec::new())
         }
     }

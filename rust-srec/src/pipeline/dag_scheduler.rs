@@ -222,6 +222,18 @@ impl From<Error> for DagRetryError {
     }
 }
 
+impl From<srec_sqlite::DbError> for DagRetryError {
+    fn from(error: srec_sqlite::DbError) -> Self {
+        Self::Rejected(error.into())
+    }
+}
+
+impl From<srec_core::CoreError> for DagRetryError {
+    fn from(error: srec_core::CoreError) -> Self {
+        Self::Rejected(error.into())
+    }
+}
+
 /// What [`DagScheduler::retry_dag`] does with a retryable step's job.
 pub(super) enum RetryAction {
     /// The job failed or was cancelled: it runs again.

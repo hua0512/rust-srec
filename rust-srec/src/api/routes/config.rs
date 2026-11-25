@@ -709,7 +709,7 @@ pub async fn replace_platform_config(
         .as_deref()
         .map(|raw| {
             serde_json::from_str(raw)
-                .map_err(|_| crate::Error::validation("invalid credential selection"))
+                .map_err(|_| srec_core::CoreError::validation("invalid credential selection"))
                 .and_then(crate::credentials::CredentialSelection::from_value)
         })
         .transpose()?;

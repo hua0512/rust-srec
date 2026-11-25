@@ -314,6 +314,18 @@ impl From<Error> for ApiError {
     }
 }
 
+impl From<srec_core::CoreError> for ApiError {
+    fn from(err: srec_core::CoreError) -> Self {
+        Self::from(Error::from(err))
+    }
+}
+
+impl From<srec_sqlite::DbError> for ApiError {
+    fn from(err: srec_sqlite::DbError) -> Self {
+        Self::from(Error::from(err))
+    }
+}
+
 impl From<crate::proxies::ProxyError> for ApiError {
     fn from(error: crate::proxies::ProxyError) -> Self {
         use crate::proxies::ProxyError;
@@ -495,6 +507,10 @@ mod tests {
             ApiError::from(Error::Validation("At most 100 IDs are allowed".to_string()));
         assert_eq!(validation.status, StatusCode::UNPROCESSABLE_ENTITY);
         assert_eq!(validation.message, "At most 100 IDs are allowed");
+        let per_streamer = ApiError::from(srec_sqlite::DbError::CredentialProfile(
+            crate::credentials::ProfileError::PerStreamerOnly("per streamer"),
+        ));
+        assert_eq!(per_streamer.status, StatusCode::UNPROCESSABLE_ENTITY);
     }
 
     #[test]

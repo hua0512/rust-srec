@@ -685,6 +685,12 @@ impl From<crate::Error> for EngineStartError {
     }
 }
 
+impl From<srec_core::CoreError> for EngineStartError {
+    fn from(err: srec_core::CoreError) -> Self {
+        Self::from(crate::Error::from(err))
+    }
+}
+
 /// Walk `err`'s `std::error::Error::source()` chain and return the
 /// `std::io::ErrorKind` of the first `std::io::Error` encountered, if any.
 fn io_error_kind_in_chain(err: &(dyn std::error::Error + 'static)) -> Option<std::io::ErrorKind> {

@@ -117,7 +117,7 @@ impl ProxyService {
                 let mut tx = crate::database::begin_immediate(&pool).await?;
                 let entry = proxies::create(&mut tx, None, &name, &endpoint).await?;
                 crate::database::committed_writer::commit_owned(tx).await?;
-                Ok(entry)
+                Ok::<_, crate::Error>(entry)
             })
             .await?;
         tracing::info!(proxy_id = %entry.id, name = %entry.name, "Proxy saved");
@@ -211,17 +211,17 @@ impl ProxyService {
             }
             RouteScope::Account { profile_id } => {
                 let profile = self.profiles.get(profile_id).await?;
-                return proxies::resolve_account(
+                return Ok(proxies::resolve_account(
                     &mut connection,
                     &profile.platform_config_id,
                     &profile.route()?,
                     None,
                     system,
                 )
-                .await;
+                .await?);
             }
         };
-        proxies::resolve_layers(&mut connection, &layers, system).await
+        Ok(proxies::resolve_layers(&mut connection, &layers, system).await?)
     }
 
     /// The saved login of an entry, for checks of an edited entry that keep

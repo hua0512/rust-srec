@@ -525,7 +525,7 @@ where
 
                 Ok(Some(metadata))
             }
-            Err(crate::Error::NotFound { .. }) => {
+            Err(srec_sqlite::DbError::NotFound { .. }) => {
                 let removed = self.metadata.remove(id);
                 if let Some((_, entry)) = &removed {
                     self.url_index.remove(&entry.url.to_lowercase());
@@ -542,7 +542,7 @@ where
 
                 Ok(None)
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -1003,40 +1003,40 @@ mod tests {
 
     #[async_trait]
     impl StreamerRepository for MockStreamerRepository {
-        async fn list_all_streamers(&self) -> Result<Vec<StreamerDbModel>> {
+        async fn list_all_streamers(&self) -> srec_sqlite::DbResult<Vec<StreamerDbModel>> {
             Ok(self.streamers.lock().unwrap().clone())
         }
 
-        async fn get_streamer(&self, id: &str) -> Result<StreamerDbModel> {
+        async fn get_streamer(&self, id: &str) -> srec_sqlite::DbResult<StreamerDbModel> {
             self.streamers
                 .lock()
                 .unwrap()
                 .iter()
                 .find(|s| s.id == id)
                 .cloned()
-                .ok_or_else(|| crate::Error::not_found("Streamer", id))
+                .ok_or_else(|| srec_sqlite::DbError::not_found("Streamer", id))
         }
 
-        async fn get_streamer_by_url(&self, url: &str) -> Result<StreamerDbModel> {
+        async fn get_streamer_by_url(&self, url: &str) -> srec_sqlite::DbResult<StreamerDbModel> {
             self.streamers
                 .lock()
                 .unwrap()
                 .iter()
                 .find(|s| s.url == url)
                 .cloned()
-                .ok_or_else(|| crate::Error::not_found("Streamer", url))
+                .ok_or_else(|| srec_sqlite::DbError::not_found("Streamer", url))
         }
 
-        async fn list_streamers(&self) -> Result<Vec<StreamerDbModel>> {
+        async fn list_streamers(&self) -> srec_sqlite::DbResult<Vec<StreamerDbModel>> {
             Ok(self.streamers.lock().unwrap().clone())
         }
 
-        async fn create_streamer(&self, streamer: &StreamerDbModel) -> Result<()> {
+        async fn create_streamer(&self, streamer: &StreamerDbModel) -> srec_sqlite::DbResult<()> {
             self.streamers.lock().unwrap().push(streamer.clone());
             Ok(())
         }
 
-        async fn update_streamer(&self, streamer: &StreamerDbModel) -> Result<()> {
+        async fn update_streamer(&self, streamer: &StreamerDbModel) -> srec_sqlite::DbResult<()> {
             let mut streamers = self.streamers.lock().unwrap();
             if let Some(s) = streamers.iter_mut().find(|s| s.id == streamer.id) {
                 s.name = streamer.name.clone();
@@ -1053,7 +1053,7 @@ mod tests {
             Ok(())
         }
 
-        async fn mark_streamer_deleted(&self, id: &str) -> Result<bool> {
+        async fn mark_streamer_deleted(&self, id: &str) -> srec_sqlite::DbResult<bool> {
             let mut streamers = self.streamers.lock().unwrap();
             match streamers
                 .iter_mut()
@@ -1067,46 +1067,62 @@ mod tests {
             }
         }
 
-        async fn delete_marked_streamer(&self, id: &str) -> Result<bool> {
+        async fn delete_marked_streamer(&self, id: &str) -> srec_sqlite::DbResult<bool> {
             let mut streamers = self.streamers.lock().unwrap();
             let before = streamers.len();
             streamers.retain(|s| !(s.id == id && s.deleted_at.is_some()));
             Ok(streamers.len() < before)
         }
 
-        async fn update_streamer_state(&self, _id: &str, _state: &str) -> Result<()> {
+        async fn update_streamer_state(
+            &self,
+            _id: &str,
+            _state: &str,
+        ) -> srec_sqlite::DbResult<()> {
             Ok(())
         }
 
-        async fn update_streamer_priority(&self, id: &str, priority: &str) -> Result<()> {
+        async fn update_streamer_priority(
+            &self,
+            id: &str,
+            priority: &str,
+        ) -> srec_sqlite::DbResult<()> {
             let mut streamers = self.streamers.lock().unwrap();
             if let Some(s) = streamers.iter_mut().find(|s| s.id == id) {
                 s.priority = priority.to_string();
                 Ok(())
             } else {
-                Err(crate::Error::not_found("Streamer", id))
+                Err(srec_sqlite::DbError::not_found("Streamer", id))
             }
         }
 
-        async fn set_disabled_until(&self, _id: &str, _until: Option<i64>) -> Result<()> {
+        async fn set_disabled_until(
+            &self,
+            _id: &str,
+            _until: Option<i64>,
+        ) -> srec_sqlite::DbResult<()> {
             Ok(())
         }
 
-        async fn update_avatar(&self, id: &str, avatar_url: Option<&str>) -> Result<()> {
+        async fn update_avatar(
+            &self,
+            id: &str,
+            avatar_url: Option<&str>,
+        ) -> srec_sqlite::DbResult<()> {
             let mut streamers = self.streamers.lock().unwrap();
             if let Some(s) = streamers.iter_mut().find(|s| s.id == id) {
                 s.avatar = avatar_url.map(|s| s.to_string());
                 Ok(())
             } else {
-                Err(crate::Error::not_found("Streamer", id))
+                Err(srec_sqlite::DbError::not_found("Streamer", id))
             }
         }
 
-        async fn clear_streamer_error_state(&self, _id: &str) -> Result<()> {
+        async fn clear_streamer_error_state(&self, _id: &str) -> srec_sqlite::DbResult<()> {
             Ok(())
         }
 
-        async fn clear_streamer_last_error(&self, _id: &str) -> Result<()> {
+        async fn clear_streamer_last_error(&self, _id: &str) -> srec_sqlite::DbResult<()> {
             Ok(())
         }
 
@@ -1115,14 +1131,14 @@ mod tests {
             _id: &str,
             _last_live_time: Option<Timestamp>,
             _checks_restored_threshold: Option<i32>,
-        ) -> Result<()> {
+        ) -> srec_sqlite::DbResult<()> {
             Ok(())
         }
 
         async fn list_streamers_by_platform(
             &self,
             platform_id: &str,
-        ) -> Result<Vec<StreamerDbModel>> {
+        ) -> srec_sqlite::DbResult<Vec<StreamerDbModel>> {
             Ok(self
                 .streamers
                 .lock()
@@ -1136,7 +1152,7 @@ mod tests {
         async fn list_streamers_by_template(
             &self,
             template_id: &str,
-        ) -> Result<Vec<StreamerDbModel>> {
+        ) -> srec_sqlite::DbResult<Vec<StreamerDbModel>> {
             Ok(self
                 .streamers
                 .lock()

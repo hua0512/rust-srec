@@ -164,6 +164,7 @@ jobs:
               - 'rust-toolchain.toml'
               - '.cargo/**'
               - 'rust-srec/Cargo.toml'
+              - 'rust-srec/crates/**'
               - 'rust-srec/proto/**'
               - 'rust-srec/migrations/**'
               - 'rust-srec/locales/**'
@@ -179,6 +180,7 @@ jobs:
             desktop:
               - 'rust-srec/src-tauri/**'
               - 'rust-srec/Cargo.toml'
+              - 'rust-srec/crates/**'
               - 'rust-srec/proto/**'
               - 'rust-srec/migrations/**'
               - 'rust-srec/locales/**'

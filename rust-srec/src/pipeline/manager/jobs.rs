@@ -415,7 +415,7 @@ impl PipelineManager {
     /// List available job presets.
     pub async fn list_presets(&self) -> Result<Vec<crate::database::models::JobPreset>> {
         if let Some(repo) = &self.preset_repo {
-            repo.list_presets().await
+            Ok(repo.list_presets().await?)
         } else {
             Ok(vec![])
         }
@@ -427,7 +427,7 @@ impl PipelineManager {
         category: Option<&str>,
     ) -> Result<Vec<crate::database::models::JobPreset>> {
         if let Some(repo) = &self.preset_repo {
-            repo.list_presets_by_category(category).await
+            Ok(repo.list_presets_by_category(category).await?)
         } else {
             Ok(vec![])
         }
@@ -436,7 +436,7 @@ impl PipelineManager {
     /// List all unique preset categories.
     pub async fn list_preset_categories(&self) -> Result<Vec<String>> {
         if let Some(repo) = &self.preset_repo {
-            repo.list_categories().await
+            Ok(repo.list_categories().await?)
         } else {
             Ok(vec![])
         }
@@ -445,7 +445,7 @@ impl PipelineManager {
     /// Get a job preset by ID.
     pub async fn get_preset(&self, id: &str) -> Result<Option<crate::database::models::JobPreset>> {
         if let Some(repo) = &self.preset_repo {
-            repo.get_preset(id).await
+            Ok(repo.get_preset(id).await?)
         } else {
             Ok(None)
         }
@@ -454,7 +454,7 @@ impl PipelineManager {
     /// Check if a preset name exists (optionally excluding a specific ID).
     pub async fn name_exists(&self, name: &str, exclude_id: Option<&str>) -> Result<bool> {
         if let Some(repo) = &self.preset_repo {
-            repo.name_exists(name, exclude_id).await
+            Ok(repo.name_exists(name, exclude_id).await?)
         } else {
             Ok(false)
         }
@@ -463,7 +463,7 @@ impl PipelineManager {
     /// Create a new job preset.
     pub async fn create_preset(&self, preset: &crate::database::models::JobPreset) -> Result<()> {
         if let Some(repo) = &self.preset_repo {
-            repo.create_preset(preset).await
+            Ok(repo.create_preset(preset).await?)
         } else {
             Err(crate::Error::Validation(
                 "Presets not supported (no repository)".to_string(),
@@ -474,7 +474,7 @@ impl PipelineManager {
     /// Update an existing job preset.
     pub async fn update_preset(&self, preset: &crate::database::models::JobPreset) -> Result<()> {
         if let Some(repo) = &self.preset_repo {
-            repo.update_preset(preset).await
+            Ok(repo.update_preset(preset).await?)
         } else {
             Err(crate::Error::Validation(
                 "Presets not supported (no repository)".to_string(),
@@ -485,7 +485,7 @@ impl PipelineManager {
     /// Delete a job preset.
     pub async fn delete_preset(&self, id: &str) -> Result<()> {
         if let Some(repo) = &self.preset_repo {
-            repo.delete_preset(id).await
+            Ok(repo.delete_preset(id).await?)
         } else {
             Err(crate::Error::Validation(
                 "Presets not supported (no repository)".to_string(),

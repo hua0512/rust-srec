@@ -809,8 +809,68 @@ fn extract_file_refs(src_root: &Path, file: &Path, skip_cfg_test: bool) -> Extra
     collector.refs
 }
 
-fn production_source_files() -> (PathBuf, Vec<(PathBuf, ModuleSlot, ExtractedRefs)>) {
-    let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+/// Source classification for every analyzed file across `rust-srec/src/` and
+/// extracted internal crates under `rust-srec/crates/srec-*`.
+struct AnalyzedFile {
+    display_path: String,
+    slot: ModuleSlot,
+    /// True when the file lives in `rust-srec/src/` so its `crate::...` paths
+    /// resolve against `slot_for_module_path`.
+    is_root_crate: bool,
+    refs: ExtractedRefs,
+}
+
+fn component_for_external_crate(ident: &str) -> Option<Component> {
+    match ident {
+        "srec_core" => Some(Component::Core),
+        "srec_sqlite" => Some(Component::Sqlite),
+        "rust_srec" => Some(Component::AppEntry),
+        _ => None,
+    }
+}
+
+fn analyze_extracted_crate(
+    crate_dir: &Path,
+    display_prefix: &str,
+    component: Component,
+    include_unit_tests: bool,
+    out: &mut Vec<AnalyzedFile>,
+) {
+    let src_root = crate_dir.join("src");
+    let mut files = Vec::new();
+    rust_files(&src_root, &mut files);
+    files.sort();
+    assert!(
+        !files.is_empty(),
+        "expected Rust source files under {}",
+        src_root.display()
+    );
+
+    let cfg_test_submodules = collect_cfg_test_submodule_paths(&src_root, &files);
+    for file in files {
+        if !include_unit_tests
+            && (is_named_test_source(&file) || is_cfg_test_submodule(&file, &cfg_test_submodules))
+        {
+            continue;
+        }
+        let rel = file
+            .strip_prefix(&src_root)
+            .unwrap_or(&file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let refs = extract_file_refs(&src_root, &file, !include_unit_tests);
+        out.push(AnalyzedFile {
+            display_path: format!("{display_prefix}/{rel}"),
+            slot: ModuleSlot::Layer(component),
+            is_root_crate: false,
+            refs,
+        });
+    }
+}
+
+fn production_source_files() -> Vec<AnalyzedFile> {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let src_root = manifest_dir.join("src");
     let mut files = Vec::new();
     rust_files(&src_root, &mut files);
     files.sort();
@@ -819,14 +879,27 @@ fn production_source_files() -> (PathBuf, Vec<(PathBuf, ModuleSlot, ExtractedRef
 
     let mut unmapped = Vec::new();
     let mut analyzed = Vec::new();
+
+    // Scan extracted Layer 0 workspace crates directly. `srec-core` includes its
+    // unit tests so domain and utility tests stay storage-free as well.
+    analyze_extracted_crate(
+        &manifest_dir.join("crates/srec-core"),
+        "crates/srec-core/src",
+        Component::Core,
+        true,
+        &mut analyzed,
+    );
+    analyze_extracted_crate(
+        &manifest_dir.join("crates/srec-sqlite"),
+        "crates/srec-sqlite/src",
+        Component::Sqlite,
+        false,
+        &mut analyzed,
+    );
+
     for file in files {
         let segs = file_module_segments(&src_root, &file);
-        let is_domain = matches!(segs.first().map(String::as_str), Some("domain"));
-        // Guard `src/domain/**` including its unit tests so `srec-core` stays
-        // self-contained without moving tests when extracted into its own crate.
-        if !is_domain
-            && (is_named_test_source(&file) || is_cfg_test_submodule(&file, &cfg_test_submodules))
-        {
+        if is_named_test_source(&file) || is_cfg_test_submodule(&file, &cfg_test_submodules) {
             continue;
         }
         let seg_refs: Vec<&str> = segs.iter().map(String::as_str).collect();
@@ -839,8 +912,18 @@ fn production_source_files() -> (PathBuf, Vec<(PathBuf, ModuleSlot, ExtractedRef
             );
             continue;
         };
-        let refs = extract_file_refs(&src_root, &file, !is_domain);
-        analyzed.push((file, slot, refs));
+        let rel = file
+            .strip_prefix(&src_root)
+            .unwrap_or(&file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let refs = extract_file_refs(&src_root, &file, true);
+        analyzed.push(AnalyzedFile {
+            display_path: rel,
+            slot,
+            is_root_crate: true,
+            refs,
+        });
     }
 
     assert!(
@@ -849,7 +932,38 @@ fn production_source_files() -> (PathBuf, Vec<(PathBuf, ModuleSlot, ExtractedRef
         unmapped.join("\n")
     );
 
-    (src_root, analyzed)
+    analyzed
+}
+
+fn check_layer_edge(
+    display_path: &str,
+    source_slot: ModuleSlot,
+    target_slot: ModuleSlot,
+    via: &str,
+    violations: &mut Vec<String>,
+) {
+    match (source_slot, target_slot) {
+        // Every layer returns `crate::Error` / `crate::Result` while hosted in `rust-srec`.
+        (_, ModuleSlot::ErrorRoot) => {}
+        // `src/error.rs` may only reference Layer 0 types (`Core`, `Sqlite`).
+        (ModuleSlot::ErrorRoot, ModuleSlot::Layer(target)) => {
+            if !matches!(target, Component::Core | Component::Sqlite) {
+                violations.push(format!(
+                    "{display_path}: error_root -> {} via {via}",
+                    target.name()
+                ));
+            }
+        }
+        (ModuleSlot::Layer(src), ModuleSlot::Layer(dst)) => {
+            if !src.may_depend_on(dst) {
+                violations.push(format!(
+                    "{display_path}: {} -> {} via {via}",
+                    src.name(),
+                    dst.name()
+                ));
+            }
+        }
+    }
 }
 
 #[test]
@@ -885,45 +999,49 @@ fn production_modules_respect_acyclic_layered_dag() {
         "Component::allowed_deps must be acyclic"
     );
 
-    let (src_root, analyzed) = production_source_files();
+    let analyzed = production_source_files();
     assert!(
         !analyzed.is_empty(),
-        "expected production Rust files under rust-srec/src/"
+        "expected production Rust files under rust-srec/src/ and rust-srec/crates/"
     );
 
     let mut violations = Vec::new();
-    for (file, source_slot, refs) in &analyzed {
-        let rel = file.strip_prefix(&src_root).unwrap_or(file);
-        for internal_path in &refs.internal_paths {
-            let segs: Vec<&str> = internal_path.iter().map(String::as_str).collect();
-            let Some(target_slot) = slot_for_module_path(&segs) else {
-                continue;
-            };
-            match (*source_slot, target_slot) {
-                // Every layer returns `crate::Error` / `crate::Result` until crates split.
-                (_, ModuleSlot::ErrorRoot) => {}
-                // `src/error.rs` may only reference Layer 0 types (`Core`, `Sqlite`).
-                (ModuleSlot::ErrorRoot, ModuleSlot::Layer(target)) => {
-                    if !matches!(target, Component::Core | Component::Sqlite) {
-                        violations.push(format!(
-                            "{}: error_root -> {} via crate::{}",
-                            rel.display(),
-                            target.name(),
-                            internal_path.join("::")
-                        ));
-                    }
-                }
-                (ModuleSlot::Layer(src), ModuleSlot::Layer(dst)) => {
-                    if !src.may_depend_on(dst) {
-                        violations.push(format!(
-                            "{}: {} -> {} via crate::{}",
-                            rel.display(),
-                            src.name(),
-                            dst.name(),
-                            internal_path.join("::")
-                        ));
-                    }
-                }
+    for entry in &analyzed {
+        if entry.is_root_crate {
+            for internal_path in &entry.refs.internal_paths {
+                let segs: Vec<&str> = internal_path.iter().map(String::as_str).collect();
+                let Some(target_slot) = slot_for_module_path(&segs) else {
+                    continue;
+                };
+                check_layer_edge(
+                    &entry.display_path,
+                    entry.slot,
+                    target_slot,
+                    &format!("crate::{}", internal_path.join("::")),
+                    &mut violations,
+                );
+            }
+        }
+        for ext in &entry.refs.external_roots {
+            if let Some(target_component) = component_for_external_crate(ext) {
+                check_layer_edge(
+                    &entry.display_path,
+                    entry.slot,
+                    ModuleSlot::Layer(target_component),
+                    ext,
+                    &mut violations,
+                );
+            }
+        }
+        if !entry.is_root_crate && !entry.refs.rust_srec_paths.is_empty() {
+            for path in &entry.refs.rust_srec_paths {
+                check_layer_edge(
+                    &entry.display_path,
+                    entry.slot,
+                    ModuleSlot::Layer(Component::AppEntry),
+                    &path.join("::"),
+                    &mut violations,
+                );
             }
         }
     }
@@ -1026,35 +1144,29 @@ fn heavy_external_dependencies_stay_within_target_crates() {
         },
     ];
 
-    let (src_root, analyzed) = production_source_files();
+    let analyzed = production_source_files();
     let mut violations = Vec::new();
 
-    for (file, slot, refs) in &analyzed {
-        let rel = file
-            .strip_prefix(&src_root)
-            .unwrap_or(file)
-            .to_string_lossy()
-            .replace('\\', "/");
+    for entry in &analyzed {
+        let rel = entry.display_path.as_str();
 
-        if rel == "i18n.rs" && refs.has_macro_export {
+        if rel == "i18n.rs" && entry.refs.has_macro_export {
             violations.push(
                 "i18n.rs: exports i18n macros outside the crate via #[macro_export]".to_owned(),
             );
         }
 
-        let slot_name = match slot {
+        let slot_name = match entry.slot {
             ModuleSlot::Layer(c) => c.name(),
             ModuleSlot::ErrorRoot => "error_root",
         };
 
         for rule in RULES {
-            if rule.allowed_slots.contains(slot)
-                || rule.allowed_files.iter().any(|allowed| *allowed == rel)
-            {
+            if rule.allowed_slots.contains(&entry.slot) || rule.allowed_files.contains(&rel) {
                 continue;
             }
             for &crate_name in rule.crates {
-                if refs.external_roots.contains(crate_name) {
+                if entry.refs.external_roots.contains(crate_name) {
                     violations.push(format!(
                         "{rel} ({slot_name}): forbidden external crate `{crate_name}` ({})",
                         rule.rationale
@@ -1062,7 +1174,7 @@ fn heavy_external_dependencies_stay_within_target_crates() {
                 }
             }
             for &marker in rule.bare_markers {
-                if refs.bare_markers.contains(marker) {
+                if entry.refs.bare_markers.contains(marker) {
                     violations.push(format!(
                         "{rel} ({slot_name}): forbidden macro/derive `{marker}` ({})",
                         rule.rationale
@@ -1075,6 +1187,92 @@ fn heavy_external_dependencies_stay_within_target_crates() {
     assert!(
         violations.is_empty(),
         "heavy external dependencies escaped their target crate boundaries:\n{}",
+        violations.join("\n")
+    );
+}
+
+fn manifest_dependency_names(manifest_path: &Path) -> BTreeSet<String> {
+    let contents = fs::read_to_string(manifest_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", manifest_path.display()));
+    let mut deps = BTreeSet::new();
+    let mut in_deps = false;
+    for raw_line in contents.lines() {
+        let line = raw_line.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line.starts_with('[') && line.ends_with(']') {
+            let header = &line[1..line.len() - 1];
+            in_deps = header == "dependencies"
+                || header == "dev-dependencies"
+                || header == "build-dependencies"
+                || header.ends_with(".dependencies")
+                || header.ends_with(".dev-dependencies")
+                || header.ends_with(".build-dependencies");
+            continue;
+        }
+        if in_deps && let Some((key, _)) = line.split_once('=') {
+            let key = key.trim().trim_matches('"');
+            if !key.is_empty() {
+                deps.insert(key.to_owned());
+            }
+        }
+    }
+    deps
+}
+
+#[test]
+fn extracted_layer0_manifests_isolate_forbidden_dependencies() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let shared_forbidden = [
+        "rust-srec",
+        "axum",
+        "utoipa",
+        "utoipa-swagger-ui",
+        "schemars",
+        "rmcp",
+        "lettre",
+        "p256",
+        "aes-gcm",
+        "hkdf",
+        "rust-i18n",
+        "mesio",
+        "mesio-engine",
+        "flv",
+        "flv-fix",
+        "hls",
+        "hls-fix",
+        "platforms-parser",
+        "zip",
+        "tar",
+        "prost",
+        "argon2",
+        "jsonwebtoken",
+    ];
+
+    let core_deps = manifest_dependency_names(&manifest_dir.join("crates/srec-core/Cargo.toml"));
+    let mut violations = Vec::new();
+    for forbidden in shared_forbidden.into_iter().chain(["sqlx", "srec-sqlite"]) {
+        if core_deps.contains(forbidden) {
+            violations.push(format!(
+                "crates/srec-core/Cargo.toml must not depend on `{forbidden}`"
+            ));
+        }
+    }
+
+    let sqlite_deps =
+        manifest_dependency_names(&manifest_dir.join("crates/srec-sqlite/Cargo.toml"));
+    for forbidden in shared_forbidden.into_iter().chain(["reqwest", "rustls"]) {
+        if sqlite_deps.contains(forbidden) {
+            violations.push(format!(
+                "crates/srec-sqlite/Cargo.toml must not depend on `{forbidden}`"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "extracted Layer 0 Cargo.toml files violated dependency isolation:\n{}",
         violations.join("\n")
     );
 }
@@ -1107,6 +1305,14 @@ fn desktop_tauri_accesses_backend_only_through_facade() {
                     "src-tauri/src/{}: direct internal reference `{}` (must go through rust_srec::backend)",
                     rel.display(),
                     path.join("::")
+                ));
+            }
+        }
+        for internal_crate in ["srec_core", "srec_sqlite"] {
+            if refs.external_roots.contains(internal_crate) {
+                violations.push(format!(
+                    "src-tauri/src/{}: direct reference to `{internal_crate}` (must go through rust_srec::backend)",
+                    rel.display()
                 ));
             }
         }

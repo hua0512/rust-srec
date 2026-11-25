@@ -461,8 +461,9 @@ impl JobQueue {
             "Invalid execution_info JSON; resetting to defaults",
         );
         update_log_summary(&mut exec_info, logs);
-        repo.update_job_execution_info(job_id, &serde_json::to_string(&exec_info)?)
-            .await
+        Ok(repo
+            .update_job_execution_info(job_id, &serde_json::to_string(&exec_info)?)
+            .await?)
     }
 
     /// Persist the logs a processor returned with its result and fold them into
@@ -493,8 +494,9 @@ impl JobQueue {
         update_log_summary(&mut exec_info, &new_logs);
         extend_logs_capped(&mut exec_info, &new_logs);
         let execution_info = serde_json::to_string(&exec_info)?;
-        repo.update_job_execution_info(job_id, &execution_info)
-            .await
+        Ok(repo
+            .update_job_execution_info(job_id, &execution_info)
+            .await?)
     }
 
     pub(super) fn log_persistence_lock(&self, job_id: &str) -> &tokio::sync::Mutex<()> {

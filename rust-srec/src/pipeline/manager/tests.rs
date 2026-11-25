@@ -1,3 +1,12 @@
+use std::cmp::Reverse;
+use std::collections::{HashMap, HashSet};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
+
+use async_trait::async_trait;
+use srec_sqlite::{DbError, DbResult};
+
 use super::*;
 use crate::config::ConfigService;
 use crate::database::models::{
@@ -12,12 +21,6 @@ use crate::database::repositories::streamer::{SqlxStreamerRepository, StreamerRe
 use crate::services::pipeline_ports::{
     ConfigServicePipelineConfigPort, DatabasePipelineSessionPort,
 };
-use async_trait::async_trait;
-use std::cmp::Reverse;
-use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
 
 fn session_port(sessions: Arc<dyn SessionRepository>) -> Arc<dyn PipelineSessionPort> {
     Arc::new(DatabasePipelineSessionPort::new(sessions))
@@ -105,7 +108,7 @@ impl TestSessionRepository {
 
 #[async_trait]
 impl SessionRepository for TestSessionRepository {
-    async fn get_session(&self, id: &str) -> Result<LiveSessionDbModel> {
+    async fn get_session(&self, id: &str) -> DbResult<LiveSessionDbModel> {
         if let Some(session) = self
             .sessions
             .lock()
@@ -130,7 +133,7 @@ impl SessionRepository for TestSessionRepository {
     async fn get_active_session_for_streamer(
         &self,
         _streamer_id: &str,
-    ) -> Result<Option<LiveSessionDbModel>> {
+    ) -> DbResult<Option<LiveSessionDbModel>> {
         unimplemented!("not needed for these tests")
     }
 
@@ -138,34 +141,34 @@ impl SessionRepository for TestSessionRepository {
         &self,
         _streamer_id: &str,
         _limit: i32,
-    ) -> Result<Vec<LiveSessionDbModel>> {
+    ) -> DbResult<Vec<LiveSessionDbModel>> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn create_session(&self, _session: &LiveSessionDbModel) -> Result<()> {
+    async fn create_session(&self, _session: &LiveSessionDbModel) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn end_session(&self, _id: &str, _end_time: i64) -> Result<()> {
+    async fn end_session(&self, _id: &str, _end_time: i64) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn update_session_titles(&self, _id: &str, _titles: &str) -> Result<()> {
+    async fn update_session_titles(&self, _id: &str, _titles: &str) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn delete_session(&self, _id: &str) -> Result<()> {
+    async fn delete_session(&self, _id: &str) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn delete_sessions_batch(&self, _ids: &[String]) -> Result<u64> {
+    async fn delete_sessions_batch(&self, _ids: &[String]) -> DbResult<u64> {
         unimplemented!("not needed for these tests")
     }
 
     async fn list_active_sessions(
         &self,
         pagination: &Pagination,
-    ) -> Result<Vec<LiveSessionDbModel>> {
+    ) -> DbResult<Vec<LiveSessionDbModel>> {
         self.active_session_queries.fetch_add(1, Ordering::SeqCst);
 
         let mut sessions = self
@@ -190,7 +193,7 @@ impl SessionRepository for TestSessionRepository {
     async fn list_ended_sessions_pending_pipeline_recovery(
         &self,
         pagination: &Pagination,
-    ) -> Result<Vec<LiveSessionDbModel>> {
+    ) -> DbResult<Vec<LiveSessionDbModel>> {
         let segments = self.segments.lock().expect("lock poisoned");
         let outputs = self.outputs.lock().expect("lock poisoned");
         let dispatched = self
@@ -222,7 +225,7 @@ impl SessionRepository for TestSessionRepository {
             .collect())
     }
 
-    async fn mark_session_complete_dispatched(&self, session_id: &str) -> Result<()> {
+    async fn mark_session_complete_dispatched(&self, session_id: &str) -> DbResult<()> {
         self.session_complete_dispatched
             .lock()
             .expect("lock poisoned")
@@ -230,14 +233,14 @@ impl SessionRepository for TestSessionRepository {
         Ok(())
     }
 
-    async fn get_media_output(&self, _id: &str) -> Result<MediaOutputDbModel> {
+    async fn get_media_output(&self, _id: &str) -> DbResult<MediaOutputDbModel> {
         unimplemented!("not needed for these tests")
     }
 
     async fn get_media_outputs_for_session(
         &self,
         session_id: &str,
-    ) -> Result<Vec<MediaOutputDbModel>> {
+    ) -> DbResult<Vec<MediaOutputDbModel>> {
         Ok(self
             .outputs
             .lock()
@@ -247,7 +250,7 @@ impl SessionRepository for TestSessionRepository {
             .unwrap_or_default())
     }
 
-    async fn create_media_output(&self, output: &MediaOutputDbModel) -> Result<()> {
+    async fn create_media_output(&self, output: &MediaOutputDbModel) -> DbResult<()> {
         self.insert_output(output.clone());
         Ok(())
     }
@@ -256,21 +259,21 @@ impl SessionRepository for TestSessionRepository {
         &self,
         output: &MediaOutputDbModel,
         segment: &SessionSegmentDbModel,
-    ) -> Result<()> {
+    ) -> DbResult<()> {
         self.insert_output(output.clone());
         self.insert_segment(segment.clone());
         Ok(())
     }
 
-    async fn delete_media_output(&self, _id: &str) -> Result<()> {
+    async fn delete_media_output(&self, _id: &str) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn get_output_count(&self, _session_id: &str) -> Result<u32> {
+    async fn get_output_count(&self, _session_id: &str) -> DbResult<u32> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn create_session_segment(&self, segment: &SessionSegmentDbModel) -> Result<()> {
+    async fn create_session_segment(&self, segment: &SessionSegmentDbModel) -> DbResult<()> {
         self.insert_segment(segment.clone());
         Ok(())
     }
@@ -279,7 +282,7 @@ impl SessionRepository for TestSessionRepository {
         &self,
         session_id: &str,
         limit: i32,
-    ) -> Result<Vec<SessionSegmentDbModel>> {
+    ) -> DbResult<Vec<SessionSegmentDbModel>> {
         let limit = usize::try_from(limit).unwrap_or(usize::MAX);
         Ok(self
             .segments
@@ -297,7 +300,7 @@ impl SessionRepository for TestSessionRepository {
         &self,
         session_id: &str,
         pagination: &Pagination,
-    ) -> Result<Vec<SessionSegmentDbModel>> {
+    ) -> DbResult<Vec<SessionSegmentDbModel>> {
         let start = pagination.offset as usize;
         Ok(self
             .segments
@@ -312,7 +315,7 @@ impl SessionRepository for TestSessionRepository {
             .collect())
     }
 
-    async fn next_session_segment_index(&self, session_id: &str) -> Result<u32> {
+    async fn next_session_segment_index(&self, session_id: &str) -> DbResult<u32> {
         let max_index = self
             .segments
             .lock()
@@ -325,7 +328,7 @@ impl SessionRepository for TestSessionRepository {
             .unwrap_or(0);
 
         u32::try_from(next).map_err(|_| {
-            crate::Error::Database(format!(
+            DbError::Database(format!(
                 "next session segment index {} for session {} is outside u32 range",
                 next, session_id
             ))
@@ -335,20 +338,20 @@ impl SessionRepository for TestSessionRepository {
     async fn get_danmu_statistics(
         &self,
         _session_id: &str,
-    ) -> Result<Option<DanmuStatisticsDbModel>> {
+    ) -> DbResult<Option<DanmuStatisticsDbModel>> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn create_danmu_statistics(&self, _stats: &DanmuStatisticsDbModel) -> Result<()> {
+    async fn create_danmu_statistics(&self, _stats: &DanmuStatisticsDbModel) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn upsert_danmu_statistics(&self, _stats: &DanmuStatisticsDbModel) -> Result<()> {
+    async fn upsert_danmu_statistics(&self, _stats: &DanmuStatisticsDbModel) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 }
 
-type BeforePublishObserver = Box<dyn Fn(&DagExecutionDbModel) -> Result<()> + Send + Sync>;
+type BeforePublishObserver = Box<dyn Fn(&DagExecutionDbModel) -> DbResult<()> + Send + Sync>;
 
 struct TestDagRepository {
     dags: Mutex<HashMap<String, DagExecutionDbModel>>,
@@ -423,29 +426,29 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
         _supported_types: &[&str],
         _after_id: Option<&str>,
         _limit: u32,
-    ) -> Result<Vec<crate::database::repositories::UnclaimableJob>> {
+    ) -> DbResult<Vec<crate::database::repositories::UnclaimableJob>> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn get_job(&self, id: &str) -> Result<JobDbModel> {
+    async fn get_job(&self, id: &str) -> DbResult<JobDbModel> {
         self.jobs
             .lock()
             .expect("lock poisoned")
             .get(id)
             .cloned()
-            .ok_or_else(|| crate::Error::not_found("Job", id))
+            .ok_or_else(|| DbError::not_found("Job", id))
     }
 
-    async fn list_jobs_by_status(&self, _status: JobStatus) -> Result<Vec<JobDbModel>> {
+    async fn list_jobs_by_status(&self, _status: JobStatus) -> DbResult<Vec<JobDbModel>> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn create_job(&self, job: &JobDbModel) -> Result<()> {
+    async fn create_job(&self, job: &JobDbModel) -> DbResult<()> {
         self.insert(job.clone());
         Ok(())
     }
 
-    async fn update_job_status(&self, _id: &str, _status: JobStatus) -> Result<()> {
+    async fn update_job_status(&self, _id: &str, _status: JobStatus) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
@@ -454,11 +457,11 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
         id: &str,
         error: &str,
         retry_after: Option<i64>,
-    ) -> Result<u64> {
+    ) -> DbResult<u64> {
         let mut jobs = self.jobs.lock().expect("lock poisoned");
         let job = jobs
             .get_mut(id)
-            .ok_or_else(|| crate::Error::not_found("Job", id))?;
+            .ok_or_else(|| DbError::not_found("Job", id))?;
         if !matches!(
             JobStatus::parse(&job.status),
             Some(JobStatus::Pending | JobStatus::Processing)
@@ -475,11 +478,11 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
         Ok(1)
     }
 
-    async fn mark_job_cancelled(&self, id: &str) -> Result<u64> {
+    async fn mark_job_cancelled(&self, id: &str) -> DbResult<u64> {
         let mut jobs = self.jobs.lock().expect("lock poisoned");
         let job = jobs
             .get_mut(id)
-            .ok_or_else(|| crate::Error::not_found("Job", id))?;
+            .ok_or_else(|| DbError::not_found("Job", id))?;
         if !matches!(
             JobStatus::parse(&job.status),
             Some(JobStatus::Pending | JobStatus::Processing)
@@ -494,12 +497,12 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
         Ok(1)
     }
 
-    async fn reset_job_for_retry(&self, id: &str) -> Result<()> {
+    async fn reset_job_for_retry(&self, id: &str) -> DbResult<()> {
         let now = jiff::Timestamp::now().as_millisecond();
         let mut jobs = self.jobs.lock().expect("lock poisoned");
         let job = jobs
             .get_mut(id)
-            .ok_or_else(|| crate::Error::not_found("Job", id))?;
+            .ok_or_else(|| DbError::not_found("Job", id))?;
 
         match JobStatus::parse(&job.status) {
             Some(JobStatus::Failed | JobStatus::Cancelled) => {
@@ -511,29 +514,29 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
                 job.updated_at = now;
                 Ok(())
             }
-            _ => Err(crate::Error::InvalidStateTransition {
+            _ => Err(DbError::InvalidStateTransition {
                 from: job.status.to_ascii_uppercase(),
                 to: JobStatus::Pending.as_str().to_string(),
             }),
         }
     }
 
-    async fn count_pending_jobs(&self, _job_types: Option<&[String]>) -> Result<u64> {
+    async fn count_pending_jobs(&self, _job_types: Option<&[String]>) -> DbResult<u64> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn count_pending_jobs_by_type(&self) -> Result<Vec<(String, u64)>> {
+    async fn count_pending_jobs_by_type(&self) -> DbResult<Vec<(String, u64)>> {
         unimplemented!("not needed for these tests")
     }
 
     async fn claim_next_pending_job(
         &self,
         _job_types: Option<&[String]>,
-    ) -> Result<Option<JobDbModel>> {
+    ) -> DbResult<Option<JobDbModel>> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn get_job_execution_info(&self, id: &str) -> Result<Option<String>> {
+    async fn get_job_execution_info(&self, id: &str) -> DbResult<Option<String>> {
         Ok(self
             .jobs
             .lock()
@@ -542,20 +545,20 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
             .and_then(|job| job.execution_info.clone()))
     }
 
-    async fn update_job_execution_info(&self, id: &str, execution_info: &str) -> Result<()> {
+    async fn update_job_execution_info(&self, id: &str, execution_info: &str) -> DbResult<()> {
         let mut jobs = self.jobs.lock().expect("lock poisoned");
         let job = jobs
             .get_mut(id)
-            .ok_or_else(|| crate::Error::not_found("Job", id))?;
+            .ok_or_else(|| DbError::not_found("Job", id))?;
         job.execution_info = Some(execution_info.to_string());
         Ok(())
     }
 
-    async fn update_job_state(&self, _id: &str, _state: &str) -> Result<()> {
+    async fn update_job_state(&self, _id: &str, _state: &str) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn update_job(&self, _job: &JobDbModel) -> Result<()> {
+    async fn update_job(&self, _job: &JobDbModel) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
@@ -563,25 +566,25 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
         &self,
         _job: &JobDbModel,
         _expected_status: JobStatus,
-    ) -> Result<u64> {
+    ) -> DbResult<u64> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn reset_processing_jobs(&self) -> Result<i32> {
+    async fn reset_processing_jobs(&self) -> DbResult<i32> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn delete_job(&self, _id: &str) -> Result<()> {
+    async fn delete_job(&self, _id: &str) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn add_execution_log(&self, _log: &JobExecutionLogDbModel) -> Result<()> {
+    async fn add_execution_log(&self, _log: &JobExecutionLogDbModel) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
     /// Accepted and dropped: terminal transitions persist a log line through this, and no
     /// test here asserts on stored logs.
-    async fn add_execution_logs(&self, _logs: &[JobExecutionLogDbModel]) -> Result<()> {
+    async fn add_execution_logs(&self, _logs: &[JobExecutionLogDbModel]) -> DbResult<()> {
         Ok(())
     }
 
@@ -589,15 +592,15 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
         &self,
         _job_id: &str,
         _pagination: &crate::database::models::Pagination,
-    ) -> Result<(Vec<JobExecutionLogDbModel>, u64)> {
+    ) -> DbResult<(Vec<JobExecutionLogDbModel>, u64)> {
         Ok((Vec::new(), 0))
     }
 
-    async fn delete_execution_logs_for_job(&self, _job_id: &str) -> Result<()> {
+    async fn delete_execution_logs_for_job(&self, _job_id: &str) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn list_pending_jobs(&self, limit: u32) -> Result<(Vec<JobDbModel>, u64)> {
+    async fn list_pending_jobs(&self, limit: u32) -> DbResult<(Vec<JobDbModel>, u64)> {
         let mut jobs: Vec<_> = self
             .jobs
             .lock()
@@ -611,7 +614,7 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
         Ok((jobs, total))
     }
 
-    async fn count_jobs_by_status(&self, status: JobStatus) -> Result<u64> {
+    async fn count_jobs_by_status(&self, status: JobStatus) -> DbResult<u64> {
         Ok(self
             .jobs
             .lock()
@@ -621,7 +624,7 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
             .count() as u64)
     }
 
-    async fn count_unfinished_jobs_for_streamer(&self, streamer_id: &str) -> Result<u64> {
+    async fn count_unfinished_jobs_for_streamer(&self, streamer_id: &str) -> DbResult<u64> {
         Ok(self
             .jobs
             .lock()
@@ -637,7 +640,7 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
             .count() as u64)
     }
 
-    async fn count_unfinished_jobs_for_session(&self, session_id: &str) -> Result<u64> {
+    async fn count_unfinished_jobs_for_session(&self, session_id: &str) -> DbResult<u64> {
         Ok(self
             .jobs
             .lock()
@@ -653,15 +656,15 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
             .count() as u64)
     }
 
-    async fn get_job_counts_by_status(&self) -> Result<crate::database::models::JobCounts> {
+    async fn get_job_counts_by_status(&self) -> DbResult<crate::database::models::JobCounts> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn get_avg_processing_time(&self) -> Result<Option<f64>> {
+    async fn get_avg_processing_time(&self) -> DbResult<Option<f64>> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn cancel_jobs_by_pipeline(&self, pipeline_id: &str) -> Result<u64> {
+    async fn cancel_jobs_by_pipeline(&self, pipeline_id: &str) -> DbResult<u64> {
         let now = jiff::Timestamp::now().as_millisecond();
         let mut cancelled = 0;
         for job in self.jobs.lock().expect("lock poisoned").values_mut() {
@@ -680,7 +683,7 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
         Ok(cancelled)
     }
 
-    async fn get_jobs_by_pipeline(&self, pipeline_id: &str) -> Result<Vec<JobDbModel>> {
+    async fn get_jobs_by_pipeline(&self, pipeline_id: &str) -> DbResult<Vec<JobDbModel>> {
         Ok(self
             .jobs
             .lock()
@@ -691,7 +694,7 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
             .collect())
     }
 
-    async fn delete_jobs_by_pipeline(&self, _pipeline_id: &str) -> Result<u64> {
+    async fn delete_jobs_by_pipeline(&self, _pipeline_id: &str) -> DbResult<u64> {
         unimplemented!("not needed for these tests")
     }
 }
@@ -730,7 +733,7 @@ impl TestDagRepositoryForRetry {
 
 #[async_trait]
 impl DagRepository for TestDagRepositoryForRetry {
-    async fn create_dag(&self, _dag: &DagExecutionDbModel) -> Result<()> {
+    async fn create_dag(&self, _dag: &DagExecutionDbModel) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
@@ -739,17 +742,17 @@ impl DagRepository for TestDagRepositoryForRetry {
         _dag: &DagExecutionDbModel,
         _steps: &[DagStepExecutionDbModel],
         _root_jobs: &[JobDbModel],
-    ) -> Result<()> {
+    ) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn get_dag(&self, id: &str) -> Result<DagExecutionDbModel> {
+    async fn get_dag(&self, id: &str) -> DbResult<DagExecutionDbModel> {
         self.dags
             .lock()
             .expect("lock poisoned")
             .get(id)
             .cloned()
-            .ok_or_else(|| crate::Error::not_found("DAG execution", id))
+            .ok_or_else(|| DbError::not_found("DAG execution", id))
     }
 
     async fn list_dags(
@@ -758,7 +761,7 @@ impl DagRepository for TestDagRepositoryForRetry {
         _session_id: Option<&str>,
         _limit: u32,
         _offset: u32,
-    ) -> Result<Vec<DagExecutionDbModel>> {
+    ) -> DbResult<Vec<DagExecutionDbModel>> {
         unimplemented!("not needed for these tests")
     }
 
@@ -766,7 +769,7 @@ impl DagRepository for TestDagRepositoryForRetry {
         &self,
         _status: Option<DagExecutionStatus>,
         _session_id: Option<&str>,
-    ) -> Result<u64> {
+    ) -> DbResult<u64> {
         unimplemented!("not needed for these tests")
     }
 
@@ -775,68 +778,68 @@ impl DagRepository for TestDagRepositoryForRetry {
         _filter: &crate::database::repositories::DagListFilter<'_>,
         _limit: u32,
         _offset: u32,
-    ) -> Result<Vec<DagExecutionListSummary>> {
+    ) -> DbResult<Vec<DagExecutionListSummary>> {
         unimplemented!("not needed for these tests")
     }
 
     async fn count_dags_by_display_status(
         &self,
         _filter: &crate::database::repositories::DagListFilter<'_>,
-    ) -> Result<u64> {
+    ) -> DbResult<u64> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn get_dag_display_status(&self, _id: &str) -> Result<DagExecutionStatus> {
+    async fn get_dag_display_status(&self, _id: &str) -> DbResult<DagExecutionStatus> {
         unimplemented!("not needed for these tests")
     }
 
     async fn get_dag_with_display_status(
         &self,
         _id: &str,
-    ) -> Result<(DagExecutionDbModel, DagExecutionStatus)> {
+    ) -> DbResult<(DagExecutionDbModel, DagExecutionStatus)> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn get_dag_display_counts(&self) -> Result<crate::database::models::DagDisplayCounts> {
+    async fn get_dag_display_counts(&self) -> DbResult<crate::database::models::DagDisplayCounts> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn delete_dag(&self, _id: &str) -> Result<()> {
+    async fn delete_dag(&self, _id: &str) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn create_step(&self, _step: &DagStepExecutionDbModel) -> Result<()> {
+    async fn create_step(&self, _step: &DagStepExecutionDbModel) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn create_steps(&self, _steps: &[DagStepExecutionDbModel]) -> Result<()> {
+    async fn create_steps(&self, _steps: &[DagStepExecutionDbModel]) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn get_step(&self, id: &str) -> Result<DagStepExecutionDbModel> {
+    async fn get_step(&self, id: &str) -> DbResult<DagStepExecutionDbModel> {
         self.steps
             .get(id)
             .cloned()
-            .ok_or_else(|| crate::Error::not_found("DAG step execution", id))
+            .ok_or_else(|| DbError::not_found("DAG step execution", id))
     }
 
     async fn get_step_by_dag_and_step_id(
         &self,
         _dag_id: &str,
         _step_id: &str,
-    ) -> Result<DagStepExecutionDbModel> {
+    ) -> DbResult<DagStepExecutionDbModel> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn get_steps_by_dag(&self, _dag_id: &str) -> Result<Vec<DagStepExecutionDbModel>> {
+    async fn get_steps_by_dag(&self, _dag_id: &str) -> DbResult<Vec<DagStepExecutionDbModel>> {
         Ok(Vec::new())
     }
 
-    async fn get_steps_with_jobs_by_dag(&self, _dag_id: &str) -> Result<Vec<DagStepWithJob>> {
+    async fn get_steps_with_jobs_by_dag(&self, _dag_id: &str) -> DbResult<Vec<DagStepWithJob>> {
         Ok(Vec::new())
     }
 
-    async fn create_job_for_step(&self, _step_id: &str, _job: &JobDbModel) -> Result<()> {
+    async fn create_job_for_step(&self, _step_id: &str, _job: &JobDbModel) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
@@ -844,7 +847,7 @@ impl DagRepository for TestDagRepositoryForRetry {
         &self,
         _step_id: &str,
         _outputs: &[String],
-    ) -> Result<crate::database::repositories::StepCompletion> {
+    ) -> DbResult<crate::database::repositories::StepCompletion> {
         unimplemented!("not needed for these tests")
     }
 
@@ -852,20 +855,28 @@ impl DagRepository for TestDagRepositoryForRetry {
         &self,
         _step_id: &str,
         _error: &str,
-    ) -> Result<Option<Vec<String>>> {
+    ) -> DbResult<Option<Vec<String>>> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn fail_dag_and_cancel_steps(&self, _dag_id: &str, _error: &str) -> Result<Vec<String>> {
+    async fn fail_dag_and_cancel_steps(
+        &self,
+        _dag_id: &str,
+        _error: &str,
+    ) -> DbResult<Vec<String>> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn cancel_dag_and_cancel_steps(&self, dag_id: &str, error: &str) -> Result<Vec<String>> {
+    async fn cancel_dag_and_cancel_steps(
+        &self,
+        dag_id: &str,
+        error: &str,
+    ) -> DbResult<Vec<String>> {
         self.cancel_calls.fetch_add(1, Ordering::SeqCst);
         let mut dags = self.dags.lock().expect("lock poisoned");
         let dag = dags
             .get_mut(dag_id)
-            .ok_or_else(|| crate::Error::not_found("DAG execution", dag_id))?;
+            .ok_or_else(|| DbError::not_found("DAG execution", dag_id))?;
         dag.status = crate::database::models::DagExecutionStatus::Cancelled
             .as_str()
             .to_string();
@@ -874,11 +885,11 @@ impl DagRepository for TestDagRepositoryForRetry {
         Ok(Vec::new())
     }
 
-    async fn reset_dag_for_retry(&self, dag_id: &str) -> Result<()> {
+    async fn reset_dag_for_retry(&self, dag_id: &str) -> DbResult<()> {
         let mut dags = self.dags.lock().expect("lock poisoned");
         let dag = dags
             .get_mut(dag_id)
-            .ok_or_else(|| crate::Error::not_found("DAG execution", dag_id))?;
+            .ok_or_else(|| DbError::not_found("DAG execution", dag_id))?;
         dag.status = crate::database::models::DagExecutionStatus::Processing
             .as_str()
             .to_string();
@@ -890,29 +901,31 @@ impl DagRepository for TestDagRepositoryForRetry {
     async fn get_dag_stats(
         &self,
         _dag_id: &str,
-    ) -> Result<crate::database::models::DagExecutionStats> {
+    ) -> DbResult<crate::database::models::DagExecutionStats> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn list_running_step_jobs(&self, _dag_ids: &[&str]) -> Result<Vec<(String, String)>> {
+    async fn list_running_step_jobs(&self, _dag_ids: &[&str]) -> DbResult<Vec<(String, String)>> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn list_ready_steps(&self, _dag_id: &str) -> Result<Vec<ReadyStep>> {
+    async fn list_ready_steps(&self, _dag_id: &str) -> DbResult<Vec<ReadyStep>> {
         unimplemented!("not needed for these tests")
     }
 
     async fn list_processing_steps_with_completed_jobs(
         &self,
-    ) -> Result<Vec<DagStepExecutionDbModel>> {
+    ) -> DbResult<Vec<DagStepExecutionDbModel>> {
         Ok(Vec::new())
     }
 
-    async fn list_dag_ids_with_unmaterialized_steps(&self) -> Result<Vec<String>> {
+    async fn list_dag_ids_with_unmaterialized_steps(&self) -> DbResult<Vec<String>> {
         Ok(Vec::new())
     }
 
-    async fn list_processing_steps_with_failed_jobs(&self) -> Result<Vec<DagStepExecutionDbModel>> {
+    async fn list_processing_steps_with_failed_jobs(
+        &self,
+    ) -> DbResult<Vec<DagStepExecutionDbModel>> {
         Ok(Vec::new())
     }
 
@@ -920,14 +933,14 @@ impl DagRepository for TestDagRepositoryForRetry {
         &self,
         _step_id: &str,
         _outputs: &[String],
-    ) -> Result<crate::database::repositories::StepCompletion> {
+    ) -> DbResult<crate::database::repositories::StepCompletion> {
         unimplemented!("not needed for these tests")
     }
 }
 
 #[async_trait]
 impl DagRepository for TestDagRepository {
-    async fn create_dag(&self, dag: &DagExecutionDbModel) -> Result<()> {
+    async fn create_dag(&self, dag: &DagExecutionDbModel) -> DbResult<()> {
         self.create_calls.fetch_add(1, Ordering::SeqCst);
         self.insert(dag.clone());
         Ok(())
@@ -938,7 +951,7 @@ impl DagRepository for TestDagRepository {
         dag: &DagExecutionDbModel,
         steps: &[DagStepExecutionDbModel],
         _root_jobs: &[JobDbModel],
-    ) -> Result<()> {
+    ) -> DbResult<()> {
         if let Some(before_publish) = &self.before_publish {
             before_publish(dag)?;
         }
@@ -946,7 +959,7 @@ impl DagRepository for TestDagRepository {
         self.create_steps(steps).await
     }
 
-    async fn get_dag(&self, id: &str) -> Result<DagExecutionDbModel> {
+    async fn get_dag(&self, id: &str) -> DbResult<DagExecutionDbModel> {
         let remaining = self
             .reads_before_dags_vanish
             .try_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
@@ -954,7 +967,7 @@ impl DagRepository for TestDagRepository {
             })
             .expect("try_update closure always returns Some");
         if remaining == 0 {
-            return Err(crate::Error::not_found("DAG execution", id));
+            return Err(DbError::not_found("DAG execution", id));
         }
 
         self.dags
@@ -962,7 +975,7 @@ impl DagRepository for TestDagRepository {
             .expect("lock poisoned")
             .get(id)
             .cloned()
-            .ok_or_else(|| crate::Error::not_found("DAG execution", id))
+            .ok_or_else(|| DbError::not_found("DAG execution", id))
     }
 
     async fn list_dags(
@@ -971,7 +984,7 @@ impl DagRepository for TestDagRepository {
         session_id: Option<&str>,
         limit: u32,
         offset: u32,
-    ) -> Result<Vec<DagExecutionDbModel>> {
+    ) -> DbResult<Vec<DagExecutionDbModel>> {
         let mut dags = self
             .dags
             .lock()
@@ -996,7 +1009,7 @@ impl DagRepository for TestDagRepository {
         &self,
         status: Option<DagExecutionStatus>,
         session_id: Option<&str>,
-    ) -> Result<u64> {
+    ) -> DbResult<u64> {
         Ok(self
             .dags
             .lock()
@@ -1014,41 +1027,41 @@ impl DagRepository for TestDagRepository {
         _filter: &crate::database::repositories::DagListFilter<'_>,
         _limit: u32,
         _offset: u32,
-    ) -> Result<Vec<DagExecutionListSummary>> {
+    ) -> DbResult<Vec<DagExecutionListSummary>> {
         unimplemented!("not needed for these tests")
     }
 
     async fn count_dags_by_display_status(
         &self,
         _filter: &crate::database::repositories::DagListFilter<'_>,
-    ) -> Result<u64> {
+    ) -> DbResult<u64> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn get_dag_display_status(&self, _id: &str) -> Result<DagExecutionStatus> {
+    async fn get_dag_display_status(&self, _id: &str) -> DbResult<DagExecutionStatus> {
         unimplemented!("not needed for these tests")
     }
 
     async fn get_dag_with_display_status(
         &self,
         _id: &str,
-    ) -> Result<(DagExecutionDbModel, DagExecutionStatus)> {
+    ) -> DbResult<(DagExecutionDbModel, DagExecutionStatus)> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn get_dag_display_counts(&self) -> Result<crate::database::models::DagDisplayCounts> {
+    async fn get_dag_display_counts(&self) -> DbResult<crate::database::models::DagDisplayCounts> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn delete_dag(&self, _id: &str) -> Result<()> {
+    async fn delete_dag(&self, _id: &str) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn create_step(&self, _step: &DagStepExecutionDbModel) -> Result<()> {
+    async fn create_step(&self, _step: &DagStepExecutionDbModel) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn create_steps(&self, steps: &[DagStepExecutionDbModel]) -> Result<()> {
+    async fn create_steps(&self, steps: &[DagStepExecutionDbModel]) -> DbResult<()> {
         let mut by_dag = self.steps.lock().expect("lock poisoned");
         for step in steps {
             by_dag
@@ -1059,7 +1072,7 @@ impl DagRepository for TestDagRepository {
         Ok(())
     }
 
-    async fn get_step(&self, _id: &str) -> Result<DagStepExecutionDbModel> {
+    async fn get_step(&self, _id: &str) -> DbResult<DagStepExecutionDbModel> {
         unimplemented!("not needed for these tests")
     }
 
@@ -1067,11 +1080,11 @@ impl DagRepository for TestDagRepository {
         &self,
         _dag_id: &str,
         _step_id: &str,
-    ) -> Result<DagStepExecutionDbModel> {
+    ) -> DbResult<DagStepExecutionDbModel> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn get_steps_by_dag(&self, dag_id: &str) -> Result<Vec<DagStepExecutionDbModel>> {
+    async fn get_steps_by_dag(&self, dag_id: &str) -> DbResult<Vec<DagStepExecutionDbModel>> {
         Ok(self
             .steps
             .lock()
@@ -1081,11 +1094,11 @@ impl DagRepository for TestDagRepository {
             .unwrap_or_default())
     }
 
-    async fn get_steps_with_jobs_by_dag(&self, _dag_id: &str) -> Result<Vec<DagStepWithJob>> {
+    async fn get_steps_with_jobs_by_dag(&self, _dag_id: &str) -> DbResult<Vec<DagStepWithJob>> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn create_job_for_step(&self, _step_id: &str, _job: &JobDbModel) -> Result<()> {
+    async fn create_job_for_step(&self, _step_id: &str, _job: &JobDbModel) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
@@ -1093,7 +1106,7 @@ impl DagRepository for TestDagRepository {
         &self,
         _step_id: &str,
         _outputs: &[String],
-    ) -> Result<crate::database::repositories::StepCompletion> {
+    ) -> DbResult<crate::database::repositories::StepCompletion> {
         unimplemented!("not needed for these tests")
     }
 
@@ -1101,23 +1114,31 @@ impl DagRepository for TestDagRepository {
         &self,
         _step_id: &str,
         _error: &str,
-    ) -> Result<Option<Vec<String>>> {
+    ) -> DbResult<Option<Vec<String>>> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn fail_dag_and_cancel_steps(&self, _dag_id: &str, _error: &str) -> Result<Vec<String>> {
+    async fn fail_dag_and_cancel_steps(
+        &self,
+        _dag_id: &str,
+        _error: &str,
+    ) -> DbResult<Vec<String>> {
         unimplemented!("not needed for these tests")
     }
 
     /// Mirrors the SQL in `SqlxDagRepository::cancel_dag_and_cancel_steps`: a terminal DAG is left
     /// alone and reports no jobs, otherwise every non-terminal step becomes `CANCELLED` and the
     /// job ids of the `PROCESSING` ones are returned for the caller to cancel.
-    async fn cancel_dag_and_cancel_steps(&self, dag_id: &str, error: &str) -> Result<Vec<String>> {
+    async fn cancel_dag_and_cancel_steps(
+        &self,
+        dag_id: &str,
+        error: &str,
+    ) -> DbResult<Vec<String>> {
         {
             let mut dags = self.dags.lock().expect("lock poisoned");
             let dag = dags
                 .get_mut(dag_id)
-                .ok_or_else(|| crate::Error::not_found("DAG execution", dag_id))?;
+                .ok_or_else(|| DbError::not_found("DAG execution", dag_id))?;
             if dag.get_status().is_some_and(|status| status.is_terminal()) {
                 return Ok(Vec::new());
             }
@@ -1146,36 +1167,38 @@ impl DagRepository for TestDagRepository {
         Ok(cancelled_job_ids)
     }
 
-    async fn reset_dag_for_retry(&self, _dag_id: &str) -> Result<()> {
+    async fn reset_dag_for_retry(&self, _dag_id: &str) -> DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
     async fn get_dag_stats(
         &self,
         _dag_id: &str,
-    ) -> Result<crate::database::models::DagExecutionStats> {
+    ) -> DbResult<crate::database::models::DagExecutionStats> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn list_running_step_jobs(&self, _dag_ids: &[&str]) -> Result<Vec<(String, String)>> {
+    async fn list_running_step_jobs(&self, _dag_ids: &[&str]) -> DbResult<Vec<(String, String)>> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn list_ready_steps(&self, _dag_id: &str) -> Result<Vec<ReadyStep>> {
+    async fn list_ready_steps(&self, _dag_id: &str) -> DbResult<Vec<ReadyStep>> {
         unimplemented!("not needed for these tests")
     }
 
     async fn list_processing_steps_with_completed_jobs(
         &self,
-    ) -> Result<Vec<DagStepExecutionDbModel>> {
+    ) -> DbResult<Vec<DagStepExecutionDbModel>> {
         Ok(Vec::new())
     }
 
-    async fn list_dag_ids_with_unmaterialized_steps(&self) -> Result<Vec<String>> {
+    async fn list_dag_ids_with_unmaterialized_steps(&self) -> DbResult<Vec<String>> {
         Ok(Vec::new())
     }
 
-    async fn list_processing_steps_with_failed_jobs(&self) -> Result<Vec<DagStepExecutionDbModel>> {
+    async fn list_processing_steps_with_failed_jobs(
+        &self,
+    ) -> DbResult<Vec<DagStepExecutionDbModel>> {
         Ok(Vec::new())
     }
 
@@ -1183,7 +1206,7 @@ impl DagRepository for TestDagRepository {
         &self,
         _step_id: &str,
         _outputs: &[String],
-    ) -> Result<crate::database::repositories::StepCompletion> {
+    ) -> DbResult<crate::database::repositories::StepCompletion> {
         unimplemented!("not needed for these tests")
     }
 }

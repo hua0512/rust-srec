@@ -172,13 +172,17 @@ impl PipelineSessionPort for DatabasePipelineSessionPort {
     }
 
     async fn mark_session_complete_dispatched(&self, session_id: &str) -> Result<()> {
-        self.session_repo
+        Ok(self
+            .session_repo
             .mark_session_complete_dispatched(session_id)
-            .await
+            .await?)
     }
 
     async fn session_pipeline_settled(&self, session_id: &str) -> Result<bool> {
-        self.session_repo.session_pipeline_settled(session_id).await
+        Ok(self
+            .session_repo
+            .session_pipeline_settled(session_id)
+            .await?)
     }
 
     async fn list_session_ids_for_retirement(&self, streamer_id: &str) -> Result<Vec<String>> {
@@ -218,8 +222,8 @@ impl PipelineSessionPort for DatabasePipelineSessionPort {
     ) -> Result<Option<PipelineSessionSummary>> {
         match self.session_repo.get_session(session_id).await {
             Ok(session) => Ok(Some(to_session_summary(session))),
-            Err(Error::NotFound { .. }) => Ok(None),
-            Err(error) => Err(error),
+            Err(srec_sqlite::DbError::NotFound { .. }) => Ok(None),
+            Err(error) => Err(error.into()),
         }
     }
 
@@ -266,8 +270,8 @@ impl PipelineSessionPort for DatabasePipelineSessionPort {
                     .and_then(|entries| entries.into_iter().last().map(|entry| entry.title));
                 Ok(Some(PipelineSessionMeta { title, started_at }))
             }
-            Err(Error::NotFound { .. }) => Ok(None),
-            Err(error) => Err(error),
+            Err(srec_sqlite::DbError::NotFound { .. }) => Ok(None),
+            Err(error) => Err(error.into()),
         }
     }
 
@@ -277,8 +281,8 @@ impl PipelineSessionPort for DatabasePipelineSessionPort {
         };
         let streamer = match streamer_repo.get_streamer(streamer_id).await {
             Ok(streamer) => streamer,
-            Err(Error::NotFound { .. }) => return Ok(None),
-            Err(error) => return Err(error),
+            Err(srec_sqlite::DbError::NotFound { .. }) => return Ok(None),
+            Err(error) => return Err(error.into()),
         };
         let platform = if let Some(config_port) = self.config_port.as_ref() {
             match config_port

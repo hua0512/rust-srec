@@ -50,7 +50,10 @@ async fn competing_output_deletes_adjust_size_only_for_the_deleted_row() {
     .unwrap();
     assert_eq!(usize::from(first.is_ok()) + usize::from(second.is_ok()), 1);
     let error = first.err().or_else(|| second.err()).unwrap();
-    assert!(matches!(error, rust_srec::Error::NotFound { .. }));
+    assert!(matches!(
+        error,
+        rust_srec::database::DbError::NotFound { .. }
+    ));
     drop(held_read);
     assert_eq!(
         repo.get_session(&session.id)

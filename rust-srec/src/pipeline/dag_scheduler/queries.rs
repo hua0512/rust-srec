@@ -14,17 +14,20 @@ use crate::{Error, Result};
 impl DagScheduler {
     /// Get DAG execution status.
     pub async fn get_dag_status(&self, dag_id: &str) -> Result<DagExecutionDbModel> {
-        self.dag_repository.get_dag(dag_id).await
+        Ok(self.dag_repository.get_dag(dag_id).await?)
     }
 
     /// Get all step executions for a DAG.
     pub async fn get_dag_steps(&self, dag_id: &str) -> Result<Vec<DagStepExecutionDbModel>> {
-        self.dag_repository.get_steps_by_dag(dag_id).await
+        Ok(self.dag_repository.get_steps_by_dag(dag_id).await?)
     }
 
     /// Get all step executions for a DAG, each with the status and timing of its job.
     pub async fn get_dag_steps_with_jobs(&self, dag_id: &str) -> Result<Vec<DagStepWithJob>> {
-        self.dag_repository.get_steps_with_jobs_by_dag(dag_id).await
+        Ok(self
+            .dag_repository
+            .get_steps_with_jobs_by_dag(dag_id)
+            .await?)
     }
 
     /// The running job's latest progress, as [`JobQueue::cached_progress`] reports it.
@@ -37,7 +40,7 @@ impl DagScheduler {
         &self,
         dag_step_execution_id: &str,
     ) -> Result<DagStepExecutionDbModel> {
-        self.dag_repository.get_step(dag_step_execution_id).await
+        Ok(self.dag_repository.get_step(dag_step_execution_id).await?)
     }
 
     /// List DAG executions with optional status and session_id filters.
@@ -48,9 +51,10 @@ impl DagScheduler {
         limit: u32,
         offset: u32,
     ) -> Result<Vec<DagExecutionDbModel>> {
-        self.dag_repository
+        Ok(self
+            .dag_repository
             .list_dags(status, session_id, limit, offset)
-            .await
+            .await?)
     }
 
     /// Count DAG executions with optional status and session_id filters.
@@ -59,14 +63,15 @@ impl DagScheduler {
         status: Option<DagExecutionStatus>,
         session_id: Option<&str>,
     ) -> Result<u64> {
-        self.dag_repository.count_dags(status, session_id).await
+        Ok(self.dag_repository.count_dags(status, session_id).await?)
     }
 
     /// Count DAG executions matching `filter`.
     pub async fn count_dags_by_display_status(&self, filter: &DagListFilter<'_>) -> Result<u64> {
-        self.dag_repository
+        Ok(self
+            .dag_repository
             .count_dags_by_display_status(filter)
-            .await
+            .await?)
     }
 
     /// List display summaries without loading execution manifests.
@@ -76,14 +81,15 @@ impl DagScheduler {
         limit: u32,
         offset: u32,
     ) -> Result<Vec<DagExecutionListSummary>> {
-        self.dag_repository
+        Ok(self
+            .dag_repository
             .list_dag_summaries(filter, limit, offset)
-            .await
+            .await?)
     }
 
     /// Get a DAG execution's display status.
     pub async fn get_dag_display_status(&self, dag_id: &str) -> Result<DagExecutionStatus> {
-        self.dag_repository.get_dag_display_status(dag_id).await
+        Ok(self.dag_repository.get_dag_display_status(dag_id).await?)
     }
 
     /// Get a DAG execution and its display status from one read.
@@ -91,16 +97,17 @@ impl DagScheduler {
         &self,
         dag_id: &str,
     ) -> Result<(DagExecutionDbModel, DagExecutionStatus)> {
-        self.dag_repository
+        Ok(self
+            .dag_repository
             .get_dag_with_display_status(dag_id)
-            .await
+            .await?)
     }
 
     /// Count all DAG executions by display status.
     pub async fn get_dag_display_counts(
         &self,
     ) -> Result<crate::database::models::DagDisplayCounts> {
-        self.dag_repository.get_dag_display_counts().await
+        Ok(self.dag_repository.get_dag_display_counts().await?)
     }
 
     /// Get statistics for a DAG execution.
@@ -108,12 +115,12 @@ impl DagScheduler {
         &self,
         dag_id: &str,
     ) -> Result<crate::database::models::dag::DagExecutionStats> {
-        self.dag_repository.get_dag_stats(dag_id).await
+        Ok(self.dag_repository.get_dag_stats(dag_id).await?)
     }
 
     /// The running steps of the given DAGs, as `(dag_id, job_id)` pairs.
     pub async fn list_running_step_jobs(&self, dag_ids: &[&str]) -> Result<Vec<(String, String)>> {
-        self.dag_repository.list_running_step_jobs(dag_ids).await
+        Ok(self.dag_repository.list_running_step_jobs(dag_ids).await?)
     }
 
     /// Permanently delete a DAG execution, all its steps, and associated jobs/logs.
@@ -155,6 +162,6 @@ impl DagScheduler {
         self.job_queue.forget_jobs(&job_ids);
 
         // Delete the DAG (CASCADE deletes steps)
-        self.dag_repository.delete_dag(dag_id).await
+        Ok(self.dag_repository.delete_dag(dag_id).await?)
     }
 }

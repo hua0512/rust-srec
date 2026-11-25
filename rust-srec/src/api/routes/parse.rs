@@ -630,8 +630,8 @@ fn playback_resolution_error(error: ApiError) -> ApiError {
     }
 }
 
-fn playback_profile_error(error: crate::Error) -> ApiError {
-    match error {
+fn playback_profile_error(error: impl Into<crate::Error>) -> ApiError {
+    match error.into() {
         crate::Error::NotFound { .. }
         | crate::Error::CredentialProfile(
             crate::credentials::ProfileError::InvalidOwner

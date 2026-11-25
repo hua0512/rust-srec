@@ -71,7 +71,7 @@ jobs:
           # `git diff --quiet` exits 1 when the paths changed, above 1 on error.
           status=0
           git diff --quiet "$BASE_TAG...HEAD" -- \
-            rust-srec/src-tauri rust-srec/frontend rust-srec/src crates \
+            rust-srec/src-tauri rust-srec/frontend rust-srec/src rust-srec/crates crates \
             Cargo.toml Cargo.lock || status=$?
           case "$status" in
             0) echo "desktop_changed=false" >> "$GITHUB_OUTPUT" ;;
@@ -121,11 +121,11 @@ jobs:
           shared-key: pr-test
           save-if: false
       - name: Clippy
-        run: cargo clippy -p rust-srec --locked --features tls-native-fallback -- -D warnings
+        run: cargo clippy -p rust-srec -p srec-core -p srec-sqlite --locked --features rust-srec/tls-native-fallback -- -D warnings
       - name: Test
-        run: cargo nextest run -p rust-srec --locked --features tls-native-fallback
+        run: cargo nextest run -p rust-srec -p srec-core -p srec-sqlite --locked --features rust-srec/tls-native-fallback
       - name: Doctests
-        run: cargo test -p rust-srec --locked --doc --features tls-native-fallback
+        run: cargo test -p rust-srec -p srec-core -p srec-sqlite --locked --doc --features rust-srec/tls-native-fallback
 
   build:
     needs: check-and-test

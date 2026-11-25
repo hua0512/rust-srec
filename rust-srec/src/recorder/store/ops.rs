@@ -35,8 +35,14 @@ async fn enqueue_outbox_event(
 ) -> Result<()> {
     let payload = serde_json::to_string(event)
         .map_err(|e| crate::Error::Other(format!("Failed to serialize outbox event: {}", e)))?;
-    MonitorOutboxTxOps::enqueue_raw(tx, streamer_id, event.event_type(), &payload, created_at_ms)
-        .await
+    Ok(MonitorOutboxTxOps::enqueue_raw(
+        tx,
+        streamer_id,
+        event.event_type(),
+        &payload,
+        created_at_ms,
+    )
+    .await?)
 }
 
 pub(super) fn commit_op_label(op: &DbCommitOp) -> &'static str {

@@ -199,11 +199,30 @@ impl CommittedStreamerState {
             + Send
             + 'static,
     {
-        self.writer.require_serialized()?;
+        self.transaction_with_error(label, publication, operation)
+            .await
+    }
+
+    async fn transaction_with_error<T, E, F>(
+        &self,
+        label: &'static str,
+        publication: StatePublication,
+        operation: F,
+    ) -> std::result::Result<T, E>
+    where
+        T: Send + 'static,
+        E: From<sqlx::Error> + From<srec_sqlite::DbError> + std::fmt::Display + Send + 'static,
+        F: for<'c> FnOnce(
+                &'c mut SqliteConnection,
+            ) -> BoxFuture<'c, std::result::Result<StateChange<T>, E>>
+            + Send
+            + 'static,
+    {
+        self.writer.require_serialized().map_err(E::from)?;
         let cache = self.cache.clone();
         let change = self
             .writer
-            .transaction(label, operation, move |change| {
+            .transaction_with_error(label, operation, move |change| {
                 cache.apply(change, publication)
             })
             .await?;
@@ -252,7 +271,7 @@ impl CommittedStreamerState {
 
 #[async_trait]
 impl StreamerCommitOwner for CommittedStreamerState {
-    fn require_same_pool(&self, pool: &SqlitePool) -> Result<()> {
+    fn require_same_pool(&self, pool: &SqlitePool) -> srec_sqlite::DbResult<()> {
         self.writer.require_same_pool(pool)
     }
 
@@ -261,8 +280,9 @@ impl StreamerCommitOwner for CommittedStreamerState {
         label: &'static str,
         publication: StatePublication,
         operation: StreamerTxOp,
-    ) -> Result<Option<StreamerDbModel>> {
-        self.transaction(label, publication, operation).await
+    ) -> srec_sqlite::DbResult<Option<StreamerDbModel>> {
+        self.transaction_with_error(label, publication, operation)
+            .await
     }
 
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {

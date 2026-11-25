@@ -1194,7 +1194,7 @@ async fn acceptance_rotation_pinning_recovery_targeted_refresh_and_fixed_isolati
     )
     .await
     .into_iter()
-    .map(Result::unwrap)
+    .map(std::result::Result::unwrap)
     .collect();
     let refreshed = service
         .refresh_profile(&profiles[0].id, OperationDeadline::default())

@@ -435,7 +435,7 @@ impl PipelineManager {
         for dag in &coordination_dags {
             let Some(source) = dag
                 .get_segment_source()
-                .and_then(DagSegmentSource::source_type)
+                .and_then(SourceType::from_segment_source)
             else {
                 continue;
             };
@@ -465,7 +465,7 @@ impl PipelineManager {
         for dag in &coordination_dags {
             let Some(source) = dag
                 .get_segment_source()
-                .and_then(DagSegmentSource::source_type)
+                .and_then(SourceType::from_segment_source)
             else {
                 continue;
             };

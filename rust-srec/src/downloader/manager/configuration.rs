@@ -158,10 +158,10 @@ impl DownloadManager {
                         };
                         return Ok((engine, engine_type, key));
                     }
-                    Err(crate::Error::NotFound { .. }) => {
+                    Err(srec_sqlite::DbError::NotFound { .. }) => {
                         warn!(engine_id = id, "Engine config not found; using default")
                     }
-                    Err(error) => return Err(error),
+                    Err(error) => return Err(error.into()),
                 }
             }
         }
@@ -189,8 +189,8 @@ impl DownloadManager {
                     error.column()
                 ))
             }),
-            Err(crate::Error::NotFound { .. }) => Ok(T::default()),
-            Err(error) => Err(error),
+            Err(srec_sqlite::DbError::NotFound { .. }) => Ok(T::default()),
+            Err(error) => Err(error.into()),
         }
     }
 

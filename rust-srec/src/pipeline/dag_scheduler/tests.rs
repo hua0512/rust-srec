@@ -1,5 +1,4 @@
 use super::*;
-use crate::Result;
 use crate::database::models::{DagExecutionStatus, DagStepStatus, JobDbModel};
 use crate::pipeline::JobFailureOutcome;
 use crate::pipeline::job_queue::parse_job_state;
@@ -165,26 +164,32 @@ impl JobRepository for NoopJobRepository {
         _supported_types: &[&str],
         _after_id: Option<&str>,
         _limit: u32,
-    ) -> Result<Vec<crate::database::repositories::UnclaimableJob>> {
+    ) -> srec_sqlite::DbResult<Vec<crate::database::repositories::UnclaimableJob>> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn create_job(&self, _job: &crate::database::models::JobDbModel) -> Result<()> {
+    async fn create_job(
+        &self,
+        _job: &crate::database::models::JobDbModel,
+    ) -> srec_sqlite::DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn get_job(&self, _id: &str) -> Result<crate::database::models::JobDbModel> {
+    async fn get_job(
+        &self,
+        _id: &str,
+    ) -> srec_sqlite::DbResult<crate::database::models::JobDbModel> {
         unimplemented!("not needed for these tests")
     }
 
     async fn list_jobs_by_status(
         &self,
         _status: JobStatus,
-    ) -> Result<Vec<crate::database::models::JobDbModel>> {
+    ) -> srec_sqlite::DbResult<Vec<crate::database::models::JobDbModel>> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn update_job_status(&self, _id: &str, _status: JobStatus) -> Result<()> {
+    async fn update_job_status(&self, _id: &str, _status: JobStatus) -> srec_sqlite::DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
@@ -193,46 +198,56 @@ impl JobRepository for NoopJobRepository {
         _id: &str,
         _error: &str,
         _retry_after: Option<i64>,
-    ) -> Result<u64> {
+    ) -> srec_sqlite::DbResult<u64> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn mark_job_cancelled(&self, _id: &str) -> Result<u64> {
+    async fn mark_job_cancelled(&self, _id: &str) -> srec_sqlite::DbResult<u64> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn reset_job_for_retry(&self, _id: &str) -> Result<()> {
+    async fn reset_job_for_retry(&self, _id: &str) -> srec_sqlite::DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn count_pending_jobs(&self, _job_types: Option<&[String]>) -> Result<u64> {
+    async fn count_pending_jobs(
+        &self,
+        _job_types: Option<&[String]>,
+    ) -> srec_sqlite::DbResult<u64> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn count_pending_jobs_by_type(&self) -> Result<Vec<(String, u64)>> {
+    async fn count_pending_jobs_by_type(&self) -> srec_sqlite::DbResult<Vec<(String, u64)>> {
         unimplemented!("not needed for these tests")
     }
 
     async fn claim_next_pending_job(
         &self,
         _job_types: Option<&[String]>,
-    ) -> Result<Option<crate::database::models::JobDbModel>> {
+    ) -> srec_sqlite::DbResult<Option<crate::database::models::JobDbModel>> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn get_job_execution_info(&self, _id: &str) -> Result<Option<String>> {
+    async fn get_job_execution_info(&self, _id: &str) -> srec_sqlite::DbResult<Option<String>> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn update_job_execution_info(&self, _id: &str, _execution_info: &str) -> Result<()> {
+    async fn update_job_execution_info(
+        &self,
+        _id: &str,
+        _execution_info: &str,
+    ) -> srec_sqlite::DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn update_job_state(&self, _id: &str, _state: &str) -> Result<()> {
+    async fn update_job_state(&self, _id: &str, _state: &str) -> srec_sqlite::DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn update_job(&self, _job: &crate::database::models::JobDbModel) -> Result<()> {
+    async fn update_job(
+        &self,
+        _job: &crate::database::models::JobDbModel,
+    ) -> srec_sqlite::DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
@@ -240,29 +255,29 @@ impl JobRepository for NoopJobRepository {
         &self,
         _job: &crate::database::models::JobDbModel,
         _expected_status: JobStatus,
-    ) -> Result<u64> {
+    ) -> srec_sqlite::DbResult<u64> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn reset_processing_jobs(&self) -> Result<i32> {
+    async fn reset_processing_jobs(&self) -> srec_sqlite::DbResult<i32> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn delete_job(&self, _id: &str) -> Result<()> {
+    async fn delete_job(&self, _id: &str) -> srec_sqlite::DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
     async fn add_execution_log(
         &self,
         _log: &crate::database::models::JobExecutionLogDbModel,
-    ) -> Result<()> {
+    ) -> srec_sqlite::DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
     async fn add_execution_logs(
         &self,
         _logs: &[crate::database::models::JobExecutionLogDbModel],
-    ) -> Result<()> {
+    ) -> srec_sqlite::DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
@@ -270,56 +285,64 @@ impl JobRepository for NoopJobRepository {
         &self,
         _job_id: &str,
         _pagination: &crate::database::models::Pagination,
-    ) -> Result<(Vec<crate::database::models::JobExecutionLogDbModel>, u64)> {
+    ) -> srec_sqlite::DbResult<(Vec<crate::database::models::JobExecutionLogDbModel>, u64)> {
         Ok((Vec::new(), 0))
     }
 
-    async fn delete_execution_logs_for_job(&self, _job_id: &str) -> Result<()> {
+    async fn delete_execution_logs_for_job(&self, _job_id: &str) -> srec_sqlite::DbResult<()> {
         unimplemented!("not needed for these tests")
     }
 
     async fn list_pending_jobs(
         &self,
         _limit: u32,
-    ) -> Result<(Vec<crate::database::models::JobDbModel>, u64)> {
+    ) -> srec_sqlite::DbResult<(Vec<crate::database::models::JobDbModel>, u64)> {
         unimplemented!("not needed for these tests")
     }
 
     async fn count_jobs_by_status(
         &self,
         _status: crate::database::models::JobStatus,
-    ) -> Result<u64> {
+    ) -> srec_sqlite::DbResult<u64> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn count_unfinished_jobs_for_streamer(&self, _streamer_id: &str) -> Result<u64> {
+    async fn count_unfinished_jobs_for_streamer(
+        &self,
+        _streamer_id: &str,
+    ) -> srec_sqlite::DbResult<u64> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn count_unfinished_jobs_for_session(&self, _session_id: &str) -> Result<u64> {
+    async fn count_unfinished_jobs_for_session(
+        &self,
+        _session_id: &str,
+    ) -> srec_sqlite::DbResult<u64> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn get_job_counts_by_status(&self) -> Result<crate::database::models::JobCounts> {
+    async fn get_job_counts_by_status(
+        &self,
+    ) -> srec_sqlite::DbResult<crate::database::models::JobCounts> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn get_avg_processing_time(&self) -> Result<Option<f64>> {
+    async fn get_avg_processing_time(&self) -> srec_sqlite::DbResult<Option<f64>> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn cancel_jobs_by_pipeline(&self, _pipeline_id: &str) -> Result<u64> {
+    async fn cancel_jobs_by_pipeline(&self, _pipeline_id: &str) -> srec_sqlite::DbResult<u64> {
         unimplemented!("not needed for these tests")
     }
 
     async fn get_jobs_by_pipeline(
         &self,
         _pipeline_id: &str,
-    ) -> Result<Vec<crate::database::models::JobDbModel>> {
+    ) -> srec_sqlite::DbResult<Vec<crate::database::models::JobDbModel>> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn delete_jobs_by_pipeline(&self, _pipeline_id: &str) -> Result<u64> {
+    async fn delete_jobs_by_pipeline(&self, _pipeline_id: &str) -> srec_sqlite::DbResult<u64> {
         unimplemented!("not needed for these tests")
     }
 }

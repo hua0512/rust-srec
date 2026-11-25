@@ -810,7 +810,10 @@ impl PipelineManager {
         if !analysis.errors.is_empty() {
             return Ok(analysis);
         }
-        record(resolved.validate(), &mut analysis.errors)?;
+        record(
+            resolved.validate().map_err(Into::into),
+            &mut analysis.errors,
+        )?;
         record(
             self.validate_step_processors(&resolved),
             &mut analysis.errors,

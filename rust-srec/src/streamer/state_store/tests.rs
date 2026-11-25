@@ -531,7 +531,7 @@ async fn mismatched_repository_pool_cannot_write_through_another_owner() {
         SqlxStreamerRepository::new(other.clone(), other).with_commit_owner(f.store.clone());
     assert!(matches!(
         repository.update_streamer_state("state-test", "LIVE").await,
-        Err(crate::Error::Configuration(_))
+        Err(srec_sqlite::DbError::Configuration(_))
     ));
     assert_eq!(
         f.repository.get_streamer("state-test").await.unwrap().state,

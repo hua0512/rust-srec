@@ -1,0 +1,103 @@
+//! Complete job row writes. Callers own retries, timestamps and transactions.
+
+use sqlx::SqliteConnection;
+
+use crate::DbResult as Result;
+use crate::models::{JobDbModel, JobStatus};
+
+const INSERT: &str = r#"
+    INSERT INTO job (
+        id, job_type, status, config, state, created_at, updated_at,
+        input, outputs, priority, streamer_id, session_id,
+        started_at, completed_at, error, retry_count,
+        pipeline_id, execution_info, duration_secs, queue_wait_secs, dag_step_execution_id,
+        retry_after
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"#;
+
+// `retry_after` is deliberately absent from the full-row update: only
+// `mark_job_failed`, `clear_job_retry` and `reset_job_for_retry` move it, so a
+// full-row write racing the retry sweeper cannot drop a scheduled retry or
+// resurrect a cleared one.
+
+const UPDATE: &str = r#"
+    UPDATE job SET
+        job_type = ?, status = ?, config = ?, state = ?, updated_at = ?,
+        input = ?, outputs = ?, priority = ?, streamer_id = ?, session_id = ?,
+        started_at = ?, completed_at = ?, error = ?, retry_count = ?,
+        pipeline_id = ?, execution_info = ?, duration_secs = ?, queue_wait_secs = ?,
+        dag_step_execution_id = ?
+    WHERE id = ? AND (? IS NULL OR status = ?)
+"#;
+
+pub enum UpdateCondition {
+    Any,
+    Status(JobStatus),
+}
+
+pub async fn insert_job(connection: &mut SqliteConnection, job: &JobDbModel) -> Result<()> {
+    sqlx::query(INSERT)
+        .bind(&job.id)
+        .bind(&job.job_type)
+        .bind(&job.status)
+        .bind(&job.config)
+        .bind(&job.state)
+        .bind(job.created_at)
+        .bind(job.updated_at)
+        .bind(&job.input)
+        .bind(&job.outputs)
+        .bind(job.priority)
+        .bind(&job.streamer_id)
+        .bind(&job.session_id)
+        .bind(job.started_at)
+        .bind(job.completed_at)
+        .bind(&job.error)
+        .bind(job.retry_count)
+        .bind(&job.pipeline_id)
+        .bind(&job.execution_info)
+        .bind(job.duration_secs)
+        .bind(job.queue_wait_secs)
+        .bind(&job.dag_step_execution_id)
+        .bind(job.retry_after)
+        .execute(connection)
+        .await?;
+    Ok(())
+}
+
+pub async fn update_job(
+    connection: &mut SqliteConnection,
+    job: &JobDbModel,
+    updated_at: i64,
+    condition: UpdateCondition,
+) -> Result<u64> {
+    let expected = match condition {
+        UpdateCondition::Any => None,
+        UpdateCondition::Status(status) => Some(status.as_str()),
+    };
+    let result = sqlx::query(UPDATE)
+        .bind(&job.job_type)
+        .bind(&job.status)
+        .bind(&job.config)
+        .bind(&job.state)
+        .bind(updated_at)
+        .bind(&job.input)
+        .bind(&job.outputs)
+        .bind(job.priority)
+        .bind(&job.streamer_id)
+        .bind(&job.session_id)
+        .bind(job.started_at)
+        .bind(job.completed_at)
+        .bind(&job.error)
+        .bind(job.retry_count)
+        .bind(&job.pipeline_id)
+        .bind(&job.execution_info)
+        .bind(job.duration_secs)
+        .bind(job.queue_wait_secs)
+        .bind(&job.dag_step_execution_id)
+        .bind(&job.id)
+        .bind(expected)
+        .bind(expected)
+        .execute(connection)
+        .await?;
+    Ok(result.rows_affected())
+}

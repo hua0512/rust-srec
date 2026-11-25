@@ -1049,11 +1049,14 @@ mod tests {
 
     #[async_trait::async_trait]
     impl NotificationRepository for MockNotificationRepo {
-        async fn get_channel(&self, _id: &str) -> Result<NotificationChannelDbModel> {
+        async fn get_channel(
+            &self,
+            _id: &str,
+        ) -> srec_sqlite::DbResult<NotificationChannelDbModel> {
             unimplemented!()
         }
 
-        async fn list_channels(&self) -> Result<Vec<NotificationChannelDbModel>> {
+        async fn list_channels(&self) -> srec_sqlite::DbResult<Vec<NotificationChannelDbModel>> {
             self.list_calls.fetch_add(1, Ordering::SeqCst);
             let channels = self.channels.lock().await.clone();
             if self.pause_next_list.swap(false, Ordering::SeqCst) {
@@ -1063,11 +1066,17 @@ mod tests {
             Ok(channels)
         }
 
-        async fn create_channel(&self, _channel: &NotificationChannelDbModel) -> Result<()> {
+        async fn create_channel(
+            &self,
+            _channel: &NotificationChannelDbModel,
+        ) -> srec_sqlite::DbResult<()> {
             unimplemented!()
         }
 
-        async fn update_channel(&self, _channel: &NotificationChannelDbModel) -> Result<()> {
+        async fn update_channel(
+            &self,
+            _channel: &NotificationChannelDbModel,
+        ) -> srec_sqlite::DbResult<()> {
             unimplemented!()
         }
 
@@ -1075,17 +1084,20 @@ mod tests {
             &self,
             _id: &str,
             _patch: crate::database::repositories::notification::ChannelPatch,
-        ) -> Result<NotificationChannelDbModel> {
+        ) -> srec_sqlite::DbResult<NotificationChannelDbModel> {
             unimplemented!()
         }
 
-        async fn delete_channel(&self, _id: &str) -> Result<()> {
+        async fn delete_channel(&self, _id: &str) -> srec_sqlite::DbResult<()> {
             unimplemented!()
         }
 
-        async fn get_subscriptions_for_channel(&self, _channel_id: &str) -> Result<Vec<String>> {
+        async fn get_subscriptions_for_channel(
+            &self,
+            _channel_id: &str,
+        ) -> srec_sqlite::DbResult<Vec<String>> {
             if self.fail_subscriptions_for.lock().as_deref() == Some(_channel_id) {
-                return Err(crate::Error::Other(
+                return Err(srec_sqlite::DbError::Other(
                     "injected subscription read failure".to_owned(),
                 ));
             }
@@ -1098,9 +1110,13 @@ mod tests {
                 .unwrap_or_default())
         }
 
-        async fn subscribe(&self, _channel_id: &str, _event_name: &str) -> Result<()> {
+        async fn subscribe(
+            &self,
+            _channel_id: &str,
+            _event_name: &str,
+        ) -> srec_sqlite::DbResult<()> {
             if self.fail_subscribe.load(Ordering::SeqCst) {
-                return Err(crate::Error::Other(
+                return Err(srec_sqlite::DbError::Other(
                     "injected subscription write failure".to_owned(),
                 ));
             }
@@ -1117,7 +1133,11 @@ mod tests {
             Ok(())
         }
 
-        async fn unsubscribe(&self, _channel_id: &str, _event_name: &str) -> Result<()> {
+        async fn unsubscribe(
+            &self,
+            _channel_id: &str,
+            _event_name: &str,
+        ) -> srec_sqlite::DbResult<()> {
             self.unsubscribe_calls
                 .lock()
                 .await
@@ -1130,9 +1150,12 @@ mod tests {
             Ok(())
         }
 
-        async fn add_to_dead_letter(&self, entry: &NotificationDeadLetterDbModel) -> Result<()> {
+        async fn add_to_dead_letter(
+            &self,
+            entry: &NotificationDeadLetterDbModel,
+        ) -> srec_sqlite::DbResult<()> {
             if self.fail_dead_letter_insert {
-                return Err(crate::Error::Other(
+                return Err(srec_sqlite::DbError::Other(
                     "forced dead letter insert failure".into(),
                 ));
             }
@@ -1147,11 +1170,14 @@ mod tests {
             &self,
             _channel_id: Option<&str>,
             _limit: i32,
-        ) -> Result<Vec<NotificationDeadLetterDbModel>> {
+        ) -> srec_sqlite::DbResult<Vec<NotificationDeadLetterDbModel>> {
             unimplemented!()
         }
 
-        async fn add_event_log(&self, entry: &NotificationEventLogDbModel) -> Result<()> {
+        async fn add_event_log(
+            &self,
+            entry: &NotificationEventLogDbModel,
+        ) -> srec_sqlite::DbResult<()> {
             assert!(
                 !self.panic_next_event_log.swap(false, Ordering::SeqCst),
                 "injected event-log panic"

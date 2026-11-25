@@ -88,7 +88,7 @@ impl DagScheduler {
         // a partially restarted DAG never sits in PROCESSING with nothing to
         // advance it.
         if let Err(error) = self.dag_repository.reset_dag_for_retry(dag_id).await {
-            return Err(self.refail_after_retry(dag_id, error).await);
+            return Err(self.refail_after_retry(dag_id, error.into()).await);
         }
         after_reset();
 

@@ -532,13 +532,13 @@ impl DagScheduler {
     ) -> Result<StepRetryState> {
         let step = match self.dag_repository.get_step(dag_step_execution_id).await {
             Ok(step) => step,
-            Err(Error::NotFound { .. }) => return Ok(StepRetryState::default()),
-            Err(error) => return Err(error),
+            Err(srec_sqlite::DbError::NotFound { .. }) => return Ok(StepRetryState::default()),
+            Err(error) => return Err(error.into()),
         };
         let dag = match self.dag_repository.get_dag(&step.dag_id).await {
             Ok(dag) => dag,
-            Err(Error::NotFound { .. }) => return Ok(StepRetryState::default()),
-            Err(error) => return Err(error),
+            Err(srec_sqlite::DbError::NotFound { .. }) => return Ok(StepRetryState::default()),
+            Err(error) => return Err(error.into()),
         };
         let max_attempts = dag
             .get_dag_definition()

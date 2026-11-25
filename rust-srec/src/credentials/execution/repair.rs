@@ -272,7 +272,9 @@ impl CredentialExecutionService {
                 snapshot.material.cookies = cookies;
                 if matches!(
                     error,
-                    Error::CredentialProfile(ProfileError::SourceChanged | ProfileError::Disabled)
+                    srec_sqlite::DbError::CredentialProfile(
+                        ProfileError::SourceChanged | ProfileError::Disabled
+                    )
                 ) {
                     tracing::debug!(
                         profile_id = %profile.id,
@@ -280,6 +282,7 @@ impl CredentialExecutionService {
                     );
                 } else {
                     let scope = self.display_scope(&profile.owner()).await;
+                    let error = Error::from(error);
                     self.providers
                         .report_session_save_failure(profile, scope, platform, &error);
                 }

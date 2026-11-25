@@ -1,0 +1,38 @@
+[package]
+name = "srec-sqlite"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "SQLite persistence layer, migrations, repositories, and committed writer for rust-srec"
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+futures = { workspace = true }
+jiff = { workspace = true }
+jiff-cron = { workspace = true }
+parking_lot = { workspace = true }
+rand = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+srec-core = { workspace = true }
+tempfile = { workspace = true, optional = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
+
+[features]
+default = []
+test-support = ["dep:tempfile"]

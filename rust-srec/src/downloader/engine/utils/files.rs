@@ -15,5 +15,5 @@ use crate::utils::fs;
 /// * `Err(crate::Error)` - If the directory could not be created
 ///
 pub async fn ensure_output_dir(path: &Path) -> Result<()> {
-    fs::ensure_dir_all_with_op("creating output directory", path).await
+    Ok(fs::ensure_dir_all_with_op("creating output directory", path).await?)
 }

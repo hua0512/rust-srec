@@ -1,0 +1,779 @@
+use std::time::Duration;
+
+use sqlx::SqlitePool;
+
+use super::*;
+use crate::models::{StreamerDbModel, TemplateConfigDbModel};
+use crate::repositories::{
+    ConfigRepository, CredentialProfileRepository, SqlxConfigRepository, SqlxStreamerRepository,
+    StreamerRepository,
+};
+use srec_core::domain::credential::CredentialMaterial;
+
+struct Fixture {
+    pool: SqlitePool,
+    profiles: CredentialProfileRepository,
+    config: SqlxConfigRepository,
+    streamers: SqlxStreamerRepository,
+}
+
+async fn fixture() -> Fixture {
+    let pool = crate::init_pool_with_size("sqlite::memory:", 1)
+        .await
+        .unwrap();
+    crate::run_migrations(&pool).await.unwrap();
+    Fixture {
+        profiles: CredentialProfileRepository::new(pool.clone(), pool.clone()),
+        config: SqlxConfigRepository::new(pool.clone(), pool.clone()),
+        streamers: SqlxStreamerRepository::new(pool.clone(), pool.clone()),
+        pool,
+    }
+}
+
+fn material(cookies: &str) -> CredentialMaterial {
+    CredentialMaterial {
+        cookies: cookies.into(),
+        refresh_token: None,
+        access_token: None,
+        reauth_config: None,
+    }
+}
+
+fn fixed(id: &str) -> CredentialSelection {
+    CredentialSelection::Fixed {
+        credential_id: id.into(),
+    }
+}
+
+fn platform(id: &str) -> CredentialOwner {
+    CredentialOwner::Platform {
+        platform_id: id.into(),
+    }
+}
+
+impl Fixture {
+    async fn profile(&self, platform_id: &str, cookies: &str) -> String {
+        self.profiles
+            .create(
+                platform_id,
+                cookies,
+                true,
+                &material(cookies),
+                &srec_core::domain::proxy::ProxyRoute::Inherit,
+            )
+            .await
+            .unwrap()
+            .id
+    }
+
+    async fn stored(
+        &self,
+        owner: &CredentialOwner,
+        platform_id: &str,
+    ) -> Option<CredentialSelection> {
+        test_support::load_scope(&mut self.pool.acquire().await.unwrap(), owner, platform_id)
+            .await
+            .unwrap()
+    }
+
+    async fn rows(&self) -> i64 {
+        sqlx::query_scalar("SELECT COUNT(*) FROM credential_selections")
+            .fetch_one(&self.pool)
+            .await
+            .unwrap()
+    }
+
+    async fn streamer(
+        &self,
+        url: &str,
+        platform_id: &str,
+        config: serde_json::Value,
+    ) -> StreamerDbModel {
+        let mut streamer = StreamerDbModel::new("Streamer", url, platform_id);
+        streamer.streamer_specific_config = Some(config.to_string());
+        self.streamers.create_streamer(&streamer).await.unwrap();
+        streamer
+    }
+}
+
+#[tokio::test]
+async fn pools_round_trip_in_saved_order_and_rewrites_are_no_ops() {
+    let f = fixture().await;
+    let a = f.profile("platform-bilibili", "a=1").await;
+    let b = f.profile("platform-bilibili", "b=1").await;
+    let pool = CredentialSelection::Pool {
+        credential_ids: vec![b.clone(), a.clone()],
+        strategy: PoolStrategy::RoundRobin,
+        failover: false,
+        max_attempts: 5,
+        anonymous_fallback: true,
+    };
+    let owner = platform("platform-bilibili");
+    let mut connection = f.pool.acquire().await.unwrap();
+    assert!(
+        set(&mut connection, &owner, "platform-bilibili", &pool)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !set(&mut connection, &owner, "platform-bilibili", &pool)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        test_support::load_scope(&mut connection, &owner, "platform-bilibili")
+            .await
+            .unwrap(),
+        Some(pool)
+    );
+    assert!(
+        set(
+            &mut connection,
+            &owner,
+            "platform-bilibili",
+            &CredentialSelection::None
+        )
+        .await
+        .unwrap()
+    );
+    assert_eq!(
+        test_support::load_scope(&mut connection, &owner, "platform-bilibili")
+            .await
+            .unwrap(),
+        Some(CredentialSelection::None)
+    );
+    let members: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM credential_selection_members")
+        .fetch_one(&mut *connection)
+        .await
+        .unwrap();
+    assert_eq!(members, 0);
+}
+
+/// One listing names every profile's selecting scopes and the live
+/// recordings bound to it, reading the open sessions once for all profiles.
+#[tokio::test]
+async fn references_of_many_profiles_are_named_in_one_pass() {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let f = fixture().await;
+        let selected = f.profile("platform-bilibili", "sid=a").await;
+        let recording = f.profile("platform-bilibili", "sid=b").await;
+        let unused = f.profile("platform-bilibili", "sid=c").await;
+        let streamer = f
+            .streamer(
+                "https://live.bilibili.com/1",
+                "platform-bilibili",
+                serde_json::json!({"credential_selection": {"mode": "pool", "credential_ids": [selected, recording]}}),
+            )
+            .await;
+        let owner = platform("platform-bilibili");
+        let bind = |profile_id: &str| {
+            serde_json::to_string(&srec_core::domain::credential::CredentialBinding {
+                identity: srec_core::domain::credential::CredentialIdentity::Profile {
+                    profile_id: profile_id.into(),
+                },
+                revision: 1,
+                policy: srec_core::domain::credential::ResolvedCredentialPolicy::new(
+                    owner.id().into(),
+                    owner.clone(),
+                    fixed(profile_id),
+                )
+                .unwrap(),
+                epoch: 1,
+            })
+            .unwrap()
+        };
+        // A live recording with its streamer, one whose streamer row is gone,
+        // and an ended one that no longer holds the account.
+        for (id, streamer_id, end_time) in [
+            ("live", Some(streamer.id.as_str()), None),
+            ("orphan", None, None),
+            ("ended", Some(streamer.id.as_str()), Some(2)),
+        ] {
+            sqlx::query("INSERT INTO live_sessions(id, streamer_id, streamer_name, start_time, end_time, credential_binding) VALUES (?, ?, 'Recorded name', 1, ?, ?)")
+                .bind(id)
+                .bind(streamer_id)
+                .bind(end_time)
+                .bind(bind(&recording))
+                .execute(&f.pool)
+                .await
+                .unwrap();
+        }
+
+        let ids = vec![selected.clone(), recording.clone(), unused.clone()];
+        let references = f.profiles.references_of(&ids).await.unwrap();
+        assert!(!references.contains_key(&unused));
+        let streamer_scope = srec_core::domain::credential::SelectionReference {
+            owner: CredentialOwner::Streamer {
+                streamer_id: streamer.id.clone(),
+            },
+            name: "Streamer".into(),
+            platform_id: "platform-bilibili".into(),
+            platform_name: "bilibili".into(),
+        };
+        assert_eq!(
+            references[&selected],
+            srec_core::domain::credential::ProfileReferences {
+                selections: vec![streamer_scope.clone()],
+                recordings: Vec::new(),
+            }
+        );
+        assert_eq!(
+            references[&recording],
+            srec_core::domain::credential::ProfileReferences {
+                selections: vec![streamer_scope],
+                recordings: vec![
+                    srec_core::domain::credential::RecordingReference {
+                        session_id: "live".into(),
+                        streamer_id: Some(streamer.id.clone()),
+                        streamer_name: "Streamer".into(),
+                    },
+                    srec_core::domain::credential::RecordingReference {
+                        session_id: "orphan".into(),
+                        streamer_id: None,
+                        streamer_name: "Recorded name".into(),
+                    },
+                ],
+            }
+        );
+        // The single-profile form reads the same.
+        for id in &ids {
+            assert_eq!(
+                f.profiles.references(id).await.unwrap(),
+                references.get(id).cloned().unwrap_or_default()
+            );
+        }
+        assert!(f.profiles.references_of(&[]).await.unwrap().is_empty());
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn a_streamer_that_moves_platform_inherits_there() {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let f = fixture().await;
+        let bilibili = f.profile("platform-bilibili", "sid=a").await;
+        let huya = f.profile("platform-huya", "huya=a").await;
+        let echoed = serde_json::json!({"credential_selection": {"mode": "fixed", "credential_id": bilibili}});
+        let mut streamer = f
+            .streamer("https://live.bilibili.com/1", "platform-bilibili", echoed.clone())
+            .await;
+        let owner = CredentialOwner::Streamer {
+            streamer_id: streamer.id.clone(),
+        };
+
+        // A form that repeats the old platform's selection still saves.
+        streamer.url = "https://www.huya.com/1".into();
+        streamer.platform_config_id = "platform-huya".into();
+        f.streamers.update_streamer(&streamer).await.unwrap();
+        assert_eq!(f.stored(&owner, "platform-bilibili").await, None);
+        assert_eq!(f.stored(&owner, "platform-huya").await, None);
+        assert!(f.profiles.references(&bilibili).await.unwrap().is_empty());
+
+        // A selection the request changes is checked against the new platform.
+        streamer.streamer_specific_config = Some(
+            serde_json::json!({"credential_selection": {"mode": "pool", "credential_ids": [bilibili]}})
+                .to_string(),
+        );
+        let error = f.streamers.update_streamer(&streamer).await.unwrap_err();
+        assert!(
+            matches!(&error, Error::CredentialProfile(ProfileError::InaccessibleReferences(references)) if references == &vec![format!("streamer:{}", streamer.id)]),
+            "{error}"
+        );
+        streamer.streamer_specific_config = Some(
+            serde_json::json!({"credential_selection": {"mode": "fixed", "credential_id": huya}})
+                .to_string(),
+        );
+        f.streamers.update_streamer(&streamer).await.unwrap();
+        assert_eq!(f.stored(&owner, "platform-huya").await, Some(fixed(&huya)));
+
+        // A raw platform change drops the selection too.
+        sqlx::query("UPDATE streamers SET platform_config_id = 'platform-bilibili' WHERE id = ?")
+            .bind(&streamer.id)
+            .execute(&f.pool)
+            .await
+            .unwrap();
+        assert_eq!(f.rows().await, 0);
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn cloned_templates_select_the_same_accounts() {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let f = fixture().await;
+        let account = f.profile("platform-bilibili", "sid=a").await;
+        let mut template = TemplateConfigDbModel::new("Source");
+        template.platform_overrides = Some(
+            serde_json::json!({"bilibili": {"credential_selection": {"mode": "fixed", "credential_id": account}}, "huya": {"credential_selection": {"mode": "none"}}})
+                .to_string(),
+        );
+        f.config.create_template_config(&template).await.unwrap();
+        let cloned = f.config.clone_template_config(&template.id, "Copy").await.unwrap();
+        let owner = CredentialOwner::Template {
+            template_id: cloned.id.clone(),
+        };
+        assert_eq!(f.stored(&owner, "platform-bilibili").await, Some(fixed(&account)));
+        assert_eq!(f.stored(&owner, "platform-huya").await, Some(CredentialSelection::None));
+        assert_eq!(f.rows().await, 4);
+    })
+    .await
+    .unwrap();
+}
+
+#[test]
+fn documents_split_and_rejoin_their_selection() {
+    let mut raw = Some(
+        serde_json::json!({"credential_selection": {"mode": "pool", "credential_ids": ["a"]}, "quality": 1})
+            .to_string(),
+    );
+    let selection = take_document(&mut raw).unwrap().unwrap();
+    assert_eq!(
+        selection,
+        CredentialSelection::Pool {
+            credential_ids: vec!["a".into()],
+            strategy: PoolStrategy::Priority,
+            failover: true,
+            max_attempts: 3,
+            anonymous_fallback: false,
+        }
+    );
+    assert_eq!(raw.as_deref(), Some(r#"{"quality":1}"#));
+    // Text without a selection, or that is not an object, stays as written.
+    for text in [r#"{ "quality" : 1 }"#, "not json"] {
+        let mut raw = Some(text.to_owned());
+        assert_eq!(take_document(&mut raw).unwrap(), None);
+        assert_eq!(raw.as_deref(), Some(text));
+    }
+    let mut invalid =
+        Some(r#"{"credential_selection": {"mode": "pool", "credential_ids": []}}"#.to_owned());
+    assert!(take_document(&mut invalid).is_err());
+
+    let rejoined =
+        inject_document(Some(serde_json::json!({"quality": 1})), Some(&selection)).unwrap();
+    assert_eq!(rejoined["credential_selection"]["strategy"], "priority");
+    assert_eq!(
+        inject_document(
+            Some(serde_json::json!({"credential_selection": {"mode": "none"}})),
+            None
+        ),
+        Some(serde_json::json!({}))
+    );
+
+    let mut overrides = Some(
+        serde_json::json!({"bilibili": {"credential_selection": {"mode": "none"}, "quality": 1}, "huya": {"quality": 2}})
+            .to_string(),
+    );
+    assert_eq!(
+        take_overrides(&mut overrides).unwrap(),
+        vec![("bilibili".to_owned(), CredentialSelection::None)]
+    );
+    let stored = StoredSelection {
+        owner: CredentialOwner::Template {
+            template_id: "t".into(),
+        },
+        platform_id: "platform-douyu".into(),
+        platform_name: "douyu".into(),
+        selection: CredentialSelection::None,
+        site: None,
+    };
+    let overrides: serde_json::Value = serde_json::from_str(overrides.as_deref().unwrap()).unwrap();
+    assert_eq!(
+        inject_overrides(Some(overrides), &[stored]),
+        Some(serde_json::json!({
+            "bilibili": {"quality": 1},
+            "huya": {"quality": 2},
+            "douyu": {"credential_selection": {"mode": "none"}}
+        }))
+    );
+}
+
+#[tokio::test]
+async fn streamlink_accounts_are_chosen_per_streamer_one_at_a_time() {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let f = fixture().await;
+        let account = f.profile("platform-streamlink", "site=a").await;
+        let other = f.profile("platform-streamlink", "site=b").await;
+        let streamer = f
+            .streamer("https://example.test/live", "platform-streamlink", serde_json::json!({}))
+            .await;
+        let owner = CredentialOwner::Streamer {
+            streamer_id: streamer.id.clone(),
+        };
+        let template = TemplateConfigDbModel::new("Streamlink");
+        f.config.create_template_config(&template).await.unwrap();
+        let pool = CredentialSelection::Pool {
+            credential_ids: vec![account.clone(), other.clone()],
+            strategy: PoolStrategy::Priority,
+            failover: true,
+            max_attempts: 3,
+            anonymous_fallback: false,
+        };
+
+        let mut connection = f.pool.acquire().await.unwrap();
+        let template_owner = CredentialOwner::Template {
+            template_id: template.id.clone(),
+        };
+        for (scope, selection) in [
+            (platform("platform-streamlink"), fixed(&account)),
+            (platform("platform-streamlink"), CredentialSelection::None),
+            (template_owner.clone(), fixed(&account)),
+            (owner.clone(), pool),
+        ] {
+            let error = set(&mut connection, &scope, "platform-streamlink", &selection)
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(&error, Error::CredentialProfile(ProfileError::PerStreamerOnly(_))),
+                "{error}"
+            );
+        }
+        drop(connection);
+        // Template writes through configuration take the same path.
+        let mut overrides = template.clone();
+        overrides.platform_overrides = Some(
+            serde_json::json!({"streamlink": {"credential_selection": {"mode": "fixed", "credential_id": account}}})
+                .to_string(),
+        );
+        let error = f.config.update_template_config(&overrides).await.unwrap_err();
+        assert!(
+            matches!(&error, Error::CredentialProfile(ProfileError::PerStreamerOnly(_))),
+            "{error}"
+        );
+        // Inherit stores nothing and is always allowed.
+        let mut connection = f.pool.acquire().await.unwrap();
+        assert!(
+            !set(
+                &mut connection,
+                &platform("platform-streamlink"),
+                "platform-streamlink",
+                &CredentialSelection::Inherit
+            )
+            .await
+            .unwrap()
+        );
+        drop(connection);
+        assert_eq!(f.rows().await, 0);
+
+        let mut connection = f.pool.acquire().await.unwrap();
+        for selection in [CredentialSelection::None, fixed(&other)] {
+            assert!(
+                set(&mut connection, &owner, "platform-streamlink", &selection)
+                    .await
+                    .unwrap()
+            );
+            drop(connection);
+            assert_eq!(f.stored(&owner, "platform-streamlink").await, Some(selection));
+            connection = f.pool.acquire().await.unwrap();
+        }
+
+        // A platform row written around the repository is ignored: a streamer
+        // without its own selection is anonymous, one with a selection keeps it.
+        clear_owner(&mut connection, &owner).await.unwrap();
+        let id: i64 = sqlx::query_scalar("INSERT INTO credential_selections(platform_config_id, mode) VALUES ('platform-streamlink', 'fixed') RETURNING id")
+            .fetch_one(&mut *connection).await.unwrap();
+        sqlx::query("INSERT INTO credential_selection_members(selection_id, platform_config_id, position, profile_id) VALUES (?, 'platform-streamlink', 0, ?)")
+            .bind(id).bind(&account).execute(&mut *connection).await.unwrap();
+        let layers = load_for_streamer(&mut connection, &streamer.id, "platform-streamlink", None)
+            .await
+            .unwrap();
+        assert_eq!(layers.len(), 1);
+        assert!(
+            srec_core::domain::credential::resolve_authentication("platform-streamlink", &layers)
+                .unwrap()
+                .is_none()
+        );
+        set(&mut connection, &owner, "platform-streamlink", &fixed(&other))
+            .await
+            .unwrap();
+        let layers = load_for_streamer(&mut connection, &streamer.id, "platform-streamlink", None)
+            .await
+            .unwrap();
+        let policy =
+            srec_core::domain::credential::resolve_authentication("platform-streamlink", &layers)
+                .unwrap()
+                .unwrap();
+        assert_eq!(policy.owner, owner);
+    })
+    .await
+    .unwrap();
+}
+
+impl Fixture {
+    async fn name_sites(
+        &self,
+        id: &str,
+        sites: &[&str],
+    ) -> Result<srec_core::domain::credential::CredentialProfile> {
+        let version = self.profiles.get(id).await.unwrap().version;
+        let sites: Vec<String> = sites.iter().map(|site| (*site).to_owned()).collect();
+        self.profiles
+            .edit(
+                id,
+                version,
+                crate::repositories::credential_profiles::ProfileEdit {
+                    sites: Some(&sites),
+                    ..Default::default()
+                },
+            )
+            .await
+    }
+
+    async fn resolved(
+        &self,
+        streamer_id: &str,
+    ) -> Option<srec_core::domain::credential::ResolvedCredentialPolicy> {
+        let mut connection = self.pool.acquire().await.unwrap();
+        let layers = load_for_streamer(&mut connection, streamer_id, "platform-streamlink", None)
+            .await
+            .unwrap();
+        srec_core::domain::credential::resolve_authentication("platform-streamlink", &layers)
+            .unwrap()
+    }
+}
+
+#[tokio::test]
+async fn a_streamlink_streamer_without_an_account_uses_the_account_of_its_site() {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let f = fixture().await;
+        let youtube = f.profile("platform-streamlink", "site=youtube").await;
+        let mobile = f.profile("platform-streamlink", "site=mobile").await;
+        let other = f.profile("platform-streamlink", "site=other").await;
+        let desktop = f
+            .streamer(
+                "https://www.youtube.com/@someone/live",
+                "platform-streamlink",
+                serde_json::json!({}),
+            )
+            .await;
+        let phone = f
+            .streamer(
+                "https://m.youtube.com/@someone/live",
+                "platform-streamlink",
+                serde_json::json!({}),
+            )
+            .await;
+        let kick = f
+            .streamer(
+                "https://kick.com/someone",
+                "platform-streamlink",
+                serde_json::json!({}),
+            )
+            .await;
+        assert!(f.resolved(&desktop.id).await.is_none());
+
+        let before = f.profiles.get(&youtube).await.unwrap();
+        let named = f
+            .name_sites(&youtube, &["https://www.youtube.com/"])
+            .await
+            .unwrap();
+        // Sites change which streamers use the account, not the account.
+        assert_eq!(named.revision, before.revision);
+        assert_eq!(named.version, before.version + 1);
+        f.name_sites(&mobile, &["m.youtube.com"]).await.unwrap();
+
+        let policy = f.resolved(&desktop.id).await.unwrap();
+        assert_eq!(policy.owner, platform("platform-streamlink"));
+        assert_eq!(policy.selection, fixed(&youtube));
+        // The most specific site wins.
+        assert_eq!(
+            f.resolved(&phone.id).await.unwrap().selection,
+            fixed(&mobile)
+        );
+        assert!(f.resolved(&kick.id).await.is_none());
+
+        let site = f.profiles.streamer_site(&phone.id).await.unwrap().unwrap();
+        assert_eq!(site.host, "m.youtube.com");
+        assert_eq!(site.site.as_deref(), Some("m.youtube.com"));
+        assert_eq!(site.accounts, [mobile.clone(), youtube.clone()]);
+        let site = f.profiles.streamer_site(&kick.id).await.unwrap().unwrap();
+        assert_eq!(
+            (site.host.as_str(), site.site, site.accounts.len()),
+            ("kick.com", None, 0)
+        );
+
+        // The streamer's own choice, including no account, beats its site.
+        let owner = CredentialOwner::Streamer {
+            streamer_id: desktop.id.clone(),
+        };
+        for selection in [CredentialSelection::None, fixed(&other)] {
+            let mut connection = f.pool.acquire().await.unwrap();
+            set(&mut connection, &owner, "platform-streamlink", &selection)
+                .await
+                .unwrap();
+            drop(connection);
+            let policy = f.resolved(&desktop.id).await.unwrap();
+            assert_eq!((policy.owner, policy.selection), (owner.clone(), selection));
+        }
+        let mut connection = f.pool.acquire().await.unwrap();
+        clear_owner(&mut connection, &owner).await.unwrap();
+        drop(connection);
+
+        // A site belongs to one account.
+        let error = f
+            .name_sites(&other, &["kick.com", "YouTube.com"])
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                Error::CredentialProfile(ProfileError::SiteTaken { site, profile_id, .. })
+                    if site == "youtube.com" && profile_id == &youtube
+            ),
+            "{error}"
+        );
+        assert!(
+            f.profiles
+                .sites_of(std::slice::from_ref(&other))
+                .await
+                .unwrap()
+                .is_empty()
+        );
+
+        // Omitting sites keeps them; an empty list removes them.
+        let version = f.profiles.get(&youtube).await.unwrap().version;
+        f.profiles
+            .update(&youtube, version, Some("Renamed"), None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            f.resolved(&desktop.id).await.unwrap().selection,
+            fixed(&youtube)
+        );
+        f.name_sites(&youtube, &[]).await.unwrap();
+        assert!(f.resolved(&desktop.id).await.is_none());
+
+        // Deleting an account frees its sites.
+        let mobile_version = f.profiles.get(&mobile).await.unwrap().version;
+        f.profiles.delete(&mobile, mobile_version).await.unwrap();
+        assert!(f.resolved(&phone.id).await.is_none());
+        f.name_sites(&other, &["m.youtube.com"]).await.unwrap();
+        assert_eq!(
+            f.resolved(&phone.id).await.unwrap().selection,
+            fixed(&other)
+        );
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn only_streamlink_accounts_name_sites() {
+    let f = fixture().await;
+    let huya = f.profile("platform-huya", "huya=1").await;
+    let error = f.name_sites(&huya, &["huya.com"]).await.unwrap_err();
+    assert!(
+        matches!(
+            &error,
+            Error::CredentialProfile(ProfileError::InvalidSite(_))
+        ),
+        "{error}"
+    );
+    let error = f
+        .profiles
+        .create_with_sites(
+            "platform-streamlink",
+            "Bad",
+            true,
+            &material("a=1"),
+            &srec_core::domain::proxy::ProxyRoute::Inherit,
+            &["com".to_owned()],
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            &error,
+            Error::CredentialProfile(ProfileError::InvalidSite(_))
+        ),
+        "{error}"
+    );
+    // The refused account was not created.
+    let accounts: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM credential_profiles WHERE platform_config_id = 'platform-streamlink'",
+    )
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    assert_eq!(accounts, 0);
+    let huya_streamer = f
+        .streamer(
+            "https://www.huya.com/123",
+            "platform-huya",
+            serde_json::json!({}),
+        )
+        .await;
+    assert!(
+        f.profiles
+            .streamer_site(&huya_streamer.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+/// Deleting a template, or marking a streamer deleted, releases the account
+/// it selected at once; a retiring streamer's selection must not keep the
+/// account undeletable until its row is reaped.
+#[tokio::test]
+async fn removed_and_retired_owners_release_their_selections() {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let f = fixture().await;
+        let account = f.profile("platform-bilibili", "sid=a").await;
+        let selection = serde_json::json!({"mode": "fixed", "credential_id": account});
+        let mut template = TemplateConfigDbModel::new("Removed template");
+        template.platform_overrides =
+            Some(serde_json::json!({"bilibili": {"credential_selection": selection}}).to_string());
+        f.config.create_template_config(&template).await.unwrap();
+        let kept = f
+            .streamer(
+                "https://live.bilibili.com/1",
+                "platform-bilibili",
+                serde_json::json!({"credential_selection": selection}),
+            )
+            .await;
+        let retired = f
+            .streamer(
+                "https://live.bilibili.com/2",
+                "platform-bilibili",
+                serde_json::json!({"credential_selection": selection}),
+            )
+            .await;
+        assert_eq!(f.rows().await, 3);
+
+        f.config.delete_template_config(&template.id).await.unwrap();
+        assert_eq!(f.rows().await, 2);
+        assert!(
+            f.streamers
+                .mark_streamer_deleted(&retired.id)
+                .await
+                .unwrap()
+        );
+        assert_eq!(f.rows().await, 1);
+        let owners: Vec<CredentialOwner> = f
+            .profiles
+            .references(&account)
+            .await
+            .unwrap()
+            .selections
+            .into_iter()
+            .map(|selection| selection.owner)
+            .collect();
+        assert_eq!(
+            owners,
+            vec![CredentialOwner::Streamer {
+                streamer_id: kept.id.clone()
+            }]
+        );
+        sqlx::query("DELETE FROM streamers WHERE id = ?")
+            .bind(&kept.id)
+            .execute(&f.pool)
+            .await
+            .unwrap();
+        assert_eq!(f.rows().await, 0);
+        f.profiles.delete(&account, 1).await.unwrap();
+    })
+    .await
+    .unwrap();
+}

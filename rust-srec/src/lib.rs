@@ -27,9 +27,11 @@ pub mod credentials;
 #[doc(hidden)]
 pub mod danmu;
 #[doc(hidden)]
-pub mod database;
+pub use srec_core::domain;
 #[doc(hidden)]
-pub mod domain;
+pub use srec_core::utils;
+#[doc(hidden)]
+pub use srec_sqlite as database;
 #[doc(hidden)]
 pub mod downloader;
 #[doc(hidden)]
@@ -56,8 +58,6 @@ pub mod services;
 pub mod session;
 #[doc(hidden)]
 pub mod streamer;
-#[doc(hidden)]
-pub mod utils;
 
 #[doc(hidden)]
 pub use api::auth_request::override_socket_revalidation_interval;

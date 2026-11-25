@@ -447,7 +447,7 @@ impl RecorderStore {
                 let operation = operation.clone();
                 async move {
                     let payload = writer
-                        .transaction(label, operation, move |payload| {
+                        .transaction_with_error(label, operation, move |payload| {
                             if let Some(state) = committed_state.as_ref()
                                 && (!payload.state_change.rows.is_empty()
                                     || !payload.state_change.removed.is_empty())
@@ -469,7 +469,7 @@ impl RecorderStore {
                         reconfigured_streamers: payload.state_change.reconfigured,
                         outbox_enqueued: payload.outbox_enqueued,
                     };
-                    Ok((payload.value, change_set))
+                    Ok::<_, crate::Error>((payload.value, change_set))
                 }
             })
             .await?;

@@ -26,17 +26,13 @@ impl SourceType {
             Self::Danmu => DagSegmentSource::Danmu,
         }
     }
-}
 
-// Lives beside `SourceType` so both conversions are in one place without the
-// database model depending on the pipeline.
-impl DagSegmentSource {
     /// The per-source segment DAG kind, or `None` for paired and session-complete DAGs.
-    pub fn source_type(self) -> Option<SourceType> {
-        match self {
-            Self::Video => Some(SourceType::Video),
-            Self::Danmu => Some(SourceType::Danmu),
-            Self::Paired | Self::SessionComplete => None,
+    pub fn from_segment_source(source: DagSegmentSource) -> Option<Self> {
+        match source {
+            DagSegmentSource::Video => Some(Self::Video),
+            DagSegmentSource::Danmu => Some(Self::Danmu),
+            DagSegmentSource::Paired | DagSegmentSource::SessionComplete => None,
         }
     }
 }

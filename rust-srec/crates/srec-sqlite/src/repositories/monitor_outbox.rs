@@ -1,0 +1,286 @@
+//! Transactional operations for monitor event outbox.
+//!
+//! This module provides transaction-aware operations for the monitor event outbox.
+//! The outbox pattern ensures that database changes and event emissions are atomic.
+
+use sqlx::{Row, SqliteConnection, SqlitePool};
+
+use crate::DbResult as Result;
+
+/// Transactional operations for monitor event outbox.
+///
+/// These methods operate within an existing transaction and do NOT commit.
+/// The caller is responsible for committing or rolling back the transaction.
+pub struct MonitorOutboxTxOps;
+
+impl MonitorOutboxTxOps {
+    /// Enqueue a pre-serialized outbox event row within a transaction.
+    pub async fn enqueue_raw(
+        tx: &mut SqliteConnection,
+        streamer_id: Option<&str>,
+        event_type: &str,
+        payload: &str,
+        created_at_ms: i64,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO monitor_event_outbox (streamer_id, event_type, payload, created_at)
+            VALUES (?, ?, ?, ?)
+            "#,
+        )
+        .bind(streamer_id)
+        .bind(event_type)
+        .bind(payload)
+        .bind(created_at_ms)
+        .execute(tx)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Enqueue a `ChecksRestored` outbox row when the streamer's current run
+    /// of failures reached `threshold`.
+    ///
+    /// Call it in the transaction that clears the errors, before the clear:
+    /// reading the count there reports each cleared run exactly once, however
+    /// many writers race to clear it.
+    pub async fn enqueue_checks_restored(
+        tx: &mut SqliteConnection,
+        streamer_id: &str,
+        threshold: i32,
+        timestamp: jiff::Timestamp,
+    ) -> Result<()> {
+        let row: Option<(String, Option<i32>)> =
+            sqlx::query_as("SELECT name, consecutive_error_count FROM streamers WHERE id = ?")
+                .bind(streamer_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+        if let Some((streamer_name, Some(count))) = row
+            && count >= threshold
+        {
+            let payload = serde_json::json!({
+                "ChecksRestored": {
+                    "streamer_id": streamer_id,
+                    "streamer_name": streamer_name,
+                    "timestamp": timestamp,
+                }
+            })
+            .to_string();
+            Self::enqueue_raw(
+                tx,
+                Some(streamer_id),
+                "ChecksRestored",
+                &payload,
+                crate::time::now_ms(),
+            )
+            .await?;
+        }
+        Ok(())
+    }
+}
+
+/// Non-transactional outbox operations (for the publisher).
+pub struct MonitorOutboxOps;
+
+impl MonitorOutboxOps {
+    /// Fetch undelivered events from the outbox.
+    pub async fn fetch_undelivered(pool: &SqlitePool, limit: i32) -> Result<Vec<OutboxEntry>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, streamer_id, event_type, payload, created_at, attempts
+            FROM monitor_event_outbox
+            WHERE delivered_at IS NULL
+            ORDER BY id
+            LIMIT ?
+            "#,
+        )
+        .bind(limit)
+        .fetch_all(pool)
+        .await?;
+
+        let entries = rows
+            .into_iter()
+            .map(|row| OutboxEntry {
+                id: row.get("id"),
+                streamer_id: row.get("streamer_id"),
+                event_type: row.get("event_type"),
+                payload: row.get("payload"),
+                created_at: row.get("created_at"),
+                attempts: row.get("attempts"),
+            })
+            .collect();
+
+        Ok(entries)
+    }
+
+    /// Record a delivery failure.
+    pub async fn record_failure(pool: &SqlitePool, id: i64, error: &str) -> Result<()> {
+        sqlx::query(
+            "UPDATE monitor_event_outbox SET attempts = attempts + 1, last_error = ? WHERE id = ?",
+        )
+        .bind(error)
+        .bind(id)
+        .execute(pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Mark multiple events as delivered in a single transaction.
+    pub async fn mark_delivered_batch(pool: &SqlitePool, ids: &[i64]) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        let now = crate::time::now_ms();
+        // Reserve one bind variable for `delivered_at` and stay under SQLite's bind limit.
+        let chunk_size = super::LOOKUP_BATCH_SIZE.min(super::MAX_SQLITE_BIND_VARS - 1);
+        let mut tx = crate::begin_immediate(pool).await?;
+        for chunk in ids.chunks(chunk_size) {
+            let placeholders = vec!["?"; chunk.len()].join(", ");
+            let sql = format!(
+                "UPDATE monitor_event_outbox SET delivered_at = ?, attempts = attempts + 1, last_error = NULL WHERE id IN ({placeholders})"
+            );
+            let mut query = sqlx::query(sqlx::AssertSqlSafe(sql)).bind(now);
+            for id in chunk {
+                query = query.bind(id);
+            }
+            query.execute(&mut *tx).await?;
+        }
+        tx.commit().await?;
+
+        Ok(())
+    }
+
+    pub async fn record_failure_batch(pool: &SqlitePool, failures: &[(i64, String)]) -> Result<()> {
+        if failures.is_empty() {
+            return Ok(());
+        }
+
+        // Each failure binds 3 parameters (`WHEN ? THEN ?` plus `IN (?)`).
+        let chunk_size = super::MAX_SQLITE_BIND_VARS / 3;
+        let mut tx = crate::begin_immediate(pool).await?;
+        for chunk in failures.chunks(chunk_size) {
+            let when_clauses = vec![" WHEN ? THEN ?"; chunk.len()].join("");
+            let id_placeholders = vec!["?"; chunk.len()].join(", ");
+            let sql = format!(
+                "UPDATE monitor_event_outbox SET attempts = attempts + 1, last_error = CASE id{when_clauses} ELSE last_error END WHERE id IN ({id_placeholders})"
+            );
+
+            let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
+            for (id, error) in chunk {
+                query = query.bind(id).bind(error);
+            }
+            for (id, _) in chunk {
+                query = query.bind(id);
+            }
+            query.execute(&mut *tx).await?;
+        }
+        tx.commit().await?;
+
+        Ok(())
+    }
+}
+
+/// An entry from the outbox table.
+pub struct OutboxEntry {
+    pub id: i64,
+    pub streamer_id: Option<String>,
+    pub event_type: String,
+    pub payload: String,
+    pub created_at: i64,
+    pub attempts: i64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::StreamerDbModel;
+    use crate::repositories::{SqlxStreamerRepository, StreamerRepository as _};
+    use crate::{init_pool_with_size, run_migrations};
+    use sqlx::SqlitePool;
+
+    async fn setup_test_db() -> SqlitePool {
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+        for id in ["test-1", "s0", "s1", "s2", "s3"] {
+            insert_streamer(&pool, id).await;
+        }
+        pool
+    }
+
+    async fn insert_streamer(pool: &SqlitePool, id: &str) {
+        let mut streamer = StreamerDbModel::new(
+            format!("Streamer {id}"),
+            format!("https://example.com/{id}"),
+            "platform-twitch",
+        );
+        streamer.id = id.to_string();
+        SqlxStreamerRepository::new(pool.clone(), pool.clone())
+            .create_streamer(&streamer)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_batch_delivery_and_failure_updates() {
+        let pool = setup_test_db().await;
+
+        for i in 0..3 {
+            sqlx::query(
+                "INSERT INTO monitor_event_outbox (streamer_id, event_type, payload, created_at) VALUES (?, ?, ?, ?)",
+            )
+            .bind(format!("s{i}"))
+            .bind("StateChanged")
+            .bind("{}")
+            .bind(crate::time::now_ms())
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        let rows: Vec<(i64,)> = sqlx::query_as("SELECT id FROM monitor_event_outbox ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        let ids: Vec<i64> = rows.into_iter().map(|(id,)| id).collect();
+
+        MonitorOutboxOps::mark_delivered_batch(&pool, &ids[..2])
+            .await
+            .unwrap();
+
+        let delivered_rows: Vec<(i64, Option<i64>, i64, Option<String>)> = sqlx::query_as(
+            "SELECT id, delivered_at, attempts, last_error FROM monitor_event_outbox WHERE id IN (?, ?) ORDER BY id",
+        )
+        .bind(ids[0])
+        .bind(ids[1])
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(delivered_rows.len(), 2);
+        for (_, delivered_at, attempts, last_error) in delivered_rows {
+            assert!(delivered_at.is_some());
+            assert_eq!(attempts, 1);
+            assert_eq!(last_error, None);
+        }
+
+        let failures = vec![(ids[2], "no receivers".to_string())];
+        MonitorOutboxOps::record_failure_batch(&pool, &failures)
+            .await
+            .unwrap();
+
+        let failed_row: (i64, Option<i64>, i64, Option<String>) = sqlx::query_as(
+            "SELECT id, delivered_at, attempts, last_error FROM monitor_event_outbox WHERE id = ?",
+        )
+        .bind(ids[2])
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(failed_row.0, ids[2]);
+        assert!(failed_row.1.is_none());
+        assert_eq!(failed_row.2, 1);
+        assert_eq!(failed_row.3.as_deref(), Some("no receivers"));
+    }
+}

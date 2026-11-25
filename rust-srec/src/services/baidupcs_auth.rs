@@ -128,10 +128,10 @@ impl BaiduPcsAuthenticator for StoredLoginAuthenticator {
         &self,
         config_dir: Option<&str>,
         material: &LoginMaterial,
-    ) -> crate::Result<()> {
+    ) -> srec_core::CoreResult<()> {
         let key = config_dir_key(config_dir);
         let payload = serde_json::to_string(material).map_err(|e| {
-            crate::Error::Other(format!("Failed to serialize BaiduPCS-Go credentials: {e}"))
+            srec_core::CoreError::Other(format!("Failed to serialize BaiduPCS-Go credentials: {e}"))
         })?;
         let now_ms = jiff::Timestamp::now().as_millisecond();
         self.repository
@@ -149,7 +149,7 @@ impl BaiduPcsAuthenticator for StoredLoginAuthenticator {
         Ok(())
     }
 
-    async fn delete_credentials(&self, config_dir: Option<&str>) -> crate::Result<()> {
+    async fn delete_credentials(&self, config_dir: Option<&str>) -> srec_core::CoreResult<()> {
         let key = config_dir_key(config_dir);
         self.repository.delete(CREDENTIAL_TOOL, &key).await?;
         self.cooldown.clear(&key);
@@ -161,7 +161,7 @@ impl BaiduPcsAuthenticator for StoredLoginAuthenticator {
         binary_path: &str,
         config_dir: Option<&str>,
         proxy: &ProxyTarget,
-    ) -> crate::Result<bool> {
+    ) -> srec_core::CoreResult<bool> {
         let key = config_dir_key(config_dir);
         if !self.cooldown.should_attempt(&key) {
             debug!("Skipping BaiduPCS-Go re-login during failure cooldown");
@@ -203,7 +203,7 @@ impl BaiduPcsAuthenticator for StoredLoginAuthenticator {
             Err(e) => {
                 self.cooldown.record_failure(&key);
                 self.notify_relogin_failure(&key, &e.to_string());
-                Err(e)
+                Err(e.into_core_error())
             }
         }
     }
@@ -253,7 +253,7 @@ mod tests {
             &self,
             tool: &str,
             account_key: &str,
-        ) -> crate::Result<Option<ToolCredentialDbModel>> {
+        ) -> srec_sqlite::DbResult<Option<ToolCredentialDbModel>> {
             self.gets.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             Ok(self
                 .row
@@ -261,11 +261,11 @@ mod tests {
                 .filter(|row| row.tool == tool && row.account_key == account_key))
         }
 
-        async fn upsert(&self, _model: &ToolCredentialDbModel) -> crate::Result<()> {
+        async fn upsert(&self, _model: &ToolCredentialDbModel) -> srec_sqlite::DbResult<()> {
             Ok(())
         }
 
-        async fn delete(&self, _tool: &str, _account_key: &str) -> crate::Result<()> {
+        async fn delete(&self, _tool: &str, _account_key: &str) -> srec_sqlite::DbResult<()> {
             Ok(())
         }
     }

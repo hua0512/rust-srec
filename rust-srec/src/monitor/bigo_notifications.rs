@@ -669,7 +669,7 @@ impl BigoNotifications {
                             let route = repository.account_route(&profile, None).await?;
                             Ok(Some((profile.version, route)))
                         }
-                        Ok(_) | Err(crate::Error::NotFound { .. }) => Ok(None),
+                        Ok(_) | Err(srec_sqlite::DbError::NotFound { .. }) => Ok(None),
                         Err(error) => Err(error),
                     }
                 };

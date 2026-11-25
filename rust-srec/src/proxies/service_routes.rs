@@ -47,7 +47,19 @@ impl ServiceRoutes {
 
 #[async_trait]
 impl ProxyRouteResolver for ServiceRoutes {
-    async fn target(&self, own: &ProxyRoute) -> Result<ProxyTarget> {
-        ServiceRoutes::target(self, own).await
+    async fn target(&self, own: &ProxyRoute) -> srec_core::CoreResult<ProxyTarget> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| srec_core::CoreError::Database(e.to_string()))?;
+        let target = proxies::resolve_over_global(&mut transaction, own, SystemProxy::current())
+            .await?
+            .target;
+        transaction
+            .commit()
+            .await
+            .map_err(|e| srec_core::CoreError::Database(e.to_string()))?;
+        Ok(target)
     }
 }
