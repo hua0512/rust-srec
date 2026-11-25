@@ -116,6 +116,12 @@ impl PlatformExtractorRunner {
             .check_status_with_filters(streamer, filters, context)
             .await
     }
+
+    /// Install or clear a test extraction override on the underlying detector.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_test_extraction(&self, extraction: Option<crate::monitor::TestExtraction>) {
+        self.detector.set_test_extraction(extraction);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

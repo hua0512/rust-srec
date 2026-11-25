@@ -306,6 +306,13 @@ async fn actor_runtime_import_reconciles_streamers_after_commit_without_deadlock
         let container = ServiceContainer::new(pool.clone(), pool.clone())
             .await
             .unwrap();
+        // Stub extraction so activated actors probing synthetic `example.test`
+        // URLs stay resident instead of exiting immediately with `FatalError`.
+        container
+            .extractor_runner
+            .set_test_extraction(Some(Arc::new(|_, _| {
+                Box::pin(async { Ok(crate::monitor::LiveStatus::Offline) })
+            })));
         let (logging, _layer) =
             crate::logging::LoggingConfig::for_route_tests(directory.path().to_owned());
         assert!(container.logging_config.set(Arc::new(logging)).is_ok());
@@ -382,14 +389,9 @@ async fn actor_runtime_import_reconciles_streamers_after_commit_without_deadlock
         .await
         .expect("atomic import must reconcile active streamer into ActorRegistry without deadlock");
 
-        assert_eq!(
-            state
-                .streamer_manager
-                .get_streamer(&streamer.id)
-                .unwrap()
-                .name,
-            "Activated By Import"
-        );
+        let reconciled = state.streamer_manager.get_streamer(&streamer.id).unwrap();
+        assert_eq!(reconciled.name, "Activated By Import");
+        assert_eq!(reconciled.state, StreamerState::NotLive);
 
         registry
             .shutdown_until(tokio::time::Instant::now() + Duration::from_secs(2))

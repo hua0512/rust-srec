@@ -48,6 +48,13 @@ impl ActorHarness {
         )
         .await
         .expect("build actor container");
+        // Stub extraction so actors spawned for synthetic `example.test` URLs
+        // stay resident instead of exiting immediately with `FatalError`.
+        container
+            .extractor_runner
+            .set_test_extraction(Some(Arc::new(|_, _| {
+                Box::pin(async { Ok(crate::monitor::LiveStatus::Offline) })
+            })));
         let registry = container.actor_registry.clone();
         Self {
             container,
@@ -621,6 +628,15 @@ async fn persisted_out_of_space_stays_dormant_on_startup_and_wakes_on_recovery()
     })
     .await
     .expect("clearing OutOfSpace must wake a resident actor via PostPublicationListener");
+    assert_eq!(
+        harness
+            .container
+            .streamer_manager
+            .get_streamer(&row.id)
+            .expect("woken streamer metadata must remain cached")
+            .state,
+        StreamerState::NotLive
+    );
 
     harness.shutdown().await;
 }

@@ -16,6 +16,8 @@ pub use bigo_notifications::{
     StreamerNotificationMethod,
 };
 pub use check_history_writer::{CheckHistoryBroadcaster, CheckHistoryWriter};
+#[cfg(any(test, feature = "test-support"))]
+pub use detector::TestExtraction;
 pub(crate) use detector::{CheckContext, DetectionResult};
 pub use detector::{FilterReason, LiveStatus, StreamDetector, StreamInfo};
 pub use events::MonitorEvent;

@@ -236,8 +236,8 @@ pub struct CheckContext<'a> {
 
 /// Stands in for extraction in tests; receives the cookies and the proxy the
 /// extractor would have used.
-#[cfg(test)]
-pub(crate) type TestExtraction = std::sync::Arc<
+#[cfg(any(test, feature = "test-support"))]
+pub type TestExtraction = std::sync::Arc<
     dyn Fn(Option<String>, ProxyTarget) -> futures::future::BoxFuture<'static, Result<LiveStatus>>
         + Send
         + Sync,
@@ -249,8 +249,8 @@ pub struct StreamDetector {
     pool_max_idle_per_host: usize,
     /// Clients kept for distinct proxies at once.
     client_cache: ClientCache<ProxyTarget>,
-    #[cfg(test)]
-    pub(crate) test_extraction: Option<TestExtraction>,
+    #[cfg(any(test, feature = "test-support"))]
+    test_extraction: parking_lot::RwLock<Option<TestExtraction>>,
 }
 
 impl StreamDetector {
@@ -267,9 +267,15 @@ impl StreamDetector {
             request_timeout,
             pool_max_idle_per_host,
             client_cache: ClientCache::new(64),
-            #[cfg(test)]
-            test_extraction: None,
+            #[cfg(any(test, feature = "test-support"))]
+            test_extraction: parking_lot::RwLock::new(None),
         }
+    }
+
+    /// Install or clear a test extraction override.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_test_extraction(&self, extraction: Option<TestExtraction>) {
+        *self.test_extraction.write() = extraction;
     }
 
     pub(crate) fn client_for_proxy(&self, proxy: &ProxyTarget) -> Result<reqwest::Client> {
@@ -333,11 +339,14 @@ impl StreamDetector {
         streamer: &StreamerMetadata,
         context: CheckContext<'_>,
     ) -> Result<DetectionResult> {
-        #[cfg(test)]
-        if let Some(extract) = &self.test_extraction {
-            return extract(context.cookies, context.proxy.clone())
-                .await
-                .map(Into::into);
+        #[cfg(any(test, feature = "test-support"))]
+        {
+            let extract = self.test_extraction.read().clone();
+            if let Some(extract) = extract {
+                return extract(context.cookies, context.proxy.clone())
+                    .await
+                    .map(Into::into);
+            }
         }
         let CheckContext {
             cookies,
