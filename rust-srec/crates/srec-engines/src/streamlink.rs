@@ -1308,7 +1308,7 @@ mod tests {
     #[tokio::test]
     async fn part_size_limit_stop_completes_the_part() {
         use super::super::utils::test_support::script;
-        use crate::downloader::{EngineEndSignal, SegmentEvent};
+        use crate::{EngineEndSignal, SegmentEvent};
         for (limit, reached) in [(4096, true), (1 << 20, false)] {
             let dir = tempfile::tempdir().unwrap();
             let streamlink = script(
