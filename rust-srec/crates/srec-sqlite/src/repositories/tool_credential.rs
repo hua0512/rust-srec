@@ -45,7 +45,7 @@ pub trait ToolCredentialRepository: Send + Sync {
 }
 
 /// Sqlx implementation backed by separate read / write pools (same pattern
-/// as [`crate::repositories::SqlxUploadRecordRepository`]).
+/// as [`crate::repositories::SqlxStreamerCheckHistoryRepository`]).
 pub struct SqlxToolCredentialRepository {
     pool: SqlitePool,
     write_pool: WritePool,

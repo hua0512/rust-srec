@@ -93,15 +93,3 @@ impl Drop for SqlTrace {
         }
     }
 }
-
-/// A job repository over a fresh, migrated in-memory database with one connection.
-pub async fn job_repository() -> Arc<crate::repositories::SqlxJobRepository> {
-    let pool = crate::init_pool_with_size("sqlite::memory:", 1)
-        .await
-        .unwrap();
-    crate::run_migrations(&pool).await.unwrap();
-    Arc::new(crate::repositories::SqlxJobRepository::new(
-        pool.clone(),
-        pool,
-    ))
-}

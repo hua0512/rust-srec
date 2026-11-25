@@ -149,6 +149,12 @@ fn slot_for_module_path(segments: &[&str]) -> Option<ModuleSlot> {
         ["bin", ..] => Some(ModuleSlot::Layer(Component::AppEntry)),
         ["error" | "Error" | "Result"] | ["error", ..] => Some(ModuleSlot::ErrorRoot),
         ["domain" | "utils", ..] => Some(ModuleSlot::Layer(Component::Core)),
+        [
+            "database",
+            "repositories",
+            "dag" | "job" | "staged_output" | "upload_record",
+            ..,
+        ] => Some(ModuleSlot::Layer(Component::Pipeline)),
         ["database", ..] => Some(ModuleSlot::Layer(Component::Sqlite)),
         ["downloader", "engine", ..] => Some(ModuleSlot::Layer(Component::Engines)),
         ["pipeline", "processors", ..] | ["baidupcs", ..] => {
@@ -827,6 +833,7 @@ fn component_for_external_crate(ident: &str) -> Option<Component> {
         "srec_engines" => Some(Component::Engines),
         "srec_processors" => Some(Component::Processors),
         "srec_notify" => Some(Component::Notify),
+        "srec_pipeline" => Some(Component::Pipeline),
         "rust_srec" => Some(Component::AppEntry),
         _ => None,
     }
@@ -883,9 +890,9 @@ fn production_source_files() -> Vec<AnalyzedFile> {
     let mut unmapped = Vec::new();
     let mut analyzed = Vec::new();
 
-    // Scan extracted Layer 0 and Layer 1 workspace crates directly. `srec-core`
-    // includes its unit tests so domain and utility tests stay storage-free as
-    // well.
+    // Scan extracted Layer 0, Layer 1, and Layer 2 workspace crates directly.
+    // `srec-core` includes its unit tests so domain and utility tests stay
+    // storage-free as well.
     analyze_extracted_crate(
         &manifest_dir.join("crates/srec-core"),
         "crates/srec-core/src",
@@ -918,6 +925,13 @@ fn production_source_files() -> Vec<AnalyzedFile> {
         &manifest_dir.join("crates/srec-notify"),
         "crates/srec-notify/src",
         Component::Notify,
+        false,
+        &mut analyzed,
+    );
+    analyze_extracted_crate(
+        &manifest_dir.join("crates/srec-pipeline"),
+        "crates/srec-pipeline/src",
+        Component::Pipeline,
         false,
         &mut analyzed,
     );
@@ -1159,13 +1173,14 @@ fn heavy_external_dependencies_stay_within_target_crates() {
                 ModuleSlot::ErrorRoot,
                 ModuleSlot::Layer(Component::Sqlite),
                 ModuleSlot::Layer(Component::Notify),
+                ModuleSlot::Layer(Component::Pipeline),
                 ModuleSlot::Layer(Component::Recorder),
                 ModuleSlot::Layer(Component::Api),
                 ModuleSlot::Layer(Component::Services),
                 ModuleSlot::Layer(Component::AppEntry),
             ],
             allowed_files: &[],
-            rationale: "sqlx is forbidden in core (domain/utils), engines, processors, pipeline, logging, and metrics",
+            rationale: "sqlx is forbidden in core (domain/utils), engines, processors, logging, and metrics",
         },
     ];
 
@@ -1256,6 +1271,7 @@ fn extracted_layer0_manifests_isolate_forbidden_dependencies() {
         "srec-engines",
         "srec-processors",
         "srec-notify",
+        "srec-pipeline",
         "axum",
         "utoipa",
         "utoipa-swagger-ui",
@@ -1312,6 +1328,7 @@ fn extracted_layer1_manifests_isolate_forbidden_dependencies() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let common_forbidden = [
         "rust-srec",
+        "srec-pipeline",
         "platforms-parser",
         "axum",
         "utoipa",
@@ -1404,6 +1421,56 @@ fn extracted_layer1_manifests_isolate_forbidden_dependencies() {
 }
 
 #[test]
+fn extracted_layer2_manifests_isolate_forbidden_dependencies() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let pipeline_forbidden = [
+        "rust-srec",
+        "srec-recorder",
+        "srec-engines",
+        "srec-notify",
+        "platforms-parser",
+        "mesio",
+        "mesio-engine",
+        "flv",
+        "flv-fix",
+        "hls",
+        "hls-fix",
+        "axum",
+        "utoipa",
+        "utoipa-swagger-ui",
+        "schemars",
+        "rmcp",
+        "lettre",
+        "p256",
+        "aes-gcm",
+        "hkdf",
+        "rust-i18n",
+        "prost",
+        "argon2",
+        "jsonwebtoken",
+        "zip",
+        "tar",
+    ];
+
+    let pipeline_deps =
+        manifest_dependency_names(&manifest_dir.join("crates/srec-pipeline/Cargo.toml"));
+    let mut violations = Vec::new();
+    for forbidden in pipeline_forbidden {
+        if pipeline_deps.contains(forbidden) {
+            violations.push(format!(
+                "crates/srec-pipeline/Cargo.toml must not depend on `{forbidden}`"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "extracted Layer 2 Cargo.toml files violated dependency isolation:\n{}",
+        violations.join("\n")
+    );
+}
+
+#[test]
 fn desktop_tauri_accesses_backend_only_through_facade() {
     let tauri_src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src-tauri/src");
     let mut files = Vec::new();
@@ -1440,6 +1507,7 @@ fn desktop_tauri_accesses_backend_only_through_facade() {
             "srec_engines",
             "srec_processors",
             "srec_notify",
+            "srec_pipeline",
         ] {
             if refs.external_roots.contains(internal_crate) {
                 violations.push(format!(
@@ -1459,6 +1527,7 @@ fn desktop_tauri_accesses_backend_only_through_facade() {
         "srec-engines",
         "srec-processors",
         "srec-notify",
+        "srec-pipeline",
     ] {
         if tauri_deps.contains(internal_crate) {
             violations.push(format!(

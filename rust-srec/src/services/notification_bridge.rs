@@ -357,5 +357,50 @@ mod tests {
         assert!(
             matches!(after_retry_scheduled, NotificationEvent::PipelineStarted { streamer_id, .. } if streamer_id.is_empty())
         );
+
+        // Full zero-backoff retry lifecycle (`started -> retry_scheduled -> enqueued -> started -> completed`)
+        // emits no failure notification and leaves no stale job_to_streamer entry.
+        for event in [
+            PipelineEvent::JobStarted {
+                job_id: "retry-ok".into(),
+                job_type: "flaky".into(),
+                streamer_id: "owner".into(),
+            },
+            PipelineEvent::JobRetryScheduled {
+                job_id: "retry-ok".into(),
+            },
+            PipelineEvent::JobEnqueued {
+                job_id: "retry-ok".into(),
+                job_type: "flaky".into(),
+                streamer_id: "owner".into(),
+            },
+            PipelineEvent::JobStarted {
+                job_id: "retry-ok".into(),
+                job_type: "flaky".into(),
+                streamer_id: "owner".into(),
+            },
+            PipelineEvent::JobCompleted {
+                job_id: "retry-ok".into(),
+                job_type: "flaky".into(),
+                duration_secs: 0.01,
+            },
+        ] {
+            if let Some(notice) = mapper.map(event, source) {
+                assert_ne!(notice.event_type(), "pipeline_failed");
+            }
+        }
+        let after_completed = mapper
+            .map(
+                PipelineEvent::JobStarted {
+                    job_id: "retry-ok".into(),
+                    job_type: "flaky".into(),
+                    streamer_id: String::new(),
+                },
+                source,
+            )
+            .unwrap();
+        assert!(
+            matches!(after_completed, NotificationEvent::PipelineStarted { streamer_id, .. } if streamer_id.is_empty())
+        );
     }
 }

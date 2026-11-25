@@ -13,14 +13,36 @@ use crate::database::models::{
 };
 use crate::database::repositories::{ConfigRepository, SessionRepository, StreamerRepository};
 use crate::pipeline::{
-    PipelineManager, PipelineNotification as EnginePipelineNotification, PipelineSessionMeta,
-    PipelineSessionPort, PipelineSessionSegment, PipelineSessionSummary, PipelineStreamerMeta,
-    SessionPipelineConfig, SessionPipelineConfigPort,
+    PipelineError, PipelineManager, PipelineNotification as EnginePipelineNotification,
+    PipelineResult, PipelineSessionMeta, PipelineSessionPort, PipelineSessionSegment,
+    PipelineSessionSummary, PipelineStreamerMeta, SessionPipelineConfig, SessionPipelineConfigPort,
 };
 use crate::recorder::{
     PipelineDrainStatus, PipelineNotification as RecorderPipelineNotification, RecorderPipelinePort,
 };
 use crate::{Error, Result};
+
+fn to_pipeline_error(error: Error) -> PipelineError {
+    match error {
+        Error::DatabaseSqlx(e) => PipelineError::DatabaseSqlx(e),
+        Error::Database(msg) => PipelineError::Database(msg),
+        Error::Serialization(e) => PipelineError::Serialization(e),
+        Error::InvalidStateTransition { from, to } => {
+            PipelineError::InvalidStateTransition { from, to }
+        }
+        Error::NotFound { entity_type, id } => PipelineError::NotFound { entity_type, id },
+        Error::Validation(msg) => PipelineError::Validation(msg),
+        Error::Conflict(msg) => PipelineError::Conflict(msg),
+        Error::DagAlreadyTerminal { dag_id } => PipelineError::DagAlreadyTerminal { dag_id },
+        Error::Configuration(msg) => PipelineError::Configuration(msg),
+        Error::Io(e) => PipelineError::Io(e),
+        Error::IoPath { op, path, source } => PipelineError::IoPath { op, path, source },
+        Error::Proxy(e) => PipelineError::Proxy(e),
+        Error::PipelineError(msg) => PipelineError::PipelineError(msg),
+        Error::NonRetryablePipeline(msg) => PipelineError::NonRetryablePipeline(msg),
+        other => PipelineError::Other(other.to_string()),
+    }
+}
 
 /// Adapter implementing [`SessionPipelineConfigPort`] via [`ConfigService`].
 pub(crate) struct ConfigServicePipelineConfigPort<CR, SR>
@@ -50,11 +72,12 @@ where
     async fn get_session_pipeline_config(
         &self,
         streamer_id: &str,
-    ) -> Result<SessionPipelineConfig> {
+    ) -> PipelineResult<SessionPipelineConfig> {
         let merged = self
             .config_service
             .get_config_for_streamer(streamer_id)
-            .await?;
+            .await
+            .map_err(to_pipeline_error)?;
         Ok(SessionPipelineConfig {
             segment_pipeline: merged.pipeline.clone(),
             paired_segment_pipeline: merged.paired_segment_pipeline.clone(),
@@ -64,7 +87,7 @@ where
         })
     }
 
-    async fn get_platform_name(&self, platform_config_id: &str) -> Result<Option<String>> {
+    async fn get_platform_name(&self, platform_config_id: &str) -> PipelineResult<Option<String>> {
         match self
             .config_service
             .get_platform_config(platform_config_id)
@@ -72,7 +95,7 @@ where
         {
             Ok(platform) => Ok(Some(platform.platform_name)),
             Err(Error::NotFound { .. }) => Ok(None),
-            Err(error) => Err(error),
+            Err(error) => Err(to_pipeline_error(error)),
         }
     }
 }
@@ -120,7 +143,7 @@ fn to_session_summary(session: LiveSessionDbModel) -> PipelineSessionSummary {
 
 #[async_trait]
 impl PipelineSessionPort for DatabasePipelineSessionPort {
-    async fn session_has_thumbnail(&self, session_id: &str) -> Result<bool> {
+    async fn session_has_thumbnail(&self, session_id: &str) -> PipelineResult<bool> {
         Ok(self
             .session_repo
             .first_thumbnail_id(session_id)
@@ -133,7 +156,7 @@ impl PipelineSessionPort for DatabasePipelineSessionPort {
         session_id: &str,
         output_path: &str,
         size_bytes: i64,
-    ) -> Result<bool> {
+    ) -> PipelineResult<bool> {
         // Best-effort dedupe: repeated retries/completions should not create duplicate rows.
         // (Schema does not enforce uniqueness on file_path.)
         if let Ok(existing) = self
@@ -171,21 +194,24 @@ impl PipelineSessionPort for DatabasePipelineSessionPort {
         Ok(true)
     }
 
-    async fn mark_session_complete_dispatched(&self, session_id: &str) -> Result<()> {
+    async fn mark_session_complete_dispatched(&self, session_id: &str) -> PipelineResult<()> {
         Ok(self
             .session_repo
             .mark_session_complete_dispatched(session_id)
             .await?)
     }
 
-    async fn session_pipeline_settled(&self, session_id: &str) -> Result<bool> {
+    async fn session_pipeline_settled(&self, session_id: &str) -> PipelineResult<bool> {
         Ok(self
             .session_repo
             .session_pipeline_settled(session_id)
             .await?)
     }
 
-    async fn list_session_ids_for_retirement(&self, streamer_id: &str) -> Result<Vec<String>> {
+    async fn list_session_ids_for_retirement(
+        &self,
+        streamer_id: &str,
+    ) -> PipelineResult<Vec<String>> {
         let sessions = self
             .session_repo
             .list_sessions_for_retirement(streamer_id)
@@ -197,7 +223,7 @@ impl PipelineSessionPort for DatabasePipelineSessionPort {
         &self,
         limit: u32,
         offset: u32,
-    ) -> Result<Vec<PipelineSessionSummary>> {
+    ) -> PipelineResult<Vec<PipelineSessionSummary>> {
         let pagination = Pagination::new(limit, offset);
         let page = self.session_repo.list_active_sessions(&pagination).await?;
         Ok(page.into_iter().map(to_session_summary).collect())
@@ -207,7 +233,7 @@ impl PipelineSessionPort for DatabasePipelineSessionPort {
         &self,
         limit: u32,
         offset: u32,
-    ) -> Result<Vec<PipelineSessionSummary>> {
+    ) -> PipelineResult<Vec<PipelineSessionSummary>> {
         let pagination = Pagination::new(limit, offset);
         let page = self
             .session_repo
@@ -219,7 +245,7 @@ impl PipelineSessionPort for DatabasePipelineSessionPort {
     async fn get_session_summary(
         &self,
         session_id: &str,
-    ) -> Result<Option<PipelineSessionSummary>> {
+    ) -> PipelineResult<Option<PipelineSessionSummary>> {
         match self.session_repo.get_session(session_id).await {
             Ok(session) => Ok(Some(to_session_summary(session))),
             Err(srec_sqlite::DbError::NotFound { .. }) => Ok(None),
@@ -232,7 +258,7 @@ impl PipelineSessionPort for DatabasePipelineSessionPort {
         session_id: &str,
         limit: u32,
         offset: u32,
-    ) -> Result<Vec<PipelineSessionSegment>> {
+    ) -> PipelineResult<Vec<PipelineSessionSegment>> {
         let pagination = Pagination::new(limit, offset);
         let segments = self
             .session_repo
@@ -247,7 +273,7 @@ impl PipelineSessionPort for DatabasePipelineSessionPort {
             .collect())
     }
 
-    async fn list_session_danmu_outputs(&self, session_id: &str) -> Result<Vec<String>> {
+    async fn list_session_danmu_outputs(&self, session_id: &str) -> PipelineResult<Vec<String>> {
         let outputs = self
             .session_repo
             .get_media_outputs_for_session(session_id)
@@ -259,7 +285,10 @@ impl PipelineSessionPort for DatabasePipelineSessionPort {
             .collect())
     }
 
-    async fn get_session_meta(&self, session_id: &str) -> Result<Option<PipelineSessionMeta>> {
+    async fn get_session_meta(
+        &self,
+        session_id: &str,
+    ) -> PipelineResult<Option<PipelineSessionMeta>> {
         match self.session_repo.get_session(session_id).await {
             Ok(session) => {
                 let started_at = crate::database::time::ms_to_datetime(session.start_time);
@@ -275,7 +304,10 @@ impl PipelineSessionPort for DatabasePipelineSessionPort {
         }
     }
 
-    async fn get_streamer_meta(&self, streamer_id: &str) -> Result<Option<PipelineStreamerMeta>> {
+    async fn get_streamer_meta(
+        &self,
+        streamer_id: &str,
+    ) -> PipelineResult<Option<PipelineStreamerMeta>> {
         let Some(streamer_repo) = self.streamer_repo.as_ref() else {
             return Ok(None);
         };
@@ -383,9 +415,10 @@ fn map_recorder_notification(
 #[async_trait]
 impl RecorderPipelinePort for PipelineManagerRecorderPort {
     async fn notify(&self, notification: RecorderPipelineNotification) -> Result<()> {
-        self.pipeline_manager
+        Ok(self
+            .pipeline_manager
             .handle_recorder_notification(map_recorder_notification(notification))
-            .await
+            .await?)
     }
 
     async fn drain_for_streamer(

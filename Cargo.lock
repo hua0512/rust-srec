@@ -5757,6 +5757,7 @@ dependencies = [
  "srec-core",
  "srec-engines",
  "srec-notify",
+ "srec-pipeline",
  "srec-processors",
  "srec-sqlite",
  "syn 3.0.10",
@@ -6812,6 +6813,31 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
+]
+
+[[package]]
+name = "srec-pipeline"
+version = "0.8.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "dashmap",
+ "futures",
+ "jiff",
+ "parking_lot",
+ "process-utils",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "srec-core",
+ "srec-processors",
+ "srec-sqlite",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "tracing",
  "uuid",
 ]
 

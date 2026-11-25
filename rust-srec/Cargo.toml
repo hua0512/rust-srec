@@ -47,6 +47,7 @@ sysinfo = { workspace = true }
 srec-core = { workspace = true }
 srec-engines = { workspace = true }
 srec-notify = { workspace = true }
+srec-pipeline = { workspace = true }
 srec-processors = { workspace = true }
 srec-sqlite = { workspace = true }
 pipeline-common = { path = "../crates/pipeline-common" }
@@ -85,6 +86,7 @@ tempfile = { workspace = true }
 
 [dev-dependencies]
 srec-engines = { workspace = true, features = ["test-support"] }
+srec-pipeline = { workspace = true, features = ["test-support"] }
 srec-sqlite = { workspace = true, features = ["test-support"] }
 syn = { version = "3", features = ["full", "visit"] }
 tokio = { workspace = true, features = ["test-util"] }

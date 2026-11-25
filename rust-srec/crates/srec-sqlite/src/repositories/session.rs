@@ -867,10 +867,39 @@ mod tests {
         assert_eq!(next, 4);
     }
 
+    async fn insert_dag_row(pool: &sqlx::SqlitePool, dag: &crate::models::DagExecutionDbModel) {
+        sqlx::query(
+            r#"
+            INSERT INTO dag_execution (
+                id, dag_definition, status, streamer_id, session_id,
+                segment_index, segment_source, created_at, updated_at, completed_at, error,
+                total_steps, completed_steps, failed_steps, input_manifest
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&dag.id)
+        .bind(&dag.dag_definition)
+        .bind(&dag.status)
+        .bind(&dag.streamer_id)
+        .bind(&dag.session_id)
+        .bind(dag.segment_index)
+        .bind(&dag.segment_source)
+        .bind(dag.created_at)
+        .bind(dag.updated_at)
+        .bind(dag.completed_at)
+        .bind(&dag.error)
+        .bind(dag.total_steps)
+        .bind(dag.completed_steps)
+        .bind(dag.failed_steps)
+        .bind(&dag.input_manifest)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
     #[tokio::test]
     async fn ended_pipeline_recovery_includes_empty_sessions_until_explicitly_settled() {
         use crate::models::{DagExecutionDbModel, DagPipelineDefinition};
-        use crate::repositories::{DagRepository as _, SqlxDagRepository};
 
         let repo = setup_test_repo().await;
         let ended_at = crate::time::now_ms();
@@ -913,10 +942,7 @@ mod tests {
             dag.segment_source = segment_source.map(str::to_string);
             dag
         };
-        SqlxDagRepository::new(repo.pool.clone(), repo.write_pool.clone())
-            .create_dag(&new_session_dag(None))
-            .await
-            .unwrap();
+        insert_dag_row(&repo.write_pool, &new_session_dag(None)).await;
         assert_eq!(
             repo.list_ended_sessions_pending_pipeline_recovery(&Pagination::new(10, 0))
                 .await
@@ -941,7 +967,6 @@ mod tests {
     #[tokio::test]
     async fn published_session_complete_dag_suppresses_recovery_without_the_marker() {
         use crate::models::{DagExecutionDbModel, DagPipelineDefinition};
-        use crate::repositories::{DagRepository as _, SqlxDagRepository};
 
         let repo = setup_test_repo().await;
         repo.end_session("session-1", crate::time::now_ms())
@@ -966,10 +991,7 @@ mod tests {
             Some("session-1".to_string()),
         );
         dag.segment_source = Some("session_complete".to_string());
-        SqlxDagRepository::new(repo.pool.clone(), repo.write_pool.clone())
-            .create_dag(&dag)
-            .await
-            .unwrap();
+        insert_dag_row(&repo.write_pool, &dag).await;
 
         assert!(
             repo.list_ended_sessions_pending_pipeline_recovery(&Pagination::new(10, 0))
