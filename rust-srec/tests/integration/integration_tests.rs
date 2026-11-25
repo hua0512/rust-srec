@@ -1297,45 +1297,4 @@ mod streamer_manager_tests {
             .expect("Failed to query");
         assert_eq!(result.0, "LIVE");
     }
-
-    #[tokio::test]
-    async fn test_streamer_manager_record_success() {
-        let pool = setup_test_db().await;
-        let platform_id = setup_platform(&pool).await;
-        let streamer_id =
-            insert_streamer(&pool, &platform_id, "TestStreamer", "NOT_LIVE", "NORMAL").await;
-
-        sqlx::query("UPDATE streamers SET state = 'TEMPORAL_DISABLED', consecutive_error_count = 2, last_error = 'fixture error', disabled_until = ? WHERE id = ?")
-            .bind((jiff::Timestamp::now() + jiff::SignedDuration::from_mins(30)).as_millisecond())
-            .bind(&streamer_id)
-            .execute(&pool)
-            .await
-            .unwrap();
-        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(repo, broadcaster);
-        manager.hydrate().await.expect("Failed to hydrate");
-        assert!(manager.is_disabled(&streamer_id));
-
-        // Record success
-        manager
-            .record_success(&streamer_id, true)
-            .await
-            .expect("Failed to record success");
-        assert!(!manager.is_disabled(&streamer_id));
-
-        // Verify last_live_time is set
-        let metadata = manager
-            .get_streamer(&streamer_id)
-            .expect("Streamer not found");
-        assert!(metadata.last_live_time.is_some());
-        let persisted: (String, i32, Option<i64>, Option<String>) = sqlx::query_as(
-            "SELECT state, consecutive_error_count, disabled_until, last_error FROM streamers WHERE id = ?",
-        )
-        .bind(&streamer_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(persisted, ("LIVE".to_string(), 0, None, None));
-    }
 }

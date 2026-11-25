@@ -475,7 +475,7 @@ async fn retained_drain_allows_only_its_own_nested_completion_after_a_hard_timeo
 #[tokio::test]
 async fn actor_runtime_hard_cap_retains_recorder_store_commit_across_force_shutdown() {
     use crate::domain::StreamerState;
-    use crate::recorder::{DbCommitOp, RecorderStorePort};
+    use crate::recorder::DbCommitOp;
 
     for phase in [CommitPhase::BeforeCommit, CommitPhase::AfterCommit] {
         let (_directory, container, state, row) = fixture().await;

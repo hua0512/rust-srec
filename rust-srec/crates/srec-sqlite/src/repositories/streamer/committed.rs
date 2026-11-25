@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use super::{StateChange, StatePublication, StreamerCommitOwner};
 use crate::models::StreamerDbModel;
-use crate::repositories::MonitorOutboxTxOps;
 use crate::repositories::row_write::WriteMode;
 use crate::{DbError as Error, DbResult as Result};
 use srec_core::domain::streamer::StreamerUpdateParams;
@@ -18,9 +17,6 @@ pub(super) enum Mutation {
     DeleteMarked,
     ClearErrors,
     ClearLastError,
-    /// Last live time, and the threshold for
-    /// [`MonitorOutboxTxOps::enqueue_checks_restored`].
-    Success(Option<i64>, Option<i32>),
     Patch(StreamerUpdateParams),
 }
 
@@ -89,15 +85,6 @@ async fn write_with_publication(
             // or live streamer keeps its state.
             Mutation::ClearErrors => row!("UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL, last_error = NULL, state = CASE WHEN state IN ('FATAL_ERROR', 'OUT_OF_SPACE', 'NOT_FOUND', 'TEMPORAL_DISABLED', 'ERROR') THEN 'NOT_LIVE' ELSE state END WHERE id = ? RETURNING *"),
             Mutation::ClearLastError => row!("UPDATE streamers SET last_error = NULL WHERE id = ? RETURNING *"),
-            Mutation::Success(time, threshold) => {
-                if let Some(threshold) = threshold {
-                    MonitorOutboxTxOps::enqueue_checks_restored(&mut *connection, &id, threshold, jiff::Timestamp::now()).await?;
-                }
-                match time {
-                    Some(time) => row!("UPDATE streamers SET state = 'LIVE', consecutive_error_count = 0, disabled_until = NULL, last_error = NULL, last_live_time = ? WHERE id = ? RETURNING *", time),
-                    None => row!("UPDATE streamers SET state = 'NOT_LIVE', consecutive_error_count = 0, disabled_until = NULL, last_error = NULL WHERE id = ? RETURNING *"),
-                }
-            }
             Mutation::Patch(patch) => {
                 let mut model = sqlx::query_as::<_, StreamerDbModel>("SELECT * FROM streamers WHERE id = ?").bind(&id).fetch_optional(&mut *connection).await?.ok_or_else(|| Error::not_found("Streamer", &id))?;
                 apply_patch(&mut model, patch);

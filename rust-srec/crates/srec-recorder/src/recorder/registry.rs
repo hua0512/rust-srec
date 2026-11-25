@@ -38,8 +38,8 @@ use crate::recorder::fsm::segment::{
 use crate::recorder::ports::{
     ActorStopReason, DanmuCloseSegmentSpec, DanmuSegmentRecord, DanmuStopResult, DbCommitOp,
     DbCommitOutcome, InitialStreamerSnapshot, PipelineNotification, RecorderPipelinePort,
-    RecorderStorePort, ResolvedActorConfig, RetirementBounds, StreamerRetirement,
-    StreamerRuntimeView, VideoSegmentRecord, should_spawn_actor,
+    ResolvedActorConfig, RetirementBounds, StreamerRetirement, StreamerRuntimeView,
+    VideoSegmentRecord, should_spawn_actor,
 };
 use crate::recorder::prober::RecorderProber;
 use crate::recorder::store::{PostPublicationChangeSet, PostPublicationListener, RecorderStore};
@@ -217,9 +217,6 @@ pub struct ActorRegistry {
     config_revisions: DashMap<String, Arc<AtomicU64>>,
     crash_counts: DashMap<String, u32>,
     runtime_views: Arc<DashMap<String, StreamerRuntimeView>>,
-    /// Tracks discarded `(session_id, segment_index)` keys for trailing danmu
-    /// completions that arrive after the streamer's actor has already exited.
-    discarded_segments_fallback: DashMap<(String, u32), Instant>,
     /// Tracks `session_id -> streamer_id` for danmu events (like `Reconnecting` /
     /// `CollectionStopped`) whose payload does not carry `streamer_id`.
     danmu_session_streamers: DashMap<String, String>,
@@ -232,7 +229,6 @@ pub struct ActorRegistry {
     reconcile_rx: Mutex<Option<mpsc::UnboundedReceiver<ReconcileCommand>>>,
     root_cancel: CancellationToken,
     started: AtomicBool,
-    download_coordination_active: AtomicBool,
     shutting_down: AtomicBool,
 }
 
@@ -260,7 +256,6 @@ impl ActorRegistry {
             config_revisions: DashMap::new(),
             crash_counts: DashMap::new(),
             runtime_views,
-            discarded_segments_fallback: DashMap::new(),
             danmu_session_streamers: DashMap::new(),
             deps: actor_deps,
             check_interval_ms: AtomicU64::new(deps.check_interval_ms.max(100)),
@@ -271,7 +266,6 @@ impl ActorRegistry {
             reconcile_rx: Mutex::new(Some(reconcile_rx)),
             root_cancel: deps.root_cancel,
             started: AtomicBool::new(false),
-            download_coordination_active: AtomicBool::new(false),
             shutting_down: AtomicBool::new(false),
         });
         feedback.bind_registry(&registry);
@@ -343,8 +337,6 @@ impl ActorRegistry {
         coordination_rx: DownloadCoordinationReceiver,
         supervisor: &TaskSupervisor,
     ) {
-        self.download_coordination_active
-            .store(true, Ordering::Release);
         let observer_rx = self.deps.download_manager.subscribe();
         let registry_obs = self.clone();
         let cancel_obs = self.root_cancel.child_token();
@@ -1132,7 +1124,6 @@ impl ActorRegistry {
                     .collect();
                 for streamer_id in affected {
                     self.reconcile_streamer(&streamer_id, true).await;
-                    self.notify_credential_material_changed(&streamer_id);
                 }
             }
             ReconcileCommand::Template(template_id) => {
@@ -1148,14 +1139,12 @@ impl ActorRegistry {
                     .collect();
                 for streamer_id in affected {
                     self.reconcile_streamer(&streamer_id, true).await;
-                    self.notify_credential_material_changed(&streamer_id);
                 }
             }
             ReconcileCommand::CredentialMaterial(owner) => {
                 let affected = self.streamers_for_credential_owner(&owner);
                 for streamer_id in affected {
                     self.reconcile_streamer(&streamer_id, true).await;
-                    self.notify_credential_material_changed(&streamer_id);
                 }
             }
             ReconcileCommand::ErrorCleared(streamer_id) => {
@@ -1470,12 +1459,6 @@ impl ActorRegistry {
         });
     }
 
-    fn notify_credential_material_changed(&self, streamer_id: &str) {
-        if let Some(entry) = self.actors.get(streamer_id) {
-            let _ = entry.handle.send_input(FsmInput::CredentialMaterialChanged);
-        }
-    }
-
     fn streamers_for_credential_owner(&self, owner: &CredentialOwner) -> Vec<String> {
         let all = self.deps.streamer_manager.get_all();
         match owner {
@@ -1544,44 +1527,19 @@ impl ActorRegistry {
                     });
                 }
             }
-            DownloadManagerEvent::Terminal(terminal) => {
-                if self.download_coordination_active.load(Ordering::Acquire) {
-                    // `DownloadEnded` was already applied synchronously to the FSM
-                    // inside `handle_required_download_event` before
-                    // `finalizer.release_active()`. Now that active ownership is
-                    // released, notify `PhysicalLeaseReleased` (carrying the reserved
-                    // feedback permit) if no physical media leases remain.
-                    if !self.has_physical_media_lease(streamer_id)
-                        && let Some(entry) = self.actors.get(streamer_id)
-                    {
-                        let _ = entry.handle.send_message(ActorMessage::ReservedDownload {
-                            input: FsmInput::PhysicalLeaseReleased,
-                            _permit: permit,
-                        });
-                    }
-                    return;
-                }
-                let attempt_id = terminal
-                    .download_id()
-                    .and_then(|download_id| self.deps.leases.take_attempt_for_download(download_id))
-                    .or_else(|| {
-                        self.deps
-                            .leases
-                            .attempt_for_session(streamer_id, terminal.session_id())
-                    })
-                    .unwrap_or(0);
-                let input = FsmInput::DownloadEnded {
-                    attempt_id,
-                    event: terminal.clone(),
-                };
-                if let Some(entry) = self.actors.get(streamer_id) {
+            DownloadManagerEvent::Terminal(_) => {
+                // `DownloadEnded` was already applied synchronously to the FSM
+                // inside `handle_required_download_event` before
+                // `finalizer.release_active()`. Now that active ownership is
+                // released, notify `PhysicalLeaseReleased` (carrying the reserved
+                // feedback permit) if no physical media leases remain.
+                if !self.has_physical_media_lease(streamer_id)
+                    && let Some(entry) = self.actors.get(streamer_id)
+                {
                     let _ = entry.handle.send_message(ActorMessage::ReservedDownload {
-                        input,
+                        input: FsmInput::PhysicalLeaseReleased,
                         _permit: permit,
                     });
-                    if !self.has_physical_media_lease(streamer_id) {
-                        let _ = entry.handle.send_input(FsmInput::PhysicalLeaseReleased);
-                    }
                 }
             }
             _ => {}
@@ -1911,8 +1869,6 @@ impl ActorRegistry {
             should_discard_segment(effective_size_bytes, min_bytes, split_by_format_change);
 
         if discard {
-            self.discarded_segments_fallback
-                .insert((session_id.to_owned(), segment_index), Instant::now());
             close_danmu_segment(
                 &self.deps.danmu_service,
                 &DanmuCloseSegmentSpec {
@@ -2053,8 +2009,7 @@ impl ActorRegistry {
                         ));
                     }
                 };
-                let Some(segment_index) = parse_segment_index_from_danmu(&segment_id, &output_path)
-                else {
+                let Ok(segment_index) = segment_id.parse::<u32>() else {
                     warn!(
                         %session_id,
                         %segment_id,
@@ -2078,16 +2033,6 @@ impl ActorRegistry {
                     .await
                 {
                     return res;
-                }
-
-                // Fallback after actor exit: honor fallback discard guard.
-                if self
-                    .discarded_segments_fallback
-                    .remove(&(session_id.clone(), segment_index))
-                    .is_some()
-                {
-                    delete_discarded_files(None, Some(&output_path_str)).await;
-                    return Ok(());
                 }
 
                 self.deps
@@ -2194,8 +2139,6 @@ impl ActorRegistry {
                 session_id,
                 total_count,
             } => {
-                self.discarded_segments_fallback
-                    .retain(|(sid, _), _| sid != &session_id);
                 let streamer_id = self
                     .danmu_session_streamers
                     .remove(&session_id)
@@ -2419,13 +2362,4 @@ impl BigoCheckTrigger for ActorRegistry {
     fn request_check(&self, streamer_id: &str) {
         self.check_now(streamer_id);
     }
-}
-
-fn parse_segment_index_from_danmu(segment_id: &str, output_path: &Path) -> Option<u32> {
-    if let Ok(index) = segment_id.parse::<u32>() {
-        return Some(index);
-    }
-    let stem = output_path.file_stem()?.to_str()?;
-    let suffix = stem.rsplit('_').next()?;
-    suffix.parse::<u32>().ok()
 }

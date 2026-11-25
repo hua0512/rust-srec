@@ -193,8 +193,6 @@ pub enum StopKind {
 pub struct StoppingState {
     pub kind: StopKind,
     pub deadline: Instant,
-    pub awaiting_download: bool,
-    pub awaiting_danmu: bool,
     pub download_confirmed: bool,
     pub danmu_confirmed: bool,
     pub danmu_unconfirmed: bool,
@@ -236,7 +234,6 @@ pub enum SessionSlot {
     /// (`Completed` / `Failed`) to `UserDisabled`.
     RecentlyEnded {
         session_id: String,
-        reattributable_timer_end: bool,
         evict_at: Instant,
     },
 }
@@ -363,8 +360,6 @@ pub struct InFlightProbe {
     pub probe_id: u64,
     pub purpose: ProbePurpose,
     pub is_live_watchdog: bool,
-    pub started_at: Instant,
-    pub for_session_id: Option<String>,
 }
 
 /// Metadata tracking the single in-flight database commit.
@@ -388,14 +383,12 @@ pub enum PendingDbKind {
         sets_offline: bool,
         sets_out_of_schedule: bool,
         clears_errors: bool,
-        infra_block: Option<crate::monitor::InfraBlockReason>,
         for_stop: bool,
     },
     EndForCredentialRetirement {
         session_id: String,
     },
     RewriteEndedCause {
-        session_id: String,
         for_stop: bool,
     },
     CommitCredentialBinding {
@@ -407,17 +400,12 @@ pub enum PendingDbKind {
     RecordTransientError {
         error_message: String,
     },
-    ClearErrors {
-        target_state: Option<StreamerState>,
-    },
+    ClearErrors,
     ClearLastError,
     RecordFatalError {
         new_state: StreamerState,
     },
     RecordFilteredState,
-    SetInfraBlocked {
-        state: StreamerState,
-    },
     AddSessionTitle,
     RecordHysteresisEntered,
 }

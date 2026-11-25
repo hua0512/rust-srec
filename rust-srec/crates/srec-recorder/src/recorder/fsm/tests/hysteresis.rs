@@ -338,7 +338,6 @@ fn quiet_period_backstop_freezes_bounded_grace_for_in_flight_probe_and_confirmat
             result: Ok(DbCommitOutcome::TransientErrorRecorded {
                 consecutive_error_count: 1,
                 disabled_until: None,
-                checks_failing_emitted: false,
             }),
         },
     );
@@ -425,7 +424,6 @@ fn quiet_period_backstop_freezes_bounded_grace_for_in_flight_probe_and_confirmat
                 result: Ok(DbCommitOutcome::TransientErrorRecorded {
                     consecutive_error_count: err_count,
                     disabled_until,
-                    checks_failing_emitted: err_count == 3,
                 }),
             },
         );
@@ -673,7 +671,6 @@ fn sliding_failure_window_promotes_mesio_network_only_and_ignores_discarded_segm
             result: Ok(DbCommitOutcome::TransientErrorRecorded {
                 consecutive_error_count: 1,
                 disabled_until: None,
-                checks_failing_emitted: false,
             }),
         },
     );
@@ -796,7 +793,6 @@ fn sliding_failure_window_promotes_mesio_network_only_and_ignores_discarded_segm
             result: Ok(DbCommitOutcome::TransientErrorRecorded {
                 consecutive_error_count: 1,
                 disabled_until: None,
-                checks_failing_emitted: false,
             }),
         },
     );
@@ -857,9 +853,7 @@ fn sliding_failure_window_promotes_mesio_network_only_and_ignores_discarded_segm
             clock.ctx(),
             FsmInput::DbCommitted {
                 op_id: clr_op,
-                result: Ok(DbCommitOutcome::ErrorsCleared {
-                    checks_restored_emitted: false,
-                }),
+                result: Ok(DbCommitOutcome::ErrorsCleared),
             },
         );
     }

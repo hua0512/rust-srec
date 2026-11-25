@@ -1,7 +1,6 @@
 //! Stop contracts and shutdown convergence (`Disable` / `OutOfSchedule`,
 //! strict `CredentialRetire`, `Retire { bounds }`, and `Shutdown`).
 
-use crate::credentials::CredentialBinding;
 use crate::downloader::DownloadStopCause;
 use crate::session::{TerminalCause, TerminalCauseDto};
 use srec_core::domain::StreamerState;
@@ -89,7 +88,7 @@ impl StreamerFsm {
             DanmuStopKind::SessionEnded
         };
 
-        let (awaiting_download, awaiting_danmu) = match &mut self.session {
+        let (stopping_download, stopping_danmu) = match &mut self.session {
             SessionSlot::Open(open) => {
                 let dl = request_stop_open_attempt(open, stop_cause, effects);
                 let dm = Self::stop_open_danmu(open, danmu_stop_kind, effects);
@@ -140,10 +139,8 @@ impl StreamerFsm {
         self.monitor = MonitorPhase::Stopping(StoppingState {
             kind,
             deadline,
-            awaiting_download,
-            awaiting_danmu,
-            download_confirmed: !awaiting_download,
-            danmu_confirmed: !awaiting_danmu,
+            download_confirmed: !stopping_download,
+            danmu_confirmed: !stopping_danmu,
             danmu_unconfirmed: false,
             db_end_dispatched: false,
             db_end_committed: false,
@@ -310,7 +307,6 @@ impl StreamerFsm {
                                     sets_offline: false,
                                     sets_out_of_schedule: false,
                                     clears_errors: false,
-                                    infra_block: None,
                                     for_stop: true,
                                 },
                                 DbCommitOp::EndSession {
@@ -332,7 +328,6 @@ impl StreamerFsm {
                         }
                         SessionSlot::RecentlyEnded {
                             session_id,
-                            reattributable_timer_end: true,
                             evict_at,
                         } if ctx.now < *evict_at => {
                             let session_id = session_id.clone();
@@ -340,10 +335,7 @@ impl StreamerFsm {
                                 s.db_end_dispatched = true;
                             }
                             self.enqueue_or_dispatch_db(
-                                PendingDbKind::RewriteEndedCause {
-                                    session_id: session_id.clone(),
-                                    for_stop: true,
-                                },
+                                PendingDbKind::RewriteEndedCause { for_stop: true },
                                 DbCommitOp::RewriteEndedCause {
                                     session_id,
                                     new_cause: TerminalCauseDto::UserDisabled,
@@ -368,7 +360,6 @@ impl StreamerFsm {
                                     sets_offline: false,
                                     sets_out_of_schedule: false,
                                     clears_errors: false,
-                                    infra_block: None,
                                     for_stop: true,
                                 },
                                 DbCommitOp::EndSession {
@@ -417,7 +408,6 @@ impl StreamerFsm {
                             sets_offline: false,
                             sets_out_of_schedule: true,
                             clears_errors: false,
-                            infra_block: None,
                             for_stop: true,
                         },
                         DbCommitOp::EndSession {
@@ -542,9 +532,4 @@ fn stop_priority(kind: &StopKind) -> u8 {
         StopKind::Retire { .. } => 4,
         StopKind::Shutdown => 5,
     }
-}
-
-/// Utility to compare credential bindings when checking retirement identity.
-pub fn binding_matches(a: Option<&CredentialBinding>, b: &CredentialBinding) -> bool {
-    a == Some(b)
 }

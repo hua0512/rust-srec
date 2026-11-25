@@ -192,8 +192,6 @@ fn session_ended_outcome(
         started_at: transitioned_from_open.then_some(wall),
         ended_at: wall,
         transitioned_from_open,
-        offline_event_emitted: transitioned_from_open,
-        checks_restored_emitted: false,
     }
 }
 
@@ -346,7 +344,6 @@ fn enter_quiet_period_ready_for_direct_backstop(
             result: Ok(DbCommitOutcome::TransientErrorRecorded {
                 consecutive_error_count: 1,
                 disabled_until: None,
-                checks_failing_emitted: false,
             }),
         },
     );
@@ -374,7 +371,6 @@ fn enter_quiet_period_ready_for_direct_backstop(
             result: Ok(DbCommitOutcome::TransientErrorRecorded {
                 consecutive_error_count: 2,
                 disabled_until: Some(backoff_until),
-                checks_failing_emitted: true,
             }),
         },
     );

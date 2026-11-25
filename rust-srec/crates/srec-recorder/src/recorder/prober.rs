@@ -10,7 +10,6 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use async_trait::async_trait;
 use dashmap::DashMap;
 use jiff::{SignedDuration, Timestamp};
 use platforms_parser::extractor::factory::{
@@ -32,7 +31,7 @@ use crate::monitor::{
 };
 use crate::proxies::ProxyTarget;
 use crate::recorder::ports::{
-    LiveProbePayload, ProbeFailure, ProbePurpose, ProbeRequest, ProbeStatus, RecorderProberPort,
+    LiveProbePayload, ProbeFailure, ProbePurpose, ProbeRequest, ProbeStatus,
 };
 use crate::recorder::store::RecorderStore;
 use crate::streamer::platform_metadata::StoredPlatformMetadata;
@@ -794,18 +793,6 @@ impl RecorderProber {
             extras.remove("session_cookies");
         }
         Ok(status)
-    }
-}
-
-#[async_trait]
-impl RecorderProberPort for RecorderProber {
-    async fn probe(
-        &self,
-        request: ProbeRequest,
-    ) -> Result<std::result::Result<ProbeStatus, ProbeFailure>> {
-        self.probe_with_hint(request)
-            .await
-            .map(|(result, _)| result)
     }
 }
 

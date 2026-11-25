@@ -18,8 +18,8 @@ use crate::recorder::actor::{ActorMessage, ActorRuntimeDeps};
 use crate::recorder::fsm::{FsmEffect, FsmInput};
 use crate::recorder::ports::{
     ActorStopReason, DanmuCloseSegmentSpec, DanmuSegmentRecord, DanmuStopKind, DanmuStopResult,
-    DbCommitOp, PipelineNotification, ProbeRequest, RecorderPipelinePort, RecorderStorePort,
-    StreamerRuntimeView, VideoSegmentRecord,
+    DbCommitOp, PipelineNotification, ProbeRequest, RecorderPipelinePort, StreamerRuntimeView,
+    VideoSegmentRecord,
 };
 
 use super::startup_task::{StartupTaskDeps, spawn_startup_task};

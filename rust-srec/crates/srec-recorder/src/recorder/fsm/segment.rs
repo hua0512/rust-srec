@@ -511,7 +511,6 @@ impl StreamerFsm {
                         sets_offline: true,
                         sets_out_of_schedule: false,
                         clears_errors: clear_errors,
-                        infra_block: None,
                         for_stop: false,
                     },
                     DbCommitOp::EndSession {
@@ -655,19 +654,17 @@ impl StreamerFsm {
         // clears `self.errors` once `DbCommitOp::ClearErrors` succeeds.
         let already_scheduled = matches!(
             self.pending_db.as_ref().map(|p| &p.kind),
-            Some(PendingDbKind::ClearErrors { .. })
+            Some(PendingDbKind::ClearErrors)
         ) || self
             .queued_db
             .iter()
-            .any(|q| matches!(q.kind, PendingDbKind::ClearErrors { .. }));
+            .any(|q| matches!(q.kind, PendingDbKind::ClearErrors));
         if already_scheduled {
             return;
         }
         let threshold = download_failure_threshold(self.config.offline_check_count);
         self.enqueue_or_dispatch_db(
-            PendingDbKind::ClearErrors {
-                target_state: Some(StreamerState::Live),
-            },
+            PendingDbKind::ClearErrors,
             DbCommitOp::ClearErrors {
                 streamer_id: self.streamer_id.clone(),
                 streamer_name: self.config.streamer_name.clone(),

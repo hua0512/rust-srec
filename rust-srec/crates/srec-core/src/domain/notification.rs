@@ -57,18 +57,6 @@ pub enum BigoNotificationProblem {
     Disconnected,
 }
 
-/// How an active recording session was opened or resumed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum StreamOnlineKind {
-    /// A brand-new session row was inserted.
-    Created,
-    /// An already-open session row (`end_time IS NULL`, e.g. after restart) was reused.
-    ReusedActive,
-    /// An open session resumed out of the in-memory hysteresis quiet period.
-    HysteresisResumed,
-}
-
 /// Convert Unix epoch milliseconds to `Timestamp`, clamping out-of-range values
 /// to the nearest representable bound.
 #[inline]
@@ -96,7 +84,6 @@ pub enum OutboxEvent {
         title: String,
         category: Option<String>,
         started_at_ms: i64,
-        kind: StreamOnlineKind,
     },
     StreamOffline {
         streamer_id: String,
@@ -150,7 +137,6 @@ enum OutboxEventWire {
         title: String,
         category: Option<String>,
         started_at_ms: i64,
-        kind: StreamOnlineKind,
     },
     StreamOffline {
         streamer_id: String,
@@ -201,7 +187,6 @@ impl Serialize for OutboxEvent {
                 title,
                 category,
                 started_at_ms,
-                kind,
             } => OutboxEventWire::StreamOnline {
                 streamer_id: streamer_id.clone(),
                 streamer_name: streamer_name.clone(),
@@ -209,7 +194,6 @@ impl Serialize for OutboxEvent {
                 title: title.clone(),
                 category: category.clone(),
                 started_at_ms: *started_at_ms,
-                kind: *kind,
             },
             Self::StreamOffline {
                 streamer_id,
@@ -285,7 +269,6 @@ impl<'de> Deserialize<'de> for OutboxEvent {
                 title,
                 category,
                 started_at_ms,
-                kind,
             } => Self::StreamOnline {
                 streamer_id,
                 streamer_name,
@@ -293,7 +276,6 @@ impl<'de> Deserialize<'de> for OutboxEvent {
                 title,
                 category,
                 started_at_ms,
-                kind,
             },
             OutboxEventWire::StreamOffline {
                 streamer_id,

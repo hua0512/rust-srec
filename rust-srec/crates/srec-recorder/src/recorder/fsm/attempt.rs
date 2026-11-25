@@ -663,7 +663,6 @@ impl StreamerFsm {
                 sets_offline: false,
                 sets_out_of_schedule: false,
                 clears_errors: false,
-                infra_block: infra_block.clone(),
                 for_stop: false,
             },
             DbCommitOp::EndSession {
@@ -707,7 +706,6 @@ impl StreamerFsm {
                 sets_offline: false,
                 sets_out_of_schedule: false,
                 clears_errors: false,
-                infra_block: None,
                 for_stop: false,
             },
             DbCommitOp::EndSession {

@@ -1,8 +1,9 @@
-//! Narrow ports and typed contracts for the recording control plane.
+//! Typed contracts for the recording control plane.
 //!
-//! These traits and value types decouple [`crate::recorder::StreamerFsm`] and
-//! future actor/runtime adapters from concrete SQLite repositories, download
-//! engines, danmu runners, and pipeline coordinators.
+//! These value types carry [`crate::recorder::StreamerFsm`] decisions to the
+//! actor's I/O (database commits, probes, download and danmu commands) and
+//! their results back. [`RecorderPipelinePort`] lets the recorder reach
+//! post-processing without depending on the pipeline crate.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -293,7 +294,7 @@ pub enum ProbeFailure {
     CredentialSourceChanged,
 }
 
-pub use srec_core::domain::notification::{OutboxEvent, StreamOnlineKind};
+pub use srec_core::domain::notification::OutboxEvent;
 
 /// Whether `StartOrResumeSession` created a fresh row or reused an active one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -414,13 +415,6 @@ pub enum DbCommitOp {
     },
     /// Clear only `last_error` without modifying error count or backoff.
     ClearLastError { streamer_id: String },
-    /// Persist an infrastructure block (`CircuitBreaker` or `OutputRootUnavailable`)
-    /// without incrementing `consecutive_error_count`.
-    SetInfraBlocked {
-        streamer_id: String,
-        reason: InfraBlockReason,
-        now: Timestamp,
-    },
     /// Append a mid-session title update (e.g. from danmu `RoomInfoChanged`).
     AddSessionTitle {
         session_id: String,
@@ -470,8 +464,6 @@ pub enum DbCommitOutcome {
         ended_at: Timestamp,
         /// Whether the session row transitioned from `end_time IS NULL` to `Some`.
         transitioned_from_open: bool,
-        offline_event_emitted: bool,
-        checks_restored_emitted: bool,
     },
     /// `EndForCredentialRetirement` committed.
     CredentialRetirementEnded { session_id: String, ended: bool },
@@ -486,15 +478,9 @@ pub enum DbCommitOutcome {
     TransientErrorRecorded {
         consecutive_error_count: i32,
         disabled_until: Option<Timestamp>,
-        checks_failing_emitted: bool,
     },
     /// `ClearErrors` committed.
-    ErrorsCleared { checks_restored_emitted: bool },
-    /// `SetInfraBlocked` committed.
-    InfraBlockedRecorded {
-        state: StreamerState,
-        disabled_until: Timestamp,
-    },
+    ErrorsCleared,
     /// `RecordFatalError` committed.
     FatalErrorRecorded {
         session_ended: Option<String>,
@@ -727,67 +713,6 @@ pub struct StreamerRuntimeView {
     pub config_revision: u64,
 }
 
-/// Narrow async port for probing streamer status.
-#[async_trait]
-pub trait RecorderProberPort: Send + Sync {
-    async fn probe(
-        &self,
-        request: ProbeRequest,
-    ) -> crate::Result<std::result::Result<ProbeStatus, ProbeFailure>>;
-}
-
-/// Narrow async port for serialized per-streamer database commits and segment persistence.
-#[async_trait]
-pub trait RecorderStorePort: Send + Sync {
-    async fn commit(&self, op: DbCommitOp)
-    -> std::result::Result<DbCommitOutcome, DbCommitFailure>;
-
-    async fn persist_video_segment(&self, record: VideoSegmentRecord) -> crate::Result<()>;
-
-    async fn persist_danmu_segment(&self, record: DanmuSegmentRecord) -> crate::Result<()>;
-
-    async fn remove_danmu_segment_output(
-        &self,
-        session_id: &str,
-        danmu_path: &str,
-    ) -> crate::Result<()>;
-
-    async fn next_session_segment_index(&self, session_id: &str) -> crate::Result<u32>;
-}
-
-/// Narrow async port for managing supervised download attempts.
-#[async_trait]
-pub trait RecorderDownloadPort: Send + Sync {
-    async fn start_attempt(&self, spec: AttemptStartSpec) -> crate::Result<()>;
-
-    async fn stop_attempt(
-        &self,
-        attempt_id: u64,
-        download_id: Option<&str>,
-        cause: crate::downloader::DownloadStopCause,
-    ) -> crate::Result<()>;
-}
-
-/// Narrow async port for danmu collection and segment synchronization.
-#[async_trait]
-pub trait RecorderDanmuPort: Send + Sync {
-    async fn start_segment(
-        &self,
-        session_id: &str,
-        segment_index: u32,
-        video_segment_path: &str,
-        started_at: Timestamp,
-    ) -> crate::Result<()>;
-
-    async fn close_segment(&self, spec: DanmuCloseSegmentSpec) -> crate::Result<()>;
-
-    async fn stop_collection(
-        &self,
-        session_id: &str,
-        reason: DanmuStopKind,
-    ) -> crate::Result<DanmuStopResult>;
-}
-
 /// Narrow async port for forwarding post-commit pipeline notifications and
 /// draining streamer post-processing work during retirement.
 #[async_trait]
@@ -799,9 +724,4 @@ pub trait RecorderPipelinePort: Send + Sync {
         streamer_id: &str,
         timeout: Duration,
     ) -> crate::Result<PipelineDrainStatus>;
-}
-
-/// Read-only runtime view publisher.
-pub trait RecorderRuntimeSink: Send + Sync {
-    fn publish_view(&self, view: StreamerRuntimeView);
 }

@@ -51,29 +51,24 @@ impl StreamerFsm {
             snapshot.last_error,
         );
 
-        let monitor = if !should_spawn_actor(snapshot.state, snapshot.deleted) {
-            MonitorPhase::Terminated
-        } else {
-            match snapshot.state {
-                StreamerState::TemporalDisabled => {
-                    let remaining = errors
-                        .remaining_backoff(wall_now)
-                        .unwrap_or(std::time::Duration::ZERO);
-                    MonitorPhase::Blocked {
-                        kind: BlockedKind::TemporalDisabled,
-                        retry_at: now.checked_add(remaining).unwrap_or(now),
-                    }
+        let monitor = match snapshot.state {
+            _ if !should_spawn_actor(snapshot.state, snapshot.deleted) => MonitorPhase::Terminated,
+            StreamerState::TemporalDisabled => {
+                let remaining = errors
+                    .remaining_backoff(wall_now)
+                    .unwrap_or(std::time::Duration::ZERO);
+                MonitorPhase::Blocked {
+                    kind: BlockedKind::TemporalDisabled,
+                    retry_at: now.checked_add(remaining).unwrap_or(now),
                 }
-                StreamerState::OutOfSchedule => MonitorPhase::Filtered {
-                    reason: FilteredKind::OutOfSchedule { smart_wake: None },
-                    next_check: now,
-                    recurring_interval_ms: None,
-                },
-                StreamerState::NotLive | StreamerState::Live | StreamerState::InspectingLive => {
-                    schedule::schedule_idle_immediate(now)
-                }
-                _ => MonitorPhase::Terminated,
             }
+            StreamerState::OutOfSchedule => MonitorPhase::Filtered {
+                reason: FilteredKind::OutOfSchedule { smart_wake: None },
+                next_check: now,
+                recurring_interval_ms: None,
+            },
+            // The remaining active states: `NotLive`, `Live` and `InspectingLive`.
+            _ => schedule::schedule_idle_immediate(now),
         };
 
         let offline_confirmation =
@@ -367,19 +362,10 @@ impl StreamerFsm {
                     consider(*until);
                 }
             }
-            SessionSlot::RecentlyEnded {
-                reattributable_timer_end: true,
-                evict_at,
-                ..
-            } => {
+            SessionSlot::RecentlyEnded { evict_at, .. } => {
                 consider(*evict_at);
             }
-            SessionSlot::None
-            | SessionSlot::CommittingStart { .. }
-            | SessionSlot::RecentlyEnded {
-                reattributable_timer_end: false,
-                ..
-            } => {}
+            SessionSlot::None | SessionSlot::CommittingStart { .. } => {}
         }
 
         earliest
@@ -595,7 +581,7 @@ impl StreamerFsm {
             return;
         }
 
-        self.spawn_status_probe(ctx, is_live_watchdog, effects);
+        self.spawn_status_probe(is_live_watchdog, effects);
     }
 
     fn on_check_now(&mut self, ctx: StepContext) {

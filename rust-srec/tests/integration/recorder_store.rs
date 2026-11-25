@@ -1,4 +1,4 @@
-//! Real SQLite integration tests for `RecorderStore` (`RecorderStorePort`).
+//! Real SQLite integration tests for `RecorderStore`.
 
 use std::sync::Arc;
 use std::task::Poll;
@@ -25,8 +25,8 @@ use rust_srec::notification::OutboxRecord;
 use rust_srec::proxies::ProxyRoute;
 use rust_srec::recorder::{
     DanmuSegmentRecord, DbCommitFailure, DbCommitOp, DbCommitOutcome, OutboxEvent,
-    PostPublicationChangeSet, PostPublicationListener, RecorderStore, RecorderStorePort,
-    SessionStartDisposition, StreamOnlineKind, VideoSegmentRecord,
+    PostPublicationChangeSet, PostPublicationListener, RecorderStore, SessionStartDisposition,
+    VideoSegmentRecord,
 };
 use rust_srec::session::{SessionEventPayload, TerminalCause, TerminalCauseDto};
 use rust_srec::streamer::CommittedStreamerState;
@@ -95,6 +95,27 @@ async fn fetch_outbox_events(pool: &SqlitePool) -> Vec<StoredOutboxEvent> {
             }
         })
         .collect()
+}
+
+/// The rejected-download end that persists an infrastructure block, as the
+/// actor commits it when preflight refuses a start, for a streamer with no
+/// open session.
+fn infra_block_op(streamer_id: &str, reason: InfraBlockReason, now: Timestamp) -> DbCommitOp {
+    DbCommitOp::EndSession {
+        streamer_id: streamer_id.into(),
+        streamer_name: streamer_id.into(),
+        session_id: None,
+        cause: TerminalCause::Rejected {
+            reason: "output root unavailable".into(),
+        },
+        via_hysteresis: false,
+        update_streamer_state: None,
+        clear_errors: false,
+        checks_restored_threshold: None,
+        infra_block: Some(reason),
+        suppress_offline_notification: false,
+        now,
+    }
 }
 
 #[tokio::test]
@@ -172,7 +193,6 @@ async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
                 title: "Initial Title".into(),
                 category: Some("Gaming".into()),
                 started_at_ms: t_start.as_millisecond(),
-                kind: StreamOnlineKind::Created,
             }
         );
 
@@ -317,7 +337,6 @@ async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
         assert!(matches!(
             &outbox[1].event,
             OutboxEvent::StreamOnline {
-                kind: StreamOnlineKind::ReusedActive,
                 started_at_ms,
                 ..
             } if *started_at_ms == t_reuse.as_millisecond()
@@ -326,7 +345,6 @@ async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
         assert!(matches!(
             &outbox[2].event,
             OutboxEvent::StreamOnline {
-                kind: StreamOnlineKind::HysteresisResumed,
                 started_at_ms,
                 ..
             } if *started_at_ms == t_resume.as_millisecond()
@@ -364,8 +382,6 @@ async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
                 started_at: Some(ms_to_datetime(t_start.as_millisecond())),
                 ended_at: t_end,
                 transitioned_from_open: true,
-                offline_event_emitted: true,
-                checks_restored_emitted: false,
             }
         );
         assert_eq!(
@@ -399,8 +415,6 @@ async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
                 started_at: None,
                 ended_at: t_second_end,
                 transitioned_from_open: false,
-                offline_event_emitted: false,
-                checks_restored_emitted: true,
             }
         );
         let cached_after_second = committed_state.get_streamer("s1").unwrap();
@@ -520,7 +534,6 @@ async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
                 stale_res,
                 DbCommitOutcome::SessionEnded {
                     transitioned_from_open: false,
-                    offline_event_emitted: false,
                     ..
                 }
             ));
@@ -549,7 +562,6 @@ async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
                 ended,
                 DbCommitOutcome::SessionEnded {
                     transitioned_from_open: true,
-                    offline_event_emitted: false,
                     ..
                 }
             ));
@@ -786,7 +798,6 @@ async fn rewrite_ended_cause_and_error_infra_fatal_transitions() {
 
         // 2. Transient errors: ChecksFailing emitted ONLY on exact threshold (3),
         //    ClearLastError keeps error count, ClearErrors emits ChecksRestored once.
-        let mut failing_emitted = Vec::new();
         for step in 1..=4 {
             let t = Timestamp::from_millisecond(1_735_010_100_000 + step * 1_000).unwrap();
             let outcome = store
@@ -804,16 +815,13 @@ async fn rewrite_ended_cause_and_error_infra_fatal_transitions() {
                 DbCommitOutcome::TransientErrorRecorded {
                     consecutive_error_count,
                     disabled_until,
-                    checks_failing_emitted,
                 } => {
                     assert_eq!(consecutive_error_count, step as i32);
                     assert_eq!(disabled_until.is_some(), step >= 3);
-                    failing_emitted.push(checks_failing_emitted);
                 }
                 other => panic!("unexpected outcome: {other:?}"),
             }
         }
-        assert_eq!(failing_emitted, vec![false, false, true, false]);
 
         store
             .commit(DbCommitOp::ClearLastError {
@@ -837,9 +845,7 @@ async fn rewrite_ended_cause_and_error_infra_fatal_transitions() {
                 })
                 .await
                 .unwrap(),
-            DbCommitOutcome::ErrorsCleared {
-                checks_restored_emitted: true,
-            }
+            DbCommitOutcome::ErrorsCleared
         );
         // Second ClearErrors must not re-emit ChecksRestored.
         assert_eq!(
@@ -853,9 +859,7 @@ async fn rewrite_ended_cause_and_error_infra_fatal_transitions() {
                 })
                 .await
                 .unwrap(),
-            DbCommitOutcome::ErrorsCleared {
-                checks_restored_emitted: false,
-            }
+            DbCommitOutcome::ErrorsCleared
         );
 
         let outbox_after_errors = fetch_outbox_events(&pool).await;
@@ -893,25 +897,18 @@ async fn rewrite_ended_cause_and_error_infra_fatal_transitions() {
 
         // 3. InfraBlockReason persists OutOfSpace without touching error count.
         let t_infra = Timestamp::from_millisecond(1_735_010_300_000).unwrap();
-        let infra_out = store
-            .commit(DbCommitOp::SetInfraBlocked {
-                streamer_id: "s1".into(),
-                reason: InfraBlockReason::OutputRootUnavailable {
+        store
+            .commit(infra_block_op(
+                "s1",
+                InfraBlockReason::OutputRootUnavailable {
                     path: "/mnt/missing".into(),
                     io_kind: IoErrorKindSer::NotFound,
                     retry_after_secs: 120,
                 },
-                now: t_infra,
-            })
+                t_infra,
+            ))
             .await
             .unwrap();
-        assert!(matches!(
-            infra_out,
-            DbCommitOutcome::InfraBlockedRecorded {
-                state: StreamerState::OutOfSpace,
-                ..
-            }
-        ));
         let cached_oos = committed_state.get_streamer("s1").unwrap();
         assert_eq!(cached_oos.state, StreamerState::OutOfSpace);
         assert_eq!(cached_oos.consecutive_error_count, 0);
@@ -1054,13 +1051,13 @@ async fn rewrite_ended_cause_and_error_infra_fatal_transitions() {
             .await
             .unwrap();
         store
-            .commit(DbCommitOp::SetInfraBlocked {
-                streamer_id: "s-dis".into(),
-                reason: InfraBlockReason::CircuitBreaker {
+            .commit(infra_block_op(
+                "s-dis",
+                InfraBlockReason::CircuitBreaker {
                     retry_after_secs: 60,
                 },
-                now: t_fatal,
-            })
+                t_fatal,
+            ))
             .await
             .unwrap();
         store
@@ -1533,11 +1530,9 @@ async fn per_streamer_lease_handles_pre_commit_cancellation_and_listener_runs_lo
             end_outcome,
             DbCommitOutcome::SessionEnded {
                 transitioned_from_open: true,
-                offline_event_emitted: true,
                 ..
             }
         ));
-        assert!(store.shutdown(Duration::from_secs(5)).await);
 
         let changes = observed.lock().await;
         assert_eq!(changes.len(), 2);
@@ -1557,25 +1552,22 @@ async fn out_of_space_cooldown_allows_recovery_after_expiry_and_offline_preserve
         insert_streamer(&pool, "s1", "OosStreamer", StreamerState::NotLive).await;
 
         let t0 = Timestamp::from_millisecond(1_735_040_000_000).unwrap();
-        let infra_outcome = store
-            .commit(DbCommitOp::SetInfraBlocked {
-                streamer_id: "s1".into(),
-                reason: InfraBlockReason::OutputRootUnavailable {
+        store
+            .commit(infra_block_op(
+                "s1",
+                InfraBlockReason::OutputRootUnavailable {
                     path: std::path::PathBuf::from("/rec"),
                     io_kind: IoErrorKindSer::StorageFull,
                     retry_after_secs: 30,
                 },
-                now: t0,
-            })
+                t0,
+            ))
             .await
             .unwrap();
-        assert!(matches!(
-            infra_outcome,
-            DbCommitOutcome::InfraBlockedRecorded {
-                state: StreamerState::OutOfSpace,
-                ..
-            }
-        ));
+        assert_eq!(
+            committed_state.get_streamer("s1").unwrap().state,
+            StreamerState::OutOfSpace
+        );
 
         // 1. Inside cooldown (t0 + 10s): StartOrResumeSession is suppressed with OutOfSpace.
         let t_during = Timestamp::from_millisecond(1_735_040_010_000).unwrap();

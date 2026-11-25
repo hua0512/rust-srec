@@ -6,7 +6,6 @@
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use jiff::Timestamp;
 use tracing::{debug, info, warn};
 
 use crate::Result;
@@ -14,14 +13,8 @@ use crate::config::{ConfigEventBroadcaster, ConfigUpdateEvent};
 use srec_core::domain::{Priority, StreamerState};
 use srec_sqlite::repositories::streamer::StreamerRepository;
 
-use super::metadata::{StreamerMetadata, download_failure_threshold};
+use super::metadata::StreamerMetadata;
 use super::state_store::{CommittedStreamerState, StateChange, StatePublication, StreamerCache};
-
-/// Base backoff duration (doubles with each error).
-const BASE_BACKOFF_SECS: u64 = 60;
-
-/// Maximum backoff duration (1 hour).
-const MAX_BACKOFF_SECS: u64 = 3600;
 
 /// Streamer manager with in-memory metadata and write-through persistence.
 ///
@@ -837,70 +830,6 @@ where
             .count()
     }
 
-    // ========== Error Handling with Exponential Backoff ==========
-
-    /// Compute the disabled-until timestamp for a given consecutive error count.
-    ///
-    /// Derives the threshold from `offline_check_count` and returns a timestamp
-    /// when the streamer should enter exponential backoff, otherwise `None`.
-    pub fn disabled_until_for_error_count(
-        &self,
-        error_count: i32,
-        offline_check_count: u32,
-    ) -> Option<Timestamp> {
-        let error_threshold = download_failure_threshold(offline_check_count);
-        if error_count >= error_threshold {
-            Some(self.calculate_backoff(error_count, error_threshold))
-        } else {
-            None
-        }
-    }
-
-    /// Record a successful operation for a streamer.
-    ///
-    /// Resets consecutive_error_count and clears disabled_until.
-    /// Updates last_live_time if the streamer is going live. Clearing a run
-    /// of failures that sent `ChecksFailing` reports the recovery.
-    pub async fn record_success(&self, id: &str, is_going_live: bool) -> Result<()> {
-        debug!("Recording success for streamer {}", id);
-
-        let last_live_time = if is_going_live {
-            Some(Timestamp::now())
-        } else {
-            None
-        };
-
-        // Persist to database
-        let checks_restored_threshold = self
-            .metadata
-            .get(id)
-            .map(|entry| download_failure_threshold(entry.offline_check_count));
-        self.repo
-            .record_streamer_success(id, last_live_time, checks_restored_threshold)
-            .await?;
-        if self.committed.is_some() {
-            return Ok(());
-        }
-
-        // Update in-memory cache
-        if let Some(mut entry) = self.metadata.get_mut(id) {
-            let entry = Arc::make_mut(entry.value_mut());
-            entry.consecutive_error_count = 0;
-            entry.disabled_until = None;
-            entry.last_error = None;
-            entry.state = if is_going_live {
-                StreamerState::Live
-            } else {
-                StreamerState::NotLive
-            };
-            if let Some(time) = last_live_time {
-                entry.last_live_time = Some(time);
-            }
-        }
-
-        Ok(())
-    }
-
     /// Check if a streamer is currently disabled.
     pub fn is_disabled(&self, id: &str) -> bool {
         self.metadata
@@ -934,17 +863,6 @@ where
 
     // ========== Private Helpers ==========
 
-    /// Calculate backoff duration based on error count.
-    fn calculate_backoff(&self, error_count: i32, error_threshold: i32) -> Timestamp {
-        // Once the delay reaches the cap, larger persisted counts must not
-        // overflow the power or multiplication before that cap is applied.
-        let cap_exponent = (MAX_BACKOFF_SECS / BASE_BACKOFF_SECS).ilog2() + 1;
-        let exponent =
-            (error_count.saturating_sub(error_threshold).max(0) as u32).min(cap_exponent);
-        let backoff_secs = (BASE_BACKOFF_SECS * 2u64.pow(exponent)).min(MAX_BACKOFF_SECS);
-        Timestamp::now() + jiff::SignedDuration::from_secs(backoff_secs as i64)
-    }
-
     /// Convert metadata to database model.
     fn metadata_to_db_model(
         &self,
@@ -968,228 +886,6 @@ where
             created_at: metadata.created_at.as_millisecond(),
             updated_at: metadata.updated_at.as_millisecond(),
             deleted_at: metadata.deleted_at.map(|dt| dt.as_millisecond()),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use async_trait::async_trait;
-    use srec_sqlite::models::StreamerDbModel;
-    use std::sync::Mutex;
-
-    #[test]
-    fn error_backoff_respects_threshold_and_caps_extreme_counts() {
-        let manager = StreamerManager::new(
-            Arc::new(MockStreamerRepository::new()),
-            ConfigEventBroadcaster::new(),
-        );
-        for (count, offline_checks, expected_seconds) in [
-            (i32::MIN, 3, None),
-            (2, 3, None),
-            (1, 1, None),
-            (2, 1, Some(60)),
-            (3, 4, None),
-            (4, 4, Some(60)),
-            (3, 3, Some(60)),
-            (4, 3, Some(120)),
-            (8, 3, Some(1920)),
-            (9, 3, Some(3600)),
-            (10, 3, Some(3600)),
-            (62, 3, Some(3600)),
-            (67, 3, Some(3600)),
-            (i32::MAX, 3, Some(3600)),
-            (i32::MAX - 1, u32::MAX, None),
-            (i32::MAX, u32::MAX, Some(60)),
-        ] {
-            let before = Timestamp::now();
-            let actual = manager.disabled_until_for_error_count(count, offline_checks);
-            let after = Timestamp::now();
-            if let Some(seconds) = expected_seconds {
-                let duration = jiff::SignedDuration::from_secs(seconds);
-                let actual = actual.expect("threshold reached");
-                assert!(actual >= before + duration, "count={count}");
-                assert!(actual <= after + duration, "count={count}");
-            } else {
-                assert_eq!(actual, None, "count={count}");
-            }
-        }
-    }
-
-    /// Mock streamer repository for testing.
-    struct MockStreamerRepository {
-        streamers: Mutex<Vec<StreamerDbModel>>,
-    }
-
-    impl MockStreamerRepository {
-        fn new() -> Self {
-            Self {
-                streamers: Mutex::new(Vec::new()),
-            }
-        }
-    }
-
-    #[async_trait]
-    impl StreamerRepository for MockStreamerRepository {
-        async fn list_all_streamers(&self) -> srec_sqlite::DbResult<Vec<StreamerDbModel>> {
-            Ok(self.streamers.lock().unwrap().clone())
-        }
-
-        async fn get_streamer(&self, id: &str) -> srec_sqlite::DbResult<StreamerDbModel> {
-            self.streamers
-                .lock()
-                .unwrap()
-                .iter()
-                .find(|s| s.id == id)
-                .cloned()
-                .ok_or_else(|| srec_sqlite::DbError::not_found("Streamer", id))
-        }
-
-        async fn get_streamer_by_url(&self, url: &str) -> srec_sqlite::DbResult<StreamerDbModel> {
-            self.streamers
-                .lock()
-                .unwrap()
-                .iter()
-                .find(|s| s.url == url)
-                .cloned()
-                .ok_or_else(|| srec_sqlite::DbError::not_found("Streamer", url))
-        }
-
-        async fn list_streamers(&self) -> srec_sqlite::DbResult<Vec<StreamerDbModel>> {
-            Ok(self.streamers.lock().unwrap().clone())
-        }
-
-        async fn create_streamer(&self, streamer: &StreamerDbModel) -> srec_sqlite::DbResult<()> {
-            self.streamers.lock().unwrap().push(streamer.clone());
-            Ok(())
-        }
-
-        async fn update_streamer(&self, streamer: &StreamerDbModel) -> srec_sqlite::DbResult<()> {
-            let mut streamers = self.streamers.lock().unwrap();
-            if let Some(s) = streamers.iter_mut().find(|s| s.id == streamer.id) {
-                s.name = streamer.name.clone();
-                s.url = streamer.url.clone();
-                s.platform_config_id = streamer.platform_config_id.clone();
-                s.template_config_id = streamer.template_config_id.clone();
-                s.state = streamer.state.clone();
-                s.priority = streamer.priority.clone();
-                s.last_live_time = streamer.last_live_time;
-                s.consecutive_error_count = streamer.consecutive_error_count;
-                s.disabled_until = streamer.disabled_until;
-                s.last_error = streamer.last_error.clone();
-            }
-            Ok(())
-        }
-
-        async fn mark_streamer_deleted(&self, id: &str) -> srec_sqlite::DbResult<bool> {
-            let mut streamers = self.streamers.lock().unwrap();
-            match streamers
-                .iter_mut()
-                .find(|s| s.id == id && s.deleted_at.is_none())
-            {
-                Some(streamer) => {
-                    streamer.deleted_at = Some(srec_sqlite::time::now_ms());
-                    Ok(true)
-                }
-                None => Ok(false),
-            }
-        }
-
-        async fn delete_marked_streamer(&self, id: &str) -> srec_sqlite::DbResult<bool> {
-            let mut streamers = self.streamers.lock().unwrap();
-            let before = streamers.len();
-            streamers.retain(|s| !(s.id == id && s.deleted_at.is_some()));
-            Ok(streamers.len() < before)
-        }
-
-        async fn update_streamer_state(
-            &self,
-            _id: &str,
-            _state: &str,
-        ) -> srec_sqlite::DbResult<()> {
-            Ok(())
-        }
-
-        async fn update_streamer_priority(
-            &self,
-            id: &str,
-            priority: &str,
-        ) -> srec_sqlite::DbResult<()> {
-            let mut streamers = self.streamers.lock().unwrap();
-            if let Some(s) = streamers.iter_mut().find(|s| s.id == id) {
-                s.priority = priority.to_string();
-                Ok(())
-            } else {
-                Err(srec_sqlite::DbError::not_found("Streamer", id))
-            }
-        }
-
-        async fn set_disabled_until(
-            &self,
-            _id: &str,
-            _until: Option<i64>,
-        ) -> srec_sqlite::DbResult<()> {
-            Ok(())
-        }
-
-        async fn update_avatar(
-            &self,
-            id: &str,
-            avatar_url: Option<&str>,
-        ) -> srec_sqlite::DbResult<()> {
-            let mut streamers = self.streamers.lock().unwrap();
-            if let Some(s) = streamers.iter_mut().find(|s| s.id == id) {
-                s.avatar = avatar_url.map(|s| s.to_string());
-                Ok(())
-            } else {
-                Err(srec_sqlite::DbError::not_found("Streamer", id))
-            }
-        }
-
-        async fn clear_streamer_error_state(&self, _id: &str) -> srec_sqlite::DbResult<()> {
-            Ok(())
-        }
-
-        async fn clear_streamer_last_error(&self, _id: &str) -> srec_sqlite::DbResult<()> {
-            Ok(())
-        }
-
-        async fn record_streamer_success(
-            &self,
-            _id: &str,
-            _last_live_time: Option<Timestamp>,
-            _checks_restored_threshold: Option<i32>,
-        ) -> srec_sqlite::DbResult<()> {
-            Ok(())
-        }
-
-        async fn list_streamers_by_platform(
-            &self,
-            platform_id: &str,
-        ) -> srec_sqlite::DbResult<Vec<StreamerDbModel>> {
-            Ok(self
-                .streamers
-                .lock()
-                .unwrap()
-                .iter()
-                .filter(|s| s.platform_config_id == platform_id)
-                .cloned()
-                .collect())
-        }
-
-        async fn list_streamers_by_template(
-            &self,
-            template_id: &str,
-        ) -> srec_sqlite::DbResult<Vec<StreamerDbModel>> {
-            Ok(self
-                .streamers
-                .lock()
-                .unwrap()
-                .iter()
-                .filter(|s| s.template_config_id.as_deref() == Some(template_id))
-                .cloned()
-                .collect())
         }
     }
 }

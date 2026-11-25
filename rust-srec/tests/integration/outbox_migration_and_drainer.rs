@@ -25,7 +25,7 @@ use rust_srec::notification::{
     NotificationEvent, NotificationOutboxDrainer, NotificationService, NotificationServiceConfig,
     OutboxDrainReport,
 };
-use rust_srec::recorder::{OutboxEvent, StreamOnlineKind};
+use rust_srec::recorder::OutboxEvent;
 use rust_srec::services::maintenance::{MaintenanceConfig, MaintenanceScheduler};
 use serde::Serialize;
 use serde_json::Value;
@@ -601,7 +601,6 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
                 title: "V2 Live".into(),
                 category: Some("Music".into()),
                 started_at_ms: base_ms + 3,
-                kind: StreamOnlineKind::Created,
             },
             base_ms + 3,
         )
@@ -914,7 +913,6 @@ async fn drainer_preserves_head_of_line_on_shutdown_cancellation_and_dead_letter
                     title: title.into(),
                     category: None,
                     started_at_ms: t1 + offset,
-                    kind: StreamOnlineKind::Created,
                 },
                 t1 + offset,
             )
@@ -1146,7 +1144,6 @@ async fn drainer_fast_fails_circuit_open_channel_without_blocking_healthy_channe
                     title: format!("Event {idx}"),
                     category: None,
                     started_at_ms: base_ms + idx * 1000,
-                    kind: StreamOnlineKind::Created,
                 },
                 base_ms + idx * 1000,
             )

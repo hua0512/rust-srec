@@ -161,8 +161,6 @@ impl StreamerFsm {
             probe_id,
             purpose: ProbePurpose::Recovery,
             is_live_watchdog: false,
-            started_at: ctx.now,
-            for_session_id: Some(session_id.clone()),
         });
         effects.push(FsmEffect::SpawnProbe(ProbeRequest {
             probe_id,

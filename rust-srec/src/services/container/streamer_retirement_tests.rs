@@ -13,7 +13,7 @@ use crate::database::repositories::job::JobRepository;
 use crate::database::repositories::session::SessionRepository;
 use crate::database::repositories::streamer::StreamerRepository;
 use crate::domain::StreamerState;
-use crate::recorder::{DbCommitOp, INTERACTIVE_RETIREMENT, OBSERVE_RETIREMENT, RecorderStorePort};
+use crate::recorder::{DbCommitOp, INTERACTIVE_RETIREMENT, OBSERVE_RETIREMENT};
 use crate::session::TerminalCause;
 
 const STREAMER_ID: &str = "streamer-retire";

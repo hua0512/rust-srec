@@ -37,46 +37,6 @@ impl MonitorOutboxTxOps {
 
         Ok(())
     }
-
-    /// Enqueue a `ChecksRestored` outbox row when the streamer's current run
-    /// of failures reached `threshold`.
-    ///
-    /// Call it in the transaction that clears the errors, before the clear:
-    /// reading the count there reports each cleared run exactly once, however
-    /// many writers race to clear it.
-    pub async fn enqueue_checks_restored(
-        tx: &mut SqliteConnection,
-        streamer_id: &str,
-        threshold: i32,
-        timestamp: jiff::Timestamp,
-    ) -> Result<()> {
-        let row: Option<(String, Option<i32>)> =
-            sqlx::query_as("SELECT name, consecutive_error_count FROM streamers WHERE id = ?")
-                .bind(streamer_id)
-                .fetch_optional(&mut *tx)
-                .await?;
-        if let Some((streamer_name, Some(count))) = row
-            && count >= threshold
-        {
-            let payload = serde_json::json!({
-                "ChecksRestored": {
-                    "streamer_id": streamer_id,
-                    "streamer_name": streamer_name,
-                    "timestamp": timestamp,
-                }
-            })
-            .to_string();
-            Self::enqueue_raw(
-                tx,
-                Some(streamer_id),
-                "ChecksRestored",
-                &payload,
-                crate::time::now_ms(),
-            )
-            .await?;
-        }
-        Ok(())
-    }
 }
 
 /// Non-transactional outbox operations (for the publisher).

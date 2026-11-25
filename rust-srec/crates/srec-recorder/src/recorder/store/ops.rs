@@ -12,9 +12,7 @@ use crate::Result;
 use crate::credentials::{CredentialBinding, CredentialIdentity};
 use crate::monitor::InfraBlockReason;
 use crate::recorder::fsm::error::{disabled_until_for_error_count, should_emit_checks_failing};
-use crate::recorder::ports::{
-    DbCommitOp, DbCommitOutcome, OutboxEvent, SessionStartDisposition, StreamOnlineKind,
-};
+use crate::recorder::ports::{DbCommitOp, DbCommitOutcome, OutboxEvent, SessionStartDisposition};
 use crate::session::TerminalCause;
 use crate::session::events::{SessionEventPayload, TerminalCauseDto};
 use crate::streamer::state_store::StateChange;
@@ -58,7 +56,6 @@ pub(super) fn commit_op_label(op: &DbCommitOp) -> &'static str {
         DbCommitOp::RecordTransientError { .. } => "recorder record_transient_error",
         DbCommitOp::ClearErrors { .. } => "recorder clear_errors",
         DbCommitOp::ClearLastError { .. } => "recorder clear_last_error",
-        DbCommitOp::SetInfraBlocked { .. } => "recorder set_infra_blocked",
         DbCommitOp::AddSessionTitle { .. } => "recorder add_session_title",
         DbCommitOp::RecordHysteresisEntered { .. } => "recorder record_hysteresis_entered",
     }
@@ -238,11 +235,6 @@ pub(super) async fn execute_commit_op(
             .await
         }
         DbCommitOp::ClearLastError { streamer_id } => clear_last_error(tx, &streamer_id).await,
-        DbCommitOp::SetInfraBlocked {
-            streamer_id,
-            reason,
-            now,
-        } => set_infra_blocked(tx, &streamer_id, &reason, now).await,
         DbCommitOp::AddSessionTitle {
             session_id,
             title,
@@ -436,7 +428,7 @@ async fn start_or_resume_session(
         SessionEventTxOps::insert(&mut *tx, &row).await?;
     }
 
-    let (session_id, session_started_at, disposition, online_kind) = match last {
+    let (session_id, session_started_at, disposition) = match last {
         Some(session) if session.end_time.is_none() => {
             debug!(session_id = %session.id, "Reusing active recording session");
             SessionTxOps::update_titles(
@@ -451,7 +443,6 @@ async fn start_or_resume_session(
                 session.id,
                 ms_to_datetime(session.start_time),
                 SessionStartDisposition::ReusedActive,
-                StreamOnlineKind::ReusedActive,
             )
         }
         _ => {
@@ -472,12 +463,7 @@ async fn start_or_resume_session(
             let row = event_row(&new_id, &params.streamer_id, &payload, now_ms)?;
             SessionEventTxOps::insert(&mut *tx, &row).await?;
             info!(session_id = %new_id, streamer_id = %params.streamer_id, "Created new recording session");
-            (
-                new_id,
-                exact_now,
-                SessionStartDisposition::Created,
-                StreamOnlineKind::Created,
-            )
+            (new_id, exact_now, SessionStartDisposition::Created)
         }
     };
 
@@ -513,7 +499,6 @@ async fn start_or_resume_session(
         title: params.title,
         category: params.category,
         started_at_ms: now_ms,
-        kind: online_kind,
     };
     enqueue_outbox_event(&mut *tx, Some(&params.streamer_id), &outbox_event, now_ms).await?;
 
@@ -607,7 +592,6 @@ async fn resume_hysteresis(
         title: params.title,
         category: params.category,
         started_at_ms: now_ms,
-        kind: StreamOnlineKind::HysteresisResumed,
     };
     enqueue_outbox_event(&mut *tx, Some(&params.streamer_id), &outbox_event, now_ms).await?;
 
@@ -626,7 +610,7 @@ async fn apply_infra_block_in_tx(
     streamer_id: &str,
     reason: &InfraBlockReason,
     exact_now: Timestamp,
-) -> Result<(Option<StreamerDbModel>, StreamerState, Timestamp)> {
+) -> Result<Option<StreamerDbModel>> {
     let disabled_until = exact_now
         + jiff::SignedDuration::from_secs(reason.retry_after_secs().min(i64::MAX as u64) as i64);
     let target_state = reason.target_state();
@@ -643,7 +627,7 @@ async fn apply_infra_block_in_tx(
         committed_row =
             StreamerTxOps::update_last_error_row(&mut *tx, streamer_id, Some(&msg)).await?;
     }
-    Ok((committed_row, target_state, disabled_until))
+    Ok(committed_row)
 }
 
 async fn enqueue_checks_restored_if_due(
@@ -701,8 +685,6 @@ async fn end_session(
                 started_at: None,
                 ended_at: exact_now,
                 transitioned_from_open: false,
-                offline_event_emitted: false,
-                checks_restored_emitted: false,
             }));
         }
     }
@@ -764,7 +746,6 @@ async fn end_session(
         };
     }
 
-    let mut checks_restored_emitted = false;
     if params.clear_errors && is_active {
         if let Some(threshold) = params.checks_restored_threshold
             && enqueue_checks_restored_if_due(
@@ -776,7 +757,6 @@ async fn end_session(
             )
             .await?
         {
-            checks_restored_emitted = true;
             outbox_enqueued = true;
         }
         committed_row = StreamerTxOps::clear_error_state_row(&mut *tx, &params.streamer_id).await?;
@@ -785,14 +765,12 @@ async fn end_session(
     if let Some(ref reason) = params.infra_block
         && StreamerTxOps::monitor_may_write(&mut *tx, &params.streamer_id).await?
     {
-        let (row, _, _) =
+        committed_row =
             apply_infra_block_in_tx(&mut *tx, &params.streamer_id, reason, exact_now).await?;
-        committed_row = row;
     }
 
     // Emit StreamOffline ONLY when `live_sessions.end_time` transitioned
     // NULL -> Some and the cause is not suppressed.
-    let mut offline_event_emitted = false;
     if transitioned_from_open
         && !params.suppress_offline_notification
         && !suppresses_offline_notification(&params.cause)
@@ -808,7 +786,6 @@ async fn end_session(
             ended_at_ms: now_ms,
         };
         enqueue_outbox_event(&mut *tx, Some(&params.streamer_id), &event, now_ms).await?;
-        offline_event_emitted = true;
         outbox_enqueued = true;
     }
 
@@ -818,8 +795,6 @@ async fn end_session(
             started_at: started_at_ms.map(ms_to_datetime),
             ended_at: exact_now,
             transitioned_from_open,
-            offline_event_emitted,
-            checks_restored_emitted,
         },
         state_change: StateChange::row((), committed_row),
         outbox_enqueued,
@@ -1100,7 +1075,6 @@ async fn record_transient_error(
             DbCommitOutcome::TransientErrorRecorded {
                 consecutive_error_count: 0,
                 disabled_until: None,
-                checks_failing_emitted: false,
             },
         ));
     }
@@ -1132,7 +1106,6 @@ async fn record_transient_error(
         value: DbCommitOutcome::TransientErrorRecorded {
             consecutive_error_count: new_error_count,
             disabled_until,
-            checks_failing_emitted,
         },
         state_change: StateChange::row((), committed_row),
         outbox_enqueued: checks_failing_emitted,
@@ -1148,9 +1121,7 @@ async fn clear_errors(
     now: Timestamp,
 ) -> Result<TxCommitPayload<DbCommitOutcome>> {
     if !StreamerTxOps::monitor_may_write(&mut *tx, streamer_id).await? {
-        return Ok(TxCommitPayload::plain(DbCommitOutcome::ErrorsCleared {
-            checks_restored_emitted: false,
-        }));
+        return Ok(TxCommitPayload::plain(DbCommitOutcome::ErrorsCleared));
     }
 
     let now_ms = datetime_to_ms(now);
@@ -1176,9 +1147,7 @@ async fn clear_errors(
     }
 
     Ok(TxCommitPayload {
-        value: DbCommitOutcome::ErrorsCleared {
-            checks_restored_emitted,
-        },
+        value: DbCommitOutcome::ErrorsCleared,
         state_change: StateChange::row((), committed_row),
         outbox_enqueued: checks_restored_emitted,
     })
@@ -1194,39 +1163,6 @@ async fn clear_last_error(
     let committed_row = StreamerTxOps::update_last_error_row(&mut *tx, streamer_id, None).await?;
     Ok(TxCommitPayload {
         value: DbCommitOutcome::LastErrorCleared,
-        state_change: StateChange::row((), committed_row),
-        outbox_enqueued: false,
-    })
-}
-
-async fn set_infra_blocked(
-    tx: &mut SqliteConnection,
-    streamer_id: &str,
-    reason: &InfraBlockReason,
-    now: Timestamp,
-) -> Result<TxCommitPayload<DbCommitOutcome>> {
-    let now_ms = datetime_to_ms(now);
-    let exact_now = ms_to_datetime(now_ms);
-    let target_state = reason.target_state();
-    let disabled_until = exact_now
-        + jiff::SignedDuration::from_secs(reason.retry_after_secs().min(i64::MAX as u64) as i64);
-
-    if !StreamerTxOps::monitor_may_write(&mut *tx, streamer_id).await? {
-        return Ok(TxCommitPayload::plain(
-            DbCommitOutcome::InfraBlockedRecorded {
-                state: target_state,
-                disabled_until,
-            },
-        ));
-    }
-
-    let (committed_row, state, disabled_until) =
-        apply_infra_block_in_tx(&mut *tx, streamer_id, reason, exact_now).await?;
-    Ok(TxCommitPayload {
-        value: DbCommitOutcome::InfraBlockedRecorded {
-            state,
-            disabled_until,
-        },
         state_change: StateChange::row((), committed_row),
         outbox_enqueued: false,
     })

@@ -404,7 +404,6 @@ impl StreamerFsm {
                 sets_offline: false,
                 sets_out_of_schedule: false,
                 clears_errors: false,
-                infra_block: None,
                 for_stop: false,
             },
             DbCommitOp::EndSession {

@@ -285,11 +285,7 @@ async fn lifecycle_fault_rolls_back_streamer_session_and_outbox_then_publishes_f
     .unwrap();
     let original = f.manager.get_streamer_snapshot("state-test").unwrap();
     sqlx::query("CREATE TRIGGER reject_state_outbox BEFORE INSERT ON monitor_event_outbox BEGIN SELECT RAISE(ABORT, 'outbox fault'); END").execute(&f.pool).await.unwrap();
-    assert!(
-        crate::recorder::RecorderStorePort::commit(&store, start_op())
-            .await
-            .is_err()
-    );
+    assert!(store.commit(start_op()).await.is_err());
     assert!(Arc::ptr_eq(
         &original,
         &f.manager.get_streamer_snapshot("state-test").unwrap()
@@ -300,9 +296,7 @@ async fn lifecycle_fault_rolls_back_streamer_session_and_outbox_then_publishes_f
         .execute(&f.pool)
         .await
         .unwrap();
-    crate::recorder::RecorderStorePort::commit(&store, start_op())
-        .await
-        .unwrap();
+    store.commit(start_op()).await.unwrap();
     let current = f.manager.get_streamer_snapshot("state-test").unwrap();
     assert_eq!(current.state, StreamerState::Live);
     assert_eq!(current.avatar_url.as_deref(), Some("avatar"));
@@ -327,9 +321,7 @@ async fn retired_and_disabled_rows_reject_stale_lifecycle_and_monitor_mutations(
             f.manager.partial_update_streamer(update).await.unwrap();
         }
         assert!(matches!(
-            crate::recorder::RecorderStorePort::commit(&store, start_op())
-                .await
-                .unwrap(),
+            store.commit(start_op()).await.unwrap(),
             crate::recorder::DbCommitOutcome::SessionStartSuppressed { .. }
         ));
         let skipped = f

@@ -31,7 +31,7 @@ use crate::downloader::{DownloadManager, RecorderFeedbackPermit};
 use crate::recorder::fsm::{FsmInput, StepContext, StreamerFsm};
 use crate::recorder::ports::{
     ActorStopReason, DbCommitFailure, DbCommitOutcome, InitialStreamerSnapshot, ProbeFailure,
-    ProbeStatus, RecorderPipelinePort, RecorderStorePort, StreamerRuntimeView,
+    ProbeStatus, RecorderPipelinePort, StreamerRuntimeView,
 };
 use crate::recorder::prober::RecorderProber;
 use crate::recorder::store::RecorderStore;
@@ -164,8 +164,7 @@ impl StreamerActor {
         &mut self.fsm
     }
 
-    /// Run the actor loop until [`crate::recorder::FsmEffect::ActorStopped`] is emitted or the
-    /// mailbox closes.
+    /// Run the actor loop until [`crate::recorder::FsmEffect::ActorStopped`] is emitted.
     pub async fn run(mut self) -> ActorStopReason {
         publish_runtime_view(&self.deps.runtime_views, self.fsm.runtime_view());
         trace!(
@@ -182,13 +181,9 @@ impl StreamerActor {
                 .next_deadline(now, wall_now)
                 .map(tokio::time::Instant::from_std);
 
+            // `self_tx` keeps the mailbox open, so `recv` never yields `None`.
             let stopped = tokio::select! {
-                msg = self.rx.recv() => {
-                    match msg {
-                        Some(msg) => self.handle_message(msg),
-                        None => Some(ActorStopReason::Shutdown),
-                    }
-                }
+                Some(msg) = self.rx.recv() => self.handle_message(msg),
                 commit_done = poll_in_flight_commit(&mut self.in_flight_commit), if self.in_flight_commit.is_some() => {
                     let (op_id, result) = commit_done;
                     self.step_and_dispatch(FsmInput::DbCommitted { op_id, result })

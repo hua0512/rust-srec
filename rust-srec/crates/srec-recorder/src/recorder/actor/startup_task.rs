@@ -30,7 +30,7 @@ use crate::recorder::actor::ActorMessage;
 use crate::recorder::fsm::FsmInput;
 use crate::recorder::ports::{
     AttemptStartFailure, AttemptStartSpec, DanmuStopResult, DbCommitFailure, DbCommitOp,
-    DbCommitOutcome, ProbeFailure, ProbePurpose, ProbeRequest, ProbeStatus, RecorderStorePort,
+    DbCommitOutcome, ProbeFailure, ProbePurpose, ProbeRequest, ProbeStatus,
 };
 use crate::recorder::prober::RecorderProber;
 use crate::recorder::store::RecorderStore;

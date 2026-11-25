@@ -23,7 +23,6 @@ use crate::recorder::ports::{
 impl StreamerFsm {
     pub(super) fn spawn_status_probe(
         &mut self,
-        ctx: StepContext,
         is_live_watchdog: bool,
         effects: &mut Vec<FsmEffect>,
     ) {
@@ -41,8 +40,6 @@ impl StreamerFsm {
             probe_id,
             purpose,
             is_live_watchdog,
-            started_at: ctx.now,
-            for_session_id: session_id.clone(),
         });
         effects.push(FsmEffect::SpawnProbe(ProbeRequest {
             probe_id,
@@ -378,7 +375,6 @@ impl StreamerFsm {
                 sets_offline: true,
                 sets_out_of_schedule: false,
                 clears_errors: clear_errors,
-                infra_block: None,
                 for_stop: false,
             },
             DbCommitOp::EndSession {
@@ -451,7 +447,6 @@ impl StreamerFsm {
                         sets_offline: false,
                         sets_out_of_schedule: true,
                         clears_errors: false,
-                        infra_block: None,
                         for_stop: false,
                     },
                     DbCommitOp::EndSession {

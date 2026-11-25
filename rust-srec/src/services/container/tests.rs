@@ -22,8 +22,7 @@ use crate::downloader::{
 };
 use crate::recorder::actor::startup_task::spawn_startup_task;
 use crate::recorder::{
-    AttemptStartSpec, DbCommitOp, DbCommitOutcome, LiveProbePayload, RecorderStorePort,
-    SessionStartDisposition,
+    AttemptStartSpec, DbCommitOp, DbCommitOutcome, LiveProbePayload, SessionStartDisposition,
 };
 
 const SHUTDOWN_STREAMER_ID: &str = "shutdown-tracer-streamer";

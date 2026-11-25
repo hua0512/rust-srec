@@ -635,7 +635,6 @@ fn refused_broadcast_suppresses_live_until_offline_reconciles() {
             result: Ok(DbCommitOutcome::TransientErrorRecorded {
                 consecutive_error_count: 1,
                 disabled_until: None,
-                checks_failing_emitted: false,
             }),
         },
     );

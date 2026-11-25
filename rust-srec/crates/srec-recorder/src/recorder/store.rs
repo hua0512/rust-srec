@@ -1,6 +1,6 @@
 //! Serialized, unabortable SQLite persistence for the recording control plane.
 //!
-//! [`RecorderStore`] implements [`RecorderStorePort`] on top of
+//! [`RecorderStore`] runs the recorder's database writes on top of
 //! `CommittedWriter`, adding:
 //! - per-streamer asynchronous write serialization leases so generation `G+1`
 //!   always observes the final committed database and cache state of generation
@@ -14,7 +14,6 @@ mod ops;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
-use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::future::BoxFuture;
@@ -24,8 +23,7 @@ use tokio::sync::{Mutex as AsyncMutex, Notify, OwnedMutexGuard};
 
 use crate::config::ConfigEventBroadcaster;
 use crate::recorder::ports::{
-    DanmuSegmentRecord, DbCommitFailure, DbCommitOp, DbCommitOutcome, RecorderStorePort,
-    VideoSegmentRecord,
+    DanmuSegmentRecord, DbCommitFailure, DbCommitOp, DbCommitOutcome, VideoSegmentRecord,
 };
 use crate::streamer::CommittedStreamerState;
 use crate::streamer::state_store::{StateChange, StatePublication};
@@ -147,7 +145,8 @@ impl<T> TxCommitPayload<T> {
     }
 }
 
-/// Concrete SQLite-backed implementation of [`RecorderStorePort`].
+/// SQLite persistence for recorder actors: serialized per-streamer commits
+/// and segment rows.
 #[derive(Clone)]
 pub struct RecorderStore {
     read_pool: DbPool,
@@ -360,11 +359,6 @@ impl RecorderStore {
         let _lease = self.leases.acquire(streamer_id).await;
     }
 
-    /// Drain owned database operations up to `grace`.
-    pub async fn shutdown(&self, grace: Duration) -> bool {
-        self.supervisor.shutdown(grace).await
-    }
-
     /// Access the bound [`CommittedStreamerState`], if any.
     pub fn committed_state(&self) -> Option<&Arc<CommittedStreamerState>> {
         self.committed_state.as_ref()
@@ -387,7 +381,6 @@ impl RecorderStore {
             | DbCommitOp::RecordTransientError { streamer_id, .. }
             | DbCommitOp::ClearErrors { streamer_id, .. }
             | DbCommitOp::ClearLastError { streamer_id }
-            | DbCommitOp::SetInfraBlocked { streamer_id, .. }
             | DbCommitOp::RecordHysteresisEntered { streamer_id, .. } => Ok(streamer_id.clone()),
             DbCommitOp::RewriteEndedCause { session_id, .. }
             | DbCommitOp::AddSessionTitle { session_id, .. } => {
@@ -496,9 +489,9 @@ impl RecorderStore {
     }
 }
 
-#[async_trait]
-impl RecorderStorePort for RecorderStore {
-    async fn commit(
+impl RecorderStore {
+    /// Run one [`DbCommitOp`] under the streamer's write lease.
+    pub async fn commit(
         &self,
         op: DbCommitOp,
     ) -> std::result::Result<DbCommitOutcome, DbCommitFailure> {
@@ -518,7 +511,8 @@ impl RecorderStorePort for RecorderStore {
         result.map_err(map_commit_error)
     }
 
-    async fn persist_video_segment(&self, record: VideoSegmentRecord) -> Result<()> {
+    /// Insert a finished video segment and its media output row.
+    pub async fn persist_video_segment(&self, record: VideoSegmentRecord) -> Result<()> {
         let lease_key = record.streamer_id.clone();
         self.run_serialized_tx(&lease_key, "recorder persist_video_segment", move |tx| {
             Box::pin(async move {
@@ -552,7 +546,8 @@ impl RecorderStorePort for RecorderStore {
         .await
     }
 
-    async fn persist_danmu_segment(&self, record: DanmuSegmentRecord) -> Result<()> {
+    /// Insert a finished danmu XML segment's media output row.
+    pub async fn persist_danmu_segment(&self, record: DanmuSegmentRecord) -> Result<()> {
         let lease_key = record.streamer_id.clone();
         self.run_serialized_tx(&lease_key, "recorder persist_danmu_segment", move |tx| {
             Box::pin(async move {
@@ -570,7 +565,13 @@ impl RecorderStorePort for RecorderStore {
         .await
     }
 
-    async fn remove_danmu_segment_output(&self, session_id: &str, danmu_path: &str) -> Result<()> {
+    /// Delete the media output rows of a danmu XML segment whose paired video
+    /// segment was discarded.
+    pub async fn remove_danmu_segment_output(
+        &self,
+        session_id: &str,
+        danmu_path: &str,
+    ) -> Result<()> {
         let lease_key = self.resolve_session_lease_key(session_id).await?;
         let session_id = session_id.to_owned();
         let danmu_path = danmu_path.to_owned();
@@ -598,7 +599,8 @@ impl RecorderStorePort for RecorderStore {
         .await
     }
 
-    async fn next_session_segment_index(&self, session_id: &str) -> Result<u32> {
+    /// Next unused `segment_index` for `session_id`.
+    pub async fn next_session_segment_index(&self, session_id: &str) -> Result<u32> {
         let next: i64 = sqlx::query_scalar(
             "SELECT COALESCE(MAX(segment_index), -1) + 1 \
              FROM session_segments WHERE session_id = ?",
@@ -630,6 +632,8 @@ fn map_commit_error(error: Error) -> DbCommitFailure {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use crate::session::TerminalCause;
     use jiff::Timestamp;
@@ -736,7 +740,6 @@ mod tests {
                 DbCommitOutcome::SessionEnded {
                     session_id: Some(_),
                     transitioned_from_open: true,
-                    offline_event_emitted: true,
                     ..
                 } => {}
                 other => {
@@ -747,7 +750,6 @@ mod tests {
                 committed_state.get_streamer("s-sealed").unwrap().state,
                 StreamerState::NotLive
             );
-            assert!(store.shutdown(Duration::from_secs(5)).await);
             assert!(
                 store.leases.locks.lock().is_empty(),
                 "dropped leases must remove their entry from the per-streamer lease map"

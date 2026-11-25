@@ -636,7 +636,6 @@ fn non_watchdog_transient_probe_failure_enters_backoff_gates_check_now_and_ignor
             result: Ok(DbCommitOutcome::TransientErrorRecorded {
                 consecutive_error_count: 1,
                 disabled_until: None,
-                checks_failing_emitted: false,
             }),
         },
     );
@@ -664,7 +663,6 @@ fn non_watchdog_transient_probe_failure_enters_backoff_gates_check_now_and_ignor
             result: Ok(DbCommitOutcome::TransientErrorRecorded {
                 consecutive_error_count: 2,
                 disabled_until: Some(until),
-                checks_failing_emitted: true,
             }),
         },
     );
@@ -844,9 +842,7 @@ fn error_tracker_backoff_cap_threshold_floor_and_download_recovery_rules() {
         clock.ctx(),
         FsmInput::DbCommitted {
             op_id: retry_op_id,
-            result: Ok(DbCommitOutcome::ErrorsCleared {
-                checks_restored_emitted: false,
-            }),
+            result: Ok(DbCommitOutcome::ErrorsCleared),
         },
     );
     assert_eq!(fsm.errors.consecutive_error_count, 0);

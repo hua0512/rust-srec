@@ -50,7 +50,6 @@ impl StreamerFsm {
                 sets_out_of_schedule,
                 clears_errors,
                 for_stop,
-                ..
             } => {
                 self.on_end_session_committed(
                     ctx,
@@ -106,16 +105,8 @@ impl StreamerFsm {
                     );
                 }
             }
-            PendingDbKind::RewriteEndedCause { for_stop, .. } => {
+            PendingDbKind::RewriteEndedCause { for_stop } => {
                 let ok = matches!(result, Ok(DbCommitOutcome::EndedCauseRewritten { .. }));
-                if ok
-                    && let SessionSlot::RecentlyEnded {
-                        reattributable_timer_end,
-                        ..
-                    } = &mut self.session
-                {
-                    *reattributable_timer_end = false;
-                }
                 if for_stop {
                     if let MonitorPhase::Stopping(stopping) = &mut self.monitor {
                         stopping.db_end_committed = true;
@@ -195,7 +186,7 @@ impl StreamerFsm {
                     }
                 }
             }
-            PendingDbKind::ClearErrors { .. } => {
+            PendingDbKind::ClearErrors => {
                 if result.is_ok() {
                     self.errors.clear_all(self.config.offline_check_count);
                 }
@@ -225,12 +216,6 @@ impl StreamerFsm {
                     });
                 } else {
                     self.monitor = schedule::schedule_idle_immediate(ctx.now);
-                }
-            }
-            PendingDbKind::SetInfraBlocked { state } => {
-                if let Ok(DbCommitOutcome::InfraBlockedRecorded { disabled_until, .. }) = result {
-                    self.errors.apply_infra_backoff(disabled_until, None);
-                    let _ = state;
                 }
             }
             PendingDbKind::RecordFilteredState
@@ -527,7 +512,6 @@ impl StreamerFsm {
                     if hysteresis::is_reattributable_timer_end(&cause, via_hysteresis) {
                         self.session = SessionSlot::RecentlyEnded {
                             session_id: sid,
-                            reattributable_timer_end: true,
                             evict_at: ctx
                                 .now
                                 .checked_add(hysteresis::RECENTLY_ENDED_RETENTION)
