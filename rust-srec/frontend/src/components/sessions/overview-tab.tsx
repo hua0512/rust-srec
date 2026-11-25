@@ -35,6 +35,16 @@ const DanmuStatsPanel = React.lazy(() =>
   })),
 );
 
+/** Format a positive duration in seconds as "MM:SS" or "HH:MM:SS" for the preview badge. */
+function formatPreviewDuration(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  const parts = hours > 0 ? [hours, minutes, secs] : [minutes, secs];
+  return parts.map((part) => String(part).padStart(2, '0')).join(':');
+}
+
 /**
  * The recorded length; a session still recording has no `duration_secs` yet,
  * so its length counts up from `startTime`. The clock starts after mount so
@@ -95,6 +105,13 @@ export function OverviewTab({
   const thumbnailUrl = getMediaUrl(session.thumbnail_url, token);
 
   const playableOutput = outputs.find(isPlayable);
+  const previewDurationSecs =
+    (playableOutput?.duration_secs && playableOutput.duration_secs > 0
+      ? playableOutput.duration_secs
+      : null) ??
+    (session.duration_secs && session.duration_secs > 0
+      ? session.duration_secs
+      : null);
 
   return (
     <motion.div
@@ -170,15 +187,26 @@ export function OverviewTab({
 
       <div className="grid grid-cols-1 @4xl:grid-cols-3 gap-8">
         <div className="@4xl:col-span-2 space-y-8">
-          <Card className="overflow-hidden border-border/50 shadow-lg bg-card/40 backdrop-blur-xs h-full min-h-[400px] flex flex-col">
-            <CardHeader className="pb-3 border-b border-border/40">
-              <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                <Monitor className="h-5 w-5 text-primary" />
-                <Trans>Session Preview</Trans>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0 flex-1 flex flex-col">
-              <div className="aspect-video bg-muted/30 flex items-center justify-center relative group overflow-hidden flex-1 min-h-[300px]">
+          <Card className="overflow-hidden border-border/50 shadow-lg bg-card/40 backdrop-blur-xs p-0 gap-0">
+            <CardContent className="p-0">
+              <div className="aspect-video w-full bg-muted/30 flex items-center justify-center relative group/preview overflow-hidden">
+                <div
+                  className={cn(
+                    'pointer-events-none absolute top-3.5 left-3.5 z-10 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium backdrop-blur-md',
+                    thumbnailUrl
+                      ? 'bg-black/55 text-white/95 ring-1 ring-white/15 shadow-sm'
+                      : 'bg-background/80 text-foreground ring-1 ring-border/60',
+                  )}
+                >
+                  <Monitor
+                    className={cn(
+                      'h-3.5 w-3.5',
+                      thumbnailUrl ? 'text-white/80' : 'text-primary',
+                    )}
+                  />
+                  <Trans>Session Preview</Trans>
+                </div>
+
                 {thumbnailUrl ? (
                   <>
                     {/* The largest element of the default tab, so it is
@@ -187,36 +215,43 @@ export function OverviewTab({
                       src={thumbnailUrl}
                       alt={i18n._(msg`Session thumbnail`)}
                       fetchPriority="high"
-                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                      className={cn(
+                        'w-full h-full object-cover',
+                        playableOutput &&
+                          'transition-transform duration-500 ease-out group-hover/preview:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover/preview:scale-100',
+                      )}
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
                     {playableOutput ? (
-                      <motion.button
-                        type="button"
-                        whileHover={{ scale: 1.1 }}
-                        aria-label={i18n._(msg`Play`)}
-                        className="absolute inset-0 flex items-center justify-center group/play cursor-pointer focus-visible:outline-none"
-                        onClick={() => onPlay(playableOutput)}
-                      >
-                        <span className="relative">
-                          <span className="absolute inset-0 bg-white/30 rounded-full blur-xl group-hover/play:bg-white/50 transition-colors" />
-                          <span className="relative h-14 w-14 md:h-20 md:w-20 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center shadow-2xl group-hover/play:scale-105 group-focus-visible/play:ring-4 group-focus-visible/play:ring-white/60 transition-transform">
-                            <Play className="h-6 w-6 md:h-8 md:w-8 text-white fill-white translate-x-1" />
+                      <>
+                        <div className="pointer-events-none absolute inset-0 bg-radial from-transparent to-black/35 opacity-30 transition-opacity duration-300 group-hover/preview:opacity-75" />
+                        <button
+                          type="button"
+                          aria-label={i18n._(msg`Play`)}
+                          className="absolute inset-0 flex items-center justify-center group/play cursor-pointer focus-visible:outline-none"
+                          onClick={() => onPlay(playableOutput)}
+                        >
+                          <span className="flex h-14 w-14 md:h-16 md:w-16 items-center justify-center rounded-full bg-black/65 text-white ring-1 ring-white/30 backdrop-blur-md shadow-[0_12px_32px_rgba(0,0,0,0.45)] transition-all duration-200 group-hover/play:scale-110 group-hover/play:bg-primary group-hover/play:text-primary-foreground group-hover/play:ring-white/50 group-focus-visible/play:ring-4 group-focus-visible/play:ring-white/70 motion-reduce:transition-none motion-reduce:group-hover/play:scale-100">
+                            <Play className="h-6 w-6 md:h-7 md:w-7 fill-current translate-x-0.5" />
                           </span>
-                        </span>
-                      </motion.button>
+                        </button>
+                      </>
                     ) : (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="px-4 py-2 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-white/80 font-medium text-sm">
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/25">
+                        <div className="px-4 py-2 rounded-full bg-black/60 backdrop-blur-md ring-1 ring-white/15 text-white/90 font-medium text-sm shadow-lg">
                           <Trans>Preview Unavailable</Trans>
                         </div>
                       </div>
                     )}
+                    {previewDurationSecs != null && (
+                      <div className="pointer-events-none absolute bottom-3.5 right-3.5 z-10 rounded-md bg-black/65 px-2 py-1 font-mono text-xs font-medium tabular-nums text-white/95 ring-1 ring-white/10 backdrop-blur-md">
+                        {formatPreviewDuration(previewDurationSecs)}
+                      </div>
+                    )}
                   </>
                 ) : (
-                  <div className="flex flex-col items-center gap-4 text-muted-foreground/30 p-4 text-center">
-                    <Monitor className="h-16 w-16" />
-                    <p className="font-medium text-sm text-muted-foreground/50">
+                  <div className="flex flex-col items-center gap-3 text-muted-foreground/40 p-6 text-center">
+                    <Monitor className="h-12 w-12" />
+                    <p className="font-medium text-sm text-muted-foreground/70">
                       <Trans>No preview generated</Trans>
                     </p>
                   </div>
