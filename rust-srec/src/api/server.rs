@@ -193,8 +193,16 @@ pub struct AppState {
 }
 
 impl AppState {
-    /// Create a fully wired application state.
+    /// Create a fully wired application state, installing the API layer's
+    /// Protobuf WebSocket encoders onto the shared broadcasters if they were
+    /// created without one.
     pub fn new(services: ApiServices) -> Self {
+        services
+            .check_history_broadcaster
+            .set_encoder(routes::downloads::check_history_ws_encoder());
+        services.upload_status_broadcaster.set_encoder(
+            routes::downloads::upload_status_ws_encoder(services.streamer_manager.clone()),
+        );
         Self {
             start_time: Instant::now(),
             auth_service: None,

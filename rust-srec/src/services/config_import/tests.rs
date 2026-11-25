@@ -10,7 +10,6 @@ use sqlx::SqlitePool;
 use super::snapshot::{ImportSnapshot, validate_import};
 use super::streamers::{clears_error_tracking, imported_state};
 use super::*;
-use crate::api::auth_service::MAX_USERNAME_LENGTH;
 use crate::config::ConfigService;
 use crate::config::backup::{ConfigExport, GlobalConfigExport, ImportMode, UserExport};
 use crate::database::models::{
@@ -29,6 +28,7 @@ use crate::database::repositories::streamer::{
 };
 use crate::database::repositories::user::import_user as persist_user;
 use crate::database::{begin_immediate, init_pool_with_size, run_migrations};
+use crate::domain::MAX_USERNAME_LENGTH;
 use crate::domain::StreamerState;
 
 #[tokio::test]

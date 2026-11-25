@@ -36,8 +36,7 @@ use self::cache::{CachedApiKeyState, CachedUserState};
 #[cfg(test)]
 use self::config::LOGIN_DUMMY_PASSWORD_HASH;
 pub use self::config::{
-    API_KEY_PREFIX, AuthConfig, AuthError, AuthPrincipal, AuthResponse, CredentialKind,
-    MAX_USERNAME_LENGTH, SessionInfo,
+    API_KEY_PREFIX, AuthConfig, AuthError, AuthPrincipal, AuthResponse, CredentialKind, SessionInfo,
 };
 pub use self::local_desktop::LocalDesktopAccount;
 use self::local_desktop::LocalDesktopSessionRecord;

@@ -5,7 +5,6 @@ use std::collections::{HashMap, HashSet};
 use argon2::password_hash::phc::PasswordHash;
 
 use super::{ConfigurationImportError, profiles, proxies, validation, validation_error};
-use crate::api::auth_service::MAX_USERNAME_LENGTH;
 use crate::config::backup::{
     ConfigExport, ImportMode, NotificationChannelExport, PipelinePresetExport,
 };
@@ -14,6 +13,7 @@ use crate::database::models::{
     GlobalConfigDbModel, JobPreset, NotificationChannelDbModel, PipelinePreset,
     PlatformConfigDbModel, RetentionDays, StreamerDbModel, TemplateConfigDbModel, UserDbModel,
 };
+use crate::domain::MAX_USERNAME_LENGTH;
 
 pub(super) struct ImportSnapshot {
     pub(super) global: GlobalConfigDbModel,

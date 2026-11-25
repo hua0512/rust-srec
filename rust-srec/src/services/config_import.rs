@@ -111,14 +111,14 @@ impl ConfigurationImportService {
         config: ConfigExport,
         mode: ImportMode,
     ) -> Result<ConfigurationImportOutcome, ConfigurationImportError> {
-        self.import_with_auth(config, mode, None).await
+        self.import_with_post_commit(config, mode, None).await
     }
 
-    pub async fn import_with_auth(
+    pub async fn import_with_post_commit(
         &self,
         mut config: ConfigExport,
         mode: ImportMode,
-        auth_service: Option<Arc<crate::api::auth_service::AuthService>>,
+        on_users_committed: Option<Box<dyn FnOnce() + Send + 'static>>,
     ) -> Result<ConfigurationImportOutcome, ConfigurationImportError> {
         validate_import(&config, mode)?;
 
@@ -182,8 +182,8 @@ impl ConfigurationImportService {
                         StatePublication::Silent,
                     );
                     config_service.invalidate_import_caches();
-                    if let Some(auth_service) = auth_service {
-                        auth_service.invalidate_user_cache();
+                    if let Some(callback) = on_users_committed {
+                        callback();
                     }
                 },
                 move |committed| {

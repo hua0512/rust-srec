@@ -22,7 +22,7 @@
 //!
 //! [`RecorderProber::probe_with_hint`]: crate::recorder::RecorderProber::probe_with_hint
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use bytes::Bytes;
 use tokio::sync::{broadcast, mpsc};
@@ -89,17 +89,36 @@ pub struct BroadcastEnvelope {
 #[derive(Clone)]
 pub struct CheckHistoryBroadcaster {
     tx: broadcast::Sender<BroadcastEnvelope>,
-    encoder: WsEncoder,
+    encoder: Arc<OnceLock<WsEncoder>>,
 }
 
 impl CheckHistoryBroadcaster {
     /// Build a broadcaster with the standard fan-out capacity and a
     /// caller-supplied encoder. The encoder lives in the API layer (it
     /// knows about proto types); passing it in keeps the writer module
-    /// from depending on `crate::api`.
+    /// from depending on the API layer.
+    #[cfg(test)]
     pub fn new(encoder: WsEncoder) -> Self {
         let (tx, _) = broadcast::channel(BROADCAST_CAPACITY);
-        Self { tx, encoder }
+        let slot = Arc::new(OnceLock::new());
+        let _ = slot.set(encoder);
+        Self { tx, encoder: slot }
+    }
+
+    /// Build a broadcaster whose wire encoder will be installed later by the
+    /// API layer via [`Self::set_encoder`]. Until an encoder is installed,
+    /// publishes are no-ops.
+    pub fn deferred() -> Self {
+        let (tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+        Self {
+            tx,
+            encoder: Arc::new(OnceLock::new()),
+        }
+    }
+
+    /// Install the wire encoder if one has not already been configured.
+    pub fn set_encoder(&self, encoder: WsEncoder) {
+        let _ = self.encoder.set(encoder);
     }
 
     /// Subscribe to record commits. Each subscriber gets every envelope
@@ -121,7 +140,10 @@ impl CheckHistoryBroadcaster {
         if self.tx.receiver_count() == 0 {
             return;
         }
-        let ws_bytes = (self.encoder)(&record);
+        let Some(encoder) = self.encoder.get() else {
+            return;
+        };
+        let ws_bytes = encoder(&record);
         let _ = self.tx.send(BroadcastEnvelope { record, ws_bytes });
     }
 }

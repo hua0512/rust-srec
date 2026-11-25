@@ -13,8 +13,7 @@ use tracing::warn;
 use crate::notification::{NotificationEvent, NotificationService};
 
 use super::provider::CredentialProvider;
-use super::types::{CredentialEvent, CredentialScope};
-use super::{CredentialProfile, PlatformAdmission};
+use super::{CredentialEvent, CredentialProfile, CredentialScope, PlatformAdmission};
 
 pub struct CredentialProviderRegistry {
     admission: Arc<PlatformAdmission>,

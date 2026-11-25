@@ -6,7 +6,7 @@ fn db_channel(id: &str, name: &str) -> NotificationChannelDbModel {
         name: name.to_owned(),
         channel_type: "Webhook".to_owned(),
         settings: r#"{"enabled":true,"url":"http://example.invalid","method":"POST"}"#.to_owned(),
-        proxy_route: crate::proxies::ProxyRoute::Inherit,
+        proxy_route: crate::domain::proxy::ProxyRoute::Inherit,
     }
 }
 

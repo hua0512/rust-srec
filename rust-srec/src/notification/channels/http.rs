@@ -1,11 +1,12 @@
 //! Bounded HTTP delivery with diagnostics that cannot retain endpoint credentials.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use reqwest::{Method, RequestBuilder, Response, StatusCode, header::HeaderMap};
 use tracing::{debug, warn};
 
-use crate::proxies::{ProxyRoute, ProxyTarget, ServiceRoutes};
+use crate::domain::proxy::{ProxyRoute, ProxyRouteResolver, ProxyTarget};
 use crate::utils::http_client::service_client;
 use crate::{Error, Result};
 
@@ -35,7 +36,7 @@ pub enum DeliveryRoute {
     /// are resolved before each delivery, so edits to the global route or
     /// to a saved proxy apply to the next one.
     Stored {
-        routes: ServiceRoutes,
+        routes: Arc<dyn ProxyRouteResolver>,
         route: ProxyRoute,
     },
 }
@@ -81,10 +82,12 @@ impl HttpDelivery {
             DeliveryRoute::Fixed(target) => service_client(target)
                 .map_err(|_| self.failure("HTTP client initialization failed"))?,
             DeliveryRoute::Stored { routes, route } => {
-                routes.client(route).await.map_err(|error| {
+                let target = routes.target(route).await.map_err(|error| {
                     warn!(channel = self.channel, %error, "Notification proxy route unavailable");
                     self.failure(format!("proxy route unavailable: {error}"))
-                })?
+                })?;
+                service_client(&target)
+                    .map_err(|_| self.failure("HTTP client initialization failed"))?
             }
         };
         Ok(client.request(method, url).timeout(self.timeout))

@@ -19,7 +19,8 @@ use crate::database::repositories::{
     DagRepository, JobRepository, SessionRepository, SqlxDagRepository, SqlxJobRepository,
 };
 
-use super::ServiceContainer;
+use super::build_api_state;
+use crate::services::ServiceContainer;
 
 async fn application() -> (ServiceContainer, Router, tempfile::TempDir) {
     let directory = tempfile::tempdir().unwrap();
@@ -31,7 +32,7 @@ async fn application() -> (ServiceContainer, Router, tempfile::TempDir) {
     let (logging, _layer) =
         crate::logging::LoggingConfig::for_route_tests(directory.path().to_path_buf());
     assert!(container.logging_config.set(Arc::new(logging)).is_ok());
-    let mut state = container.build_api_state(None).unwrap();
+    let mut state = build_api_state(&container, None).unwrap();
     state.web_push_service = None;
     let application = crate::api::routes::create_router(state).layer(Extension(Claims {
         sub: "contract-user".to_owned(),

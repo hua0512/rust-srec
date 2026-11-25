@@ -31,8 +31,7 @@ use crate::Result;
 use crate::database::models::NotificationChannelDbModel;
 use crate::database::models::NotificationEventLogDbModel;
 use crate::database::repositories::NotificationRepository;
-use crate::downloader::DownloadManagerEvent;
-use crate::pipeline::PipelineEvent;
+use crate::domain::proxy::ProxyRouteResolver;
 use crate::utils::task_supervisor::TaskSupervisor;
 
 mod dead_letter;
@@ -338,7 +337,7 @@ pub struct NotificationService {
     web_push_service: Option<Arc<WebPushService>>,
     /// Resolves stored channels' routes; without it they use the
     /// environment's proxy.
-    routes: Option<crate::proxies::ServiceRoutes>,
+    routes: Option<Arc<dyn ProxyRouteResolver>>,
     web_push_tx: parking_lot::RwLock<Option<mpsc::Sender<WebPushQueuedEvent>>>,
     web_push_worker_started: AtomicBool,
     web_push_dropped: AtomicU64,
@@ -413,7 +412,7 @@ impl NotificationService {
 
     /// Stored channels resolve their proxy route through `routes` before
     /// each delivery.
-    pub fn with_routes(mut self, routes: crate::proxies::ServiceRoutes) -> Self {
+    pub fn with_routes(mut self, routes: Arc<dyn ProxyRouteResolver>) -> Self {
         self.routes = Some(routes);
         self
     }
@@ -813,20 +812,6 @@ impl NotificationService {
                 .map(|channel| (channel.key.clone(), channel.breaker.lock().is_open))
                 .collect(),
         }
-    }
-
-    /// Start listening for non-outbox download and pipeline notification events.
-    ///
-    /// Streamer and session lifecycle notifications (`StreamOnline`,
-    /// `StreamOffline`, `FatalError`, `ChecksFailing`, `ChecksRestored`) are
-    /// delivered durably via [`crate::notification::NotificationOutboxDrainer`].
-    pub fn start_event_listeners(
-        self: &Arc<Self>,
-        download_rx: broadcast::Receiver<DownloadManagerEvent>,
-        pipeline_rx: broadcast::Receiver<PipelineEvent>,
-    ) {
-        self.listen_for_download_events(download_rx);
-        self.listen_for_pipeline_events(pipeline_rx);
     }
 
     /// Stop the notification service.

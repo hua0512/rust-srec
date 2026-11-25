@@ -3,28 +3,31 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{debug, warn};
 
-use crate::downloader::DownloadManagerEvent;
-use crate::pipeline::PipelineEvent;
-
 use super::NotificationService;
-use crate::notification::events::mapping::{PipelineNotifications, download_notification};
+use crate::notification::events::NotificationEvent;
 
 impl NotificationService {
-    /// Listen for download events.
-    pub(super) fn listen_for_download_events(
+    /// Spawn a supervised broadcast listener that maps upstream events into
+    /// [`NotificationEvent`]s and dispatches them with backpressure.
+    pub fn spawn_event_listener<E, F>(
         self: &Arc<Self>,
-        mut rx: broadcast::Receiver<DownloadManagerEvent>,
-    ) {
+        task_name: &'static str,
+        mut rx: broadcast::Receiver<E>,
+        mut map: F,
+    ) where
+        E: Clone + Send + 'static,
+        F: FnMut(E, jiff::Timestamp) -> Option<NotificationEvent> + Send + 'static,
+    {
         let service = Arc::clone(self);
         let config = service.config.clone();
         let cancellation_token = service.cancellation_token.clone();
         let task_supervisor = service.task_supervisor.clone();
 
-        task_supervisor.spawn("download notification listener", async move {
+        task_supervisor.spawn(task_name, async move {
             loop {
                 tokio::select! {
                     _ = cancellation_token.cancelled() => {
-                        debug!("Download event listener shutting down");
+                        debug!(listener = task_name, "Notification event listener shutting down");
                         break;
                     }
                     result = rx.recv() => {
@@ -34,62 +37,15 @@ impl NotificationService {
                                     continue;
                                 }
 
-                                let notification = download_notification(event, jiff::Timestamp::now());
-
-                                if let Some(notification) = notification {
+                                if let Some(notification) = map(event, jiff::Timestamp::now()) {
                                     service.dispatch_notification_wait(notification).await;
                                 }
                             }
                             Err(broadcast::error::RecvError::Lagged(n)) => {
-                                warn!("Download event listener lagged {} events", n);
+                                warn!(listener = task_name, lagged = n, "Notification event listener lagged");
                             }
                             Err(broadcast::error::RecvError::Closed) => {
-                                debug!("Download event channel closed");
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    /// Listen for pipeline events.
-    pub(super) fn listen_for_pipeline_events(
-        self: &Arc<Self>,
-        mut rx: broadcast::Receiver<PipelineEvent>,
-    ) {
-        let service = Arc::clone(self);
-        let config = service.config.clone();
-        let cancellation_token = service.cancellation_token.clone();
-        let task_supervisor = service.task_supervisor.clone();
-
-        task_supervisor.spawn("pipeline notification listener", async move {
-            let mut mapper = PipelineNotifications::default();
-            loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => {
-                        debug!("Pipeline event listener shutting down");
-                        break;
-                    }
-                    result = rx.recv() => {
-                        match result {
-                            Ok(event) => {
-                                if !config.enabled {
-                                    continue;
-                                }
-
-                                let notification = mapper.map(event, jiff::Timestamp::now());
-
-                                if let Some(notification) = notification {
-                                    service.dispatch_notification_wait(notification).await;
-                                }
-                            }
-                            Err(broadcast::error::RecvError::Lagged(n)) => {
-                                warn!("Pipeline event listener lagged by {} events", n);
-                            }
-                            Err(broadcast::error::RecvError::Closed) => {
-                                debug!("Pipeline event channel closed");
+                                debug!(listener = task_name, "Notification event channel closed");
                                 break;
                             }
                         }

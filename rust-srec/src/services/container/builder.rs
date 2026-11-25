@@ -60,7 +60,7 @@ impl ServiceContainer {
         Self::build(
             pool,
             write_pool,
-            ServiceContainerConfig::standard(cache_ttl, event_capacity)?,
+            ServiceContainerConfig::standard(cache_ttl, event_capacity),
             None,
         )
         .await
@@ -103,10 +103,7 @@ impl ServiceContainer {
             event_capacity,
             download_config,
             pipeline_config,
-            api_config,
-            local_desktop_mode,
         } = options;
-        let auth_config = crate::api::auth_service::AuthConfig::from_env()?;
 
         pipeline_config.throttle.validate()?;
 
@@ -297,20 +294,8 @@ impl ServiceContainer {
                 ),
             );
 
-        // Live upload-status fan-out for the downloads WS route.
-        let upload_status_broadcaster = {
-            use prost::Message;
-            let streamer_avatar =
-                crate::api::routes::downloads::streamer_avatar_lookup(streamer_manager.clone());
-            let encoder: crate::pipeline::UploadWsEncoder = Arc::new(move |event| {
-                let msg = crate::api::routes::downloads::map_upload_event_to_protobuf(
-                    event,
-                    &streamer_avatar,
-                );
-                bytes::Bytes::from(msg.encode_to_vec())
-            });
-            crate::pipeline::UploadStatusBroadcaster::new(encoder)
-        };
+        // Live upload-status fan-out; its wire encoder is installed by the API layer.
+        let upload_status_broadcaster = crate::pipeline::UploadStatusBroadcaster::deferred();
 
         // Create pipeline manager with job repository for database persistence.
         let mut effective_pipeline_config = pipeline_config;
@@ -391,7 +376,7 @@ impl ServiceContainer {
         }
         notification_service = notification_service
             .with_task_supervisor(task_supervisor.clone())
-            .with_routes(crate::proxies::ServiceRoutes::new(pool.clone()));
+            .with_routes(Arc::new(crate::proxies::ServiceRoutes::new(pool.clone())));
         let notification_service = Arc::new(notification_service);
         notification_service.start_web_push_worker();
         credential_service.set_notification_service(Arc::clone(&notification_service));
@@ -575,14 +560,10 @@ impl ServiceContainer {
             credential_service,
             check_history_broadcaster,
             upload_status_broadcaster,
-            api_server_config: api_config,
-            auth_config,
             cancellation_token,
             task_supervisor,
             committed_write_supervisor,
             logging_config: Arc::new(std::sync::OnceLock::new()),
-            auth_service: std::sync::OnceLock::new(),
-            local_desktop_mode,
             startup_recovery_complete: std::sync::atomic::AtomicBool::new(false),
             extractor_runner,
             actor_registry,

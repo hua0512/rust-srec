@@ -6,6 +6,7 @@
 pub(crate) mod auth_request;
 pub mod auth_service;
 pub(crate) mod batch_lookup;
+pub(crate) mod bootstrap;
 pub mod cors;
 pub mod error;
 pub mod extract;

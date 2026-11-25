@@ -11,7 +11,6 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use crate::Result;
-use crate::api::server::ApiServerConfig;
 use crate::config::{ConfigEventBroadcaster, ConfigService};
 use crate::danmu::DanmuService;
 use crate::database::repositories::NotificationRepository;
@@ -35,7 +34,6 @@ use output_roots::{
 };
 pub(crate) use shutdown::ServiceShutdownSchedule;
 
-mod api;
 mod builder;
 #[cfg(test)]
 mod config_refresh_tests;
@@ -55,10 +53,10 @@ mod tests;
 mod throttle_tests;
 
 /// Default cache TTL (1 hour).
-const DEFAULT_CACHE_TTL: Duration = Duration::from_secs(3600);
+pub(crate) const DEFAULT_CACHE_TTL: Duration = Duration::from_secs(3600);
 
 /// Default event channel capacity.
-const DEFAULT_EVENT_CAPACITY: usize = 256;
+pub(crate) const DEFAULT_EVENT_CAPACITY: usize = 256;
 
 /// Gap between two passes of `ServiceContainer::spawn_streamer_reaper`.
 ///
@@ -83,20 +81,6 @@ pub struct ServiceContainerConfig {
     pub event_capacity: usize,
     pub download_config: DownloadManagerConfig,
     pub pipeline_config: PipelineManagerConfig,
-    pub api_config: ApiServerConfig,
-    /// Serve the API as the desktop app's built-in backend. The shell signs
-    /// its user in without a password, so nobody is ever made to change the
-    /// seeded default password, and `must_change_password` then means "no
-    /// password has been set". With this set, an account with that flag is
-    /// reachable only through sessions issued by
-    /// [`ServiceContainer::issue_local_desktop_session`]: a password login for
-    /// it never succeeds (the seeded password never signs in), its other
-    /// sessions are refused like revoked ones, and its API keys are honoured.
-    ///
-    /// Part of the configuration so it is fixed before the container, and so
-    /// the API server's `AuthService`, exists. Only the desktop shell's local
-    /// mode sets it; the server and Docker builds never do.
-    pub local_desktop_mode: bool,
 }
 
 /// Snapshot of currently active recordings for desktop status and exit guards.
@@ -107,24 +91,23 @@ pub struct ActiveRecordingSummary {
 }
 
 impl ServiceContainerConfig {
-    fn standard(cache_ttl: Duration, event_capacity: usize) -> Result<Self> {
-        Ok(Self {
+    pub(crate) fn standard(cache_ttl: Duration, event_capacity: usize) -> Self {
+        Self {
             cache_ttl,
             event_capacity,
             download_config: DownloadManagerConfig::default(),
             pipeline_config: PipelineManagerConfig::default(),
-            api_config: ApiServerConfig::from_env()?,
-            local_desktop_mode: false,
-        })
+        }
     }
 }
 
-/// Service container holding all application services.
+/// Service container holding all core application services (independent of the
+/// HTTP/WebSocket API presentation layer).
 pub struct ServiceContainer {
     /// Database connection pool (read-heavy).
     pub(crate) pool: SqlitePool,
     /// Serialized write pool (max_connections=1) for contention-free writes.
-    write_pool: SqlitePool,
+    pub(crate) write_pool: SqlitePool,
     /// Configuration service.
     pub(crate) config_service: Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
     /// Streamer manager.
@@ -135,16 +118,20 @@ pub struct ServiceContainer {
     pub(crate) download_manager: Arc<DownloadManager>,
     /// Session repository shared by monitor, pipeline, danmu, and download startup.
     pub(crate) session_repository: Arc<SqlxSessionRepository>,
-    session_event_repository: Arc<dyn crate::database::repositories::SessionEventRepository>,
-    streamer_check_history_repository:
+    pub(crate) session_event_repository:
+        Arc<dyn crate::database::repositories::SessionEventRepository>,
+    pub(crate) streamer_check_history_repository:
         Arc<dyn crate::database::repositories::StreamerCheckHistoryRepository>,
-    upload_record_repository: Arc<dyn crate::database::repositories::UploadRecordRepository>,
-    filter_repository: Arc<SqlxFilterRepository>,
-    streamer_repository: Arc<SqlxStreamerRepository>,
-    pipeline_preset_repository:
+    pub(crate) upload_record_repository:
+        Arc<dyn crate::database::repositories::UploadRecordRepository>,
+    pub(crate) filter_repository: Arc<SqlxFilterRepository>,
+    pub(crate) streamer_repository: Arc<SqlxStreamerRepository>,
+    pub(crate) pipeline_preset_repository:
         Arc<crate::database::repositories::preset::SqlitePipelinePresetRepository>,
-    configuration_import_service: Arc<crate::services::config_import::ConfigurationImportService>,
-    configuration_export_service: Arc<crate::services::config_export::ConfigurationExportService>,
+    pub(crate) configuration_import_service:
+        Arc<crate::services::config_import::ConfigurationImportService>,
+    pub(crate) configuration_export_service:
+        Arc<crate::services::config_export::ConfigurationExportService>,
     /// Output-root write gate. Shared by the download manager for
     /// pre-start checks + runtime ENOSPC routing and by the health checker
     /// for aggregated `/health` reporting.
@@ -191,30 +178,20 @@ pub struct ServiceContainer {
     pub(crate) playback_contexts: Arc<crate::services::playback_context::PlaybackContextService>,
     /// Live broadcaster for committed check-history rows. Cloned into the
     /// downloads WS route so per-streamer subscribers see new bars appear
-    /// without polling. Same fan-out pattern as
-    /// [`crate::downloader::DownloadManager::subscribe`].
+    /// without polling. Its wire encoder is injected by the API layer.
     pub(crate) check_history_broadcaster: crate::monitor::CheckHistoryBroadcaster,
     /// Live broadcaster for upload status events (started/progress/terminal).
-    /// Published by `JobQueue`, consumed by the downloads WS route.
+    /// Published by `JobQueue`, consumed by the downloads WS route. Its wire
+    /// encoder is injected by the API layer.
     pub(crate) upload_status_broadcaster: crate::pipeline::UploadStatusBroadcaster,
-    /// API server configuration.
-    api_server_config: ApiServerConfig,
-    /// Token and password settings, read while building so an invalid value fails startup
-    /// before any service starts.
-    auth_config: crate::api::auth_service::AuthConfig,
     /// Cancellation token for graceful shutdown.
-    cancellation_token: CancellationToken,
+    pub(crate) cancellation_token: CancellationToken,
     /// Owner for background tasks started by the application runtime.
-    task_supervisor: Arc<TaskSupervisor>,
+    pub(crate) task_supervisor: Arc<TaskSupervisor>,
     /// Database commits and their publication/completion survive forced task aborts.
     committed_write_supervisor: Arc<TaskSupervisor>,
     /// Logging configuration
-    logging_config: Arc<std::sync::OnceLock<Arc<LoggingConfig>>>,
-    /// Installed when the API server starts with database authentication.
-    auth_service: std::sync::OnceLock<Arc<crate::api::auth_service::AuthService>>,
-    /// See [`ServiceContainerConfig::local_desktop_mode`]; read when the API
-    /// server's `AuthService` is built.
-    local_desktop_mode: bool,
+    pub(crate) logging_config: Arc<std::sync::OnceLock<Arc<LoggingConfig>>>,
     startup_recovery_complete: std::sync::atomic::AtomicBool,
     /// Shared stateless extractor runner used by `/api/parse` and the actor prober.
     pub(crate) extractor_runner: Arc<crate::recorder::PlatformExtractorRunner>,
@@ -228,8 +205,7 @@ pub struct ServiceContainer {
 /// Wire the streamer-check-history pipeline:
 /// - One repository on top of the shared SQLite pools.
 /// - One bounded MPSC; senders are cloned into every monitor poll.
-/// - One broadcaster cloned into the downloads WS route loop, so live bars
-///   stream to subscribed clients without polling.
+/// - One broadcaster whose wire encoder is installed by the API layer.
 /// - One drain task that survives until shutdown cancels it.
 ///
 /// The polling hot path uses `try_send` so DB latency never blocks the
@@ -245,8 +221,6 @@ fn wire_check_history_pipeline(
     crate::monitor::CheckHistoryBroadcaster,
     Arc<dyn crate::database::repositories::StreamerCheckHistoryRepository>,
 ) {
-    use prost::Message;
-
     let repo: Arc<dyn crate::database::repositories::StreamerCheckHistoryRepository> = Arc::new(
         crate::database::repositories::SqlxStreamerCheckHistoryRepository::new(
             pool.clone(),
@@ -254,17 +228,7 @@ fn wire_check_history_pipeline(
         ),
     );
     let (writer, rx) = crate::monitor::CheckHistoryWriter::new();
-
-    // WS encoder: builds the protobuf payload + serializes it to bytes.
-    // Stored on the broadcaster so encoding runs once per record (in the
-    // drain task) instead of once per subscriber (in the WS route's
-    // select loop). With N connected clients, this saves N − 1 protobuf
-    // encodes per record.
-    let encoder: crate::monitor::check_history_writer::WsEncoder = Arc::new(|record| {
-        let msg = crate::api::routes::downloads::map_check_record_to_protobuf(record);
-        bytes::Bytes::from(msg.encode_to_vec())
-    });
-    let broadcaster = crate::monitor::CheckHistoryBroadcaster::new(encoder);
+    let broadcaster = crate::monitor::CheckHistoryBroadcaster::deferred();
 
     task_supervisor.spawn(
         "check-history writer",
@@ -359,7 +323,8 @@ impl ServiceContainer {
             self.actor_registry
                 .spawn_danmu_bridge(danmu_rx, &self.task_supervisor);
         }
-        self.notification_service.start_event_listeners(
+        crate::services::notification_bridge::start_runtime_notification_listeners(
+            &self.notification_service,
             self.download_manager.subscribe(),
             self.pipeline_manager.subscribe(),
         );
@@ -567,76 +532,6 @@ impl ServiceContainer {
         &self,
     ) -> tokio::sync::broadcast::Receiver<crate::downloader::DownloadManagerEvent> {
         self.download_manager.subscribe()
-    }
-
-    /// Issue a local desktop session for the active admin user when the
-    /// loopback desktop app operates without password sign-in.
-    pub async fn issue_local_desktop_session(
-        &self,
-    ) -> Result<(String, crate::api::auth_service::AuthResponse)> {
-        let auth = self.auth_service.get().ok_or_else(|| {
-            crate::Error::ApiError("Authentication service is not initialized".to_string())
-        })?;
-        auth.issue_local_desktop_session()
-            .await
-            .map_err(|error| crate::Error::ApiError(error.to_string()))
-    }
-
-    /// The account local desktop sessions are issued for, or `None` when
-    /// there is no active admin.
-    pub async fn local_desktop_account(
-        &self,
-    ) -> Result<Option<crate::api::auth_service::LocalDesktopAccount>> {
-        let auth = self.auth_service.get().ok_or_else(|| {
-            crate::Error::ApiError("Authentication service is not initialized".to_string())
-        })?;
-        auth.local_desktop_account()
-            .await
-            .map_err(|error| crate::Error::ApiError(error.to_string()))
-    }
-
-    /// Replace the initial password of the local desktop account. Fails once
-    /// that account has a password of its own.
-    pub async fn set_local_desktop_password(&self, new_password: &str) -> Result<()> {
-        let auth = self.auth_service.get().ok_or_else(|| {
-            crate::Error::ApiError("Authentication service is not initialized".to_string())
-        })?;
-        auth.set_local_desktop_password(new_password)
-            .await
-            .map_err(|error| crate::Error::ApiError(error.to_string()))
-    }
-
-    /// Restore previously persisted local desktop `(session_id, user_id)` pairs
-    /// on startup when password sign-in remains disabled.
-    pub fn restore_local_desktop_sessions(
-        &self,
-        sessions: impl IntoIterator<Item = (String, String)>,
-    ) {
-        if let Some(auth) = self.auth_service.get() {
-            auth.restore_local_desktop_sessions(sessions);
-        }
-    }
-
-    /// Return the currently tracked local desktop `(session_id, user_id)` pairs.
-    pub fn list_local_desktop_sessions(&self) -> Vec<(String, String)> {
-        self.auth_service
-            .get()
-            .map(|auth| auth.list_local_desktop_sessions())
-            .unwrap_or_default()
-    }
-
-    /// Revoke all tracked local-desktop sessions (plus any persisted entries) in
-    /// SQLite and clear their in-memory exemptions.
-    pub async fn revoke_local_desktop_sessions(
-        &self,
-        extra_sessions: &[(String, String)],
-    ) -> Result<usize> {
-        let auth = self.auth_service.get().ok_or_else(|| {
-            crate::Error::ApiError("Authentication service is not initialized".to_string())
-        })?;
-        auth.revoke_local_desktop_sessions(extra_sessions)
-            .await
-            .map_err(|error| crate::Error::ApiError(error.to_string()))
     }
 
     /// Set the logging configuration

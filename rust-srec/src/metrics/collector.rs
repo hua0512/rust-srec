@@ -68,6 +68,28 @@ impl MetricsCollector {
     }
 }
 
+impl crate::notification::web_push::WebPushMetrics for MetricsCollector {
+    fn record_web_push_sent(&self, duration_ms: u64) {
+        MetricsCollector::record_web_push_sent(self, duration_ms);
+    }
+
+    fn record_web_push_failed(&self) {
+        MetricsCollector::record_web_push_failed(self);
+    }
+
+    fn record_web_push_throttled(&self) {
+        MetricsCollector::record_web_push_throttled(self);
+    }
+
+    fn record_web_push_stale_deleted(&self) {
+        MetricsCollector::record_web_push_stale_deleted(self);
+    }
+
+    fn record_web_push_skipped_backoff(&self) {
+        MetricsCollector::record_web_push_skipped_backoff(self);
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetricsSnapshot {
     pub web_push_sent_total: u64,

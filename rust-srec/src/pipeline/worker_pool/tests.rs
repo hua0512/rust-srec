@@ -1813,9 +1813,9 @@ async fn zero_backoff_retry_orders_retry_scheduled_before_reenqueue_without_leak
 {
     use crate::database::models::{DagPipelineDefinition, DagStep, PipelineStep, StepRetryPolicy};
     use crate::database::repositories::{SqlxDagRepository, SqlxJobRepository};
-    use crate::notification::events::mapping::PipelineNotifications;
     use crate::pipeline::dag_scheduler::{DagRunContext, DagScheduler};
     use crate::pipeline::job_queue::JobQueue;
+    use crate::services::notification_bridge::PipelineNotifications;
 
     struct FailOnceProcessor {
         attempts: AtomicUsize,

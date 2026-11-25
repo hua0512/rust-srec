@@ -1,7 +1,7 @@
 //! Durable notification outbox drainer with two-level record decoding.
 //!
 //! Scans undelivered rows from `monitor_event_outbox` in ascending `id` order,
-//! decodes both current [`OutboxEvent`] records and legacy [`MonitorEvent`]
+//! decodes both current [`OutboxEvent`] records and legacy [`LegacyOutboxEvent`]
 //! records left behind across upgrades, settles alertable events through
 //! [`NotificationService::deliver_durable_for_outbox`], and marks `delivered_at`
 //! only after settlement succeeds.
@@ -9,6 +9,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use jiff::Timestamp;
+use serde::Deserialize;
 use sqlx::SqlitePool;
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
@@ -17,31 +19,64 @@ use tracing::{debug, info, warn};
 use crate::Result;
 use crate::database::repositories::MonitorOutboxOps;
 use crate::database::time::ms_to_datetime;
-use crate::monitor::MonitorEvent;
-use crate::notification::events::mapping::monitor_notification;
+use crate::domain::notification::OutboxEvent;
+use crate::domain::streamer::FatalErrorType;
 use crate::notification::{DurableDeliveryError, NotificationEvent, NotificationService};
-use crate::recorder::OutboxEvent;
 
 const DEFAULT_BATCH_SIZE: i32 = 100;
 const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
+/// Minimal JSON wire-compatible projection of legacy `MonitorEvent` outbox rows.
+///
+/// Retains exact field compatibility with pre-v2 `monitor_event_outbox` rows
+/// without importing outer monitoring types. Non-notifying variants ignore
+/// their JSON object payload while validating that the variant name and object
+/// framing match the legacy wire format.
+#[derive(Debug, Clone, Deserialize)]
+pub enum LegacyOutboxEvent {
+    StreamerLive {},
+    StreamerOffline {},
+    FatalError {
+        streamer_id: String,
+        streamer_name: String,
+        error_type: FatalErrorType,
+        message: String,
+        timestamp: Timestamp,
+    },
+    TransientError {},
+    ChecksFailing {
+        streamer_id: String,
+        streamer_name: String,
+        platform: String,
+        last_error: String,
+        consecutive_errors: i32,
+        timestamp: Timestamp,
+    },
+    ChecksRestored {
+        streamer_id: String,
+        streamer_name: String,
+        timestamp: Timestamp,
+    },
+    StateChanged {},
+}
+
 /// Decoded payload from a `monitor_event_outbox` row.
 #[derive(Debug, Clone)]
 pub enum OutboxRecord {
-    /// Current notification-only outbox record written by `RecorderStore`.
+    /// Current notification-only outbox record written alongside state commits.
     V2(OutboxEvent),
     /// Legacy `MonitorEvent` record written before migration to `OutboxEvent`.
-    Legacy(MonitorEvent),
+    Legacy(LegacyOutboxEvent),
 }
 
 impl OutboxRecord {
     /// Decode a raw JSON outbox payload, trying [`OutboxEvent`] before falling
-    /// back to legacy [`MonitorEvent`].
+    /// back to [`LegacyOutboxEvent`].
     pub fn decode(payload: &str) -> std::result::Result<Self, serde_json::Error> {
         if let Ok(event) = serde_json::from_str::<OutboxEvent>(payload) {
             return Ok(Self::V2(event));
         }
-        serde_json::from_str::<MonitorEvent>(payload).map(Self::Legacy)
+        serde_json::from_str::<LegacyOutboxEvent>(payload).map(Self::Legacy)
     }
 
     /// Translate this outbox record into a user-facing [`NotificationEvent`],
@@ -50,8 +85,54 @@ impl OutboxRecord {
     pub fn into_notification_event(self) -> Option<NotificationEvent> {
         match self {
             Self::V2(event) => Some(outbox_event_to_notification(event)),
-            Self::Legacy(event) => monitor_notification(event),
+            Self::Legacy(event) => legacy_outbox_to_notification(event),
         }
+    }
+}
+
+fn legacy_outbox_to_notification(event: LegacyOutboxEvent) -> Option<NotificationEvent> {
+    match event {
+        LegacyOutboxEvent::FatalError {
+            streamer_id,
+            streamer_name,
+            error_type,
+            message,
+            timestamp,
+        } => Some(NotificationEvent::FatalError {
+            streamer_id,
+            streamer_name,
+            error_type: format!("{error_type:?}"),
+            message,
+            timestamp,
+        }),
+        LegacyOutboxEvent::ChecksFailing {
+            streamer_id,
+            streamer_name,
+            platform,
+            last_error,
+            consecutive_errors,
+            timestamp,
+        } => Some(NotificationEvent::StreamerChecksFailing {
+            streamer_id,
+            streamer_name,
+            platform,
+            last_error,
+            consecutive_errors,
+            timestamp,
+        }),
+        LegacyOutboxEvent::ChecksRestored {
+            streamer_id,
+            streamer_name,
+            timestamp,
+        } => Some(NotificationEvent::StreamerChecksRestored {
+            streamer_id,
+            streamer_name,
+            timestamp,
+        }),
+        LegacyOutboxEvent::StreamerLive {}
+        | LegacyOutboxEvent::StreamerOffline {}
+        | LegacyOutboxEvent::TransientError {}
+        | LegacyOutboxEvent::StateChanged {} => None,
     }
 }
 

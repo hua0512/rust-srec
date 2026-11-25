@@ -259,3 +259,123 @@ fn pipeline_processors_have_no_sqlx_database_notification_or_credential_deps() {
         violations.join("\n")
     );
 }
+
+#[test]
+fn notification_production_code_has_no_outer_module_dependencies() {
+    const FORBIDDEN: &[&str] = &[
+        "api",
+        "baidupcs",
+        "config",
+        "credentials",
+        "danmu",
+        "downloader",
+        "metrics",
+        "monitor",
+        "pipeline",
+        "proxies",
+        "recorder",
+        "services",
+        "session",
+        "streamer",
+    ];
+    let violations = collect_production_violations("src/notification", FORBIDDEN, &[]);
+    assert!(
+        violations.is_empty(),
+        "notification production code must depend only on domain, database, i18n, and utils:\n{}",
+        violations.join("\n")
+    );
+}
+
+#[test]
+fn credentials_and_non_notification_code_do_not_invoke_i18n_macros() {
+    let mut violations = collect_production_violations(
+        "src/credentials",
+        &["i18n"],
+        &["t_str", "t_str_in", "rust_i18n"],
+    );
+
+    let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    rust_files(&src_root, &mut files);
+    files.sort();
+
+    for file in files {
+        if is_test_source(&file) {
+            continue;
+        }
+        let rel = file.strip_prefix(&src_root).expect("path under src/");
+        let first = rel.components().next().and_then(|c| c.as_os_str().to_str());
+        if matches!(
+            first,
+            Some("notification" | "notification.rs" | "i18n.rs" | "lib.rs")
+        ) {
+            continue;
+        }
+        let source = fs::read_to_string(&file).expect("read source file");
+        for (line_no, line) in production_lines(&source) {
+            for ident in ["t_str", "t_str_in", "rust_i18n"] {
+                if references_identifier(line, ident) {
+                    violations.push(format!(
+                        "{}:{} references `{ident}` outside notification/i18n",
+                        file.display(),
+                        line_no
+                    ));
+                }
+            }
+        }
+    }
+
+    let i18n_source = fs::read_to_string(src_root.join("i18n.rs")).expect("read i18n.rs");
+    for (line_no, line) in production_lines(&i18n_source) {
+        if line.contains("macro_export") {
+            violations.push(format!(
+                "src/i18n.rs:{line_no} exports i18n macros outside the crate"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "i18n macros must stay private to the notification domain:\n{}",
+        violations.join("\n")
+    );
+}
+
+#[test]
+fn non_api_production_code_does_not_depend_on_api() {
+    let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    rust_files(&src_root, &mut files);
+    files.sort();
+
+    let mut violations = Vec::new();
+    for file in files {
+        if is_test_source(&file) {
+            continue;
+        }
+        let rel = file.strip_prefix(&src_root).expect("path under src/");
+        let first = rel.components().next().and_then(|c| c.as_os_str().to_str());
+        if matches!(
+            first,
+            Some("api" | "api.rs" | "mcp" | "mcp.rs" | "backend.rs" | "main.rs" | "lib.rs")
+        ) {
+            continue;
+        }
+        let source = fs::read_to_string(&file).expect("read source file");
+        for (line_no, line) in production_lines(&source) {
+            if references_module(line, "api") {
+                violations.push(format!(
+                    "{}:{} references crate::api",
+                    file.display(),
+                    line_no
+                ));
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "non-API production code must not depend on crate::api:\n{}",
+        violations.join("\n")
+    );
+}

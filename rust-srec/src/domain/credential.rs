@@ -801,6 +801,140 @@ impl std::fmt::Display for CredentialUnavailable {
 
 impl std::error::Error for CredentialUnavailable {}
 
+/// Credential lifecycle event carried into notifications.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum CredentialEvent {
+    /// Selection exhaustion does not assert that any individual account is invalid.
+    Unavailable {
+        scope: CredentialScope,
+        platform: String,
+        reason_code: UnavailableReason,
+        timestamp: Timestamp,
+    },
+    /// Credentials were successfully refreshed.
+    Refreshed {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_label: Option<String>,
+        scope: CredentialScope,
+        platform: String,
+        expires_at: Option<Timestamp>,
+        timestamp: Timestamp,
+    },
+    /// Credential refresh failed - action may be required.
+    RefreshFailed {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_label: Option<String>,
+        scope: CredentialScope,
+        platform: String,
+        error: String,
+        /// Whether manual re-login is required.
+        requires_relogin: bool,
+        /// Number of consecutive failures.
+        failure_count: u32,
+        timestamp: Timestamp,
+    },
+    /// Credentials are invalid - manual re-login required.
+    Invalid {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_label: Option<String>,
+        scope: CredentialScope,
+        platform: String,
+        reason: String,
+        /// Error code from platform API (e.g., -101 for Bilibili).
+        error_code: Option<i32>,
+        timestamp: Timestamp,
+    },
+    /// Credentials are expiring soon - proactive warning.
+    ExpiringSoon {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_label: Option<String>,
+        scope: CredentialScope,
+        platform: String,
+        expires_at: Timestamp,
+        days_remaining: u32,
+        timestamp: Timestamp,
+    },
+    /// Session cookies obtained during a check (e.g. SOOP reactive login)
+    /// could not be stored; the next check has to log in again.
+    SessionSaveFailed {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_label: Option<String>,
+        scope: CredentialScope,
+        platform: String,
+        error: String,
+        timestamp: Timestamp,
+    },
+}
+
+impl CredentialEvent {
+    /// Event name for notification subscription matching.
+    pub fn event_name(&self) -> &'static str {
+        match self {
+            Self::Unavailable { .. } => "credential_unavailable",
+            Self::Refreshed { .. } => "credential_refreshed",
+            Self::RefreshFailed { .. } => "credential_refresh_failed",
+            Self::Invalid { .. } => "credential_invalid",
+            Self::ExpiringSoon { .. } => "credential_expiring",
+            Self::SessionSaveFailed { .. } => "credential_session_save_failed",
+        }
+    }
+
+    /// Timestamp when this credential event occurred.
+    pub fn timestamp(&self) -> Timestamp {
+        match self {
+            Self::Unavailable { timestamp, .. }
+            | Self::Refreshed { timestamp, .. }
+            | Self::RefreshFailed { timestamp, .. }
+            | Self::Invalid { timestamp, .. }
+            | Self::ExpiringSoon { timestamp, .. }
+            | Self::SessionSaveFailed { timestamp, .. } => *timestamp,
+        }
+    }
+
+    /// The owning scope and optional account label carried by this event.
+    pub fn scope_and_label(&self) -> (&CredentialScope, Option<&str>) {
+        match self {
+            Self::Unavailable { scope, .. } => (scope, None),
+            Self::SessionSaveFailed {
+                scope,
+                profile_label,
+                ..
+            }
+            | Self::Refreshed {
+                scope,
+                profile_label,
+                ..
+            }
+            | Self::RefreshFailed {
+                scope,
+                profile_label,
+                ..
+            }
+            | Self::Invalid {
+                scope,
+                profile_label,
+                ..
+            }
+            | Self::ExpiringSoon {
+                scope,
+                profile_label,
+                ..
+            } => (scope, profile_label.as_deref()),
+        }
+    }
+}
+
 /// Replacement material from a successful refresh. Absent tokens keep the
 /// profile's current ones.
 #[derive(Clone)]

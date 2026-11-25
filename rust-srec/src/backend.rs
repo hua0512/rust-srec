@@ -4,7 +4,15 @@
 //! desktop shell. Application wiring remains internal so changes to routes,
 //! services, and infrastructure do not expand the crate's public API.
 
+use std::net::SocketAddr;
+use std::ops::Deref;
+use std::time::Duration;
+
+use sqlx::SqlitePool;
+
+use crate::Result;
 pub use crate::api::auth_service::{AuthResponse, LocalDesktopAccount};
+use crate::api::bootstrap::ApiServerHost;
 pub use crate::api::server::ApiServerConfig;
 pub use crate::database::{init_database_pools, init_migration_pool, init_pool, init_write_pool};
 pub use crate::downloader::{DownloadManagerConfig, DownloadManagerEvent};
@@ -14,9 +22,183 @@ pub use crate::panic_hook::install as install_panic_hook;
 pub use crate::pipeline::PipelineManagerConfig;
 pub use crate::runtime::RuntimeLease;
 pub use crate::server::run as run_server;
+pub use crate::services::ActiveRecordingSummary;
+use crate::services::container::{DEFAULT_CACHE_TTL, DEFAULT_EVENT_CAPACITY};
 pub use crate::services::legacy_upgrade::run_migrations;
-pub use crate::services::{ActiveRecordingSummary, ServiceContainer, ServiceContainerConfig};
 pub use crate::utils::http_client::install_rustls_provider;
+
+/// Configuration used to assemble a backend [`ServiceContainer`].
+pub struct ServiceContainerConfig {
+    pub cache_ttl: Duration,
+    pub event_capacity: usize,
+    pub download_config: DownloadManagerConfig,
+    pub pipeline_config: PipelineManagerConfig,
+    pub api_config: ApiServerConfig,
+    /// Serve the API as the desktop app's built-in backend. The shell signs
+    /// its user in without a password, so nobody is ever made to change the
+    /// seeded default password, and `must_change_password` then means "no
+    /// password has been set". With this set, an account with that flag is
+    /// reachable only through sessions issued by
+    /// [`ServiceContainer::issue_local_desktop_session`]: a password login for
+    /// it never succeeds (the seeded password never signs in), its other
+    /// sessions are refused like revoked ones, and its API keys are honoured.
+    ///
+    /// Part of the configuration so it is fixed before the container, and so
+    /// the API server's `AuthService`, exists. Only the desktop shell's local
+    /// mode sets it; the server and Docker builds never do.
+    pub local_desktop_mode: bool,
+}
+
+/// Composed backend container combining core runtime services with the API
+/// server host and authentication surface.
+pub struct ServiceContainer {
+    core: crate::services::ServiceContainer,
+    api: ApiServerHost,
+}
+
+impl Deref for ServiceContainer {
+    type Target = crate::services::ServiceContainer;
+
+    fn deref(&self) -> &Self::Target {
+        &self.core
+    }
+}
+
+impl ServiceContainer {
+    /// Create a new backend container with default subsystem settings and
+    /// environment-configured API/auth settings.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if API/auth environment settings are invalid or the
+    /// persisted global configuration cannot be loaded or initialized.
+    pub async fn new(pool: SqlitePool, write_pool: SqlitePool) -> Result<Self> {
+        let api_config = ApiServerConfig::from_env()?;
+        Self::with_full_config(
+            pool,
+            write_pool,
+            ServiceContainerConfig {
+                cache_ttl: DEFAULT_CACHE_TTL,
+                event_capacity: DEFAULT_EVENT_CAPACITY,
+                download_config: DownloadManagerConfig::default(),
+                pipeline_config: PipelineManagerConfig::default(),
+                api_config,
+                local_desktop_mode: false,
+            },
+        )
+        .await
+    }
+
+    /// Create a backend container with custom subsystem, API, and desktop-mode
+    /// settings.
+    ///
+    /// Database-backed global settings remain authoritative for download
+    /// concurrency, pipeline worker counts, pipeline timeouts, and queue
+    /// freshness.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if auth environment settings are invalid or the
+    /// persisted global configuration cannot be loaded or initialized.
+    pub async fn with_full_config(
+        pool: SqlitePool,
+        write_pool: SqlitePool,
+        config: ServiceContainerConfig,
+    ) -> Result<Self> {
+        let ServiceContainerConfig {
+            cache_ttl,
+            event_capacity,
+            download_config,
+            pipeline_config,
+            api_config,
+            local_desktop_mode,
+        } = config;
+        // Validate auth settings before building any background service.
+        let api = ApiServerHost::new(api_config, local_desktop_mode)?;
+        let core = crate::services::ServiceContainer::with_full_config(
+            pool,
+            write_pool,
+            crate::services::ServiceContainerConfig {
+                cache_ttl,
+                event_capacity,
+                download_config,
+                pipeline_config,
+            },
+        )
+        .await?;
+        Ok(Self { core, api })
+    }
+
+    /// Initialize and start the API server.
+    /// This should be called after `initialize()` and runs the server in the background.
+    pub async fn start_api_server(&self) -> Result<()> {
+        self.api.start_api_server(&self.core).await
+    }
+
+    /// Initialize and start the API server, returning the resolved bind address.
+    ///
+    /// This is required when binding to port `0` (ephemeral port), where the
+    /// actual port is only known after binding.
+    pub async fn start_api_server_bound(&self) -> Result<SocketAddr> {
+        self.api.start_api_server_bound(&self.core).await
+    }
+
+    /// Initialize and start the API server, returning the resolved bind
+    /// address, using a caller-provided JWT secret.
+    ///
+    /// This is primarily intended for the desktop (Tauri) wrapper, which
+    /// should not depend on `.env` loading or shell environment setup for
+    /// authentication to work.
+    pub async fn start_api_server_bound_with_jwt_secret(
+        &self,
+        jwt_secret: String,
+    ) -> Result<SocketAddr> {
+        self.api
+            .start_api_server_bound_with_jwt_secret(&self.core, jwt_secret)
+            .await
+    }
+
+    /// Issue a local desktop session for the active admin user when the
+    /// loopback desktop app operates without password sign-in.
+    pub async fn issue_local_desktop_session(&self) -> Result<(String, AuthResponse)> {
+        self.api.issue_local_desktop_session().await
+    }
+
+    /// The account local desktop sessions are issued for, or `None` when
+    /// there is no active admin.
+    pub async fn local_desktop_account(&self) -> Result<Option<LocalDesktopAccount>> {
+        self.api.local_desktop_account().await
+    }
+
+    /// Replace the initial password of the local desktop account. Fails once
+    /// that account has a password of its own.
+    pub async fn set_local_desktop_password(&self, new_password: &str) -> Result<()> {
+        self.api.set_local_desktop_password(new_password).await
+    }
+
+    /// Restore previously persisted local desktop `(session_id, user_id)` pairs
+    /// on startup when password sign-in remains disabled.
+    pub fn restore_local_desktop_sessions(
+        &self,
+        sessions: impl IntoIterator<Item = (String, String)>,
+    ) {
+        self.api.restore_local_desktop_sessions(sessions);
+    }
+
+    /// Return the currently tracked local desktop `(session_id, user_id)` pairs.
+    pub fn list_local_desktop_sessions(&self) -> Vec<(String, String)> {
+        self.api.list_local_desktop_sessions()
+    }
+
+    /// Revoke all tracked local-desktop sessions (plus any persisted entries) in
+    /// SQLite and clear their in-memory exemptions.
+    pub async fn revoke_local_desktop_sessions(
+        &self,
+        extra_sessions: &[(String, String)],
+    ) -> Result<usize> {
+        self.api.revoke_local_desktop_sessions(extra_sessions).await
+    }
+}
 
 /// The HTTP client for the desktop app's check for a newer release, chosen
 /// from the global route of `container` as it is now. Callers set timeouts

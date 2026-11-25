@@ -241,8 +241,6 @@ async fn graceful_shutdown_flushes_and_persists_the_final_segment_before_pool_cl
             event_capacity: 8,
             download_config: DownloadManagerConfig::default(),
             pipeline_config: crate::pipeline::PipelineManagerConfig::default(),
-            api_config: crate::api::server::ApiServerConfig::default(),
-            local_desktop_mode: false,
         },
         providers,
     )
@@ -502,8 +500,6 @@ async fn graceful_shutdown_flushes_and_persists_the_final_segment_before_pool_cl
             event_capacity: 8,
             download_config: DownloadManagerConfig::default(),
             pipeline_config: crate::pipeline::PipelineManagerConfig::default(),
-            api_config: crate::api::server::ApiServerConfig::default(),
-            local_desktop_mode: false,
         },
     )
     .await

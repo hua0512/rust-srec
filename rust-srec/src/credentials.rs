@@ -16,18 +16,17 @@ mod resolution;
 mod service;
 #[cfg(test)]
 pub(crate) mod test_support;
-mod types;
 
 // Platform-specific implementations
 pub mod platforms;
 
 pub use crate::domain::credential::{
     ATTENTION_REFRESH_FAILURES, AUTHENTICATION_FIELDS, AttentionReason, CredentialAttention,
-    CredentialBinding, CredentialIdentity, CredentialMaterial, CredentialOwner, CredentialProfile,
-    CredentialProfileHealth, CredentialProfileSummary, CredentialScope, CredentialSelection,
-    CredentialUnavailable, CredentialValidity, HealthReason, MAX_SITES, PoolStrategy, ProfileError,
-    ProfileReferences, RecordingReference, RefreshedCredentials, ResolvedCredentialPolicy,
-    SelectionReference, StreamerSite, UnavailableReason, covering_sites,
+    CredentialBinding, CredentialEvent, CredentialIdentity, CredentialMaterial, CredentialOwner,
+    CredentialProfile, CredentialProfileHealth, CredentialProfileSummary, CredentialScope,
+    CredentialSelection, CredentialUnavailable, CredentialValidity, HealthReason, MAX_SITES,
+    PoolStrategy, ProfileError, ProfileReferences, RecordingReference, RefreshedCredentials,
+    ResolvedCredentialPolicy, SelectionReference, StreamerSite, UnavailableReason, covering_sites,
     isolate_platform_authentication_extras, login_fields, merge_cookie_updates, normalize_site,
     normalize_sites, site_host,
 };
@@ -50,4 +49,3 @@ pub use provider::{
 pub use provider::{DuplicateProvider, register_provider_for_process};
 pub use resolution::managed_authentication_extras;
 pub use service::CredentialProviderRegistry;
-pub use types::CredentialEvent;

@@ -72,7 +72,7 @@ fn output_path_inaccessible_all_error_kinds_resolve() {
 /// `all_notification_variants_localize` will catch the omission via
 /// the exhaustive count assertion.
 fn sample_events() -> Vec<NotificationEvent> {
-    use crate::credentials::{CredentialEvent, CredentialScope};
+    use crate::domain::credential::{CredentialEvent, CredentialScope, UnavailableReason};
     let now = jiff::Timestamp::now();
     vec![
         NotificationEvent::StreamOnline {
@@ -301,7 +301,7 @@ fn sample_events() -> Vec<NotificationEvent> {
                     platform_name: "bilibili".into(),
                 },
                 platform: "bilibili".into(),
-                reason_code: crate::credentials::UnavailableReason::LoginRequired,
+                reason_code: UnavailableReason::LoginRequired,
                 timestamp: now,
             },
         },
@@ -393,6 +393,57 @@ fn every_notification_variant_is_subscribable() {
             canonicalize_subscription_event_name(event.event_type()).is_some(),
             "{} is missing from the subscription catalog",
             event.event_type(),
+        );
+    }
+}
+
+/// Unavailable notices read as text rather than codes, and
+/// profile events name the account beside the owner it belongs to.
+#[test]
+fn credential_notices_render_reasons_and_account_labels() {
+    use crate::domain::credential::{CredentialEvent, CredentialScope, UNAVAILABLE_REASON_CODES};
+
+    let scope = CredentialScope::Template {
+        template_id: "template-1".to_string(),
+        template_name: "Night shift".to_string(),
+    };
+    for locale in ["en", "zh-CN"] {
+        for code in UNAVAILABLE_REASON_CODES {
+            let notification = NotificationEvent::Credential {
+                event: CredentialEvent::Unavailable {
+                    scope: scope.clone(),
+                    platform: "bilibili".to_string(),
+                    reason_code: *code,
+                    timestamp: jiff::Timestamp::now(),
+                },
+            };
+            let message = notification.description_in(locale);
+            let code = code.as_str();
+            assert!(!message.contains(code), "{locale}/{code}: {message}");
+            assert!(
+                !message.contains("notification."),
+                "{locale}/{code}: {message}"
+            );
+            assert!(message.contains("Night shift"), "{message}");
+        }
+        let invalid = NotificationEvent::Credential {
+            event: CredentialEvent::Invalid {
+                profile_id: Some("profile-1".to_string()),
+                profile_label: Some("Backup account".to_string()),
+                scope: scope.clone(),
+                platform: "bilibili".to_string(),
+                reason: "login_required".to_string(),
+                error_code: None,
+                timestamp: jiff::Timestamp::now(),
+            },
+        };
+        let title = invalid.title_in(locale);
+        let description = invalid.description_in(locale);
+        assert!(title.contains("Template: Night shift"), "{title}");
+        assert!(title.contains("Backup account"), "{title}");
+        assert!(
+            description.contains("Backup account"),
+            "{locale}: {description}"
         );
     }
 }

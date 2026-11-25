@@ -31,10 +31,6 @@ pub(super) fn bounded_device_info(value: Option<String>) -> Option<String> {
     value.map(|value| value.chars().take(MAX_DEVICE_INFO_LENGTH).collect())
 }
 
-/// Longest username `authenticate` will look up, counted in `char`s so the
-/// bound is the same for ASCII and CJK names.
-pub const MAX_USERNAME_LENGTH: usize = 128;
-
 /// Which credential authenticated the request.
 ///
 /// API key management endpoints (`routes::auth::api_keys`) only accept

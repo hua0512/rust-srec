@@ -4,10 +4,11 @@ use std::time::Duration;
 use axum::{extract::State, response::IntoResponse};
 use serde_json::json;
 
-use super::ServiceContainer;
+use super::build_api_state;
 use crate::config::backup::{ConfigExport, ImportMode, JobPresetExport};
 use crate::database::models::{FilterDbModel, FilterType, StreamerDbModel};
 use crate::domain::filter::Filter;
+use crate::services::ServiceContainer;
 
 async fn export(state: crate::api::server::AppState) -> ConfigExport {
     let response = crate::api::routes::export_import::export_config(State(state))
@@ -29,7 +30,7 @@ async fn public_timezone_import_rolls_back_or_invalidates_filter_snapshots_after
         let container=ServiceContainer::new(pool.clone(),pool.clone()).await.unwrap();
         let (logging,_layer)=crate::logging::LoggingConfig::for_route_tests(directory.path().to_owned());
         assert!(container.logging_config.set(Arc::new(logging)).is_ok());
-        let state=container.build_api_state(None).unwrap();
+        let state=build_api_state(&container, None).unwrap();
         let mut owner=StreamerDbModel::new("Timezone import","https://example.test/timezone-import","platform-huya");
         owner.state="DISABLED".into();
         state.streamer_repository.create_streamer(&owner).await.unwrap();

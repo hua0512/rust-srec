@@ -89,10 +89,13 @@ pub async fn import_config(
     // Detached, so a caller that disconnects or times out cannot cut the
     // import short after its commit, nor skip the cache invalidation below.
     let outcome = tokio::spawn(async move {
-        // `import_with_auth` invalidates `AuthService`'s user/API-key cache
-        // synchronously inside the commit hook before `finish_import` runs.
+        // Invalidate `AuthService`'s user/API-key cache synchronously inside
+        // the commit hook before `finish_import` runs.
+        let on_users_committed = auth_service.map(|auth| {
+            Box::new(move || auth.invalidate_user_cache()) as Box<dyn FnOnce() + Send + 'static>
+        });
         import_service
-            .import_with_auth(request.config, request.mode, auth_service)
+            .import_with_post_commit(request.config, request.mode, on_users_committed)
             .await
     })
     .await

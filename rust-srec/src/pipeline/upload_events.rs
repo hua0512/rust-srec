@@ -15,7 +15,7 @@
 //! injected by the service container so this module never depends on the API
 //! module.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use bytes::Bytes;
 use tokio::sync::broadcast;
@@ -134,35 +134,57 @@ pub struct UploadBroadcastEnvelope {
 #[derive(Clone)]
 pub struct UploadStatusBroadcaster {
     tx: broadcast::Sender<UploadBroadcastEnvelope>,
-    encoder: UploadWsEncoder,
+    encoder: Arc<OnceLock<UploadWsEncoder>>,
 }
 
 impl UploadStatusBroadcaster {
     pub fn new(encoder: UploadWsEncoder) -> Self {
         let (tx, _) = broadcast::channel(BROADCAST_CAPACITY);
-        Self { tx, encoder }
+        let slot = Arc::new(OnceLock::new());
+        let _ = slot.set(encoder);
+        Self { tx, encoder: slot }
+    }
+
+    /// Build a broadcaster whose wire encoder will be installed later by the
+    /// API layer via [`Self::set_encoder`].
+    pub fn deferred() -> Self {
+        let (tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+        Self {
+            tx,
+            encoder: Arc::new(OnceLock::new()),
+        }
+    }
+
+    /// Install the wire encoder if one has not already been configured.
+    pub fn set_encoder(&self, encoder: UploadWsEncoder) {
+        let _ = self.encoder.set(encoder);
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<UploadBroadcastEnvelope> {
         self.tx.subscribe()
     }
 
-    /// True when at least one WS connection is subscribed. `send` already
-    /// early-returns without one, but producers on hot paths (the progress
-    /// aggregator) check this first to skip building the event —
-    /// cloning a `JobProgressSnapshot` and its `raw` JSON tree — at all.
+    /// True when at least one WS connection is subscribed and an encoder is
+    /// installed. `send` already early-returns without one, but producers on
+    /// hot paths (the progress aggregator) check this first to skip building
+    /// the event — cloning a `JobProgressSnapshot` and its `raw` JSON tree —
+    /// at all.
     pub fn has_subscribers(&self) -> bool {
-        self.tx.receiver_count() > 0
+        self.tx.receiver_count() > 0 && self.encoder.get().is_some()
     }
 
-    /// Encode once and fan out. No subscribers → no encode, no send; an
-    /// idle or headless deployment pays nothing on the job hot path.
+    /// Encode once and fan out. No subscribers or no installed encoder → no
+    /// encode, no send; an idle or headless deployment pays nothing on the job
+    /// hot path.
     pub fn send(&self, event: UploadStatusEvent) {
         if self.tx.receiver_count() == 0 {
             return;
         }
+        let Some(encoder) = self.encoder.get() else {
+            return;
+        };
         let event = Arc::new(event);
-        let ws_bytes = (self.encoder)(&event);
+        let ws_bytes = encoder(&event);
         let _ = self.tx.send(UploadBroadcastEnvelope { event, ws_bytes });
     }
 }

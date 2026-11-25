@@ -11,13 +11,13 @@ use super::AuthService;
 use super::cache::{CachedUserState, USER_STATE_CACHE_TTL};
 use super::config::{
     API_KEY_PREFIX, AuthError, AuthPrincipal, AuthResponse, CredentialKind,
-    LOGIN_DUMMY_PASSWORD_HASH, MAX_USERNAME_LENGTH, SessionInfo, bounded_device_info,
-    session_expiration,
+    LOGIN_DUMMY_PASSWORD_HASH, SessionInfo, bounded_device_info, session_expiration,
 };
 use crate::api::jwt::{Claims, JwtError};
 use crate::api::rate_limit::LoginRateKey;
 use crate::database::models::{ApiKeyAccessLevel, AuthSessionDbModel, RefreshTokenDbModel};
 use crate::database::repositories::refresh_token::RefreshTokenRotation;
+use crate::domain::MAX_USERNAME_LENGTH;
 
 impl AuthService {
     /// Validate an access token and enforce durable session and user security state.

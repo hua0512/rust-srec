@@ -23,8 +23,17 @@ use std::time::Instant;
 use tokio::net::lookup_host;
 use url::Url;
 
-use crate::proxies::{ProxyRoute, ProxyTarget, ServiceRoutes, SystemProxy};
+use crate::domain::proxy::{ProxyRoute, ProxyTarget, SystemProxy};
 use crate::utils::http_client::{ClientCache, apply_proxy, build_client, install_rustls_provider};
+
+/// Telemetry sink for browser push delivery outcomes.
+pub trait WebPushMetrics: Send + Sync {
+    fn record_web_push_sent(&self, duration_ms: u64);
+    fn record_web_push_failed(&self);
+    fn record_web_push_throttled(&self);
+    fn record_web_push_stale_deleted(&self);
+    fn record_web_push_skipped_backoff(&self);
+}
 
 const SALT_LEN: usize = 16;
 const PUBLIC_KEY_LEN: usize = 65;
@@ -141,9 +150,7 @@ pub struct WebPushService {
     config: WebPushConfig,
     subscription_cache: SubscriptionCache,
     vapid_jwt_cache: DashMap<String, CachedVapidJwt>,
-    metrics: std::sync::Arc<
-        parking_lot::RwLock<Option<std::sync::Arc<crate::metrics::MetricsCollector>>>,
-    >,
+    metrics: std::sync::Arc<parking_lot::RwLock<Option<std::sync::Arc<dyn WebPushMetrics>>>>,
 }
 
 impl std::fmt::Debug for WebPushService {
@@ -200,7 +207,7 @@ impl WebPushService {
         self.config.vapid_public_key_b64()
     }
 
-    pub fn set_metrics_collector(&self, metrics: std::sync::Arc<crate::metrics::MetricsCollector>) {
+    pub fn set_metrics_collector(&self, metrics: std::sync::Arc<dyn WebPushMetrics>) {
         *self.metrics.write() = Some(metrics);
     }
 
@@ -317,9 +324,16 @@ impl WebPushService {
     }
 
     async fn route_target(&self) -> Result<ProxyTarget> {
-        ServiceRoutes::new(self.pool.clone())
-            .target(&ProxyRoute::Inherit)
-            .await
+        let mut transaction = self.pool.begin().await?;
+        let target = crate::database::repositories::proxies::resolve_over_global(
+            &mut transaction,
+            &ProxyRoute::Inherit,
+            SystemProxy::current(),
+        )
+        .await?
+        .target;
+        transaction.commit().await?;
+        Ok(target)
     }
 
     /// Checks a subscription endpoint against the target policy that delivery

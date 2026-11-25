@@ -878,7 +878,7 @@ mod tests {
             #[tokio::test]
             async fn overlong_usernames_are_rejected_by_character_count() {
                 let (app, _token) = forced_change_app();
-                let max = crate::api::auth_service::MAX_USERNAME_LENGTH;
+                let max = crate::domain::MAX_USERNAME_LENGTH;
 
                 // 128 CJK characters are 384 bytes: a byte-based bound would
                 // refuse this, and the account could never be logged into.

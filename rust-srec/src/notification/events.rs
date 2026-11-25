@@ -5,10 +5,10 @@
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
-use crate::credentials::CredentialEvent;
+use crate::domain::credential::CredentialEvent;
+pub use crate::domain::notification::BigoNotificationProblem;
 
 mod catalog;
-pub(crate) mod mapping;
 mod render;
 
 pub use catalog::{
@@ -139,16 +139,6 @@ impl std::fmt::Display for NotificationPriority {
             Self::Critical => write!(f, "critical"),
         }
     }
-}
-
-/// What stopped Bigo live notifications.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BigoNotificationProblem {
-    /// BIGO accepted the subscriptions but sends the account no pushes.
-    NotArriving,
-    /// The listener has been disconnected for several minutes.
-    Disconnected,
 }
 
 /// Events that can trigger notifications.
@@ -307,7 +297,7 @@ pub enum NotificationEvent {
         path: String,
         /// Stable string identifying the underlying io error kind. Maps to the
         /// `notification.output_path_inaccessible.description.<kind>` i18n key
-        /// via [`crate::downloader::IoErrorKindSer::as_str`].
+        /// via `IoErrorKindSer::as_str`.
         error_kind: String,
         timestamp: Timestamp,
     },
@@ -321,7 +311,7 @@ pub enum NotificationEvent {
     GpuUnavailable {
         /// Stable string identifying the failure kind. Maps to the
         /// `notification.gpu_unavailable.description.<error_kind>` i18n
-        /// key via [`crate::metrics::gpu_health::GpuErrorKind::as_str`].
+        /// key via `GpuErrorKind::as_str`.
         error_kind: String,
         /// Truncated stderr / diagnostic line from the failed probe (≤ 256
         /// chars). Useful for ops; not used for routing.
@@ -387,7 +377,7 @@ pub enum NotificationEvent {
 
     // ========== External Tool Events ==========
     /// Automatic Baidu Netdisk re-login with stored credentials was
-    /// rejected. Emitted by `crate::baidupcs::StoredLoginAuthenticator`
+    /// rejected. Emitted by `StoredLoginAuthenticator`
     /// after a real replay attempt only — its failure cooldown bounds this
     /// to at most one event per window per config dir. Uploads keep
     /// failing until fresh credentials are provided via the login dialog.
@@ -446,7 +436,7 @@ impl NotificationEvent {
             Self::BigoNotificationsRestored { .. } => NotificationPriority::Normal,
 
             // Credential events
-            Self::Credential { event } => event.severity(),
+            Self::Credential { event } => credential_priority(event),
 
             // External tool events
             Self::BaiduPcsReloginFailed { .. } => NotificationPriority::High,
@@ -517,14 +507,7 @@ impl NotificationEvent {
             | Self::BigoNotificationsFailing { timestamp, .. }
             | Self::BigoNotificationsRestored { timestamp, .. }
             | Self::BaiduPcsReloginFailed { timestamp, .. } => *timestamp,
-            Self::Credential { event } => match event {
-                CredentialEvent::Unavailable { timestamp, .. }
-                | CredentialEvent::Refreshed { timestamp, .. }
-                | CredentialEvent::RefreshFailed { timestamp, .. }
-                | CredentialEvent::Invalid { timestamp, .. }
-                | CredentialEvent::ExpiringSoon { timestamp, .. }
-                | CredentialEvent::SessionSaveFailed { timestamp, .. } => *timestamp,
-            },
+            Self::Credential { event } => event.timestamp(),
         }
     }
 
@@ -554,6 +537,27 @@ impl NotificationEvent {
             .iter()
             .copied()
             .find(|e| e.event_type == canonical)
+    }
+}
+
+fn credential_priority(event: &CredentialEvent) -> NotificationPriority {
+    match event {
+        CredentialEvent::Unavailable { .. } => NotificationPriority::High,
+        CredentialEvent::Refreshed { .. } => NotificationPriority::Normal,
+        CredentialEvent::RefreshFailed {
+            requires_relogin: true,
+            ..
+        } => NotificationPriority::Critical,
+        CredentialEvent::RefreshFailed {
+            requires_relogin: false,
+            ..
+        } => NotificationPriority::High,
+        CredentialEvent::Invalid { .. } => NotificationPriority::Critical,
+        CredentialEvent::ExpiringSoon { days_remaining, .. } if *days_remaining <= 3 => {
+            NotificationPriority::High
+        }
+        CredentialEvent::ExpiringSoon { .. } => NotificationPriority::Normal,
+        CredentialEvent::SessionSaveFailed { .. } => NotificationPriority::High,
     }
 }
 

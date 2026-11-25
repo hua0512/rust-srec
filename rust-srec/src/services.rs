@@ -11,6 +11,7 @@ pub(crate) mod container;
 pub mod legacy_upgrade;
 #[doc(hidden)]
 pub mod maintenance;
+pub(crate) mod notification_bridge;
 pub(crate) mod pipeline_ports;
 pub(crate) mod playback_context;
 

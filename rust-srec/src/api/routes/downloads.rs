@@ -766,13 +766,32 @@ fn map_event_to_protobuf(event: &DownloadManagerEvent) -> Option<WsMessage> {
     }
 }
 
+/// Build the Protobuf encoder installed on [`crate::monitor::CheckHistoryBroadcaster`]
+/// by the API layer so check records are encoded once per committed row.
+pub fn check_history_ws_encoder() -> crate::monitor::check_history_writer::WsEncoder {
+    std::sync::Arc::new(|record| {
+        let msg = map_check_record_to_protobuf(record);
+        bytes::Bytes::from(msg.encode_to_vec())
+    })
+}
+
+/// Build the Protobuf encoder installed on [`crate::pipeline::UploadStatusBroadcaster`]
+/// by the API layer so upload status events are encoded once per transition.
+pub fn upload_status_ws_encoder(
+    streamer_manager: std::sync::Arc<crate::streamer::StreamerManager<SqlxStreamerRepository>>,
+) -> crate::pipeline::UploadWsEncoder {
+    let streamer_avatar = streamer_avatar_lookup(streamer_manager);
+    std::sync::Arc::new(move |event| {
+        let msg = map_upload_event_to_protobuf(event, &streamer_avatar);
+        bytes::Bytes::from(msg.encode_to_vec())
+    })
+}
+
 /// Map a domain [`CheckRecord`] to the WebSocket envelope.
 ///
-/// `pub` so the [`crate::services::container::ServiceContainer`] can wrap
-/// it as the [`crate::monitor::check_history_writer::WsEncoder`] handed to
-/// the broadcaster. Keeping the encoding here (next to the proto
-/// definitions and other download-WS mappers) avoids adding a
-/// monitor-layer dependency on `api::proto`.
+/// Keeping the encoding here (next to the proto definitions and other
+/// download-WS mappers) avoids adding a monitor-layer dependency on
+/// `api::proto`.
 ///
 /// proto3 scalars have no nullability — the convention here is "empty
 /// string means absent" for fatal_kind / filter_reason / error_message /
@@ -884,12 +903,10 @@ fn bigo_notifications_changed_message() -> WsMessage {
 
 /// Map an [`UploadStatusEvent`] to the WebSocket envelope.
 ///
-/// `pub` for the same reason as [`map_check_record_to_protobuf`]: the
-/// [`crate::services::container`] wraps it as the
-/// [`crate::pipeline::UploadWsEncoder`] handed to the
-/// `UploadStatusBroadcaster`, keeping proto knowledge out of the pipeline
-/// module. Absent `streamer_id`/`session_id` become empty strings (proto3
-/// scalar-default convention, same as check-history fields).
+/// Kept in the API layer and injected via [`upload_status_ws_encoder`] so
+/// the pipeline module remains independent of protobuf types. Absent
+/// `streamer_id`/`session_id` become empty strings (proto3 scalar-default
+/// convention, same as check-history fields).
 pub fn map_upload_event_to_protobuf(
     event: &UploadStatusEvent,
     streamer_avatar: &StreamerAvatarLookup,

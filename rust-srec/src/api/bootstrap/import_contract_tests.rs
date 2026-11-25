@@ -8,7 +8,8 @@ use crate::config::ConfigUpdateEvent;
 use crate::config::backup::{ConfigExport, ImportMode, JobPresetExport};
 use crate::database::models::StreamerDbModel;
 
-use super::ServiceContainer;
+use super::build_api_state;
+use crate::services::ServiceContainer;
 
 #[tokio::test]
 async fn public_import_preserves_warm_caches_until_commit_and_publishes_only_after_success() {
@@ -19,7 +20,7 @@ async fn public_import_preserves_warm_caches_until_commit_and_publishes_only_aft
         let container = ServiceContainer::new(pool.clone(), pool.clone()).await.unwrap();
         let (logging, _layer) = crate::logging::LoggingConfig::for_route_tests(directory.path().to_owned());
         assert!(container.logging_config.set(Arc::new(logging)).is_ok());
-        let state = container.build_api_state(None).unwrap();
+        let state = build_api_state(&container, None).unwrap();
         let streamer = StreamerDbModel::new("Warm cache", "https://example.com/warm-cache", "platform-huya");
         state.streamer_repository.create_streamer(&streamer).await.unwrap();
         let cached_global = state.config_service.get_cached_global_config().await.unwrap();
@@ -78,7 +79,7 @@ async fn cancelled_import_commit_finishes_filter_invalidation_and_runtime_public
         let (logging, _layer) =
             crate::logging::LoggingConfig::for_route_tests(directory.path().to_owned());
         assert!(container.logging_config.set(Arc::new(logging)).is_ok());
-        let state = container.build_api_state(None).unwrap();
+        let state = build_api_state(&container, None).unwrap();
         let streamer = StreamerDbModel::new(
             "Before import",
             "https://example.test/cancelled-import",
@@ -190,7 +191,7 @@ async fn committed_reaping_invalidates_filters_only_after_delete_succeeds() {
     let (logging, _layer) =
         crate::logging::LoggingConfig::for_route_tests(directory.path().to_owned());
     assert!(container.logging_config.set(Arc::new(logging)).is_ok());
-    let state = container.build_api_state(None).unwrap();
+    let state = build_api_state(&container, None).unwrap();
     let streamer = StreamerDbModel::new(
         "Retire",
         "https://example.test/reap-filter",
@@ -283,7 +284,7 @@ async fn actor_runtime_import_reconciles_streamers_after_commit_without_deadlock
         let (logging, _layer) =
             crate::logging::LoggingConfig::for_route_tests(directory.path().to_owned());
         assert!(container.logging_config.set(Arc::new(logging)).is_ok());
-        let state = container.build_api_state(None).unwrap();
+        let state = build_api_state(&container, None).unwrap();
         let registry = container.actor_registry.clone();
         registry.start();
 
