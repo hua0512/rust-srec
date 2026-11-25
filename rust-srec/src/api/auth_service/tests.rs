@@ -4,12 +4,11 @@ use std::time::Instant;
 
 use super::cache::CachedApiKeyState;
 use super::*;
-use crate::api::jwt::{Claims, JwtService};
-use crate::database::models::{
-    ApiKeyAccessLevel, AuthSessionDbModel, RefreshTokenDbModel, UserDbModel,
+use crate::api::auth_store::{
+    ApiKeyAccessLevel, AuthSessionDbModel, InMemoryApiKeyRepository, RefreshTokenDbModel,
+    RefreshTokenRepository, RefreshTokenRotation, UserDbModel, UserRepository,
 };
-use crate::database::repositories::refresh_token::RefreshTokenRotation;
-use crate::database::repositories::{RefreshTokenRepository, UserRepository};
+use crate::api::jwt::{Claims, JwtService};
 
 #[test]
 fn test_verify_password_legacy_argon2id_hash() {
@@ -209,7 +208,7 @@ fn create_counting_access_service(
     let service = AuthService::new(
         repo.clone(),
         Arc::new(MockRefreshTokenRepository),
-        Arc::new(crate::database::repositories::InMemoryApiKeyRepository::default()),
+        Arc::new(InMemoryApiKeyRepository::default()),
         jwt_service.clone(),
         AuthConfig::default(),
     );
@@ -306,7 +305,7 @@ async fn api_key_revocation_ignores_a_stale_cache_fill() {
     let service = AuthService::new(
         user_repo,
         Arc::new(MockRefreshTokenRepository),
-        Arc::new(crate::database::repositories::InMemoryApiKeyRepository::default()),
+        Arc::new(InMemoryApiKeyRepository::default()),
         jwt_service,
         AuthConfig::default(),
     );

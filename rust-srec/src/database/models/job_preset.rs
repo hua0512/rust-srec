@@ -42,7 +42,7 @@ pub const VALID_CATEGORIES: &[&str] = &[
 ///
 /// Represents a reusable, named configuration for a specific processor.
 /// Used in pipeline definitions to simplify configuration and promote reuse.
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct JobPreset {
     /// Unique identifier (UUID).
     pub id: String,

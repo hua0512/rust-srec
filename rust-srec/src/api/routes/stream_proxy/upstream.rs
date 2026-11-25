@@ -47,7 +47,7 @@ pub(super) async fn fetch_upstream_bound(
     initial_target: url::Url,
     headers: &reqwest::header::HeaderMap,
     allow_private_targets: bool,
-    authentication: Option<(&crate::services::playback_context::PlaybackData, usize)>,
+    authentication: Option<(&crate::api::playback_context::PlaybackData, usize)>,
 ) -> ApiResult<reqwest::Response> {
     let mut target = initial_target;
 

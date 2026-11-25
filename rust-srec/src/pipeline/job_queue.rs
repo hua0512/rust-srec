@@ -30,8 +30,8 @@ mod tests;
 use logs_progress::spawn_progress_aggregator;
 #[cfg(test)]
 use logs_progress::*;
-pub(crate) use metadata::{JobStateMeta, job_state_json, parse_job_state};
-pub(super) use metadata::{db_model_to_job, job_to_db_model};
+pub(super) use metadata::job_to_db_model;
+pub(crate) use metadata::{JobStateMeta, db_model_to_job, job_state_json, parse_job_state};
 
 pub(super) fn is_thumbnail_job_type(job_type: &str) -> bool {
     // JobDbModel.job_type is a free-form string. In practice we use:

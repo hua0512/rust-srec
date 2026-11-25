@@ -11,7 +11,7 @@ use crate::config::backup::{
 use crate::database::models::{
     ChannelType, EngineConfigurationDbModel, EngineType, FilterDbModel, FilterType,
     GlobalConfigDbModel, JobPreset, NotificationChannelDbModel, PipelinePreset,
-    PlatformConfigDbModel, RetentionDays, StreamerDbModel, TemplateConfigDbModel, UserDbModel,
+    PlatformConfigDbModel, RetentionDays, StreamerDbModel, TemplateConfigDbModel,
 };
 use crate::domain::MAX_USERNAME_LENGTH;
 
@@ -31,7 +31,6 @@ pub(super) struct ImportSnapshot {
     pub(super) channels: HashMap<String, NotificationChannelDbModel>,
     pub(super) job_presets: HashMap<String, JobPreset>,
     pub(super) pipeline_presets: HashMap<String, PipelinePreset>,
-    pub(super) users: HashMap<String, UserDbModel>,
 }
 
 impl ImportSnapshot {
@@ -116,12 +115,6 @@ impl ImportSnapshot {
                 .into_iter()
                 .map(|model| (model.name.clone(), model))
                 .collect();
-        let users = sqlx::query_as::<_, UserDbModel>("SELECT * FROM users")
-            .fetch_all(&mut *tx)
-            .await?
-            .into_iter()
-            .map(|model| (model.username.clone(), model))
-            .collect();
 
         Ok(Self {
             global,
@@ -135,7 +128,6 @@ impl ImportSnapshot {
             channels,
             job_presets,
             pipeline_presets,
-            users,
         })
     }
 
@@ -252,63 +244,6 @@ impl ImportSnapshot {
             }
         }
 
-        let existing_ids: HashMap<&str, &str> = self
-            .users
-            .values()
-            .map(|user| (user.id.as_str(), user.username.as_str()))
-            .collect();
-        for user in &config.users {
-            if self.users.contains_key(&user.username) {
-                continue;
-            }
-            if let Some(existing_username) = existing_ids.get(user.id.as_str()) {
-                return validation(format!(
-                    "User id '{}' is already in use by username '{}'",
-                    user.id, existing_username
-                ));
-            }
-        }
-
-        self.validate_user_emails(config, mode)?;
-
-        Ok(())
-    }
-
-    fn validate_user_emails(
-        &self,
-        config: &ConfigExport,
-        mode: ImportMode,
-    ) -> Result<(), ConfigurationImportError> {
-        if !includes_imported_users(config) {
-            return Ok(());
-        }
-        let replaced: HashSet<&str> = config
-            .users
-            .iter()
-            .map(|user| user.username.as_str())
-            .collect();
-        let mut emails = HashSet::new();
-        if mode == ImportMode::Merge {
-            for user in self
-                .users
-                .values()
-                .filter(|user| !replaced.contains(user.username.as_str()))
-            {
-                if let Some(email) = user.email.as_deref() {
-                    emails.insert(email);
-                }
-            }
-        }
-        for user in &config.users {
-            if let Some(email) = user.email.as_deref()
-                && !emails.insert(email)
-            {
-                return validation(format!(
-                    "Imported user '{}' has an email already assigned to another user",
-                    user.username,
-                ));
-            }
-        }
         Ok(())
     }
 }

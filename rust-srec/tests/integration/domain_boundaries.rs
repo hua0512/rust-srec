@@ -379,3 +379,80 @@ fn non_api_production_code_does_not_depend_on_api() {
         violations.join("\n")
     );
 }
+
+#[test]
+fn non_api_or_mcp_production_code_has_no_utoipa_or_schemars_dependencies() {
+    const FORBIDDEN: &[&str] = &["utoipa", "schemars", "ToSchema", "IntoParams", "JsonSchema"];
+    let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    rust_files(&src_root, &mut files);
+    files.sort();
+
+    let mut violations = Vec::new();
+    for file in files {
+        if is_test_source(&file) {
+            continue;
+        }
+        let rel = file.strip_prefix(&src_root).expect("path under src/");
+        let first = rel.components().next().and_then(|c| c.as_os_str().to_str());
+        if matches!(first, Some("api" | "api.rs" | "mcp" | "mcp.rs")) {
+            continue;
+        }
+        let source = fs::read_to_string(&file).expect("read source file");
+        for (line_no, line) in production_lines(&source) {
+            for ident in FORBIDDEN {
+                if references_identifier(line, ident) {
+                    violations.push(format!(
+                        "{}:{} references `{ident}` outside api/mcp",
+                        file.display(),
+                        line_no
+                    ));
+                }
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "non-API/MCP production code must not depend on utoipa or schemars:\n{}",
+        violations.join("\n")
+    );
+}
+
+#[test]
+fn api_production_code_does_not_bypass_config_backup_port() {
+    const FORBIDDEN_PATHS: &[&str] = &[
+        "crate::services::config_export",
+        "crate::services::config_import",
+        "crate::services::playback_context",
+    ];
+    let api_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/api");
+    let mut files = Vec::new();
+    rust_files(&api_root, &mut files);
+    files.sort();
+
+    let mut violations = Vec::new();
+    for file in files {
+        if is_test_source(&file) {
+            continue;
+        }
+        let source = fs::read_to_string(&file).expect("read api source file");
+        for (line_no, line) in production_lines(&source) {
+            for path in FORBIDDEN_PATHS {
+                if line.contains(path) {
+                    violations.push(format!(
+                        "{}:{} references `{path}` directly instead of ConfigBackupPort/api::playback_context",
+                        file.display(),
+                        line_no
+                    ));
+                }
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "API production code must go through ConfigBackupPort and api::playback_context:\n{}",
+        violations.join("\n")
+    );
+}

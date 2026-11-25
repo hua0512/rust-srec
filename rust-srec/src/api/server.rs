@@ -112,6 +112,8 @@ pub struct ApiServices {
     pub pipeline_manager: Arc<PipelineManager>,
     /// Download manager
     pub download_manager: Arc<DownloadManager>,
+    /// Read-pool query facade for UI/MCP filtered listing, search, and summary endpoints.
+    pub(crate) queries: crate::api::queries::ApiQueries,
     /// Session repository for session and output queries
     pub session_repository: Arc<dyn SessionRepository>,
     /// Session-event repository for the session-detail timeline.
@@ -156,17 +158,13 @@ pub struct ApiServices {
     pub(crate) credential_blocks: Arc<crate::credentials::CredentialBlocks>,
     /// Bigo's live-notification listener, for its status.
     pub(crate) bigo_notifications: Arc<crate::monitor::BigoNotifications>,
-    pub(crate) playback_contexts: Arc<crate::services::playback_context::PlaybackContextService>,
+    pub(crate) playback_contexts: Arc<crate::api::playback_context::PlaybackContextService>,
     /// Shared stateless extractor runner (pooled HTTP clients and proxy/tunnel setup).
     pub(crate) extractor_runner: Arc<crate::recorder::PlatformExtractorRunner>,
     /// Rooms recordings are collecting, which live danmu sockets follow.
     pub(crate) danmu_taps: Arc<crate::danmu::DanmuTaps>,
-    /// Validated, transactional configuration import application service.
-    pub(crate) configuration_import_service:
-        Arc<crate::services::config_import::ConfigurationImportService>,
-    /// Assembles the complete configuration backup.
-    pub(crate) configuration_export_service:
-        Arc<crate::services::config_export::ConfigurationExportService>,
+    /// Transactional configuration export/import port implemented at the application layer.
+    pub(crate) config_backup: Arc<dyn crate::api::backup::ConfigBackupPort>,
     /// Recording control-plane registry. Routes reach it for streamer deletion,
     /// which stands down the streamer actor, download, danmu, and pipeline
     /// owners before the `streamers` row can be removed.

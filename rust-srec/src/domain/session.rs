@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 /// A high-confidence offline signal observed at the engine or danmu boundary
 /// that bypasses the hysteresis quiet period.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "count", rename_all = "snake_case")]
 pub enum OfflineSignal {
     /// Danmu websocket sent an explicit stream-closed control frame.
@@ -78,7 +78,7 @@ impl SessionEventKind {
 ///
 /// The `kind` discriminator is chosen so it lines up with the top-level
 /// `kind` column on the row (no separate JSON key for type tagging).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SessionEventPayload {
     /// A new session began. `from_hysteresis` is `true` only on the resume path.
@@ -130,7 +130,7 @@ impl SessionEventPayload {
 /// - `{ "type": "definitive_offline", "signal": { "type": "consecutive_failures", "count": 2 } }`
 /// - `{ "type": "user_disabled" }`
 /// - `{ "type": "out_of_schedule" }`
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TerminalCauseDto {
     Completed,

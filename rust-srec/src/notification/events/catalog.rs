@@ -1,7 +1,7 @@
 use super::NotificationPriority;
 
 /// Static metadata about a supported notification event type.
-#[derive(Debug, Clone, Copy, serde::Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, serde::Serialize)]
 pub struct NotificationEventTypeInfo {
     /// Canonical subscription key (snake_case).
     pub event_type: &'static str,

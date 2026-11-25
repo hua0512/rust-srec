@@ -135,7 +135,7 @@ impl std::fmt::Display for PresetChange {
 }
 
 /// What kind of configuration owns a pipeline that names a step.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StepUserKind {
     Global,
@@ -169,7 +169,7 @@ impl StepUserKind {
 }
 
 /// A stored pipeline owner that names a step definition.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct StepUser {
     pub kind: StepUserKind,
     /// The owner's id; empty for the global config.

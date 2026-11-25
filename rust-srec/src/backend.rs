@@ -6,14 +6,18 @@
 
 use std::net::SocketAddr;
 use std::ops::Deref;
+use std::sync::Arc;
 use std::time::Duration;
 
 use sqlx::SqlitePool;
 
 use crate::Result;
 pub use crate::api::auth_service::{AuthResponse, LocalDesktopAccount};
+use crate::api::auth_store::{AuthImportError, apply_auth_import_tx, validate_auth_import_tx};
+use crate::api::backup::{ConfigBackupError, ConfigBackupImportOutcome, ConfigBackupPort};
 use crate::api::bootstrap::ApiServerHost;
 pub use crate::api::server::ApiServerConfig;
+use crate::config::backup::{ConfigExport, ImportMode, ImportStats, UserExport};
 pub use crate::database::{init_database_pools, init_migration_pool, init_pool, init_write_pool};
 pub use crate::downloader::{DownloadManagerConfig, DownloadManagerEvent};
 pub use crate::logging::init_logging;
@@ -23,9 +27,131 @@ pub use crate::pipeline::PipelineManagerConfig;
 pub use crate::runtime::RuntimeLease;
 pub use crate::server::run as run_server;
 pub use crate::services::ActiveRecordingSummary;
+use crate::services::config_export::ConfigurationExportService;
+use crate::services::config_import::{
+    AuthImportTxPort, ConfigurationImportError, ConfigurationImportService,
+};
 use crate::services::container::{DEFAULT_CACHE_TTL, DEFAULT_EVENT_CAPACITY};
 pub use crate::services::legacy_upgrade::run_migrations;
 pub use crate::utils::http_client::install_rustls_provider;
+
+fn map_auth_import_error(error: AuthImportError) -> ConfigurationImportError {
+    match error {
+        AuthImportError::Validation(message) => ConfigurationImportError::Validation(message),
+        AuthImportError::Database(error) => ConfigurationImportError::Database(error),
+    }
+}
+
+struct BackendAuthImportTxPort;
+
+#[async_trait::async_trait]
+impl AuthImportTxPort for BackendAuthImportTxPort {
+    async fn validate_users_tx(
+        &self,
+        tx: &mut sqlx::SqliteConnection,
+        users: &[UserExport],
+        include_users: bool,
+        mode: ImportMode,
+    ) -> std::result::Result<(), ConfigurationImportError> {
+        validate_auth_import_tx(tx, users, include_users, mode)
+            .await
+            .map_err(map_auth_import_error)
+    }
+
+    async fn apply_auth_import_tx(
+        &self,
+        tx: &mut sqlx::SqliteConnection,
+        users: &[UserExport],
+        include_users: bool,
+        mode: ImportMode,
+        stats: &mut ImportStats,
+    ) -> std::result::Result<(), ConfigurationImportError> {
+        let auth_stats = apply_auth_import_tx(tx, users, include_users, mode)
+            .await
+            .map_err(map_auth_import_error)?;
+        stats.users_created += auth_stats.users_created;
+        stats.users_updated += auth_stats.users_updated;
+        stats.users_deleted += auth_stats.users_deleted;
+        Ok(())
+    }
+}
+
+/// Build the transactional auth-import adapter bridging `services::config_import`
+/// with `api::auth_store` inside the single import transaction.
+pub(crate) fn auth_import_tx_port() -> Arc<dyn AuthImportTxPort> {
+    Arc::new(BackendAuthImportTxPort)
+}
+
+struct BackendConfigBackup {
+    export_service: ConfigurationExportService,
+    import_service: ConfigurationImportService,
+}
+
+#[async_trait::async_trait]
+impl ConfigBackupPort for BackendConfigBackup {
+    async fn export_config(
+        &self,
+        user_exports: Vec<UserExport>,
+    ) -> std::result::Result<ConfigExport, ConfigBackupError> {
+        self.export_service
+            .export(user_exports)
+            .await
+            .map_err(ConfigBackupError::Other)
+    }
+
+    async fn import_config(
+        &self,
+        config: ConfigExport,
+        mode: ImportMode,
+        on_users_committed: Option<Box<dyn FnOnce() + Send + 'static>>,
+    ) -> std::result::Result<ConfigBackupImportOutcome, ConfigBackupError> {
+        let outcome = self
+            .import_service
+            .import_with_post_commit(config, mode, on_users_committed)
+            .await
+            .map_err(|error| match error {
+                ConfigurationImportError::Validation(message) => {
+                    ConfigBackupError::Validation(message)
+                }
+                ConfigurationImportError::MissingProxy(error) => {
+                    ConfigBackupError::MissingProxy(error)
+                }
+                ConfigurationImportError::Database(error) => ConfigBackupError::Database(error),
+            })?;
+        Ok(ConfigBackupImportOutcome {
+            stats: outcome.stats,
+            warnings: outcome.warnings,
+        })
+    }
+}
+
+/// Assemble the [`ConfigBackupPort`] adapter for a core [`crate::services::ServiceContainer`].
+pub(crate) fn build_config_backup(
+    container: &crate::services::ServiceContainer,
+) -> Arc<dyn ConfigBackupPort> {
+    let export_service = ConfigurationExportService::new(
+        container.write_pool.clone(),
+        container.config_service.clone(),
+        container.streamer_repository.clone(),
+        container.filter_repository.clone(),
+        container.notification_repository.clone(),
+        container.job_preset_repository.clone(),
+        container.pipeline_preset_repository.clone(),
+    );
+    let import_service = ConfigurationImportService::new(
+        container.write_pool.clone(),
+        container.config_service.clone(),
+        container.streamer_manager.clone(),
+        container.notification_service.clone(),
+        container.actor_registry.clone(),
+        container.platform_admission.clone(),
+        auth_import_tx_port(),
+    );
+    Arc::new(BackendConfigBackup {
+        export_service,
+        import_service,
+    })
+}
 
 /// Configuration used to assemble a backend [`ServiceContainer`].
 pub struct ServiceContainerConfig {
@@ -53,6 +179,7 @@ pub struct ServiceContainerConfig {
 /// server host and authentication surface.
 pub struct ServiceContainer {
     core: crate::services::ServiceContainer,
+    config_backup: Arc<dyn ConfigBackupPort>,
     api: ApiServerHost,
 }
 
@@ -126,13 +253,20 @@ impl ServiceContainer {
             },
         )
         .await?;
-        Ok(Self { core, api })
+        let config_backup = build_config_backup(&core);
+        Ok(Self {
+            core,
+            config_backup,
+            api,
+        })
     }
 
     /// Initialize and start the API server.
     /// This should be called after `initialize()` and runs the server in the background.
     pub async fn start_api_server(&self) -> Result<()> {
-        self.api.start_api_server(&self.core).await
+        self.api
+            .start_api_server(&self.core, self.config_backup.clone())
+            .await
     }
 
     /// Initialize and start the API server, returning the resolved bind address.
@@ -140,7 +274,9 @@ impl ServiceContainer {
     /// This is required when binding to port `0` (ephemeral port), where the
     /// actual port is only known after binding.
     pub async fn start_api_server_bound(&self) -> Result<SocketAddr> {
-        self.api.start_api_server_bound(&self.core).await
+        self.api
+            .start_api_server_bound(&self.core, self.config_backup.clone())
+            .await
     }
 
     /// Initialize and start the API server, returning the resolved bind
@@ -154,7 +290,11 @@ impl ServiceContainer {
         jwt_secret: String,
     ) -> Result<SocketAddr> {
         self.api
-            .start_api_server_bound_with_jwt_secret(&self.core, jwt_secret)
+            .start_api_server_bound_with_jwt_secret(
+                &self.core,
+                self.config_backup.clone(),
+                jwt_secret,
+            )
             .await
     }
 

@@ -6,50 +6,12 @@ pub(crate) use writes::{import_job_preset, import_pipeline_preset};
 use std::sync::Arc;
 
 use crate::Result;
-use crate::database::models::{JobPreset, Pagination};
+use crate::database::models::JobPreset;
 pub(crate) use crate::domain::step_routes::summarize_users;
 use crate::domain::step_routes::{Layout, pipeline_steps_mut};
 pub use crate::domain::step_routes::{PresetChange, StepRef, StepUser, StepUserKind};
 use async_trait::async_trait;
-use sqlx::{QueryBuilder, Sqlite, SqlitePool};
-
-/// Append each optional job preset predicate with its bound value.
-fn push_job_preset_filters(query: &mut QueryBuilder<Sqlite>, filters: &JobPresetFilters) {
-    let mut separator = " WHERE ";
-    let mut next_separator = || std::mem::replace(&mut separator, " AND ");
-
-    if let Some(category) = &filters.category {
-        query
-            .push(next_separator())
-            .push("category = ")
-            .push_bind(category);
-    }
-    if let Some(processor) = &filters.processor {
-        query
-            .push(next_separator())
-            .push("processor = ")
-            .push_bind(processor);
-    }
-    if let Some(name) = &filters.name {
-        query.push(next_separator()).push("name = ").push_bind(name);
-    }
-    push_search_filter(query, next_separator(), filters.search.as_deref());
-}
-
-/// Append a literal substring match on name or description when `search` is set.
-fn push_search_filter(query: &mut QueryBuilder<Sqlite>, separator: &str, search: Option<&str>) {
-    let Some(search) = search else {
-        return;
-    };
-    let pattern = super::literal_substring_pattern(search);
-    query
-        .push(separator)
-        .push("(name LIKE ")
-        .push_bind(pattern.clone())
-        .push(r" ESCAPE '\' OR description LIKE ")
-        .push_bind(pattern)
-        .push(r" ESCAPE '\')");
-}
+use sqlx::SqlitePool;
 
 fn step_ref_table(step: StepRef) -> &'static str {
     super::config_retirement::RetiredConfigKind::from(step).table()
@@ -245,20 +207,6 @@ async fn ensure_rename_allowed(
     }
 }
 
-/// Filter parameters for job presets.
-#[derive(Debug, Clone, Default)]
-pub struct JobPresetFilters {
-    /// Filter by category.
-    pub category: Option<String>,
-    /// Filter by processor type.
-    pub processor: Option<String>,
-    /// Exact preset name. `job_presets.name` is UNIQUE, so this matches at most one row —
-    /// the same identity `get_preset_by_name` resolves a `PipelineStep::Preset` by.
-    pub name: Option<String>,
-    /// Search query (substring of name or description).
-    pub search: Option<String>,
-}
-
 /// Repository for managing job presets.
 #[async_trait]
 pub trait JobPresetRepository: Send + Sync {
@@ -276,13 +224,6 @@ pub trait JobPresetRepository: Send + Sync {
 
     /// List presets filtered by category.
     async fn list_presets_by_category(&self, category: Option<&str>) -> Result<Vec<JobPreset>>;
-
-    /// List presets with filtering, searching, and pagination.
-    async fn list_presets_filtered(
-        &self,
-        filters: &JobPresetFilters,
-        pagination: &Pagination,
-    ) -> Result<(Vec<JobPreset>, u64)>;
 
     /// List all unique categories.
     async fn list_categories(&self) -> Result<Vec<String>>;
@@ -400,33 +341,6 @@ impl JobPresetRepository for SqliteJobPresetRepository {
         Ok(presets)
     }
 
-    async fn list_presets_filtered(
-        &self,
-        filters: &JobPresetFilters,
-        pagination: &Pagination,
-    ) -> Result<(Vec<JobPreset>, u64)> {
-        let mut count_query = QueryBuilder::new("SELECT COUNT(*) FROM job_presets");
-        push_job_preset_filters(&mut count_query, filters);
-        let total = count_query
-            .build_query_scalar::<i64>()
-            .fetch_one(&*self.pool)
-            .await? as u64;
-
-        let mut data_query = QueryBuilder::new("SELECT * FROM job_presets");
-        push_job_preset_filters(&mut data_query, filters);
-        data_query
-            .push(" ORDER BY name LIMIT ")
-            .push_bind(pagination.limit as i64)
-            .push(" OFFSET ")
-            .push_bind(pagination.offset as i64);
-        let presets = data_query
-            .build_query_as::<JobPreset>()
-            .fetch_all(&*self.pool)
-            .await?;
-
-        Ok((presets, total))
-    }
-
     async fn list_categories(&self) -> Result<Vec<String>> {
         let categories: Vec<(String,)> = sqlx::query_as(
             r#"
@@ -477,25 +391,11 @@ impl JobPresetRepository for SqliteJobPresetRepository {
 
 use crate::database::models::PipelinePreset;
 
-/// Filter parameters for pipeline presets.
-#[derive(Debug, Clone, Default)]
-pub struct PipelinePresetFilters {
-    /// Search query (matches name or description).
-    pub search: Option<String>,
-}
-
 /// Repository for managing pipeline presets (workflow sequences).
 #[async_trait]
 pub trait PipelinePresetRepository: Send + Sync {
     /// List all pipeline presets.
     async fn list_pipeline_presets(&self) -> Result<Vec<PipelinePreset>>;
-
-    /// List pipeline presets with filtering, searching, and pagination.
-    async fn list_pipeline_presets_filtered(
-        &self,
-        filters: &PipelinePresetFilters,
-        pagination: &Pagination,
-    ) -> Result<(Vec<PipelinePreset>, u64)>;
 
     /// Get a pipeline preset by ID.
     async fn get_pipeline_preset(&self, id: &str) -> Result<Option<PipelinePreset>>;
@@ -541,33 +441,6 @@ impl PipelinePresetRepository for SqlitePipelinePresetRepository {
         .await?;
 
         Ok(presets)
-    }
-
-    async fn list_pipeline_presets_filtered(
-        &self,
-        filters: &PipelinePresetFilters,
-        pagination: &Pagination,
-    ) -> Result<(Vec<PipelinePreset>, u64)> {
-        let mut count_query = QueryBuilder::new("SELECT COUNT(*) FROM pipeline_presets");
-        push_search_filter(&mut count_query, " WHERE ", filters.search.as_deref());
-        let total = count_query
-            .build_query_scalar::<i64>()
-            .fetch_one(&*self.pool)
-            .await? as u64;
-
-        let mut data_query = QueryBuilder::new("SELECT * FROM pipeline_presets");
-        push_search_filter(&mut data_query, " WHERE ", filters.search.as_deref());
-        data_query
-            .push(" ORDER BY name LIMIT ")
-            .push_bind(pagination.limit as i64)
-            .push(" OFFSET ")
-            .push_bind(pagination.offset as i64);
-        let presets = data_query
-            .build_query_as::<PipelinePreset>()
-            .fetch_all(&*self.pool)
-            .await?;
-
-        Ok((presets, total))
     }
 
     async fn get_pipeline_preset(&self, id: &str) -> Result<Option<PipelinePreset>> {

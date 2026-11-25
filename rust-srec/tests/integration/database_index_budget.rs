@@ -1,10 +1,8 @@
+use rust_srec::api::queries::{ApiQueries, OutputFilters};
 use rust_srec::database::{
     self,
-    models::{OutputFilters, Pagination},
-    repositories::{
-        DagRepository, JobRepository, SessionRepository, SqlxDagRepository, SqlxJobRepository,
-        SqlxSessionRepository,
-    },
+    models::Pagination,
+    repositories::{DagRepository, JobRepository, SqlxDagRepository, SqlxJobRepository},
 };
 use sqlx::{Row, SqlitePool, migrate::Migrator};
 
@@ -156,7 +154,7 @@ async fn index_upgrade_removes_page_sorts_and_preserves_cleanup_and_statistics()
         .unwrap();
     assert_eq!(dags.first().unwrap().id, "plan-dag-5000");
     assert_eq!(dags.last().unwrap().id, "plan-dag-4951");
-    let (outputs, total) = SqlxSessionRepository::new(pool.clone(), pool.clone())
+    let (outputs, total) = ApiQueries::new(pool.clone())
         .list_outputs_filtered(
             &OutputFilters::default(),
             &Pagination {

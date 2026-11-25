@@ -14,16 +14,16 @@ mod streamers;
 mod tests;
 
 use self::global_platforms::{apply_engines, apply_platforms, global_model};
-use self::notifications_users::{apply_notification_channels, apply_users};
+use self::notifications_users::apply_notification_channels;
 use self::presets_templates::{
     apply_job_presets, apply_pipeline_presets, apply_templates, delete_omitted_presets,
     delete_unimported_templates,
 };
 pub(super) use self::profiles::export_profiles;
-use self::snapshot::{ImportSnapshot, validate_import, validate_unique};
+use self::snapshot::{ImportSnapshot, includes_imported_users, validate_import, validate_unique};
 use self::streamers::{ImportedScopes, StreamerImportDiff, apply_streamers};
 use crate::config::ConfigService;
-use crate::config::backup::{ConfigExport, ImportMode, ImportStats};
+use crate::config::backup::{ConfigExport, ImportMode, ImportStats, UserExport};
 use crate::database::repositories::config::{
     SqlxConfigRepository, import_global as persist_global,
 };
@@ -72,6 +72,37 @@ struct CommittedImport {
     credential_retirement_streamers: Vec<String>,
 }
 
+/// Single-connection transactional hook for user import validation, user
+/// persistence, and auth session/refresh-token invalidation.
+///
+/// Injected from the top-level application composition layer so `services`
+/// keeps zero dependency on the API auth store while committing user changes
+/// and token invalidation in the same SQLite transaction as configuration
+/// writes.
+#[async_trait::async_trait]
+pub(crate) trait AuthImportTxPort: Send + Sync {
+    /// Validate imported user IDs and emails against persisted `users` rows
+    /// inside `tx` before any configuration table is modified.
+    async fn validate_users_tx(
+        &self,
+        tx: &mut sqlx::SqliteConnection,
+        users: &[UserExport],
+        include_users: bool,
+        mode: ImportMode,
+    ) -> Result<(), ConfigurationImportError>;
+
+    /// Persist imported users (when `include_users` is true) and invalidate
+    /// all auth sessions and refresh tokens inside `tx`.
+    async fn apply_auth_import_tx(
+        &self,
+        tx: &mut sqlx::SqliteConnection,
+        users: &[UserExport],
+        include_users: bool,
+        mode: ImportMode,
+        stats: &mut ImportStats,
+    ) -> Result<(), ConfigurationImportError>;
+}
+
 #[derive(Clone)]
 pub(crate) struct ConfigurationImportService {
     write_pool: SqlitePool,
@@ -83,6 +114,7 @@ pub(crate) struct ConfigurationImportService {
     /// Platform throttles, kept per route; an imported proxy that reaches
     /// another exit drops the old exit's.
     admission_backoff: Arc<crate::credentials::PlatformAdmission>,
+    auth_import: Arc<dyn AuthImportTxPort>,
 }
 
 impl ConfigurationImportService {
@@ -93,6 +125,7 @@ impl ConfigurationImportService {
         notification_service: Arc<NotificationService>,
         actor_registry: Arc<ActorRegistry>,
         admission_backoff: Arc<crate::credentials::PlatformAdmission>,
+        auth_import: Arc<dyn AuthImportTxPort>,
     ) -> Self {
         Self {
             write_pool,
@@ -102,16 +135,8 @@ impl ConfigurationImportService {
             notification_service,
             actor_registry,
             admission_backoff,
+            auth_import,
         }
-    }
-
-    #[cfg(test)]
-    pub async fn import(
-        &self,
-        config: ConfigExport,
-        mode: ImportMode,
-    ) -> Result<ConfigurationImportOutcome, ConfigurationImportError> {
-        self.import_with_post_commit(config, mode, None).await
     }
 
     pub async fn import_with_post_commit(
@@ -139,6 +164,7 @@ impl ConfigurationImportService {
             })?;
         let cache = state.cache.clone();
         let config_service = self.config_service.clone();
+        let auth_import = self.auth_import.clone();
         let service = self.clone();
         state
             .writer
@@ -149,12 +175,21 @@ impl ConfigurationImportService {
                         let snapshot = ImportSnapshot::load(tx).await?;
                         snapshot.upgrade_bundle(&mut config, mode)?;
                         snapshot.validate_references(&config, mode)?;
+                        auth_import
+                            .validate_users_tx(
+                                tx,
+                                &config.users,
+                                includes_imported_users(&config),
+                                mode,
+                            )
+                            .await?;
                         let AppliedImport {
                             stats,
                             streamers,
                             moved_proxies,
                             kept_presets,
-                        } = apply_import(tx, &snapshot, &config, mode).await?;
+                        } = apply_import(tx, &snapshot, &config, mode, auth_import.as_ref())
+                            .await?;
                         let retained_definitions =
                             sqlx::query_scalar("SELECT COUNT(*) FROM retirement_config_deletions")
                                 .fetch_one(&mut *tx)
@@ -336,6 +371,7 @@ async fn apply_import(
     snapshot: &ImportSnapshot,
     config: &ConfigExport,
     mode: ImportMode,
+    auth_import: &dyn AuthImportTxPort,
 ) -> Result<AppliedImport, ConfigurationImportError> {
     let replace = mode == ImportMode::Replace;
     let mut changes = ImportChanges::default();
@@ -411,9 +447,15 @@ async fn apply_import(
         Vec::new()
     };
     proxies::delete_omitted(tx, config, mode).await?;
-    apply_users(tx, snapshot, config, replace, &mut changes.stats).await?;
-
-    crate::database::repositories::refresh_token::invalidate_all_for_import(tx).await?;
+    auth_import
+        .apply_auth_import_tx(
+            tx,
+            &config.users,
+            includes_imported_users(config),
+            mode,
+            &mut changes.stats,
+        )
+        .await?;
 
     Ok(AppliedImport {
         stats: changes.stats,

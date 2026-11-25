@@ -3,8 +3,8 @@ use crate::config::ConfigService;
 use crate::database::models::{
     DagExecutionDbModel, DagExecutionListSummary, DagStepExecutionDbModel, DagStepWithJob,
     DanmuStatisticsDbModel, JobDbModel, JobExecutionLogDbModel, LiveSessionDbModel, MediaFileType,
-    MediaOutputDbModel, MediaOutputTypeSummary, OutputFilters, ReadyStep, SessionFilters,
-    SessionSegmentDbModel, SessionSegmentLifecycle, SessionSegmentSplitReason,
+    MediaOutputDbModel, ReadyStep, SessionSegmentDbModel, SessionSegmentLifecycle,
+    SessionSegmentSplitReason,
 };
 use crate::database::repositories::SessionRepository;
 use crate::database::repositories::config::{ConfigRepository, SqlxConfigRepository};
@@ -57,7 +57,7 @@ struct TestSessionRepository {
     sessions: Mutex<HashMap<String, LiveSessionDbModel>>,
     segments: Mutex<HashMap<String, Vec<SessionSegmentDbModel>>>,
     outputs: Mutex<HashMap<String, Vec<MediaOutputDbModel>>>,
-    list_filters: Mutex<Vec<SessionFilters>>,
+    active_session_queries: AtomicUsize,
     session_complete_dispatched: Mutex<HashSet<String>>,
 }
 
@@ -68,7 +68,7 @@ impl TestSessionRepository {
             sessions: Mutex::new(HashMap::new()),
             segments: Mutex::new(HashMap::new()),
             outputs: Mutex::new(HashMap::new()),
-            list_filters: Mutex::new(Vec::new()),
+            active_session_queries: AtomicUsize::new(0),
             session_complete_dispatched: Mutex::new(HashSet::new()),
         }
     }
@@ -98,8 +98,8 @@ impl TestSessionRepository {
             .push(output);
     }
 
-    fn list_filters(&self) -> Vec<SessionFilters> {
-        self.list_filters.lock().expect("lock poisoned").clone()
+    fn active_session_queries(&self) -> usize {
+        self.active_session_queries.load(Ordering::SeqCst)
     }
 }
 
@@ -162,46 +162,29 @@ impl SessionRepository for TestSessionRepository {
         unimplemented!("not needed for these tests")
     }
 
-    async fn list_sessions_filtered(
+    async fn list_active_sessions(
         &self,
-        filters: &SessionFilters,
         pagination: &Pagination,
-    ) -> Result<(Vec<LiveSessionDbModel>, u64)> {
-        self.list_filters
-            .lock()
-            .expect("lock poisoned")
-            .push(filters.clone());
+    ) -> Result<Vec<LiveSessionDbModel>> {
+        self.active_session_queries.fetch_add(1, Ordering::SeqCst);
 
         let mut sessions = self
             .sessions
             .lock()
             .expect("lock poisoned")
             .values()
+            .filter(|session| session.end_time.is_none())
             .cloned()
             .collect::<Vec<_>>();
-
-        if let Some(streamer_id) = &filters.streamer_id {
-            sessions.retain(|session| session.streamer_id.as_ref() == Some(streamer_id));
-        }
-        if filters.active_only == Some(true) {
-            sessions.retain(|session| session.end_time.is_none());
-        }
-        if filters.include_empty != Some(true) {
-            sessions.retain(|session| session.total_size_bytes > 0 || session.end_time.is_none());
-        }
         sessions.sort_by_key(|session| Reverse(session.start_time));
 
-        let total = sessions.len() as u64;
         let start = pagination.offset as usize;
         let end = start.saturating_add(pagination.limit as usize);
-        Ok((
-            sessions
-                .into_iter()
-                .skip(start)
-                .take(end.saturating_sub(start))
-                .collect(),
-            total,
-        ))
+        Ok(sessions
+            .into_iter()
+            .skip(start)
+            .take(end.saturating_sub(start))
+            .collect())
     }
 
     async fn list_ended_sessions_pending_pipeline_recovery(
@@ -284,21 +267,6 @@ impl SessionRepository for TestSessionRepository {
     }
 
     async fn get_output_count(&self, _session_id: &str) -> Result<u32> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn list_outputs_filtered(
-        &self,
-        _filters: &OutputFilters,
-        _pagination: &Pagination,
-    ) -> Result<(Vec<MediaOutputDbModel>, u64)> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn summarize_outputs_filtered(
-        &self,
-        _filters: &OutputFilters,
-    ) -> Result<Vec<MediaOutputTypeSummary>> {
         unimplemented!("not needed for these tests")
     }
 
@@ -445,33 +413,6 @@ impl TestJobRepository {
             .get_mut(id)
             .expect("job should exist")
             .status = status.as_str().to_string();
-    }
-
-    /// Apply the subset of `JobFilters` these tests exercise: `status`,
-    /// `statuses` and `session_id`.
-    fn matching(&self, filters: &crate::database::models::JobFilters) -> Vec<JobDbModel> {
-        self.jobs
-            .lock()
-            .expect("lock poisoned")
-            .values()
-            .filter(|job| {
-                filters
-                    .status
-                    .is_none_or(|status| JobStatus::parse(&job.status) == Some(status))
-            })
-            .filter(|job| {
-                filters.statuses.as_ref().is_none_or(|statuses| {
-                    JobStatus::parse(&job.status).is_some_and(|status| statuses.contains(&status))
-                })
-            })
-            .filter(|job| {
-                filters
-                    .session_id
-                    .as_deref()
-                    .is_none_or(|session_id| job.session_id.as_deref() == Some(session_id))
-            })
-            .cloned()
-            .collect()
     }
 }
 
@@ -656,26 +597,60 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
         unimplemented!("not needed for these tests")
     }
 
-    async fn list_jobs_filtered(
-        &self,
-        filters: &crate::database::models::JobFilters,
-        _pagination: &crate::database::models::Pagination,
-    ) -> Result<(Vec<JobDbModel>, u64)> {
-        let jobs = self.matching(filters);
+    async fn list_pending_jobs(&self, limit: u32) -> Result<(Vec<JobDbModel>, u64)> {
+        let mut jobs: Vec<_> = self
+            .jobs
+            .lock()
+            .expect("lock poisoned")
+            .values()
+            .filter(|job| JobStatus::parse(&job.status) == Some(JobStatus::Pending))
+            .cloned()
+            .collect();
         let total = jobs.len() as u64;
+        jobs.truncate(limit as usize);
         Ok((jobs, total))
     }
 
-    async fn count_jobs(&self, filters: &crate::database::models::JobFilters) -> Result<u64> {
-        Ok(self.matching(filters).len() as u64)
+    async fn count_jobs_by_status(&self, status: JobStatus) -> Result<u64> {
+        Ok(self
+            .jobs
+            .lock()
+            .expect("lock poisoned")
+            .values()
+            .filter(|job| JobStatus::parse(&job.status) == Some(status))
+            .count() as u64)
     }
 
-    async fn list_jobs_page_filtered(
-        &self,
-        _filters: &crate::database::models::JobFilters,
-        _pagination: &crate::database::models::Pagination,
-    ) -> Result<Vec<JobDbModel>> {
-        unimplemented!("not needed for these tests")
+    async fn count_unfinished_jobs_for_streamer(&self, streamer_id: &str) -> Result<u64> {
+        Ok(self
+            .jobs
+            .lock()
+            .expect("lock poisoned")
+            .values()
+            .filter(|job| {
+                job.streamer_id.as_deref() == Some(streamer_id)
+                    && matches!(
+                        JobStatus::parse(&job.status),
+                        Some(JobStatus::Pending | JobStatus::Processing)
+                    )
+            })
+            .count() as u64)
+    }
+
+    async fn count_unfinished_jobs_for_session(&self, session_id: &str) -> Result<u64> {
+        Ok(self
+            .jobs
+            .lock()
+            .expect("lock poisoned")
+            .values()
+            .filter(|job| {
+                job.session_id.as_deref() == Some(session_id)
+                    && matches!(
+                        JobStatus::parse(&job.status),
+                        Some(JobStatus::Pending | JobStatus::Processing)
+                    )
+            })
+            .count() as u64)
     }
 
     async fn get_job_counts_by_status(&self) -> Result<crate::database::models::JobCounts> {
@@ -2618,12 +2593,8 @@ async fn test_recovery_ignores_historical_ended_sessions() {
         0,
         "startup recovery must not replay historical segments into new DAGs"
     );
-    assert_eq!(
-        session_repo
-            .list_filters()
-            .last()
-            .and_then(|filters| filters.active_only),
-        Some(true),
+    assert!(
+        session_repo.active_session_queries() > 0,
         "recovery should query active sessions, not the full historical session list"
     );
 }

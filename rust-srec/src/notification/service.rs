@@ -368,7 +368,7 @@ struct WebPushQueuedEvent {
 }
 
 /// Public view of a configured notification channel instance.
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationChannelInstance {
     /// Unique channel instance key.
     pub key: String,
@@ -382,7 +382,7 @@ pub struct NotificationChannelInstance {
     pub source: NotificationChannelSource,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NotificationChannelSource {
     Config,
@@ -1117,18 +1117,6 @@ mod tests {
             }
             self.event_logs.lock().await.push(entry.clone());
             Ok(())
-        }
-
-        async fn list_event_logs(
-            &self,
-            _event_type: Option<&str>,
-            _streamer_id: Option<&str>,
-            _search: Option<&str>,
-            _priority: Option<&str>,
-            _offset: i32,
-            _limit: i32,
-        ) -> Result<Vec<NotificationEventLogDbModel>> {
-            Ok(Vec::new())
         }
     }
 

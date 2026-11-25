@@ -2,8 +2,8 @@
 
 use tracing::warn;
 
+use crate::api::auth_store::ApiKeyAccessLevel;
 use crate::api::jwt::Claims;
-use crate::database::models::ApiKeyAccessLevel;
 
 /// Prefix of every raw API key. The auth middleware routes `Bearer` tokens
 /// starting with this prefix to `AuthService::authorize_api_key` instead of

@@ -1,9 +1,8 @@
 use super::*;
-use crate::api::error::ApiError;
-use crate::database::models::UserDbModel;
-use crate::database::repositories::{
-    SqlxApiKeyRepository, SqlxRefreshTokenRepository, SqlxUserRepository,
+use crate::api::auth_store::{
+    SqlxApiKeyRepository, SqlxRefreshTokenRepository, SqlxUserRepository, UserDbModel,
 };
+use crate::api::error::ApiError;
 
 async fn service() -> (sqlx::SqlitePool, AuthService) {
     let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)

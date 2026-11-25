@@ -91,6 +91,7 @@ impl ProxyResponse {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ProxyDetailResponse {
     pub proxy: ProxyResponse,
+    #[schema(value_type = crate::api::schemas::ProxyReferences)]
     pub references: ProxyReferences,
 }
 
@@ -187,10 +188,13 @@ pub struct EffectiveRouteQuery {
 /// The route a scope's requests take now.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct EffectiveRouteResponse {
+    #[schema(value_type = crate::api::schemas::RouteKind)]
     pub kind: RouteKind,
     /// The saved proxy, for a `proxy` route.
+    #[schema(value_type = Option<crate::api::schemas::ProxyName>)]
     pub proxy: Option<ProxyName>,
     /// Which setting decided the route.
+    #[schema(value_type = crate::api::schemas::RouteSource)]
     pub source: RouteSource,
 }
 
@@ -338,7 +342,7 @@ pub async fn delete_proxy(
     path = "/api/proxies/system",
     tag = "proxies",
     description = "The proxy the server's environment configures, read at startup. The system route uses it for danmu and throttling; in-process clients also follow the operating system's proxy settings where the platform provides them.",
-    responses((status = 200, description = "Detected environment proxy", body = SystemProxySummary)),
+    responses((status = 200, description = "Detected environment proxy", body = crate::api::schemas::SystemProxySummary)),
     security(("bearer_auth" = []))
 )]
 pub async fn system_proxy() -> Json<SystemProxySummary> {
@@ -393,7 +397,7 @@ pub async fn effective_route(
     description = "Requests a platform's home page or a URL once through a saved or unsaved proxy, with a 10 second limit, without following redirects. Any HTTP status except 407 counts as reachable.",
     request_body = TestProxyRequest,
     responses(
-        (status = 200, description = "Check result", body = ProbeOutcome),
+        (status = 200, description = "Check result", body = crate::api::schemas::ProbeOutcome),
         (status = 400, description = "Target not allowed", body = crate::api::error::ApiErrorResponse),
         (status = 422, description = "PROXY_INVALID or an unknown platform", body = crate::api::error::ApiErrorResponse)
     ),

@@ -463,9 +463,9 @@ impl From<AuthError> for ApiError {
 /// Result type for API handlers.
 pub type ApiResult<T> = Result<T, ApiError>;
 
-impl From<crate::services::playback_context::PlaybackError> for ApiError {
-    fn from(error: crate::services::playback_context::PlaybackError) -> Self {
-        use crate::services::playback_context::PlaybackError;
+impl From<crate::api::playback_context::PlaybackError> for ApiError {
+    fn from(error: crate::api::playback_context::PlaybackError) -> Self {
+        use crate::api::playback_context::PlaybackError;
         let (status, code) = match error {
             PlaybackError::Expired => (StatusCode::GONE, "PLAYBACK_CONTEXT_EXPIRED"),
             PlaybackError::Forbidden => (StatusCode::FORBIDDEN, "PLAYBACK_CONTEXT_FORBIDDEN"),

@@ -11,8 +11,10 @@ use crate::api::models::{
     PaginationParams, PipelineStatsResponse, StalledOperationListResponse,
     StalledOperationResponse, UploadRecordListResponse, UploadRecordResponse,
 };
-use crate::database::models::{JobFilters, OutputFilters, Pagination};
+use crate::api::queries::{JobFilters, OutputFilters};
+use crate::database::models::Pagination;
 use crate::database::time::ms_to_datetime;
+use crate::pipeline::db_model_to_job;
 use crate::pipeline::{Job, JobProgressSnapshot, StalledOperation, WorkerType};
 
 use super::{
@@ -66,15 +68,16 @@ pub async fn list_jobs(
     ApiQuery(pagination): ApiQuery<PaginationParams>,
     ApiQuery(filters): ApiQuery<JobFilterParams>,
 ) -> ApiResult<Json<PaginatedResponse<JobResponse>>> {
-    let pipeline_manager = &state.pipeline_manager;
     let db_filters = job_filters(filters);
 
     let effective_limit = pagination.effective_limit();
     let db_pagination = Pagination::new(effective_limit, pagination.offset);
 
-    let (jobs, total) = pipeline_manager
-        .list_jobs(&db_filters, &db_pagination)
+    let (db_jobs, total) = state
+        .queries
+        .list_jobs_filtered(&db_filters, &db_pagination)
         .await?;
+    let jobs = db_jobs.iter().map(db_model_to_job).collect();
 
     let job_responses = jobs_to_responses(&state, jobs).await;
 
@@ -97,16 +100,16 @@ pub async fn list_jobs_page(
     ApiQuery(pagination): ApiQuery<PaginationParams>,
     ApiQuery(filters): ApiQuery<JobFilterParams>,
 ) -> ApiResult<Json<PageResponse<JobResponse>>> {
-    let pipeline_manager = &state.pipeline_manager;
-
     let db_filters = job_filters(filters);
 
     let effective_limit = pagination.effective_limit();
     let db_pagination = Pagination::new(effective_limit, pagination.offset);
 
-    let jobs = pipeline_manager
-        .list_jobs_page(&db_filters, &db_pagination)
+    let db_jobs = state
+        .queries
+        .list_jobs_page_filtered(&db_filters, &db_pagination)
         .await?;
+    let jobs = db_jobs.iter().map(db_model_to_job).collect();
 
     let job_responses = jobs_to_responses(&state, jobs).await;
     Ok(Json(PageResponse::new(
@@ -161,7 +164,7 @@ pub async fn list_job_logs(
     tag = "pipeline",
     params(("id" = String, Path, description = "Job ID")),
     responses(
-        (status = 200, description = "Job progress snapshot", body = JobProgressSnapshot),
+        (status = 200, description = "Job progress snapshot", body = crate::api::schemas::JobProgressSnapshot),
         (status = 404, description = "Job or progress not found", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -529,9 +532,8 @@ pub async fn list_outputs(
     let effective_limit = pagination.effective_limit();
     let db_pagination = Pagination::new(effective_limit, pagination.offset);
 
-    // Call SessionRepository.list_outputs_filtered
     let (outputs, total) = state
-        .session_repository
+        .queries
         .list_outputs_filtered(&db_filters, &db_pagination)
         .await?;
 
@@ -670,7 +672,7 @@ pub async fn summarize_outputs(
     };
 
     let by_type = state
-        .session_repository
+        .queries
         .summarize_outputs_filtered(&db_filters)
         .await?;
 
@@ -1091,6 +1093,7 @@ mod batch_tests {
             .unwrap();
         queries.store(0, Ordering::SeqCst);
         let state = PipelineRouteState {
+            queries: crate::api::queries::ApiQueries::new(pool.clone()),
             pipeline_manager: Arc::new(crate::pipeline::PipelineManager::with_repository(
                 Default::default(),
                 crate::database::test_support::job_repository().await,

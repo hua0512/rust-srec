@@ -249,7 +249,7 @@ fn file_stem(path: &str) -> Option<String> {
 // Progress reporting
 // ============================================================================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ProgressKind {
     Ffmpeg,
@@ -261,7 +261,7 @@ pub enum ProgressKind {
 }
 
 /// A stage of a job that is not plain work towards its percent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum JobPhase {
     Finalizing,
@@ -269,7 +269,7 @@ pub enum JobPhase {
     Preparing,
 }
 
-#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize)]
 pub struct JobProgressSnapshot {
     pub kind: ProgressKind,
     pub updated_at: Timestamp,

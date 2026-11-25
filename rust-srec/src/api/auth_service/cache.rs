@@ -4,7 +4,7 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use super::AuthService;
-use crate::database::models::ApiKeyAccessLevel;
+use crate::api::auth_store::ApiKeyAccessLevel;
 
 /// TTL for cached user-state denials and API-key snapshots. Session authorization
 /// always reloads any state that could grant access, including password remediation.

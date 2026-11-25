@@ -5,7 +5,6 @@
 
 pub(crate) mod row_write;
 
-pub mod api_key;
 pub mod config;
 pub(crate) mod config_retirement;
 pub mod credential_profiles;
@@ -17,7 +16,6 @@ pub mod monitor_outbox;
 pub mod notification;
 pub mod preset;
 pub mod proxies;
-pub mod refresh_token;
 pub mod session;
 pub mod session_event;
 pub mod session_tx;
@@ -27,12 +25,10 @@ pub mod streamer_check_history;
 pub mod streamer_tx;
 pub mod tool_credential;
 pub mod upload_record;
-pub mod user;
 
 #[cfg(test)]
 mod write_contract_tests;
 
-pub use api_key::*;
 pub use config::*;
 pub use credential_profiles::*;
 pub use credential_selections::StoredSelection;
@@ -42,7 +38,6 @@ pub use job::*;
 pub use monitor_outbox::*;
 pub use notification::*;
 pub use preset::*;
-pub use refresh_token::*;
 pub use session::*;
 pub use session_event::*;
 pub use session_tx::*;
@@ -52,11 +47,10 @@ pub use streamer_check_history::*;
 pub use streamer_tx::*;
 pub use tool_credential::*;
 pub use upload_record::*;
-pub use user::*;
 
 /// Bind a literal substring to `LIKE ... ESCAPE '\'` without changing SQLite's
 /// case matching. The surrounding percent signs are the only wildcards.
-fn literal_substring_pattern(search: &str) -> String {
+pub(crate) fn literal_substring_pattern(search: &str) -> String {
     let mut pattern = String::with_capacity(search.len() + 2);
     pattern.push('%');
     for character in search.chars() {

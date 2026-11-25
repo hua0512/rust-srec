@@ -4,17 +4,24 @@
 //! templates, and monitoring pipeline jobs.
 
 pub(crate) mod auth_request;
-pub mod auth_service;
+pub(crate) mod auth_service;
+#[doc(hidden)]
+pub mod auth_store;
+pub(crate) mod backup;
 pub(crate) mod batch_lookup;
 pub(crate) mod bootstrap;
-pub mod cors;
-pub mod error;
-pub mod extract;
-pub mod jwt;
-pub mod middleware;
-pub mod models;
-pub mod openapi;
-pub mod proto;
-pub mod rate_limit;
-pub mod routes;
-pub mod server;
+pub(crate) mod cors;
+pub(crate) mod error;
+pub(crate) mod extract;
+pub(crate) mod jwt;
+pub(crate) mod middleware;
+pub(crate) mod models;
+pub(crate) mod openapi;
+pub(crate) mod playback_context;
+pub(crate) mod proto;
+#[doc(hidden)]
+pub mod queries;
+pub(crate) mod rate_limit;
+pub(crate) mod routes;
+pub(crate) mod schemas;
+pub(crate) mod server;

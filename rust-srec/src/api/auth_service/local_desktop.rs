@@ -11,7 +11,7 @@ use tracing::{info, warn};
 
 use super::AuthService;
 use super::config::{AuthError, AuthResponse, session_expiration};
-use crate::database::models::{AuthSessionDbModel, RefreshTokenDbModel, UserDbModel};
+use crate::api::auth_store::{AuthSessionDbModel, RefreshTokenDbModel, UserDbModel};
 
 /// Local desktop sessions kept alive at once. Issuing one more revokes the
 /// oldest, so sessions the webview no longer holds do not pile up until they

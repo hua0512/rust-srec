@@ -8,7 +8,6 @@
 // re-exports `t!` and exposes locale-management helpers.
 rust_i18n::i18n!("locales", fallback = "en");
 
-mod api;
 pub mod backend;
 pub mod error;
 mod mcp;
@@ -17,6 +16,8 @@ mod server;
 
 // Internal modules kept `pub` only so the integration tests in `tests/` can
 // import them; `backend` is the supported public surface.
+#[doc(hidden)]
+pub mod api;
 #[doc(hidden)]
 pub mod baidupcs;
 #[doc(hidden)]

@@ -7,8 +7,8 @@ use std::time::Duration;
 use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
 
 use crate::api::auth_service::{AuthPrincipal, AuthService};
+use crate::api::auth_store::ApiKeyAccessLevel;
 use crate::api::error::ApiError;
-use crate::database::models::ApiKeyAccessLevel;
 
 /// How often an open socket rechecks the credential it was opened with.
 const SOCKET_REVALIDATION_INTERVAL: Duration = Duration::from_secs(5);
@@ -169,13 +169,13 @@ pub(crate) mod tests {
     }
 
     pub(crate) async fn fixture() -> AuthFixture {
-        use crate::api::{auth_service::AuthConfig, jwt::JwtService};
-        use crate::database::{
-            models::UserDbModel,
-            repositories::{
-                SqlxApiKeyRepository, SqlxRefreshTokenRepository, SqlxUserRepository,
+        use crate::api::{
+            auth_service::AuthConfig,
+            auth_store::{
+                SqlxApiKeyRepository, SqlxRefreshTokenRepository, SqlxUserRepository, UserDbModel,
                 UserRepository,
             },
+            jwt::JwtService,
         };
         let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
             .await

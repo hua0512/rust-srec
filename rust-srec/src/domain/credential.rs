@@ -105,7 +105,7 @@ pub(crate) fn platform_reauth_extra(
 // Selection and binding policies
 // ============================================================================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PoolStrategy {
     RoundRobin,
@@ -113,7 +113,7 @@ pub enum PoolStrategy {
 }
 
 /// A scope that stores no selection inherits; at the platform that is anonymous.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CredentialSelection {
     Inherit,
@@ -258,7 +258,7 @@ impl CredentialSelection {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CredentialOwner {
     Platform { platform_id: String },
@@ -294,7 +294,7 @@ impl CredentialOwner {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResolvedCredentialPolicy {
     pub platform_id: String,
     pub owner: CredentialOwner,
@@ -321,14 +321,14 @@ impl ResolvedCredentialPolicy {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CredentialIdentity {
     Profile { profile_id: String },
     Anonymous,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CredentialBinding {
     pub identity: CredentialIdentity,
@@ -437,7 +437,7 @@ pub enum ProfileError {
 
 /// What keeps a profile in use: the scopes whose selections list it and the
 /// live recordings bound to it.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct ProfileReferences {
     pub selections: Vec<SelectionReference>,
     pub recordings: Vec<RecordingReference>,
@@ -476,7 +476,7 @@ impl std::fmt::Display for ProfileReferences {
 }
 
 /// A scope whose selection lists the profile, with its display name.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SelectionReference {
     pub owner: CredentialOwner,
     /// The platform's, template's or streamer's name; its ID when the owner
@@ -489,7 +489,7 @@ pub struct SelectionReference {
 }
 
 /// A live recording bound to the profile.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RecordingReference {
     pub session_id: String,
     /// Absent once the streamer itself has been deleted.
@@ -499,7 +499,7 @@ pub struct RecordingReference {
 }
 
 /// Input-only material: never derive Serialize or Debug for secrets.
-#[derive(Clone, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CredentialMaterial {
     pub cookies: String,
@@ -641,7 +641,7 @@ impl CredentialProfile {
     }
 }
 
-#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CredentialProfileSummary {
     pub id: String,
     pub platform_config_id: String,
@@ -661,7 +661,7 @@ pub struct CredentialProfileSummary {
 }
 
 /// The last conclusion about an account at its current revision.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CredentialValidity {
     Unknown,
@@ -692,7 +692,7 @@ impl CredentialValidity {
 }
 
 /// Why the stored health conclusion was reached.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HealthReason {
     /// The provider rejected the account; only a new login restores it.
@@ -731,7 +731,7 @@ impl HealthReason {
 }
 
 /// Why a credential policy has no account to offer right now.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UnavailableReason {
     /// The remaining candidates need a new login.
@@ -774,7 +774,7 @@ impl std::fmt::Display for UnavailableReason {
     }
 }
 
-#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CredentialProfileHealth {
     pub profile_id: String,
     pub revision: i64,
@@ -787,7 +787,7 @@ pub struct CredentialProfileHealth {
     pub reason_code: Option<HealthReason>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CredentialUnavailable {
     pub reason: UnavailableReason,
     pub policy_generation: String,
@@ -966,7 +966,7 @@ impl std::fmt::Debug for RefreshedCredentials {
 pub const ATTENTION_REFRESH_FAILURES: i64 = 3;
 
 /// What the user has to do about an account.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AttentionReason {
     /// Only a new login or new cookies make the account usable again.
@@ -992,7 +992,7 @@ impl AttentionReason {
 }
 
 /// An enabled account that needs the user, with its platform's name.
-#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CredentialAttention {
     pub profile: CredentialProfileSummary,
     pub platform_name: String,
@@ -1009,7 +1009,7 @@ pub struct CredentialAttention {
 pub const MAX_SITES: usize = 32;
 
 /// A Streamlink streamer's site and the accounts that name it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct StreamerSite {
     /// The host of the streamer's URL, without a leading `www.`.
     pub host: String,

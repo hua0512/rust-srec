@@ -518,7 +518,7 @@ pub async fn get_platform_config(
     path = "/api/config/platforms/bigo/notifications",
     tag = "config",
     responses(
-        (status = 200, description = "Bigo live-notification status", body = crate::monitor::BigoNotificationStatus)
+        (status = 200, description = "Bigo live-notification status", body = crate::api::schemas::BigoNotificationStatus)
     ),
     security(("bearer_auth" = []))
 )]

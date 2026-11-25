@@ -2,16 +2,18 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use jiff::Timestamp;
+use rust_srec::api::queries::{
+    ApiQueries, JobFilters, JobPresetFilters, OutputFilters, PipelinePresetFilters, SessionFilters,
+};
 use rust_srec::database::models::{
-    JobDbModel, JobFilters, JobPreset, JobStatus, LiveSessionDbModel, MediaFileType,
-    MediaOutputDbModel, NotificationEventLogDbModel, OutputFilters, Pagination, PipelinePreset,
-    SessionFilters, StreamerDbModel,
+    JobDbModel, JobPreset, JobStatus, LiveSessionDbModel, MediaFileType, MediaOutputDbModel,
+    NotificationEventLogDbModel, Pagination, PipelinePreset, StreamerDbModel,
 };
 use rust_srec::database::repositories::{
-    JobPresetFilters, JobPresetRepository, JobRepository, NotificationRepository,
-    PipelinePresetFilters, PipelinePresetRepository, SessionRepository, SqliteJobPresetRepository,
-    SqlitePipelinePresetRepository, SqlxJobRepository, SqlxNotificationRepository,
-    SqlxSessionRepository, SqlxStreamerRepository, StreamerRepository,
+    JobPresetRepository, JobRepository, NotificationRepository, PipelinePresetRepository,
+    SessionRepository, SqliteJobPresetRepository, SqlitePipelinePresetRepository,
+    SqlxJobRepository, SqlxNotificationRepository, SqlxSessionRepository, SqlxStreamerRepository,
+    StreamerRepository,
 };
 use rust_srec::database::{init_pool_with_size, run_migrations};
 use sqlx::SqlitePool;
@@ -74,6 +76,7 @@ async fn job_search_literals_apply_to_every_column_count_page_and_combined_filte
     for column in ["id", "session_id", "streamer_id", "job_type"] {
         let pool = pool().await;
         let repo = SqlxJobRepository::new(pool.clone(), pool.clone());
+        let queries = ApiQueries::new(pool.clone());
         let mut models = Vec::new();
         for (index, value) in VALUES.iter().enumerate() {
             let mut model = JobDbModel::new("execute", "{}");
@@ -94,7 +97,7 @@ async fn job_search_literals_apply_to_every_column_count_page_and_combined_filte
             models.push(model);
         }
         let ids: Vec<_> = models.iter().map(|model| model.id.clone()).collect();
-        let (unfiltered, total) = repo
+        let (unfiltered, total) = queries
             .list_jobs_filtered(
                 &JobFilters {
                     statuses: Some(Vec::new()),
@@ -109,14 +112,14 @@ async fn job_search_literals_apply_to_every_column_count_page_and_combined_filte
         assert_eq!(unfiltered.len(), models.len());
         for &(search, expected) in CASES {
             let filters = JobFilters::new().with_search(search);
-            let (rows, total) = repo
+            let (rows, total) = queries
                 .list_jobs_filtered(&filters, &Pagination::new(100, 0))
                 .await
                 .unwrap();
             assert_eq!(total as usize, expected.len(), "{column}: {search}");
             assert_ids(rows.iter().map(|row| row.id.clone()), &ids, expected);
-            assert_eq!(repo.count_jobs(&filters).await.unwrap(), total);
-            let page = repo
+            assert_eq!(queries.count_jobs(&filters).await.unwrap(), total);
+            let page = queries
                 .list_jobs_page_filtered(&filters, &Pagination::new(2, 1))
                 .await
                 .unwrap();
@@ -142,15 +145,16 @@ async fn job_search_literals_apply_to_every_column_count_page_and_combined_filte
             job_types: Some(vec![target.job_type.clone(), "other".to_owned()]),
             search: Some("%".to_owned()),
         };
-        let (rows, total) = repo
+        let (rows, total) = queries
             .list_jobs_filtered(&filters, &Pagination::new(2, 0))
             .await
             .unwrap();
         assert_eq!(total, 1);
         assert_ids(rows.into_iter().map(|row| row.id), &ids, &[2]);
-        assert_eq!(repo.count_jobs(&filters).await.unwrap(), 1);
+        assert_eq!(queries.count_jobs(&filters).await.unwrap(), 1);
         assert_eq!(
-            repo.list_jobs_page_filtered(&filters, &Pagination::new(2, 1))
+            queries
+                .list_jobs_page_filtered(&filters, &Pagination::new(2, 1))
                 .await
                 .unwrap()
                 .len(),
@@ -165,6 +169,7 @@ async fn session_search_literals_cover_live_and_retained_names_titles_ids_and_fi
     for column in ["name", "retained_name", "titles", "id"] {
         let pool = pool().await;
         let repo = SqlxSessionRepository::new(pool.clone(), pool.clone());
+        let queries = ApiQueries::new(pool.clone());
         let mut models = Vec::new();
         for (index, value) in VALUES.iter().enumerate() {
             let owner = streamer(
@@ -193,13 +198,13 @@ async fn session_search_literals_cover_live_and_retained_names_titles_ids_and_fi
         let ids: Vec<_> = models.iter().map(|model| model.id.clone()).collect();
         for &(search, expected) in CASES {
             let filters = SessionFilters::new().with_search(search);
-            let (rows, total) = repo
+            let (rows, total) = queries
                 .list_sessions_filtered(&filters, &Pagination::new(100, 0))
                 .await
                 .unwrap();
             assert_eq!(total as usize, expected.len(), "{column}: {search}");
             assert_ids(rows.iter().map(|row| row.id.clone()), &ids, expected);
-            let (page, page_total) = repo
+            let (page, page_total) = queries
                 .list_sessions_filtered(&filters, &Pagination::new(2, 1))
                 .await
                 .unwrap();
@@ -219,7 +224,7 @@ async fn session_search_literals_cover_live_and_retained_names_titles_ids_and_fi
                 (r"folder\\clip", vec![4]),
                 (r"folder\clip", vec![]),
             ] {
-                let (rows, total) = repo
+                let (rows, total) = queries
                     .list_sessions_filtered(
                         &SessionFilters::new().with_search(search),
                         &Pagination::new(100, 0),
@@ -239,7 +244,7 @@ async fn session_search_literals_cover_live_and_retained_names_titles_ids_and_fi
             include_empty: Some(true),
             search: Some("%".to_owned()),
         };
-        let (rows, total) = repo
+        let (rows, total) = queries
             .list_sessions_filtered(&filters, &Pagination::new(2, 0))
             .await
             .unwrap();
@@ -254,6 +259,7 @@ async fn media_search_literals_keep_counts_summaries_and_joined_filters_consiste
     for column in ["file_path", "session_id", "file_type"] {
         let pool = pool().await;
         let repo = SqlxSessionRepository::new(pool.clone(), pool.clone());
+        let queries = ApiQueries::new(pool.clone());
         let mut models = Vec::new();
         for (index, value) in VALUES.iter().enumerate() {
             let owner = streamer(&pool, index, "neutral").await;
@@ -281,19 +287,19 @@ async fn media_search_literals_keep_counts_summaries_and_joined_filters_consiste
         let ids: Vec<_> = models.iter().map(|model| model.id.clone()).collect();
         for &(search, expected) in CASES {
             let filters = OutputFilters::new().with_search(search);
-            let (rows, total) = repo
+            let (rows, total) = queries
                 .list_outputs_filtered(&filters, &Pagination::new(100, 0))
                 .await
                 .unwrap();
             assert_eq!(total as usize, expected.len(), "{column}: {search}");
             assert_ids(rows.iter().map(|row| row.id.clone()), &ids, expected);
-            let summary = repo.summarize_outputs_filtered(&filters).await.unwrap();
+            let summary = queries.summarize_outputs_filtered(&filters).await.unwrap();
             assert_eq!(summary.iter().map(|row| row.count).sum::<u64>(), total);
             assert_eq!(
                 summary.iter().map(|row| row.size_bytes).sum::<u64>(),
                 total * 10
             );
-            let (page, page_total) = repo
+            let (page, page_total) = queries
                 .list_outputs_filtered(&filters, &Pagination::new(2, 1))
                 .await
                 .unwrap();
@@ -312,13 +318,13 @@ async fn media_search_literals_keep_counts_summaries_and_joined_filters_consiste
             .with_streamer_id("streamer-2")
             .with_session_id(&models[2].session_id)
             .with_file_type(&models[2].file_type);
-        let (rows, total) = repo
+        let (rows, total) = queries
             .list_outputs_filtered(&filters, &Pagination::new(2, 0))
             .await
             .unwrap();
         assert_eq!(total, 1);
         assert_ids(rows.into_iter().map(|row| row.id), &ids, &[2]);
-        let summary = repo.summarize_outputs_filtered(&filters).await.unwrap();
+        let summary = queries.summarize_outputs_filtered(&filters).await.unwrap();
         assert_eq!(summary.len(), 1);
         assert_eq!(summary[0].count, 1);
         assert_eq!(summary[0].size_bytes, 10);
@@ -328,7 +334,8 @@ async fn media_search_literals_keep_counts_summaries_and_joined_filters_consiste
             "video"
         });
         assert_eq!(
-            repo.list_outputs_filtered(&by_type, &Pagination::new(100, 0))
+            queries
+                .list_outputs_filtered(&by_type, &Pagination::new(100, 0))
                 .await
                 .unwrap()
                 .1,
@@ -347,6 +354,7 @@ async fn notification_search_literals_cover_joined_names_json_and_all_filter_com
     for column in ["name", "payload"] {
         let pool = pool().await;
         let repo = SqlxNotificationRepository::new(pool.clone(), pool.clone());
+        let queries = ApiQueries::new(pool.clone());
         let mut ids = Vec::new();
         for (index, value) in VALUES.iter().enumerate() {
             let owner = streamer(
@@ -367,12 +375,12 @@ async fn notification_search_literals_cover_joined_names_json_and_all_filter_com
             ids.push(model.id);
         }
         for &(search, expected) in CASES {
-            let rows = repo
+            let rows = queries
                 .list_event_logs(None, None, Some(search), None, 0, 100)
                 .await
                 .unwrap();
             assert_ids(rows.iter().map(|row| row.id.clone()), &ids, expected);
-            let page = repo
+            let page = queries
                 .list_event_logs(None, None, Some(search), None, 1, 2)
                 .await
                 .unwrap();
@@ -398,7 +406,7 @@ async fn notification_search_literals_cover_joined_names_json_and_all_filter_com
                         && (priority.is_none() || index % 2 == 0)
                 })
                 .collect();
-            let rows = repo
+            let rows = queries
                 .list_event_logs(event_type, owner, search, priority, 0, 100)
                 .await
                 .unwrap();
@@ -410,7 +418,7 @@ async fn notification_search_literals_cover_joined_names_json_and_all_filter_com
                 (r"folder\\clip", vec![4]),
                 (r"folder\clip", vec![]),
             ] {
-                let rows = repo
+                let rows = queries
                     .list_event_logs(None, None, Some(search), None, 0, 100)
                     .await
                     .unwrap();
@@ -423,7 +431,7 @@ async fn notification_search_literals_cover_joined_names_json_and_all_filter_com
             .await
             .unwrap();
         if column == "payload" {
-            let rows = repo
+            let rows = queries
                 .list_event_logs(None, None, Some("ratio%"), Some("8"), 0, 100)
                 .await
                 .unwrap();
@@ -448,6 +456,7 @@ async fn preset_search_literals_cover_both_fields_numbered_binds_and_pagination(
             .unwrap();
         let jobs = SqliteJobPresetRepository::new(pool.clone(), pool.clone());
         let pipelines = SqlitePipelinePresetRepository::new(pool.clone(), pool.clone());
+        let queries = ApiQueries::new((*pool).clone());
         let mut ids = Vec::new();
         let mut names = Vec::new();
         for (index, value) in VALUES.iter().enumerate() {
@@ -484,13 +493,13 @@ async fn preset_search_literals_cover_both_fields_numbered_binds_and_pagination(
                 search: Some(search.to_owned()),
                 ..Default::default()
             };
-            let (rows, total) = jobs
+            let (rows, total) = queries
                 .list_presets_filtered(&filters, &Pagination::new(100, 0))
                 .await
                 .unwrap();
             assert_eq!(total as usize, expected.len());
             assert_ids(rows.iter().map(|row| row.id.clone()), &ids, expected);
-            let (page, page_total) = jobs
+            let (page, page_total) = queries
                 .list_presets_filtered(&filters, &Pagination::new(2, 1))
                 .await
                 .unwrap();
@@ -506,13 +515,13 @@ async fn preset_search_literals_cover_both_fields_numbered_binds_and_pagination(
             let filters = PipelinePresetFilters {
                 search: Some(search.to_owned()),
             };
-            let (rows, total) = pipelines
+            let (rows, total) = queries
                 .list_pipeline_presets_filtered(&filters, &Pagination::new(100, 0))
                 .await
                 .unwrap();
             assert_eq!(total as usize, expected.len());
             assert_ids(rows.iter().map(|row| row.id.clone()), &ids, expected);
-            let (page, page_total) = pipelines
+            let (page, page_total) = queries
                 .list_pipeline_presets_filtered(&filters, &Pagination::new(2, 1))
                 .await
                 .unwrap();
@@ -539,7 +548,7 @@ async fn preset_search_literals_cover_both_fields_numbered_binds_and_pagination(
                         && (filters.search.is_none() || [2, 8].contains(index))
                 })
                 .collect();
-            let (rows, total) = jobs
+            let (rows, total) = queries
                 .list_presets_filtered(&filters, &Pagination::new(100, 0))
                 .await
                 .unwrap();

@@ -37,22 +37,6 @@ pub enum NotificationPriority {
     Critical,
 }
 
-impl utoipa::PartialSchema for NotificationPriority {
-    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
-        use utoipa::openapi::schema::{Object, SchemaType, Type};
-        Object::builder()
-            .schema_type(SchemaType::Type(Type::Integer))
-            .description(Some(
-                "Priority level (integer, 0-10 scale): 2=Low, 5=Normal, 8=High, 10=Critical",
-            ))
-            .enum_values(Some([2i32, 5, 8, 10]))
-            .build()
-            .into()
-    }
-}
-
-impl utoipa::ToSchema for NotificationPriority {}
-
 impl Serialize for NotificationPriority {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_u8(self.as_int())

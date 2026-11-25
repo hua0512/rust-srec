@@ -78,6 +78,7 @@ impl PlaybackData {
 #[derive(Clone, Serialize, utoipa::ToSchema)]
 pub struct ManagedPlayback {
     pub handle: String,
+    #[schema(value_type = crate::api::schemas::CredentialBinding)]
     pub binding: CredentialBinding,
     pub title: String,
     pub artist: String,

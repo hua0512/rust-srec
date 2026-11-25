@@ -13,7 +13,7 @@ use axum::{
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::extract::ApiJson;
 use crate::api::server::AppState;
-use crate::config::backup::{ConfigExport, ImportRequest, ImportResult};
+use crate::config::backup::{ImportRequest, ImportResult};
 
 /// Create the export/import router.
 pub fn router() -> Router<AppState> {
@@ -31,19 +31,17 @@ pub fn router() -> Router<AppState> {
     path = "/api/config/backup/export",
     tag = "export_import",
     responses(
-        (status = 200, description = "Configuration export", body = ConfigExport)
+        (status = 200, description = "Configuration export", body = crate::api::backup::ConfigExport)
     ),
     security(("bearer_auth" = []))
 )]
 pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoResponse, ApiError> {
-    let users = state
-        .auth_service
-        .as_ref()
-        .map(|auth_service| auth_service.user_repository());
-    let export = state
-        .configuration_export_service
-        .export(users.as_deref())
-        .await?;
+    let user_exports = if let Some(auth_service) = state.auth_service.as_ref() {
+        crate::api::auth_store::export_users(auth_service.user_repository().as_ref()).await?
+    } else {
+        Vec::new()
+    };
+    let export = state.config_backup.export_config(user_exports).await?;
 
     let json = serde_json::to_string_pretty(&export)?;
 
@@ -73,9 +71,9 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
     path = "/api/config/backup/import",
     tag = "export_import",
     description = "Import configuration transactionally. Every successful import revokes all refresh tokens and their bound access-token sessions, including Merge imports that omit users. User-email conflicts with retained accounts are rejected before configuration writes.",
-    request_body = ImportRequest,
+    request_body = crate::api::backup::ImportRequest,
     responses(
-        (status = 200, description = "Configuration imported", body = ImportResult),
+        (status = 200, description = "Configuration imported", body = crate::api::backup::ImportResult),
         (status = 400, description = "Invalid request", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -84,7 +82,7 @@ pub async fn import_config(
     State(state): State<AppState>,
     ApiJson(request): ApiJson<ImportRequest>,
 ) -> ApiResult<Json<ImportResult>> {
-    let import_service = state.configuration_import_service.clone();
+    let config_backup = state.config_backup.clone();
     let auth_service = state.auth_service.clone();
     // Detached, so a caller that disconnects or times out cannot cut the
     // import short after its commit, nor skip the cache invalidation below.
@@ -94,8 +92,8 @@ pub async fn import_config(
         let on_users_committed = auth_service.map(|auth| {
             Box::new(move || auth.invalidate_user_cache()) as Box<dyn FnOnce() + Send + 'static>
         });
-        import_service
-            .import_with_post_commit(request.config, request.mode, on_users_committed)
+        config_backup
+            .import_config(request.config, request.mode, on_users_committed)
             .await
     })
     .await
@@ -103,17 +101,7 @@ pub async fn import_config(
         tracing::error!(error = %error, "Configuration import task failed");
         ApiError::internal("Configuration import task failed")
     })?
-    .map_err(|error| match error {
-        crate::services::config_import::ConfigurationImportError::Validation(message) => {
-            ApiError::bad_request(message)
-        }
-        crate::services::config_import::ConfigurationImportError::MissingProxy(error) => {
-            ApiError::from(error)
-        }
-        crate::services::config_import::ConfigurationImportError::Database(error) => {
-            ApiError::from(error)
-        }
-    })?;
+    .map_err(ApiError::from)?;
 
     let stats = outcome.stats;
     let mut message = format!(

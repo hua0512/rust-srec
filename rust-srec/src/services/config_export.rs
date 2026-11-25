@@ -15,13 +15,13 @@ use crate::config::backup::{
 use crate::credentials::{CredentialOwner, CredentialSelection};
 use crate::database::models::{
     GlobalConfigDbModel, NotificationChannelDbModel, PlatformConfigDbModel, StreamerDbModel,
-    TemplateConfigDbModel, UserDbModel,
+    TemplateConfigDbModel,
 };
 use crate::database::repositories::proxies::RouteOwner;
 use crate::database::repositories::{
     FilterRepository, JobPresetRepository, NotificationRepository, PipelinePresetRepository,
-    StoredSelection, StreamerRepository, UserRepository, config::SqlxConfigRepository,
-    credential_selections, streamer::SqlxStreamerRepository,
+    StoredSelection, StreamerRepository, config::SqlxConfigRepository, credential_selections,
+    streamer::SqlxStreamerRepository,
 };
 
 type RuntimeConfigService = ConfigService<SqlxConfigRepository, SqlxStreamerRepository>;
@@ -349,37 +349,9 @@ impl ConfigurationExportService {
     /// Assemble the complete backup. Any read failure fails the export, so a
     /// returned document never silently omits configuration.
     ///
-    /// `users` is `None` when authentication is disabled; the backup then
-    /// carries no accounts.
-    pub async fn export(&self, users: Option<&dyn UserRepository>) -> crate::Result<ConfigExport> {
+    /// `user_exports` is empty when authentication is disabled.
+    pub async fn export(&self, user_exports: Vec<UserExport>) -> crate::Result<ConfigExport> {
         let config_service = &self.config_service;
-
-        let user_exports = if let Some(user_repo) = users {
-            let total_users = user_repo.count().await?;
-
-            let users = user_repo.list(total_users, 0).await?;
-
-            users
-                .into_iter()
-                .map(|u: UserDbModel| {
-                    let roles = u.get_roles();
-                    UserExport {
-                        id: u.id,
-                        username: u.username,
-                        password_hash: u.password_hash,
-                        email: u.email,
-                        roles,
-                        is_active: u.is_active,
-                        must_change_password: u.must_change_password,
-                        last_login_at: u.last_login_at,
-                        created_at: u.created_at,
-                        updated_at: u.updated_at,
-                    }
-                })
-                .collect::<Vec<_>>()
-        } else {
-            Vec::new()
-        };
 
         let global_config = config_service.get_global_config().await?;
 

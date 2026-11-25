@@ -30,7 +30,7 @@ async fn public_timezone_import_rolls_back_or_invalidates_filter_snapshots_after
         let container=ServiceContainer::new(pool.clone(),pool.clone()).await.unwrap();
         let (logging,_layer)=crate::logging::LoggingConfig::for_route_tests(directory.path().to_owned());
         assert!(container.logging_config.set(Arc::new(logging)).is_ok());
-        let state=build_api_state(&container, None).unwrap();
+        let state=build_api_state(&container, crate::backend::build_config_backup(&container), None).unwrap();
         let mut owner=StreamerDbModel::new("Timezone import","https://example.test/timezone-import","platform-huya");
         owner.state="DISABLED".into();
         state.streamer_repository.create_streamer(&owner).await.unwrap();
@@ -48,13 +48,13 @@ async fn public_timezone_import_rolls_back_or_invalidates_filter_snapshots_after
         let mut failing=bundle.clone();
         failing.job_presets.push(JobPresetExport {name:"timezone-late-failure".into(),description:None,category:None,processor:"remux".into(),config:json!({})});
         sqlx::query("CREATE TRIGGER reject_timezone_import BEFORE INSERT ON job_presets WHEN NEW.name='timezone-late-failure' BEGIN SELECT RAISE(ABORT,'timezone import failure'); END").execute(&pool).await.unwrap();
-        assert!(state.configuration_import_service.import(failing,ImportMode::Merge).await.is_err());
+        assert!(state.config_backup.import_config(failing,ImportMode::Merge,None).await.is_err());
         assert!(events.try_recv().is_err());
         assert!(Arc::ptr_eq(&cached,&filters.get(&owner.id).await.unwrap()));
         let stored=state.filter_repository.get_filters_for_streamer(&owner.id).await.unwrap();
         assert_eq!(serde_json::from_str::<serde_json::Value>(&stored[0].config).unwrap(),body);
 
-        state.configuration_import_service.import(bundle,ImportMode::Merge).await.unwrap();
+        state.config_backup.import_config(bundle,ImportMode::Merge,None).await.unwrap();
         let local=filters.get(&owner.id).await.unwrap();
         assert!(!Arc::ptr_eq(&cached,&local));
         assert!(matches!(&local[0],Filter::TimeBased(filter) if filter.timezone.as_deref()==Some("local")));
@@ -64,7 +64,7 @@ async fn public_timezone_import_rolls_back_or_invalidates_filter_snapshots_after
         assert_eq!(current.streamers[0].filters[0].config["extension"],json!({"kept":true}));
         current.streamers[0].filters[0].config.as_object_mut().unwrap().remove("timezone");
         current.users.clear();
-        state.configuration_import_service.import(current,ImportMode::Merge).await.unwrap();
+        state.config_backup.import_config(current,ImportMode::Merge,None).await.unwrap();
         let utc=filters.get(&owner.id).await.unwrap();
         assert!(!Arc::ptr_eq(&local,&utc));
         assert!(matches!(&utc[0],Filter::TimeBased(filter) if filter.timezone.is_none()));

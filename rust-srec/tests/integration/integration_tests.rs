@@ -783,8 +783,8 @@ mod session_repository_tests {
     /// dashboard.
     #[tokio::test]
     async fn test_list_sessions_filtered_excludes_empty_by_default() {
-        use rust_srec::database::models::{Pagination, SessionFilters};
-        use rust_srec::database::repositories::{SessionRepository, SqlxSessionRepository};
+        use rust_srec::api::queries::{ApiQueries, SessionFilters};
+        use rust_srec::database::models::Pagination;
 
         let pool = setup_test_db().await;
         let streamer_id = setup_streamer(&pool).await;
@@ -794,8 +794,8 @@ mod session_repository_tests {
         let real_id =
             insert_session_with_size(&pool, &streamer_id, 1_500_000_000, Some(now_ms)).await;
 
-        let repo = SqlxSessionRepository::new(pool.clone(), pool);
-        let (sessions, total) = repo
+        let queries = ApiQueries::new(pool);
+        let (sessions, total) = queries
             .list_sessions_filtered(
                 &SessionFilters {
                     streamer_id: Some(streamer_id.clone()),
@@ -815,8 +815,8 @@ mod session_repository_tests {
     /// useful for diagnostics ("why did this brief blip happen?").
     #[tokio::test]
     async fn test_list_sessions_filtered_includes_empty_when_opted_in() {
-        use rust_srec::database::models::{Pagination, SessionFilters};
-        use rust_srec::database::repositories::{SessionRepository, SqlxSessionRepository};
+        use rust_srec::api::queries::{ApiQueries, SessionFilters};
+        use rust_srec::database::models::Pagination;
 
         let pool = setup_test_db().await;
         let streamer_id = setup_streamer(&pool).await;
@@ -825,8 +825,8 @@ mod session_repository_tests {
         insert_session_with_size(&pool, &streamer_id, 0, Some(now_ms)).await;
         insert_session_with_size(&pool, &streamer_id, 1_500_000_000, Some(now_ms)).await;
 
-        let repo = SqlxSessionRepository::new(pool.clone(), pool);
-        let (_sessions, total) = repo
+        let queries = ApiQueries::new(pool);
+        let (_sessions, total) = queries
             .list_sessions_filtered(
                 &SessionFilters {
                     streamer_id: Some(streamer_id.clone()),
@@ -846,16 +846,16 @@ mod session_repository_tests {
     /// detection and the first retained segment; we must NOT hide them.
     #[tokio::test]
     async fn test_list_sessions_filtered_keeps_active_empty_sessions() {
-        use rust_srec::database::models::{Pagination, SessionFilters};
-        use rust_srec::database::repositories::{SessionRepository, SqlxSessionRepository};
+        use rust_srec::api::queries::{ApiQueries, SessionFilters};
+        use rust_srec::database::models::Pagination;
 
         let pool = setup_test_db().await;
         let streamer_id = setup_streamer(&pool).await;
 
         let active_id = insert_session_with_size(&pool, &streamer_id, 0, None).await;
 
-        let repo = SqlxSessionRepository::new(pool.clone(), pool);
-        let (sessions, total) = repo
+        let queries = ApiQueries::new(pool);
+        let (sessions, total) = queries
             .list_sessions_filtered(
                 &SessionFilters {
                     streamer_id: Some(streamer_id.clone()),
@@ -906,15 +906,16 @@ mod job_repository_tests {
         assert_eq!(result.2, "PENDING");
     }
 
-    /// `PipelineManager::drain_for_session` counts a session's unfinished jobs
-    /// with one query, which means `JobFilters::statuses` has to render an
-    /// `IN` list whose binds line up with the `session_id` bind that follows it.
+    /// `JobFilters::statuses` renders an `IN` list whose binds must line up
+    /// with the `session_id` bind that follows it, and `JobRepository` offers
+    /// a dedicated unfinished-job count for `PipelineManager::drain_for_session`.
     #[tokio::test]
     async fn test_count_jobs_by_session_and_statuses() {
-        use rust_srec::database::models::JobFilters;
+        use rust_srec::api::queries::{ApiQueries, JobFilters};
 
         let pool = setup_test_db().await;
         let repo = SqlxJobRepository::new(pool.clone(), pool.clone());
+        let queries = ApiQueries::new(pool);
 
         for (status, session_id) in [
             (JobStatus::Pending, "session-a"),
@@ -936,20 +937,49 @@ mod job_repository_tests {
                 .with_statuses([JobStatus::Pending, JobStatus::Processing])
         };
 
-        assert_eq!(repo.count_jobs(&unfinished("session-a")).await.unwrap(), 2);
-        assert_eq!(repo.count_jobs(&unfinished("session-b")).await.unwrap(), 1);
-        assert_eq!(repo.count_jobs(&unfinished("session-c")).await.unwrap(), 0);
-
-        // The single-value `status` filter still works, and combines with
-        // `statuses` by intersection.
         assert_eq!(
-            repo.count_jobs(&unfinished("session-a").with_status(JobStatus::Pending))
+            queries.count_jobs(&unfinished("session-a")).await.unwrap(),
+            2
+        );
+        assert_eq!(
+            queries.count_jobs(&unfinished("session-b")).await.unwrap(),
+            1
+        );
+        assert_eq!(
+            queries.count_jobs(&unfinished("session-c")).await.unwrap(),
+            0
+        );
+        assert_eq!(
+            repo.count_unfinished_jobs_for_session("session-a")
+                .await
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            repo.count_unfinished_jobs_for_session("session-b")
                 .await
                 .unwrap(),
             1
         );
         assert_eq!(
-            repo.count_jobs(&JobFilters::new().with_session_id("session-a"))
+            repo.count_unfinished_jobs_for_session("session-c")
+                .await
+                .unwrap(),
+            0
+        );
+
+        // The single-value `status` filter still works, and combines with
+        // `statuses` by intersection.
+        assert_eq!(
+            queries
+                .count_jobs(&unfinished("session-a").with_status(JobStatus::Pending))
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            queries
+                .count_jobs(&JobFilters::new().with_session_id("session-a"))
                 .await
                 .unwrap(),
             5

@@ -2,14 +2,13 @@
 
 use crate::database::begin_immediate;
 use crate::database::models::{
-    DanmuStatisticsDbModel, LiveSessionDbModel, MediaFileType, MediaOutputDbModel,
-    MediaOutputTypeSummary, OutputFilters, Pagination, SessionFilters, SessionOutputSummary,
-    SessionSegmentDbModel,
+    DanmuStatisticsDbModel, LiveSessionDbModel, MediaFileType, MediaOutputDbModel, Pagination,
+    SessionOutputSummary, SessionSegmentDbModel,
 };
 use crate::database::retry::retry_on_sqlite_busy;
 use crate::{Error, Result};
 use async_trait::async_trait;
-use sqlx::{QueryBuilder, Sqlite, SqlitePool};
+use sqlx::{Sqlite, SqlitePool};
 
 /// Session repository trait.
 #[async_trait]
@@ -43,14 +42,12 @@ pub trait SessionRepository: Send + Sync {
     async fn delete_session(&self, id: &str) -> Result<()>;
     async fn delete_sessions_batch(&self, ids: &[String]) -> Result<u64>;
 
-    // Filtering and pagination
-    /// List sessions with optional filters and pagination.
-    /// Returns a tuple of (sessions, total_count).
-    async fn list_sessions_filtered(
+    /// List active (unended) sessions ordered newest-first, including sessions
+    /// that have not yet produced retained segments.
+    async fn list_active_sessions(
         &self,
-        filters: &SessionFilters,
         pagination: &Pagination,
-    ) -> Result<(Vec<LiveSessionDbModel>, u64)>;
+    ) -> Result<Vec<LiveSessionDbModel>>;
 
     /// List ended sessions whose final pipeline has not been published or skipped.
     async fn list_ended_sessions_pending_pipeline_recovery(
@@ -133,21 +130,6 @@ pub trait SessionRepository: Send + Sync {
 
     /// Get the count of media outputs for a session.
     async fn get_output_count(&self, session_id: &str) -> Result<u32>;
-
-    /// List media outputs with optional filters and pagination.
-    /// Returns a tuple of (outputs, total_count).
-    async fn list_outputs_filtered(
-        &self,
-        filters: &OutputFilters,
-        pagination: &Pagination,
-    ) -> Result<(Vec<MediaOutputDbModel>, u64)>;
-
-    /// Count and total size of the media outputs matching `filters`, grouped by
-    /// `file_type`. Types with no matching rows are absent from the result.
-    async fn summarize_outputs_filtered(
-        &self,
-        filters: &OutputFilters,
-    ) -> Result<Vec<MediaOutputTypeSummary>>;
 
     async fn create_session_segment(&self, segment: &SessionSegmentDbModel) -> Result<()>;
     async fn list_session_segments_for_session(
@@ -247,68 +229,6 @@ const DANMU_STATISTICS_UPSERT: &str = "INSERT INTO danmu_statistics (\
      top_gifts = excluded.top_gifts, \
      word_frequency = excluded.word_frequency";
 
-/// The `FROM`/`WHERE` fragments for an `OutputFilters` query, plus the values to
-/// bind in the order the placeholders appear.
-///
-/// `list_outputs_filtered` and `summarize_outputs_filtered` build three queries
-/// between them off the same filters. They share this one builder so a new
-/// filter cannot be added to one query's placeholders and missed in another's
-/// binds — a mismatch SQLite reports only as wrong rows, not as an error.
-struct OutputQueryClause {
-    from_clause: &'static str,
-    where_clause: String,
-    binds: Vec<String>,
-}
-
-/// One `GROUP BY m.file_type` row of `summarize_outputs_filtered`.
-#[derive(sqlx::FromRow)]
-struct OutputTypeSummaryRow {
-    file_type: String,
-    count: i64,
-    size_bytes: i64,
-}
-
-impl OutputQueryClause {
-    fn build(filters: &OutputFilters) -> Self {
-        let mut conditions: Vec<&'static str> = Vec::new();
-        let mut binds: Vec<String> = Vec::new();
-
-        if let Some(session_id) = &filters.session_id {
-            conditions.push("m.session_id = ?");
-            binds.push(session_id.clone());
-        }
-        if let Some(streamer_id) = &filters.streamer_id {
-            conditions.push("s.streamer_id = ?");
-            binds.push(streamer_id.clone());
-        }
-        if let Some(file_type) = &filters.file_type {
-            conditions.push("m.file_type = ?");
-            binds.push(file_type.clone());
-        }
-        if let Some(search) = &filters.search {
-            conditions.push(r"(m.file_path LIKE ? ESCAPE '\' OR m.session_id LIKE ? ESCAPE '\' OR m.file_type LIKE ? ESCAPE '\')");
-            let pattern = super::literal_substring_pattern(search);
-            binds.extend([pattern.clone(), pattern.clone(), pattern]);
-        }
-
-        Self {
-            // `s` is only in scope for the streamer_id condition, so the join is
-            // added only when that filter is present.
-            from_clause: if filters.streamer_id.is_some() {
-                "media_outputs m INNER JOIN live_sessions s ON m.session_id = s.id"
-            } else {
-                "media_outputs m"
-            },
-            where_clause: if conditions.is_empty() {
-                String::new()
-            } else {
-                format!("WHERE {}", conditions.join(" AND "))
-            },
-            binds,
-        }
-    }
-}
-
 /// SQLx implementation of SessionRepository.
 pub struct SqlxSessionRepository {
     pool: SqlitePool,
@@ -318,63 +238,6 @@ pub struct SqlxSessionRepository {
 impl SqlxSessionRepository {
     pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
         Self { pool, write_pool }
-    }
-}
-
-/// Append each session list predicate with its bound value. The query must
-/// select from `live_sessions s LEFT JOIN streamers st`.
-fn push_session_filters(query: &mut QueryBuilder<Sqlite>, filters: &SessionFilters) {
-    let mut separator = " WHERE ";
-    let mut next_separator = || std::mem::replace(&mut separator, " AND ");
-
-    if let Some(streamer_id) = &filters.streamer_id {
-        query
-            .push(next_separator())
-            .push("s.streamer_id = ")
-            .push_bind(streamer_id);
-    }
-    if let Some(from_date) = &filters.from_date {
-        query
-            .push(next_separator())
-            .push("s.start_time >= ")
-            .push_bind(crate::database::time::datetime_to_ms(*from_date));
-    }
-    if let Some(to_date) = &filters.to_date {
-        query
-            .push(next_separator())
-            .push("s.start_time <= ")
-            .push_bind(crate::database::time::datetime_to_ms(*to_date));
-    }
-    if filters.active_only == Some(true) {
-        query.push(next_separator()).push("s.end_time IS NULL");
-    }
-
-    // Hide ended sessions that produced no retained segments by default.
-    // `total_size_bytes` grows only when a retained segment's output is
-    // recorded, so `total_size_bytes > 0` means the session kept real bytes.
-    // Active sessions (`end_time IS NULL`) are always kept: their size is 0
-    // between LIVE detection and the first retained segment.
-    if filters.include_empty != Some(true) {
-        query
-            .push(next_separator())
-            .push("(s.total_size_bytes > 0 OR s.end_time IS NULL)");
-    }
-
-    // `COALESCE` keeps a session searchable by streamer name after its
-    // `streamers` row is gone: the LEFT JOIN yields a NULL `st.name` and
-    // the denormalized `s.streamer_name` takes over. While the streamer
-    // exists `st.name` wins, so a rename is searchable immediately.
-    if let Some(search) = &filters.search {
-        let pattern = super::literal_substring_pattern(search);
-        query
-            .push(next_separator())
-            .push("(COALESCE(st.name, s.streamer_name) LIKE ")
-            .push_bind(pattern.clone())
-            .push(r" ESCAPE '\' OR s.titles LIKE ")
-            .push_bind(pattern.clone())
-            .push(r" ESCAPE '\' OR s.id LIKE ")
-            .push_bind(pattern)
-            .push(r" ESCAPE '\')");
     }
 }
 
@@ -873,35 +736,18 @@ impl SessionRepository for SqlxSessionRepository {
         .await
     }
 
-    async fn list_sessions_filtered(
+    async fn list_active_sessions(
         &self,
-        filters: &SessionFilters,
         pagination: &Pagination,
-    ) -> Result<(Vec<LiveSessionDbModel>, u64)> {
-        const FROM: &str = "FROM live_sessions s LEFT JOIN streamers st ON s.streamer_id = st.id";
-
-        let mut count_query = QueryBuilder::new("SELECT COUNT(s.id) as count ");
-        count_query.push(FROM);
-        push_session_filters(&mut count_query, filters);
-        let total_count = count_query
-            .build_query_scalar::<i64>()
-            .fetch_one(&self.pool)
-            .await? as u64;
-
-        let mut data_query = QueryBuilder::new("SELECT s.* ");
-        data_query.push(FROM);
-        push_session_filters(&mut data_query, filters);
-        data_query
-            .push(" ORDER BY s.start_time DESC LIMIT ")
-            .push_bind(pagination.limit as i64)
-            .push(" OFFSET ")
-            .push_bind(pagination.offset as i64);
-        let sessions = data_query
-            .build_query_as::<LiveSessionDbModel>()
-            .fetch_all(&self.pool)
-            .await?;
-
-        Ok((sessions, total_count))
+    ) -> Result<Vec<LiveSessionDbModel>> {
+        let sessions = sqlx::query_as::<_, LiveSessionDbModel>(
+            "SELECT * FROM live_sessions WHERE end_time IS NULL ORDER BY start_time DESC LIMIT ? OFFSET ?",
+        )
+        .bind(i64::from(pagination.limit))
+        .bind(i64::from(pagination.offset))
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(sessions)
     }
 
     async fn list_ended_sessions_pending_pipeline_recovery(
@@ -959,75 +805,6 @@ impl SessionRepository for SqlxSessionRepository {
                 .await?;
 
         Ok(count as u32)
-    }
-
-    async fn list_outputs_filtered(
-        &self,
-        filters: &OutputFilters,
-        pagination: &Pagination,
-    ) -> Result<(Vec<MediaOutputDbModel>, u64)> {
-        let clause = OutputQueryClause::build(filters);
-
-        let count_sql = format!(
-            "SELECT COUNT(*) FROM {} {}",
-            clause.from_clause, clause.where_clause
-        );
-
-        // Select only media_outputs columns to avoid ambiguity with the join.
-        let data_sql = format!(
-            "SELECT m.id, m.session_id, m.parent_media_output_id, m.file_path, m.file_type, m.size_bytes, m.created_at \
-             FROM {} {} ORDER BY m.created_at DESC LIMIT ? OFFSET ?",
-            clause.from_clause, clause.where_clause
-        );
-
-        let mut count_query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql));
-        for value in &clause.binds {
-            count_query = count_query.bind(value);
-        }
-        // COUNT(*) is never negative, so the sign cannot be lost here.
-        let total_count = count_query.fetch_one(&self.pool).await?.cast_unsigned();
-
-        let mut data_query = sqlx::query_as::<_, MediaOutputDbModel>(sqlx::AssertSqlSafe(data_sql));
-        for value in &clause.binds {
-            data_query = data_query.bind(value);
-        }
-        data_query = data_query.bind(i64::from(pagination.limit));
-        data_query = data_query.bind(i64::from(pagination.offset));
-
-        let outputs = data_query.fetch_all(&self.pool).await?;
-
-        Ok((outputs, total_count))
-    }
-
-    async fn summarize_outputs_filtered(
-        &self,
-        filters: &OutputFilters,
-    ) -> Result<Vec<MediaOutputTypeSummary>> {
-        let clause = OutputQueryClause::build(filters);
-
-        let sql = format!(
-            "SELECT m.file_type AS file_type, COUNT(*) AS count, COALESCE(SUM(m.size_bytes), 0) AS size_bytes \
-             FROM {} {} GROUP BY m.file_type ORDER BY m.file_type",
-            clause.from_clause, clause.where_clause
-        );
-
-        let mut query = sqlx::query_as::<_, OutputTypeSummaryRow>(sqlx::AssertSqlSafe(sql));
-        for value in &clause.binds {
-            query = query.bind(value);
-        }
-
-        Ok(query
-            .fetch_all(&self.pool)
-            .await?
-            .into_iter()
-            .map(|row| MediaOutputTypeSummary {
-                file_type: row.file_type,
-                // Clamped first: a stored negative `size_bytes` would otherwise
-                // wrap to an enormous total rather than contributing nothing.
-                count: row.count.max(0).cast_unsigned(),
-                size_bytes: row.size_bytes.max(0).cast_unsigned(),
-            })
-            .collect())
     }
 }
 
@@ -1358,11 +1135,8 @@ mod tests {
                 .is_some(),
             "an orphaned session must not stay active"
         );
-        let (active_sessions, _) = repo
-            .list_sessions_filtered(
-                &SessionFilters::new().with_active_only(true),
-                &Pagination::new(10, 0),
-            )
+        let active_sessions = repo
+            .list_active_sessions(&Pagination::new(10, 0))
             .await
             .unwrap();
         assert!(active_sessions.is_empty());

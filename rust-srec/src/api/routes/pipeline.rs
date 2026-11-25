@@ -113,10 +113,12 @@ use crate::database::repositories::{
 use crate::pipeline::JobProgressSnapshot;
 
 /// Dependencies shared by the job and DAG execution endpoints in `jobs` and
-/// `dag` (everything routed through `pipeline_manager`, plus
-/// `streamer_repository` for resolving streamer display names).
+/// `dag` (everything routed through `pipeline_manager`, plus `queries` for
+/// filtered job reads and `streamer_repository` for resolving streamer display
+/// names).
 #[derive(Clone)]
 pub struct PipelineRouteState {
+    queries: crate::api::queries::ApiQueries,
     pipeline_manager: Arc<crate::pipeline::PipelineManager>,
     streamer_repository: Arc<dyn StreamerRepository>,
 }
@@ -124,6 +126,7 @@ pub struct PipelineRouteState {
 impl FromRef<AppState> for PipelineRouteState {
     fn from_ref(state: &AppState) -> Self {
         Self {
+            queries: state.queries.clone(),
             pipeline_manager: state.pipeline_manager.clone(),
             streamer_repository: state.streamer_repository.clone(),
         }
@@ -131,10 +134,11 @@ impl FromRef<AppState> for PipelineRouteState {
 }
 
 /// Dependencies of the pipeline-preset endpoints in `presets`: the preset
-/// store, plus `pipeline_manager` to check a saved definition the way DAG
-/// creation will.
+/// store, `queries` for filtered preset searches, plus `pipeline_manager` to
+/// check a saved definition the way DAG creation will.
 #[derive(Clone)]
 pub struct PresetRouteState {
+    queries: crate::api::queries::ApiQueries,
     pipeline_preset_repository: Arc<dyn PipelinePresetRepository>,
     pipeline_manager: Arc<crate::pipeline::PipelineManager>,
 }
@@ -142,17 +146,19 @@ pub struct PresetRouteState {
 impl FromRef<AppState> for PresetRouteState {
     fn from_ref(state: &AppState) -> Self {
         Self {
+            queries: state.queries.clone(),
             pipeline_preset_repository: state.pipeline_preset_repository.clone(),
             pipeline_manager: state.pipeline_manager.clone(),
         }
     }
 }
 
-/// Dependencies of `jobs::list_outputs`, which reads media outputs from the
-/// session store rather than from `pipeline_manager`, plus the upload-record
-/// store used to annotate each output with its upload results.
+/// Dependencies of `jobs::list_outputs`, which reads media outputs through
+/// `queries`, deletes via `session_repository`, and annotates each output with
+/// its upload results from `upload_record_repository`.
 #[derive(Clone)]
 pub struct OutputRouteState {
+    queries: crate::api::queries::ApiQueries,
     session_repository: Arc<dyn SessionRepository>,
     upload_record_repository: Arc<dyn UploadRecordRepository>,
 }
@@ -160,6 +166,7 @@ pub struct OutputRouteState {
 impl FromRef<AppState> for OutputRouteState {
     fn from_ref(state: &AppState) -> Self {
         Self {
+            queries: state.queries.clone(),
             session_repository: state.session_repository.clone(),
             upload_record_repository: state.upload_record_repository.clone(),
         }
@@ -300,6 +307,7 @@ pub struct CreatePipelineRequest {
     /// Input file paths.
     pub input_paths: Vec<String>,
     /// DAG pipeline definition.
+    #[schema(value_type = crate::api::schemas::DagPipelineDefinition)]
     pub dag: DagPipelineDefinition,
 }
 
@@ -355,6 +363,7 @@ pub struct CreatePipelinePresetRequest {
     /// Optional description.
     pub description: Option<String>,
     /// DAG pipeline definition.
+    #[schema(value_type = crate::api::schemas::DagPipelineDefinition)]
     pub dag: DagPipelineDefinition,
 }
 
@@ -366,6 +375,7 @@ pub struct UpdatePipelinePresetRequest {
     /// Optional description.
     pub description: Option<String>,
     /// DAG pipeline definition.
+    #[schema(value_type = crate::api::schemas::DagPipelineDefinition)]
     pub dag: DagPipelineDefinition,
 }
 
@@ -397,6 +407,7 @@ pub struct PipelinePresetResponse {
     pub name: String,
     pub description: Option<String>,
     /// DAG definition.
+    #[schema(value_type = crate::api::schemas::DagPipelineDefinition)]
     pub dag: DagPipelineDefinition,
     pub created_at: jiff::Timestamp,
     pub updated_at: jiff::Timestamp,
@@ -516,6 +527,7 @@ pub struct DagStepStatusResponse {
     /// Status of the step's job; null while the step has no job. A PROCESSING
     /// step whose job is PENDING is queued, and one whose job is FAILED waits
     /// for its automatic retry when `retry_after` is set.
+    #[schema(value_type = Option<crate::api::schemas::JobStatus>)]
     pub job_status: Option<crate::database::models::JobStatus>,
     /// When the job's latest attempt started, in epoch milliseconds.
     pub started_at: Option<i64>,
@@ -526,6 +538,7 @@ pub struct DagStepStatusResponse {
     /// The running job's latest progress snapshot, with `raw` always null. Set
     /// only while the step and its job are both PROCESSING and the job has
     /// reported progress; null does not mean 0%.
+    #[schema(value_type = Option<crate::api::schemas::JobProgressSnapshot>)]
     pub progress: Option<JobProgressSnapshot>,
     /// Step IDs this step depends on.
     pub depends_on: Vec<String>,
@@ -589,6 +602,7 @@ pub struct DagRetryResponse {
 #[derive(Debug, Clone, serde::Deserialize, utoipa::ToSchema)]
 pub struct ValidateDagRequest {
     /// DAG definition to validate.
+    #[schema(value_type = crate::api::schemas::DagPipelineDefinition)]
     pub dag: DagPipelineDefinition,
 }
 

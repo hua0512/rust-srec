@@ -41,6 +41,7 @@ async fn fixture() -> (
         streamer_manager: container.streamer_manager.clone(),
         pipeline_manager: container.pipeline_manager.clone(),
         download_manager: container.download_manager.clone(),
+        queries: crate::api::queries::ApiQueries::new(container.pool.clone()),
         session_repository: container.session_repository.clone(),
         session_event_repository: container.session_event_repository.clone(),
         streamer_check_history_repository: container.streamer_check_history_repository.clone(),
@@ -63,12 +64,13 @@ async fn fixture() -> (
         proxies: container.proxies.clone(),
         credential_blocks: container.credential_blocks().clone(),
         bigo_notifications: container.bigo_notifications.clone(),
-        playback_contexts: container.playback_contexts.clone(),
+        playback_contexts: Arc::new(
+            crate::api::playback_context::PlaybackContextService::default(),
+        ),
         extractor_runner: container.extractor_runner.clone(),
         danmu_taps: container.danmu_service.taps(),
         credential_login_sessions: container.credential_login_sessions.clone(),
-        configuration_import_service: container.configuration_import_service.clone(),
-        configuration_export_service: container.configuration_export_service.clone(),
+        config_backup: crate::backend::build_config_backup(&container),
         actor_registry: container.actor_registry.clone(),
     });
     let mut row = StreamerDbModel::new(
@@ -190,8 +192,8 @@ async fn hard_cap_retains_manager_and_import_commit_publication() {
                                 .await
                                 .map(|_| ()),
                             Mutation::Import => caller_state
-                                .configuration_import_service
-                                .import(config, ImportMode::Merge)
+                                .config_backup
+                                .import_config(config, ImportMode::Merge, None)
                                 .await
                                 .map(|_| ())
                                 .map_err(|error| crate::Error::Other(error.to_string())),

@@ -485,28 +485,6 @@ impl ServiceContainer {
         recorder_store.set_post_publication_listener(actor_registry.clone());
         committed_streamers.add_post_publication_listener(actor_registry.clone());
 
-        let configuration_import_service = Arc::new(
-            crate::services::config_import::ConfigurationImportService::new(
-                write_pool.clone(),
-                config_service.clone(),
-                streamer_manager.clone(),
-                notification_service.clone(),
-                actor_registry.clone(),
-                platform_admission.clone(),
-            ),
-        );
-        let configuration_export_service = Arc::new(
-            crate::services::config_export::ConfigurationExportService::new(
-                write_pool.clone(),
-                config_service.clone(),
-                streamer_repo.clone(),
-                filter_repo.clone(),
-                notification_repository.clone(),
-                preset_repo,
-                pipeline_preset_repo.clone(),
-            ),
-        );
-
         let total_ms = overall.elapsed().as_millis();
         info!(
             startup_container_global_config_ms = global_config_ms,
@@ -531,9 +509,8 @@ impl ServiceContainer {
             upload_record_repository: upload_record_repo,
             filter_repository: filter_repo,
             streamer_repository: streamer_repo,
+            job_preset_repository: preset_repo,
             pipeline_preset_repository: pipeline_preset_repo,
-            configuration_import_service,
-            configuration_export_service,
             output_root_gate,
             gpu_health_monitor: std::sync::OnceLock::new(),
             pipeline_manager,
@@ -551,9 +528,6 @@ impl ServiceContainer {
             bigo_notifications,
             platform_admission,
             credential_profiles,
-            playback_contexts: Arc::new(
-                crate::services::playback_context::PlaybackContextService::default(),
-            ),
             credential_execution,
             credential_login_sessions,
             proxies,

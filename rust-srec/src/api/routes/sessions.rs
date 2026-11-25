@@ -23,15 +23,16 @@ use crate::api::models::{
     PaginatedResponse, PaginationParams, SessionDanmuStatisticsResponse, SessionEventResponse,
     SessionFilterParams, SessionResponse, SessionSegmentResponse, TitleChange,
 };
+use crate::api::queries::{ApiQueries, SessionFilters};
 use crate::api::server::AppState;
 use crate::database::models::{
-    DanmuRateEntry, GiftTallyEntry, Pagination, SessionFilters, TitleEntry, TopTalkerEntry,
-    WordFrequencyEntry,
+    DanmuRateEntry, GiftTallyEntry, Pagination, TitleEntry, TopTalkerEntry, WordFrequencyEntry,
 };
 use crate::session::SessionEvent;
 
 #[derive(Clone)]
 pub struct SessionRouteState {
+    queries: ApiQueries,
     session_repository: std::sync::Arc<dyn crate::database::repositories::SessionRepository>,
     session_event_repository:
         std::sync::Arc<dyn crate::database::repositories::SessionEventRepository>,
@@ -41,6 +42,7 @@ pub struct SessionRouteState {
 impl FromRef<AppState> for SessionRouteState {
     fn from_ref(state: &AppState) -> Self {
         Self {
+            queries: state.queries.clone(),
             session_repository: state.session_repository.clone(),
             session_event_repository: state.session_event_repository.clone(),
             streamer_repository: state.streamer_repository.clone(),
@@ -209,8 +211,8 @@ pub async fn list_sessions(
     let effective_limit = pagination.effective_limit();
     let db_pagination = Pagination::new(effective_limit, pagination.offset);
 
-    // Call SessionRepository.list_sessions_filtered
-    let (sessions, total) = session_repository
+    let (sessions, total) = state
+        .queries
         .list_sessions_filtered(&db_filters, &db_pagination)
         .await?;
 
@@ -757,6 +759,7 @@ mod tests {
             .await
             .unwrap();
         let state = SessionRouteState {
+            queries: crate::api::queries::ApiQueries::new(pool.clone()),
             session_repository: Arc::new(SqlxSessionRepository::new(pool.clone(), pool.clone())),
             session_event_repository: Arc::new(SqlxSessionEventRepository::new(
                 pool.clone(),

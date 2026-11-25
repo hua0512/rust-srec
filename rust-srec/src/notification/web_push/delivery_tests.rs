@@ -6,8 +6,7 @@ use axum::http::StatusCode;
 use axum::routing::post;
 use tokio_util::task::AbortOnDropHandle;
 
-use crate::database::models::UserDbModel;
-use crate::database::repositories::{SqlxUserRepository, UserRepository};
+use crate::api::auth_store::{SqlxUserRepository, UserDbModel, UserRepository};
 
 use super::*;
 

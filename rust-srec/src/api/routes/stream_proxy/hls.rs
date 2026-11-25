@@ -14,7 +14,7 @@ pub(super) struct RelayContext<'a> {
 pub(super) struct ManagedRelay<'a> {
     pub(super) handle: &'a str,
     pub(super) stream: usize,
-    pub(super) data: &'a crate::services::playback_context::PlaybackData,
+    pub(super) data: &'a crate::api::playback_context::PlaybackData,
 }
 
 fn build_proxy_url(target: &url::Url, context: RelayContext<'_>) -> String {

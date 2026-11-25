@@ -12,11 +12,13 @@ use tracing::{info, warn};
 
 use crate::Result;
 use crate::api::auth_service::{AuthConfig, AuthResponse, AuthService, LocalDesktopAccount};
-use crate::api::jwt::JwtService;
-use crate::api::server::{ApiServer, ApiServerConfig, ApiServices, AppState};
-use crate::database::repositories::{
+use crate::api::auth_store::{
     SqlxApiKeyRepository, SqlxRefreshTokenRepository, SqlxUserRepository,
 };
+use crate::api::backup::ConfigBackupPort;
+use crate::api::jwt::JwtService;
+use crate::api::playback_context::PlaybackContextService;
+use crate::api::server::{ApiServer, ApiServerConfig, ApiServices, AppState};
 use crate::services::ServiceContainer;
 
 #[cfg(test)]
@@ -75,11 +77,12 @@ fn validate_auth_mode(
     Ok(ApiAuthMode::Disabled)
 }
 
-/// Assemble the Axum [`AppState`] from a core [`ServiceContainer`] and an
-/// optional [`AuthService`], installing the API layer's WebSocket Protobuf
-/// encoders on the shared broadcasters.
+/// Assemble the Axum [`AppState`] from a core [`ServiceContainer`], a
+/// [`ConfigBackupPort`], and an optional [`AuthService`], installing the API
+/// layer's WebSocket Protobuf encoders on the shared broadcasters.
 pub(crate) fn build_api_state(
     container: &ServiceContainer,
+    config_backup: Arc<dyn ConfigBackupPort>,
     auth_service: Option<Arc<AuthService>>,
 ) -> Result<AppState> {
     let logging_config = container.logging_config.get().cloned().ok_or_else(|| {
@@ -93,6 +96,7 @@ pub(crate) fn build_api_state(
         streamer_manager: container.streamer_manager.clone(),
         pipeline_manager: container.pipeline_manager.clone(),
         download_manager: container.download_manager.clone(),
+        queries: crate::api::queries::ApiQueries::new(container.pool.clone()),
         session_repository: container.session_repository.clone(),
         session_event_repository: container.session_event_repository.clone(),
         streamer_check_history_repository: container.streamer_check_history_repository.clone(),
@@ -115,12 +119,11 @@ pub(crate) fn build_api_state(
         proxies: container.proxies.clone(),
         credential_blocks: container.credential_blocks().clone(),
         bigo_notifications: container.bigo_notifications.clone(),
-        playback_contexts: container.playback_contexts.clone(),
+        playback_contexts: Arc::new(PlaybackContextService::default()),
         extractor_runner: container.extractor_runner.clone(),
         danmu_taps: container.danmu_service.taps(),
         credential_login_sessions: container.credential_login_sessions.clone(),
-        configuration_import_service: container.configuration_import_service.clone(),
-        configuration_export_service: container.configuration_export_service.clone(),
+        config_backup,
         actor_registry: container.actor_registry.clone(),
     };
 
@@ -172,11 +175,12 @@ impl ApiServerHost {
     async fn bind_and_spawn_api_server(
         &self,
         container: &ServiceContainer,
+        config_backup: Arc<dyn ConfigBackupPort>,
         auth_service: Option<Arc<AuthService>>,
         bridge_task: &'static str,
         server_task: &'static str,
     ) -> Result<SocketAddr> {
-        let state = build_api_state(container, auth_service.clone())?;
+        let state = build_api_state(container, config_backup, auth_service.clone())?;
         if let Some(auth_service) = auth_service
             && self.auth_service.set(auth_service).is_err()
         {
@@ -240,8 +244,13 @@ impl ApiServerHost {
     }
 
     /// Initialize and start the API server.
-    pub(crate) async fn start_api_server(&self, container: &ServiceContainer) -> Result<()> {
-        self.start_api_server_bound(container).await?;
+    pub(crate) async fn start_api_server(
+        &self,
+        container: &ServiceContainer,
+        config_backup: Arc<dyn ConfigBackupPort>,
+    ) -> Result<()> {
+        self.start_api_server_bound(container, config_backup)
+            .await?;
         Ok(())
     }
 
@@ -249,6 +258,7 @@ impl ApiServerHost {
     pub(crate) async fn start_api_server_bound(
         &self,
         container: &ServiceContainer,
+        config_backup: Arc<dyn ConfigBackupPort>,
     ) -> Result<SocketAddr> {
         let auth_config = self.auth_config.clone();
 
@@ -282,8 +292,14 @@ impl ApiServerHost {
             }
         };
 
-        self.bind_and_spawn_api_server(container, auth_service, "API shutdown bridge", "API server")
-            .await
+        self.bind_and_spawn_api_server(
+            container,
+            config_backup,
+            auth_service,
+            "API shutdown bridge",
+            "API server",
+        )
+        .await
     }
 
     /// Initialize and start the API server, returning the resolved bind address, using a
@@ -291,6 +307,7 @@ impl ApiServerHost {
     pub(crate) async fn start_api_server_bound_with_jwt_secret(
         &self,
         container: &ServiceContainer,
+        config_backup: Arc<dyn ConfigBackupPort>,
         jwt_secret: String,
     ) -> Result<SocketAddr> {
         let auth_config = self.auth_config.clone();
@@ -315,6 +332,7 @@ impl ApiServerHost {
 
         self.bind_and_spawn_api_server(
             container,
+            config_backup,
             Some(Arc::new(auth_svc)),
             "desktop API shutdown bridge",
             "desktop API server",
@@ -460,6 +478,7 @@ mod tests {
         let address = host
             .bind_and_spawn_api_server(
                 &container,
+                crate::backend::build_config_backup(&container),
                 Some(Arc::new(auth)),
                 "test bridge",
                 "test server",
@@ -503,6 +522,7 @@ mod tests {
         let address = host
             .start_api_server_bound_with_jwt_secret(
                 &container,
+                crate::backend::build_config_backup(&container),
                 "local-desktop-mode-test-secret-with-entropy".to_owned(),
             )
             .await

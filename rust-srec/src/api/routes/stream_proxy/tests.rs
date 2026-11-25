@@ -55,11 +55,11 @@ fn test_state(allow_private_targets: bool) -> StreamProxyState {
 fn managed_context(
     streams: &[&str],
 ) -> (
-    crate::services::playback_context::PlaybackContextService,
-    crate::services::playback_context::ManagedPlayback,
+    crate::api::playback_context::PlaybackContextService,
+    crate::api::playback_context::ManagedPlayback,
 ) {
-    let service = crate::services::playback_context::PlaybackContextService::default();
-    let (source, snapshot, mut media) = crate::services::playback_context::test_bundle(streams[0]);
+    let service = crate::api::playback_context::PlaybackContextService::default();
+    let (source, snapshot, mut media) = crate::api::playback_context::test_bundle(streams[0]);
     for url in &streams[1..] {
         let mut stream = media.streams[0].clone();
         stream.url = (*url).to_owned();
@@ -197,7 +197,7 @@ fn managed_handle_is_refused_for_hosts_outside_its_stream_and_source() {
     ] {
         assert!(matches!(
             managed_target(&data, stream, url),
-            Err(crate::services::playback_context::PlaybackError::InvalidResource)
+            Err(crate::api::playback_context::PlaybackError::InvalidResource)
         ));
     }
 }
@@ -232,9 +232,9 @@ fn long_running_live_playlists_keep_producing_playable_managed_links() {
 
 #[test]
 fn managed_resource_headers_keep_each_cdns_cookie_without_changing_the_account() {
-    let service = crate::services::playback_context::PlaybackContextService::default();
+    let service = crate::api::playback_context::PlaybackContextService::default();
     let (source, snapshot, mut media) =
-        crate::services::playback_context::test_bundle("https://cdn.test/a.m3u8");
+        crate::api::playback_context::test_bundle("https://cdn.test/a.m3u8");
     let mut other = media.streams[0].clone();
     media.streams[0].extras = Some(
         serde_json::json!({"headers":{"Cookie":"session=stale; edge=cdn-a","Authorization":"Bearer cdn-a"}}),
@@ -302,9 +302,8 @@ async fn managed_redirect_cannot_forward_authentication_to_another_variant_origi
         let source_task = tokio::spawn(async move {
             axum::serve(source, source_app).await.unwrap();
         });
-        let service = crate::services::playback_context::PlaybackContextService::default();
-        let (source, snapshot, mut media) =
-            crate::services::playback_context::test_bundle(&source_url);
+        let service = crate::api::playback_context::PlaybackContextService::default();
+        let (source, snapshot, mut media) = crate::api::playback_context::test_bundle(&source_url);
         let mut other_variant = media.streams[0].clone();
         other_variant.url = other_variant_url;
         media.streams.push(other_variant);

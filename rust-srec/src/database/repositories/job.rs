@@ -4,97 +4,12 @@ pub(super) mod writes;
 
 use crate::database::begin_immediate;
 use crate::database::models::{
-    JobCounts, JobDbModel, JobExecutionLogDbModel, JobFilters, JobStatus, Pagination,
+    JobCounts, JobDbModel, JobExecutionLogDbModel, JobStatus, Pagination,
 };
 use crate::database::retry::retry_on_sqlite_busy;
 use crate::{Error, Result};
 use async_trait::async_trait;
-use sqlx::{QueryBuilder, Sqlite, SqlitePool};
-
-use super::literal_substring_pattern;
-
-/// Append each optional predicate with its bound value for count and page queries.
-fn push_job_filters(query: &mut QueryBuilder<Sqlite>, filters: &JobFilters) {
-    let mut separator = " WHERE ";
-    let mut next_separator = || std::mem::replace(&mut separator, " AND ");
-
-    if let Some(status) = filters.status {
-        query
-            .push(next_separator())
-            .push("status = ")
-            .push_bind(status.as_str());
-    }
-    if let Some(statuses) = &filters.statuses
-        && !statuses.is_empty()
-    {
-        query.push(next_separator()).push("status IN (");
-        let mut values = query.separated(", ");
-        for status in statuses {
-            values.push_bind(status.as_str());
-        }
-        values.push_unseparated(")");
-    }
-    if let Some(streamer_id) = &filters.streamer_id {
-        query
-            .push(next_separator())
-            .push("streamer_id = ")
-            .push_bind(streamer_id);
-    }
-    if let Some(session_id) = &filters.session_id {
-        query
-            .push(next_separator())
-            .push("session_id = ")
-            .push_bind(session_id);
-    }
-    if let Some(pipeline_id) = &filters.pipeline_id {
-        query
-            .push(next_separator())
-            .push("pipeline_id = ")
-            .push_bind(pipeline_id);
-    }
-    if let Some(from_date) = filters.from_date {
-        query
-            .push(next_separator())
-            .push("created_at >= ")
-            .push_bind(crate::database::time::datetime_to_ms(from_date));
-    }
-    if let Some(to_date) = filters.to_date {
-        query
-            .push(next_separator())
-            .push("created_at <= ")
-            .push_bind(crate::database::time::datetime_to_ms(to_date));
-    }
-    if let Some(job_type) = &filters.job_type {
-        query
-            .push(next_separator())
-            .push("job_type = ")
-            .push_bind(job_type);
-    }
-    if let Some(job_types) = &filters.job_types
-        && !job_types.is_empty()
-    {
-        query.push(next_separator()).push("job_type IN (");
-        let mut values = query.separated(", ");
-        for job_type in job_types {
-            values.push_bind(job_type);
-        }
-        values.push_unseparated(")");
-    }
-    if let Some(search) = &filters.search {
-        let pattern = literal_substring_pattern(search);
-        query
-            .push(next_separator())
-            .push("(id LIKE ")
-            .push_bind(pattern.clone())
-            .push(r" ESCAPE '\' OR session_id LIKE ")
-            .push_bind(pattern.clone())
-            .push(r" ESCAPE '\' OR streamer_id LIKE ")
-            .push_bind(pattern.clone())
-            .push(r" ESCAPE '\' OR job_type LIKE ")
-            .push_bind(pattern)
-            .push(r" ESCAPE '\')");
-    }
-}
+use sqlx::{QueryBuilder, SqlitePool};
 
 /// Pending job whose type has no registered processor.
 #[derive(sqlx::FromRow)]
@@ -189,22 +104,16 @@ pub trait JobRepository: Send + Sync {
     }
     async fn delete_execution_logs_for_job(&self, job_id: &str) -> Result<()>;
 
-    // Filtering and pagination
-    /// List jobs with optional filters and pagination.
-    /// Returns a tuple of (jobs, total_count).
-    async fn list_jobs_filtered(
-        &self,
-        filters: &JobFilters,
-        pagination: &Pagination,
-    ) -> Result<(Vec<JobDbModel>, u64)>;
-    /// List jobs with optional filters and pagination, without running a `COUNT(*)`.
-    async fn list_jobs_page_filtered(
-        &self,
-        filters: &JobFilters,
-        pagination: &Pagination,
-    ) -> Result<Vec<JobDbModel>>;
-    /// Count jobs matching `filters`, without fetching any rows.
-    async fn count_jobs(&self, filters: &JobFilters) -> Result<u64>;
+    // Domain recovery and quiescence queries
+    /// List up to `limit` pending jobs (highest priority, newest first) along
+    /// with the total pending count for startup recovery.
+    async fn list_pending_jobs(&self, limit: u32) -> Result<(Vec<JobDbModel>, u64)>;
+    /// Count jobs currently in `status`.
+    async fn count_jobs_by_status(&self, status: JobStatus) -> Result<u64>;
+    /// Count pending or processing jobs owned by `streamer_id`.
+    async fn count_unfinished_jobs_for_streamer(&self, streamer_id: &str) -> Result<u64>;
+    /// Count pending or processing jobs attached to `session_id`.
+    async fn count_unfinished_jobs_for_session(&self, session_id: &str) -> Result<u64>;
 
     // Statistics
     /// Get job counts by status.
@@ -819,41 +728,48 @@ impl JobRepository for SqlxJobRepository {
         .await
     }
 
-    async fn list_jobs_filtered(
-        &self,
-        filters: &JobFilters,
-        pagination: &Pagination,
-    ) -> Result<(Vec<JobDbModel>, u64)> {
-        let total_count = self.count_jobs(filters).await?;
-        let jobs = self.list_jobs_page_filtered(filters, pagination).await?;
-        Ok((jobs, total_count))
+    async fn list_pending_jobs(&self, limit: u32) -> Result<(Vec<JobDbModel>, u64)> {
+        let total = self.count_jobs_by_status(JobStatus::Pending).await?;
+        let jobs = sqlx::query_as::<_, JobDbModel>(
+            "SELECT * FROM job WHERE status = ? ORDER BY priority DESC, created_at DESC LIMIT ?",
+        )
+        .bind(JobStatus::Pending.as_str())
+        .bind(i64::from(limit))
+        .fetch_all(&self.pool)
+        .await?;
+        Ok((jobs, total))
     }
 
-    async fn count_jobs(&self, filters: &JobFilters) -> Result<u64> {
-        let mut query = QueryBuilder::new("SELECT COUNT(*) as count FROM job");
-        push_job_filters(&mut query, filters);
-        Ok(query
-            .build_query_scalar::<i64>()
+    async fn count_jobs_by_status(&self, status: JobStatus) -> Result<u64> {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM job WHERE status = ?")
+            .bind(status.as_str())
             .fetch_one(&self.pool)
-            .await? as u64)
+            .await?;
+        Ok(count as u64)
     }
 
-    async fn list_jobs_page_filtered(
-        &self,
-        filters: &JobFilters,
-        pagination: &Pagination,
-    ) -> Result<Vec<JobDbModel>> {
-        let mut query = QueryBuilder::new("SELECT * FROM job");
-        push_job_filters(&mut query, filters);
-        query
-            .push(" ORDER BY priority DESC, created_at DESC LIMIT ")
-            .push_bind(i64::from(pagination.limit))
-            .push(" OFFSET ")
-            .push_bind(i64::from(pagination.offset));
-        Ok(query
-            .build_query_as::<JobDbModel>()
-            .fetch_all(&self.pool)
-            .await?)
+    async fn count_unfinished_jobs_for_streamer(&self, streamer_id: &str) -> Result<u64> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM job WHERE streamer_id = ? AND status IN (?, ?)",
+        )
+        .bind(streamer_id)
+        .bind(JobStatus::Pending.as_str())
+        .bind(JobStatus::Processing.as_str())
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(count as u64)
+    }
+
+    async fn count_unfinished_jobs_for_session(&self, session_id: &str) -> Result<u64> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM job WHERE session_id = ? AND status IN (?, ?)",
+        )
+        .bind(session_id)
+        .bind(JobStatus::Pending.as_str())
+        .bind(JobStatus::Processing.as_str())
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(count as u64)
     }
 
     async fn get_job_counts_by_status(&self) -> Result<JobCounts> {

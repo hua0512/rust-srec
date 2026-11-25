@@ -149,7 +149,7 @@ impl ProxyError {
 }
 
 /// What keeps a proxy entry in use.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct ProxyReferences {
     /// The global route names the entry.
     pub global: bool,
@@ -230,14 +230,14 @@ impl std::fmt::Display for ProxyReferences {
 
 /// A platform, streamer, notification channel or job preset whose route
 /// names the entry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct NamedReference {
     pub id: String,
     pub name: String,
 }
 
 /// A template whose route names the entry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TemplateReference {
     pub id: String,
     pub name: String,
@@ -247,7 +247,7 @@ pub struct TemplateReference {
 }
 
 /// An account whose own route names the entry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AccountReference {
     pub id: String,
     pub label: String,
@@ -295,7 +295,7 @@ impl std::fmt::Debug for SystemProxy {
 }
 
 /// What the API shows of the environment's proxy.
-#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SystemProxySummary {
     pub detected: bool,
     /// `scheme://host[:port]`, without any login.
@@ -403,20 +403,8 @@ impl SystemProxy {
 /// The connection a scope chooses. Platforms, templates and streamers may
 /// inherit from the next scope out; global settings always decide. An
 /// account that inherits follows the route of the operation using it.
-#[derive(
-    Debug,
-    Clone,
-    Default,
-    PartialEq,
-    Eq,
-    Hash,
-    Serialize,
-    Deserialize,
-    utoipa::ToSchema,
-    schemars::JsonSchema,
-)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", try_from = "RouteWire")]
-#[schemars(!try_from, deny_unknown_fields)]
 pub enum ProxyRoute {
     #[default]
     Inherit,
@@ -425,10 +413,7 @@ pub enum ProxyRoute {
     /// Use the proxy the environment configures, if any.
     System,
     /// Connect through a saved proxy.
-    Proxy {
-        #[schemars(regex(pattern = r"\S"))]
-        id: String,
-    },
+    Proxy { id: String },
 }
 
 /// The wire form a route is read from.
@@ -507,7 +492,7 @@ pub enum RouteKey {
 }
 
 /// Which setting decided a request's route.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RouteSource {
     Account,
@@ -518,7 +503,7 @@ pub enum RouteSource {
 }
 
 /// How a resolved route connects, as the API reports it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RouteKind {
     Direct,
@@ -537,7 +522,7 @@ impl RouteKind {
 }
 
 /// A saved proxy as routes and notifications name it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProxyName {
     pub id: String,
     pub name: String,

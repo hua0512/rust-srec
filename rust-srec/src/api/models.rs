@@ -157,6 +157,7 @@ pub struct CreateStreamerRequest {
     pub template_id: Option<String>,
     /// Priority (default: Normal)
     #[serde(default)]
+    #[schema(value_type = crate::api::schemas::Priority)]
     pub priority: Priority,
     /// Whether to enable recording
     #[serde(default = "default_true")]
@@ -180,6 +181,7 @@ pub struct UpdateStreamerRequest {
     #[serde(default, deserialize_with = "deserialize_field_present_nullable")]
     pub template_id: Option<Option<String>>,
     /// Priority
+    #[schema(value_type = Option<crate::api::schemas::Priority>)]
     pub priority: Option<Priority>,
     /// Whether to enable recording
     pub enabled: Option<bool>,
@@ -190,6 +192,7 @@ pub struct UpdateStreamerRequest {
 /// Request to update streamer priority.
 #[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct UpdatePriorityRequest {
+    #[schema(value_type = crate::api::schemas::Priority)]
     pub priority: Priority,
 }
 
@@ -202,7 +205,10 @@ pub enum BatchStreamerAction {
     /// Assign a template, or clear it with `null`.
     SetTemplate { template_id: Option<String> },
     /// Set the scheduling priority.
-    SetPriority { priority: Priority },
+    SetPriority {
+        #[schema(value_type = crate::api::schemas::Priority)]
+        priority: Priority,
+    },
     /// Delete the streamer.
     Delete,
 }
@@ -253,7 +259,9 @@ pub struct StreamerResponse {
     pub avatar_url: Option<String>,
     pub platform_config_id: String,
     pub template_id: Option<String>,
+    #[schema(value_type = crate::api::schemas::StreamerState)]
     pub state: StreamerState,
+    #[schema(value_type = crate::api::schemas::Priority)]
     pub priority: Priority,
     pub enabled: bool,
     pub consecutive_error_count: i32,
@@ -263,6 +271,7 @@ pub struct StreamerResponse {
     /// Set while the streamer's latest check, queued start or recovery found
     /// no usable account on its platform, so nothing records until an account
     /// is fixed. Absent for streamers that are not monitored.
+    #[schema(value_type = Option<crate::api::schemas::CredentialBlock>)]
     pub credential_blocked: Option<crate::credentials::CredentialBlock>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
@@ -282,6 +291,7 @@ pub struct StreamerFilterParams {
     /// Filter by state (comma-separated for multiple)
     pub state: Option<String>,
     /// Filter by priority
+    #[param(value_type = Option<crate::api::schemas::Priority>)]
     pub priority: Option<Priority>,
     /// Filter by enabled status
     pub enabled: Option<bool>,
@@ -358,6 +368,7 @@ pub struct GlobalConfigResponse {
     pub streamer_check_delay_ms: u64,
     /// How requests connect unless a platform, template, streamer or account
     /// chooses otherwise; never `inherit`.
+    #[schema(value_type = crate::api::schemas::ProxyRoute)]
     pub proxy_route: crate::proxies::ProxyRoute,
     pub offline_check_delay_ms: u64,
     pub offline_check_count: u32,
@@ -425,6 +436,7 @@ pub struct UpdateGlobalConfigRequest {
     pub danmu_statistics: Option<serde_json::Value>,
     /// The global route; never `inherit`. Omitting it keeps the stored route.
     #[serde(default)]
+    #[schema(value_type = Option<crate::api::schemas::ProxyRoute>)]
     pub proxy_route: Option<crate::proxies::ProxyRoute>,
     /// Not accepted: routes are set with `proxy_route`. A request carrying a
     /// non-null value is rejected with `PROXY_CONFIG_REPLACED`.
@@ -477,6 +489,7 @@ pub struct PlatformConfigResponse {
     pub platform_specific_config: Option<String>,
     /// The platform's route. In a request, absent keeps the stored route.
     #[serde(default)]
+    #[schema(value_type = Option<crate::api::schemas::ProxyRoute>)]
     pub proxy_route: Option<crate::proxies::ProxyRoute>,
     /// Not accepted: routes are set with `proxy_route`. A request carrying a
     /// non-null value is rejected with `PROXY_CONFIG_REPLACED`.
@@ -584,6 +597,7 @@ pub struct CreateTemplateRequest {
     pub cookies: Option<serde_json::Value>,
     /// The template's route; absent inherits.
     #[serde(default)]
+    #[schema(value_type = Option<crate::api::schemas::ProxyRoute>)]
     pub proxy_route: Option<crate::proxies::ProxyRoute>,
     /// Not accepted: routes are set with `proxy_route`. A request carrying a
     /// non-null value is rejected with `PROXY_CONFIG_REPLACED`.
@@ -625,6 +639,7 @@ pub struct UpdateTemplateRequest {
     pub cookies: Option<serde_json::Value>,
     /// The template's route; absent keeps the stored route.
     #[serde(default)]
+    #[schema(value_type = Option<crate::api::schemas::ProxyRoute>)]
     pub proxy_route: Option<crate::proxies::ProxyRoute>,
     /// Not accepted: routes are set with `proxy_route`. A request carrying a
     /// non-null value is rejected with `PROXY_CONFIG_REPLACED`.
@@ -660,6 +675,7 @@ pub struct TemplateResponse {
     pub max_part_size_bytes: Option<i64>,
     pub download_retry_policy: Option<String>,
     /// The template's route.
+    #[schema(value_type = crate::api::schemas::ProxyRoute)]
     pub proxy_route: crate::proxies::ProxyRoute,
     pub pipeline: Option<String>,
     pub session_complete_pipeline: Option<String>,
@@ -721,6 +737,7 @@ pub struct JobResponse {
     /// its own; retrying the workflow (`pipeline_id`) restarts it together with the
     /// branches that were cancelled alongside it.
     pub belongs_to_workflow: bool,
+    #[schema(value_type = crate::api::schemas::JobStatus)]
     pub status: JobStatus,
     pub processor_type: String,
     pub input_path: Vec<String>,
@@ -808,6 +825,7 @@ impl From<crate::pipeline::JobLogEntry> for JobLogEntry {
 #[into_params(parameter_in = Query)]
 pub struct JobFilterParams {
     /// Filter by status
+    #[param(value_type = Option<crate::api::schemas::JobStatus>)]
     pub status: Option<JobStatus>,
     /// Filter by streamer ID
     pub streamer_id: Option<String>,
@@ -1066,6 +1084,7 @@ pub struct SessionEventResponse {
     /// Typed payload. `None` when the underlying row had no payload or when
     /// the payload failed to parse. The frontend still renders a known
     /// lifecycle kind and marks only its extra details unavailable.
+    #[schema(value_type = Option<crate::api::schemas::SessionEventPayload>)]
     pub payload: Option<SessionEventPayload>,
 }
 
@@ -1268,6 +1287,7 @@ pub struct ComponentHealth {
     pub check_duration_ms: Option<u64>,
     /// Filesystem capacity, present on `disk:` components only.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<crate::api::schemas::DiskUsage>)]
     pub disk: Option<crate::metrics::DiskUsage>,
 }
 
@@ -1307,7 +1327,7 @@ pub struct ParseUrlRequest {
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct ParseUrlResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub playback: Option<crate::services::playback_context::ManagedPlayback>,
+    pub playback: Option<crate::api::playback_context::ManagedPlayback>,
     /// Whether extraction was successful
     pub success: bool,
     /// Whether the stream is currently live

@@ -15,13 +15,13 @@ use serde::{Deserialize, Serialize};
 use crate::api::auth_service::{
     AuthPrincipal, AuthResponse, AuthService, CredentialKind, SessionInfo,
 };
+use crate::api::auth_store::{ApiKeyAccessLevel, ApiKeyDbModel};
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::extract::{ApiJson, ApiPath};
 use crate::api::jwt::Claims;
 use crate::api::middleware::AuthLayer;
 use crate::api::rate_limit::ClientIp;
 use crate::api::server::AppState;
-use crate::database::models::{ApiKeyAccessLevel, ApiKeyDbModel};
 
 #[derive(Clone)]
 pub struct AuthRouteState {
@@ -617,11 +617,11 @@ mod tests {
 
         use super::super::*;
         use crate::api::auth_service::AuthConfig;
-        use crate::api::jwt::JwtService;
-        use crate::database::models::{RefreshTokenDbModel, UserDbModel};
-        use crate::database::repositories::{
-            InMemoryApiKeyRepository, RefreshTokenRepository, UserRepository,
+        use crate::api::auth_store::{
+            AuthSessionDbModel, InMemoryApiKeyRepository, RefreshTokenDbModel,
+            RefreshTokenRepository, RefreshTokenRotation, UserDbModel, UserRepository,
         };
+        use crate::api::jwt::JwtService;
 
         const CURRENT_PASSWORD: &str = "current-pass-1";
 
@@ -705,7 +705,7 @@ mod tests {
         impl RefreshTokenRepository for NoopRefreshTokenRepository {
             async fn create_session(
                 &self,
-                _session: &crate::database::models::AuthSessionDbModel,
+                _session: &AuthSessionDbModel,
                 _token: &RefreshTokenDbModel,
                 _expected_password_hash: &str,
             ) -> crate::Result<bool> {
@@ -716,8 +716,8 @@ mod tests {
                 &self,
                 user_id: &str,
                 session_id: &str,
-            ) -> crate::Result<Option<crate::database::models::AuthSessionDbModel>> {
-                Ok(Some(crate::database::models::AuthSessionDbModel {
+            ) -> crate::Result<Option<AuthSessionDbModel>> {
+                Ok(Some(AuthSessionDbModel {
                     id: session_id.to_owned(),
                     user_id: user_id.to_owned(),
                     created_at: 0,
@@ -730,9 +730,8 @@ mod tests {
                 &self,
                 _id: &str,
                 _replacement: &RefreshTokenDbModel,
-            ) -> crate::Result<crate::database::repositories::refresh_token::RefreshTokenRotation>
-            {
-                Ok(crate::database::repositories::refresh_token::RefreshTokenRotation::NotFound)
+            ) -> crate::Result<RefreshTokenRotation> {
+                Ok(RefreshTokenRotation::NotFound)
             }
 
             async fn create(&self, _token: &RefreshTokenDbModel) -> crate::Result<()> {

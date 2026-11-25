@@ -23,6 +23,7 @@ use crate::proxies::ProxyRoute;
 #[derive(Clone)]
 pub struct NotificationRouteState {
     auth_enabled: bool,
+    queries: crate::api::queries::ApiQueries,
     notification_repository:
         std::sync::Arc<dyn crate::database::repositories::NotificationRepository>,
     notification_service: std::sync::Arc<crate::notification::NotificationService>,
@@ -33,6 +34,7 @@ impl FromRef<AppState> for NotificationRouteState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             auth_enabled: state.auth_service.is_some(),
+            queries: state.queries.clone(),
             notification_repository: state.notification_repository.clone(),
             notification_service: state.notification_service.clone(),
             web_push_service: state.web_push_service.clone(),
@@ -96,12 +98,14 @@ pub fn router() -> Router<AppState> {
 #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct CreateChannelRequest {
     pub name: String,
+    #[schema(value_type = crate::api::schemas::ChannelType)]
     pub channel_type: ChannelType,
     pub settings: serde_json::Value,
     /// How deliveries connect; `inherit`, the default, follows the global
     /// route. Email channels always connect directly and accept only
     /// `inherit`.
     #[serde(default)]
+    #[schema(value_type = crate::api::schemas::ProxyRoute)]
     pub proxy_route: ProxyRoute,
 }
 
@@ -111,6 +115,7 @@ pub struct UpdateChannelRequest {
     pub settings: serde_json::Value,
     /// Replaces the channel's route; omitting it keeps it.
     #[serde(default)]
+    #[schema(value_type = Option<crate::api::schemas::ProxyRoute>)]
     pub proxy_route: Option<ProxyRoute>,
 }
 
@@ -180,7 +185,7 @@ pub struct UnsubscribeWebPushRequest {
     path = "/api/notifications/event-types",
     tag = "notifications",
     responses(
-        (status = 200, description = "List of event types", body = Vec<crate::notification::events::NotificationEventTypeInfo>)
+        (status = 200, description = "List of event types", body = Vec<crate::api::schemas::NotificationEventTypeInfo>)
     ),
     security(("bearer_auth" = []))
 )]
@@ -393,7 +398,7 @@ pub async fn unsubscribe_web_push(
         ("priority" = Option<String>, Query, description = "Filter by minimum priority level (low, normal, high, critical)")
     ),
     responses(
-        (status = 200, description = "List of events", body = Vec<crate::database::models::notification::NotificationEventLogDbModel>)
+        (status = 200, description = "List of events", body = Vec<crate::api::schemas::NotificationEventLogDbModel>)
     ),
     security(("bearer_auth" = []))
 )]
@@ -401,11 +406,10 @@ pub async fn list_events(
     State(state): State<NotificationRouteState>,
     ApiQuery(q): ApiQuery<ListEventsQuery>,
 ) -> Result<Json<Vec<NotificationEventLogDbModel>>, ApiError> {
-    let repo = &state.notification_repository;
-
     let limit = q.limit.unwrap_or(200);
     let offset = q.offset.unwrap_or(0);
-    let entries = repo
+    let entries = state
+        .queries
         .list_event_logs(
             q.event_type.as_deref(),
             q.streamer_id.as_deref(),
@@ -438,7 +442,7 @@ fn parse_priority(input: &str) -> Option<NotificationPriority> {
     path = "/api/notifications/instances",
     tag = "notifications",
     responses(
-        (status = 200, description = "List of active channel instances", body = Vec<crate::notification::service::NotificationChannelInstance>)
+        (status = 200, description = "List of active channel instances", body = Vec<crate::api::schemas::NotificationChannelInstance>)
     ),
     security(("bearer_auth" = []))
 )]
@@ -454,7 +458,7 @@ pub async fn list_instances(
     path = "/api/notifications/channels",
     tag = "notifications",
     responses(
-        (status = 200, description = "List of channels", body = Vec<crate::database::models::notification::NotificationChannelDbModel>)
+        (status = 200, description = "List of channels", body = Vec<crate::api::schemas::NotificationChannelDbModel>)
     ),
     security(("bearer_auth" = []))
 )]
@@ -473,7 +477,7 @@ pub async fn list_channels(
     tag = "notifications",
     params(("id" = String, Path, description = "Channel ID")),
     responses(
-        (status = 200, description = "Channel details", body = crate::database::models::notification::NotificationChannelDbModel),
+        (status = 200, description = "Channel details", body = crate::api::schemas::NotificationChannelDbModel),
         (status = 404, description = "Channel not found", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -494,7 +498,7 @@ pub async fn get_channel(
     tag = "notifications",
     request_body = CreateChannelRequest,
     responses(
-        (status = 201, description = "Channel created", body = crate::database::models::notification::NotificationChannelDbModel),
+        (status = 201, description = "Channel created", body = crate::api::schemas::NotificationChannelDbModel),
         (status = 422, description = "The route names a saved proxy that does not exist (`PROXY_NOT_FOUND`), or an email channel chooses a route other than inherit (`VALIDATION_ERROR`): email always connects directly", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -528,7 +532,7 @@ pub async fn create_channel(
     params(("id" = String, Path, description = "Channel ID")),
     request_body = UpdateChannelRequest,
     responses(
-        (status = 200, description = "Channel updated", body = crate::database::models::notification::NotificationChannelDbModel),
+        (status = 200, description = "Channel updated", body = crate::api::schemas::NotificationChannelDbModel),
         (status = 404, description = "Channel not found", body = crate::api::error::ApiErrorResponse),
         (status = 422, description = "The route names a saved proxy that does not exist (`PROXY_NOT_FOUND`), or an email channel chooses a route other than inherit (`VALIDATION_ERROR`): email always connects directly", body = crate::api::error::ApiErrorResponse)
     ),
@@ -707,6 +711,7 @@ mod tests {
 
         let state = NotificationRouteState {
             auth_enabled: false,
+            queries: crate::api::queries::ApiQueries::new(pool.clone()),
             notification_repository: repo,
             notification_service,
             web_push_service: Some(web_push_service),

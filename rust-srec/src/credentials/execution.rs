@@ -75,7 +75,7 @@ pub struct CredentialExecution<T> {
     pub snapshot: CredentialSnapshot,
 }
 
-#[derive(Debug, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize)]
 pub struct ProfileActionResult {
     pub supported: bool,
     pub profile: CredentialProfileSummary,

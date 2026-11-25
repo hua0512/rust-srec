@@ -103,10 +103,12 @@ pub struct CreateProfileRequest {
     pub platform_id: String,
     pub label: String,
     pub enabled: bool,
+    #[schema(value_type = crate::api::schemas::CredentialMaterial)]
     pub material: CredentialMaterial,
     /// The account's own route, used by every request made with it;
     /// `inherit`, the default, follows the recording using the account.
     #[serde(default)]
+    #[schema(value_type = crate::api::schemas::ProxyRoute)]
     pub proxy_route: crate::proxies::ProxyRoute,
     /// For a Streamlink account, the sites it is for, as host names or URLs.
     /// Streamlink streamers on them that choose no account use it.
@@ -119,9 +121,11 @@ pub struct UpdateProfileRequest {
     pub expected_version: i64,
     pub label: Option<String>,
     pub enabled: Option<bool>,
+    #[schema(value_type = Option<crate::api::schemas::CredentialMaterial>)]
     pub replacement: Option<CredentialMaterial>,
     /// Replaces the account's own route; omitting it keeps it.
     #[serde(default)]
+    #[schema(value_type = Option<crate::api::schemas::ProxyRoute>)]
     pub proxy_route: Option<crate::proxies::ProxyRoute>,
     /// Replaces a Streamlink account's sites; omitting them keeps them.
     #[serde(default)]
@@ -140,11 +144,14 @@ pub struct ProfileCapabilities {
 }
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ProfileDetail {
+    #[schema(value_type = crate::api::schemas::CredentialProfileSummary)]
     pub profile: CredentialProfileSummary,
     /// The sites a Streamlink account is for, sorted.
     pub sites: Vec<String>,
+    #[schema(value_type = Option<crate::api::schemas::CredentialProfileHealth>)]
     pub health: Option<CredentialProfileHealth>,
     /// The selections that list the profile and the live recordings bound to it.
+    #[schema(value_type = crate::api::schemas::ProfileReferences)]
     pub references: ProfileReferences,
     pub capabilities: ProfileCapabilities,
     /// When the account is next renewed before use, in epoch milliseconds,
@@ -155,14 +162,19 @@ pub struct ProfileDetail {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct EffectiveCredentialSelection {
+    #[schema(value_type = Option<crate::api::schemas::CredentialSelection>)]
     pub configured: Option<CredentialSelection>,
+    #[schema(value_type = Option<crate::api::schemas::ResolvedCredentialPolicy>)]
     pub resolved: Option<ResolvedCredentialPolicy>,
     pub candidates: Vec<ProfileDetail>,
+    #[schema(value_type = Option<crate::api::schemas::UnavailableReason>)]
     pub unavailable_reason: Option<crate::credentials::UnavailableReason>,
+    #[schema(value_type = Option<crate::api::schemas::CredentialBinding>)]
     pub active_binding: Option<crate::credentials::CredentialBinding>,
     /// For a Streamlink streamer, its site and the accounts that name it.
     /// `resolved` comes from that site when the streamer chooses no account
     /// and `site.site` is present.
+    #[schema(value_type = Option<crate::api::schemas::StreamerSite>)]
     pub site: Option<crate::credentials::StreamerSite>,
 }
 
@@ -248,6 +260,7 @@ async fn details(
 #[derive(Debug, Serialize, ToSchema)]
 pub struct PlatformCredentialCapabilities {
     #[serde(flatten)]
+    #[schema(value_type = crate::api::schemas::ProviderCapabilities)]
     pub provider: ProviderCapabilities,
     /// The platform serves many unrelated sites: its accounts name the sites
     /// they are for, and only a streamer chooses, as none or one fixed
@@ -276,7 +289,7 @@ pub async fn get_capabilities(
 /// Enabled accounts on every platform that need a new login, or whose
 /// automatic refresh keeps failing after the platform rejected them. Disabled
 /// accounts are a user choice and are not listed.
-#[utoipa::path(get, path = "/api/credentials/attention", tag = "credentials", responses((status = 200, body = Vec<CredentialAttention>)), security(("bearer_auth" = [])))]
+#[utoipa::path(get, path = "/api/credentials/attention", tag = "credentials", responses((status = 200, body = Vec<crate::api::schemas::CredentialAttention>)), security(("bearer_auth" = [])))]
 pub async fn list_attention(
     State(state): State<CredentialProfileRouteState>,
 ) -> ApiResult<Json<Vec<CredentialAttention>>> {
@@ -377,7 +390,7 @@ async fn mutation<T: Send + 'static>(
         .map_err(|_| ApiError::internal("Credential mutation task failed"))?
 }
 
-#[utoipa::path(post, path = "/api/credentials/profiles", tag = "credentials", request_body = CreateProfileRequest, responses((status = 200, body = CredentialProfileSummary)), security(("bearer_auth" = [])))]
+#[utoipa::path(post, path = "/api/credentials/profiles", tag = "credentials", request_body = CreateProfileRequest, responses((status = 200, body = crate::api::schemas::CredentialProfileSummary)), security(("bearer_auth" = [])))]
 pub async fn create_profile(
     State(state): State<CredentialProfileRouteState>,
     ApiJson(body): ApiJson<CreateProfileRequest>,
@@ -399,7 +412,7 @@ pub async fn create_profile(
     .await
 }
 
-#[utoipa::path(patch, path = "/api/credentials/profiles/{id}", tag = "credentials", params(("id" = String, Path)), request_body = UpdateProfileRequest, responses((status = 200, body = CredentialProfileSummary)), security(("bearer_auth" = [])))]
+#[utoipa::path(patch, path = "/api/credentials/profiles/{id}", tag = "credentials", params(("id" = String, Path)), request_body = UpdateProfileRequest, responses((status = 200, body = crate::api::schemas::CredentialProfileSummary)), security(("bearer_auth" = [])))]
 pub async fn update_profile(
     State(state): State<CredentialProfileRouteState>,
     ApiPath(id): ApiPath<String>,
@@ -471,7 +484,7 @@ pub async fn refresh_profile(
     .await
 }
 
-#[utoipa::path(post, path = "/api/credentials/login-sessions", tag = "credentials", request_body = CredentialLoginTarget, responses((status = 200, body = CredentialLoginGenerated)), security(("bearer_auth" = [])))]
+#[utoipa::path(post, path = "/api/credentials/login-sessions", tag = "credentials", request_body = crate::api::schemas::CredentialLoginTarget, responses((status = 200, body = crate::api::schemas::CredentialLoginGenerated)), security(("bearer_auth" = [])))]
 pub async fn generate_login(
     State(state): State<CredentialProfileRouteState>,
     identity: Option<Extension<AuthPrincipal>>,
@@ -485,7 +498,7 @@ pub async fn generate_login(
     Ok((super::private_response_headers(), Json(generated)))
 }
 
-#[utoipa::path(post, path = "/api/credentials/login-sessions/{id}/poll", tag = "credentials", params(("id" = String, Path)), responses((status = 200, body = CredentialLoginReceipt)), security(("bearer_auth" = [])))]
+#[utoipa::path(post, path = "/api/credentials/login-sessions/{id}/poll", tag = "credentials", params(("id" = String, Path)), responses((status = 200, body = crate::api::schemas::CredentialLoginReceipt)), security(("bearer_auth" = [])))]
 pub async fn poll_login(
     State(state): State<CredentialProfileRouteState>,
     identity: Option<Extension<AuthPrincipal>>,
@@ -513,10 +526,12 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::api::auth_service::{AuthConfig, AuthService};
-    use crate::database::models::{ApiKeyAccessLevel, UserDbModel};
+    use crate::api::auth_store::{
+        ApiKeyAccessLevel, SqlxApiKeyRepository, SqlxRefreshTokenRepository, SqlxUserRepository,
+        UserDbModel, UserRepository,
+    };
     use crate::database::repositories::{
-        ConfigRepository, CredentialProfileRepository, SqlxApiKeyRepository, SqlxConfigRepository,
-        SqlxRefreshTokenRepository, SqlxStreamerRepository, SqlxUserRepository, UserRepository,
+        ConfigRepository, CredentialProfileRepository, SqlxConfigRepository, SqlxStreamerRepository,
     };
 
     use super::*;

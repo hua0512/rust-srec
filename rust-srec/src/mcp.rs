@@ -25,9 +25,9 @@ use rmcp::{
 };
 
 use crate::api::auth_service::AuthPrincipal;
+use crate::api::auth_store::ApiKeyAccessLevel;
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::server::AppState;
-use crate::database::models::ApiKeyAccessLevel;
 
 mod config_tools;
 mod notification_tools;

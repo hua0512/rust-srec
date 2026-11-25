@@ -8,7 +8,7 @@ use tracing::debug;
 
 use crate::config::ConfigService;
 use crate::database::models::{
-    LiveSessionDbModel, MediaFileType, MediaOutputDbModel, Pagination, SessionFilters, TitleEntry,
+    LiveSessionDbModel, MediaFileType, MediaOutputDbModel, Pagination, TitleEntry,
 };
 use crate::database::repositories::{ConfigRepository, SessionRepository, StreamerRepository};
 use crate::pipeline::{
@@ -189,16 +189,8 @@ impl PipelineSessionPort for DatabasePipelineSessionPort {
         limit: u32,
         offset: u32,
     ) -> Result<Vec<PipelineSessionSummary>> {
-        let filters = SessionFilters {
-            active_only: Some(true),
-            include_empty: Some(true),
-            ..SessionFilters::new()
-        };
         let pagination = Pagination::new(limit, offset);
-        let (page, _) = self
-            .session_repo
-            .list_sessions_filtered(&filters, &pagination)
-            .await?;
+        let page = self.session_repo.list_active_sessions(&pagination).await?;
         Ok(page.into_iter().map(to_session_summary).collect())
     }
 

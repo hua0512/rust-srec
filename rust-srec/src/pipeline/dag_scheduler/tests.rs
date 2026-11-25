@@ -278,23 +278,25 @@ impl JobRepository for NoopJobRepository {
         unimplemented!("not needed for these tests")
     }
 
-    async fn list_jobs_filtered(
+    async fn list_pending_jobs(
         &self,
-        _filters: &crate::database::models::JobFilters,
-        _pagination: &crate::database::models::Pagination,
+        _limit: u32,
     ) -> Result<(Vec<crate::database::models::JobDbModel>, u64)> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn list_jobs_page_filtered(
+    async fn count_jobs_by_status(
         &self,
-        _filters: &crate::database::models::JobFilters,
-        _pagination: &crate::database::models::Pagination,
-    ) -> Result<Vec<crate::database::models::JobDbModel>> {
+        _status: crate::database::models::JobStatus,
+    ) -> Result<u64> {
         unimplemented!("not needed for these tests")
     }
 
-    async fn count_jobs(&self, _filters: &crate::database::models::JobFilters) -> Result<u64> {
+    async fn count_unfinished_jobs_for_streamer(&self, _streamer_id: &str) -> Result<u64> {
+        unimplemented!("not needed for these tests")
+    }
+
+    async fn count_unfinished_jobs_for_session(&self, _session_id: &str) -> Result<u64> {
         unimplemented!("not needed for these tests")
     }
 

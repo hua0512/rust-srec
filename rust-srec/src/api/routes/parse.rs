@@ -22,7 +22,7 @@ use crate::danmu::live::{self, LiveDanmuTarget};
 #[derive(Clone)]
 pub struct ParseRouteState {
     auth_enabled: bool,
-    playback: std::sync::Arc<crate::services::playback_context::PlaybackContextService>,
+    playback: std::sync::Arc<crate::api::playback_context::PlaybackContextService>,
     execution: std::sync::Arc<crate::credentials::CredentialExecutionService>,
     admission: std::sync::Arc<crate::credentials::PlatformAdmission>,
     config_service: std::sync::Arc<
@@ -290,7 +290,7 @@ fn parse_deadline_error() -> ApiError {
 
 struct ManagedConfig {
     platform_name: String,
-    source: crate::services::playback_context::PlaybackSource,
+    source: crate::api::playback_context::PlaybackSource,
     policy: crate::credentials::ResolvedCredentialPolicy,
     extras: Option<serde_json::Value>,
     extractor: ExtractorSelection,
@@ -434,7 +434,7 @@ async fn managed_config(
     };
     Ok(Some(ManagedConfig {
         platform_name,
-        source: crate::services::playback_context::PlaybackSource {
+        source: crate::api::playback_context::PlaybackSource {
             url: url.to_owned(),
             owner,
             explicit_profile: requested_profile.map(str::to_owned),
@@ -483,8 +483,7 @@ async fn extract_managed(
                         )
                         .map_err(crate::Error::from)?;
                     let mut media = extractor.extract().await.map_err(crate::Error::from)?;
-                    if media.streams.len() > crate::services::playback_context::MAX_PLAYBACK_STREAMS
-                    {
+                    if media.streams.len() > crate::api::playback_context::MAX_PLAYBACK_STREAMS {
                         return Err(crate::Error::validation(
                             "Too many playback stream candidates",
                         ));
@@ -561,8 +560,8 @@ pub(crate) async fn validate_playback(
     state: &ParseRouteState,
     handle: &str,
     principal: &str,
-) -> ApiResult<std::sync::Arc<crate::services::playback_context::PlaybackData>> {
-    use crate::services::playback_context::PlaybackError;
+) -> ApiResult<std::sync::Arc<crate::api::playback_context::PlaybackData>> {
+    use crate::api::playback_context::PlaybackError;
     let data = state.playback.get(handle, principal)?;
     let current = current_managed_config(state, &data.source).await?;
     if current.policy.generation != data.snapshot.binding.policy.generation
@@ -608,13 +607,13 @@ pub(crate) async fn validate_playback(
 /// source that is no longer managed needs a fresh parse.
 async fn current_managed_config(
     state: &ParseRouteState,
-    source: &crate::services::playback_context::PlaybackSource,
+    source: &crate::api::playback_context::PlaybackSource,
 ) -> ApiResult<ManagedConfig> {
     Ok(
         managed_config(state, &source.url, source.explicit_profile.as_deref())
             .await
             .map_err(playback_resolution_error)?
-            .ok_or(crate::services::playback_context::PlaybackError::RenewalRequired)?,
+            .ok_or(crate::api::playback_context::PlaybackError::RenewalRequired)?,
     )
 }
 
@@ -625,7 +624,7 @@ fn playback_resolution_error(error: ApiError) -> ApiError {
             | axum::http::StatusCode::CONFLICT
             | axum::http::StatusCode::UNPROCESSABLE_ENTITY
     ) {
-        crate::services::playback_context::PlaybackError::RenewalRequired.into()
+        crate::api::playback_context::PlaybackError::RenewalRequired.into()
     } else {
         error
     }
@@ -638,7 +637,7 @@ fn playback_profile_error(error: crate::Error) -> ApiError {
             crate::credentials::ProfileError::InvalidOwner
             | crate::credentials::ProfileError::SourceChanged
             | crate::credentials::ProfileError::StaleVersion,
-        ) => crate::services::playback_context::PlaybackError::RenewalRequired.into(),
+        ) => crate::api::playback_context::PlaybackError::RenewalRequired.into(),
         error => ApiError::from(error),
     }
 }
@@ -1113,7 +1112,7 @@ mod tests {
 
     #[test]
     fn only_playback_invalidation_refuses_a_danmu_handle() {
-        use crate::services::playback_context::PlaybackError;
+        use crate::api::playback_context::PlaybackError;
         for error in [
             PlaybackError::Expired,
             PlaybackError::Forbidden,
@@ -1171,9 +1170,8 @@ mod tests {
             material: profile.material().unwrap(),
             route: crate::proxies::ResolvedRoute::default(),
         };
-        let (_, _, media) = crate::services::playback_context::test_bundle(
-            "https://cdn.test/master?signature=private",
-        );
+        let (_, _, media) =
+            crate::api::playback_context::test_bundle("https://cdn.test/master?signature=private");
         let context = state
             .playback
             .insert("alice", config.source, snapshot, media)
@@ -1268,9 +1266,7 @@ mod tests {
         let streamers = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
         ParseRouteState {
             auth_enabled: false,
-            playback: Arc::new(
-                crate::services::playback_context::PlaybackContextService::default(),
-            ),
+            playback: Arc::new(crate::api::playback_context::PlaybackContextService::default()),
             execution,
             admission: Arc::new(crate::credentials::PlatformAdmission::from_config(
                 &crate::monitor::StreamMonitorConfig::default(),

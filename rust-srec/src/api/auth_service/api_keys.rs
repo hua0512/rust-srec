@@ -8,8 +8,8 @@ use tracing::{info, warn};
 use super::AuthService;
 use super::cache::{API_KEY_LAST_USED_WRITE_INTERVAL, CachedApiKeyState, USER_STATE_CACHE_TTL};
 use super::config::{API_KEY_PREFIX, AuthError, AuthPrincipal, CredentialKind};
+use crate::api::auth_store::{ApiKeyAccessLevel, ApiKeyDbModel};
 use crate::api::jwt::Claims;
-use crate::database::models::{ApiKeyAccessLevel, ApiKeyDbModel};
 
 impl AuthService {
     /// Generate a raw API key: `API_KEY_PREFIX` + 256 bits of randomness in hex.

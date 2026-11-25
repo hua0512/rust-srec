@@ -25,7 +25,7 @@ use super::{CredentialError, CredentialMaterial};
 
 /// What accounts on a platform support. Profile validation, the extractor
 /// handoff and the account UI all follow these.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 pub struct ProviderCapabilities {
     /// Profiles may hold a refresh token.
     pub refresh_token: bool,

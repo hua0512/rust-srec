@@ -41,11 +41,11 @@ pub use self::config::{
 pub use self::local_desktop::LocalDesktopAccount;
 use self::local_desktop::LocalDesktopSessionRecord;
 use self::users::password_work_permits;
+use crate::api::auth_store::{ApiKeyRepository, RefreshTokenRepository, UserRepository};
+#[cfg(test)]
+use crate::api::auth_store::{AuthSessionDbModel, RefreshTokenDbModel};
 use crate::api::jwt::JwtService;
 use crate::api::rate_limit::LoginRateLimiter;
-#[cfg(test)]
-use crate::database::models::{AuthSessionDbModel, RefreshTokenDbModel};
-use crate::database::repositories::{ApiKeyRepository, RefreshTokenRepository, UserRepository};
 
 /// Authentication service for managing user authentication and tokens.
 pub struct AuthService {

@@ -4,7 +4,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
 use super::*;
-use super::{config, filter, notification, streamer, user};
+use super::{config, filter, notification, streamer};
 use crate::database::models::*;
 
 /// Platform import with the stored account selection kept.
@@ -114,7 +114,7 @@ async fn complete_row_projections_match_repository_and_import_modes() {
         let notification_repo = SqlxNotificationRepository::new(pool.clone(), pool.clone());
         let job_repo = SqliteJobPresetRepository::new(Arc::new(pool.clone()), Arc::new(pool.clone()));
         let pipeline_repo = SqlitePipelinePresetRepository::new(Arc::new(pool.clone()), Arc::new(pool.clone()));
-        let user_repo = SqlxUserRepository::new(pool.clone(), pool.clone());
+        let user_repo = crate::api::auth_store::SqlxUserRepository::new(pool.clone(), pool.clone());
 
         macro_rules! check {
             ($ty:ident, $table:literal, $seed:expr, $repo:ident, $create:ident, $update:ident, $import:path, $clock:expr) => {{
@@ -195,6 +195,7 @@ async fn complete_row_projections_match_repository_and_import_modes() {
         check!(NotificationChannelDbModel, "notification_channel", NotificationChannelDbModel::new("channel", ChannelType::Webhook, "{}"), notification_repo, create_channel, update_channel, notification::import_channel, false);
         check!(JobPreset, "job_presets", JobPreset::new("preset", "remux", json!({})), job_repo, create_preset, update_preset, preset::import_job_preset, true);
         check!(PipelinePreset, "pipeline_presets", PipelinePreset::new("pipeline", crate::database::models::job::DagPipelineDefinition::new("test", vec![])), pipeline_repo, create_pipeline_preset, update_pipeline_preset, preset::import_pipeline_preset, true);
-        check!(UserDbModel, "users", UserDbModel::new("user", "unused", vec!["user".into()]), user_repo, create, update, user::import_user, true);
+        use crate::api::auth_store::{UserDbModel, UserRepository as _, import_user as import_auth_user};
+        check!(UserDbModel, "users", UserDbModel::new("user", "unused", vec!["user".into()]), user_repo, create, update, import_auth_user, true);
     }).await.expect("projection checks must finish");
 }

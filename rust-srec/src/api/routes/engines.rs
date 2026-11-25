@@ -51,6 +51,7 @@ pub fn router() -> Router<AppState> {
 #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct CreateEngineRequest {
     pub name: String,
+    #[schema(value_type = crate::api::schemas::EngineType)]
     pub engine_type: EngineType,
     pub config: serde_json::Value,
 }
@@ -62,6 +63,8 @@ pub struct CreateEngineRequest {
 #[derive(Debug, serde::Deserialize, utoipa::ToSchema, schemars::JsonSchema)]
 pub struct UpdateEngineRequest {
     pub name: Option<String>,
+    #[schema(value_type = Option<crate::api::schemas::EngineType>)]
+    #[schemars(with = "Option<crate::api::schemas::EngineType>")]
     pub engine_type: Option<EngineType>,
     /// Engine-specific settings, same shape as the parsed `config` of a
     /// listed engine.
@@ -93,7 +96,7 @@ pub struct EngineTestResponse {
     path = "/api/engines",
     tag = "engines",
     responses(
-        (status = 200, description = "List of engine configurations", body = Vec<crate::database::models::EngineConfigurationDbModel>)
+        (status = 200, description = "List of engine configurations", body = Vec<crate::api::schemas::EngineConfigurationDbModel>)
     ),
     security(("bearer_auth" = []))
 )]
@@ -113,7 +116,7 @@ pub async fn list_engines(
     tag = "engines",
     params(("id" = String, Path, description = "Engine config ID")),
     responses(
-        (status = 200, description = "Engine configuration", body = crate::database::models::EngineConfigurationDbModel),
+        (status = 200, description = "Engine configuration", body = crate::api::schemas::EngineConfigurationDbModel),
         (status = 404, description = "Engine not found", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -135,7 +138,7 @@ pub async fn get_engine(
     tag = "engines",
     request_body = CreateEngineRequest,
     responses(
-        (status = 201, description = "Engine created", body = crate::database::models::EngineConfigurationDbModel),
+        (status = 201, description = "Engine created", body = crate::api::schemas::EngineConfigurationDbModel),
         (status = 422, description = "Config does not fit the engine type", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -164,7 +167,7 @@ pub async fn create_engine(
     params(("id" = String, Path, description = "Engine config ID")),
     request_body = UpdateEngineRequest,
     responses(
-        (status = 200, description = "Engine updated", body = crate::database::models::EngineConfigurationDbModel),
+        (status = 200, description = "Engine updated", body = crate::api::schemas::EngineConfigurationDbModel),
         (status = 404, description = "Engine not found", body = crate::api::error::ApiErrorResponse),
         (status = 422, description = "Config does not fit the engine type", body = crate::api::error::ApiErrorResponse)
     ),

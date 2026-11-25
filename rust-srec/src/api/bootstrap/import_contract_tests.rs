@@ -20,7 +20,7 @@ async fn public_import_preserves_warm_caches_until_commit_and_publishes_only_aft
         let container = ServiceContainer::new(pool.clone(), pool.clone()).await.unwrap();
         let (logging, _layer) = crate::logging::LoggingConfig::for_route_tests(directory.path().to_owned());
         assert!(container.logging_config.set(Arc::new(logging)).is_ok());
-        let state = build_api_state(&container, None).unwrap();
+        let state = build_api_state(&container, crate::backend::build_config_backup(&container), None).unwrap();
         let streamer = StreamerDbModel::new("Warm cache", "https://example.com/warm-cache", "platform-huya");
         state.streamer_repository.create_streamer(&streamer).await.unwrap();
         let cached_global = state.config_service.get_cached_global_config().await.unwrap();
@@ -37,7 +37,7 @@ async fn public_import_preserves_warm_caches_until_commit_and_publishes_only_aft
         failing.global_config.output_folder = directory.path().join("rejected").to_string_lossy().into_owned();
         failing.job_presets.push(JobPresetExport { name: "late-failure".into(), description: None, category: None, processor: "remux".into(), config: json!({}) });
         sqlx::query("CREATE TRIGGER reject_public_import BEFORE INSERT ON job_presets WHEN NEW.name = 'late-failure' BEGIN SELECT RAISE(ABORT, 'public import failure'); END").execute(&pool).await.unwrap();
-        assert!(state.configuration_import_service.import(failing, ImportMode::Merge).await.is_err());
+        assert!(state.config_backup.import_config(failing, ImportMode::Merge, None).await.is_err());
         assert!(events.try_recv().is_err(), "failed import must publish nothing");
         assert!(Arc::ptr_eq(&cached_global, &state.config_service.get_cached_global_config().await.unwrap()));
         assert!(Arc::ptr_eq(&cached_streamer, &state.config_service.get_config_for_streamer(&streamer.id).await.unwrap()));
@@ -45,7 +45,7 @@ async fn public_import_preserves_warm_caches_until_commit_and_publishes_only_aft
         assert_eq!(state.config_service.get_global_config().await.unwrap().output_folder, cached_global.output_folder);
 
         config.global_config.output_folder = directory.path().join("committed").to_string_lossy().into_owned();
-        state.configuration_import_service.import(config.clone(), ImportMode::Merge).await.unwrap();
+        state.config_backup.import_config(config.clone(), ImportMode::Merge, None).await.unwrap();
         assert!(matches!(events.try_recv().unwrap(), ConfigUpdateEvent::GlobalUpdated));
         assert!(events.try_recv().is_err());
         let global = state.config_service.get_cached_global_config().await.unwrap();
@@ -79,7 +79,12 @@ async fn cancelled_import_commit_finishes_filter_invalidation_and_runtime_public
         let (logging, _layer) =
             crate::logging::LoggingConfig::for_route_tests(directory.path().to_owned());
         assert!(container.logging_config.set(Arc::new(logging)).is_ok());
-        let state = build_api_state(&container, None).unwrap();
+        let state = build_api_state(
+            &container,
+            crate::backend::build_config_backup(&container),
+            None,
+        )
+        .unwrap();
         let streamer = StreamerDbModel::new(
             "Before import",
             "https://example.test/cancelled-import",
@@ -124,8 +129,12 @@ async fn cancelled_import_commit_finishes_filter_invalidation_and_runtime_public
         let gate = Arc::new(CommitTestGate::default());
         writer.set_commit_gate(phase, Some(gate.clone()));
         let mut events = container.event_broadcaster.subscribe();
-        let importer = state.configuration_import_service.clone();
-        let caller = tokio::spawn(async move { importer.import(config, ImportMode::Merge).await });
+        let importer = state.config_backup.clone();
+        let caller = tokio::spawn(async move {
+            importer
+                .import_config(config, ImportMode::Merge, None)
+                .await
+        });
         tokio::time::timeout(Duration::from_secs(2), gate.started.notified())
             .await
             .unwrap();
@@ -191,7 +200,12 @@ async fn committed_reaping_invalidates_filters_only_after_delete_succeeds() {
     let (logging, _layer) =
         crate::logging::LoggingConfig::for_route_tests(directory.path().to_owned());
     assert!(container.logging_config.set(Arc::new(logging)).is_ok());
-    let state = build_api_state(&container, None).unwrap();
+    let state = build_api_state(
+        &container,
+        crate::backend::build_config_backup(&container),
+        None,
+    )
+    .unwrap();
     let streamer = StreamerDbModel::new(
         "Retire",
         "https://example.test/reap-filter",
@@ -284,7 +298,12 @@ async fn actor_runtime_import_reconciles_streamers_after_commit_without_deadlock
         let (logging, _layer) =
             crate::logging::LoggingConfig::for_route_tests(directory.path().to_owned());
         assert!(container.logging_config.set(Arc::new(logging)).is_ok());
-        let state = build_api_state(&container, None).unwrap();
+        let state = build_api_state(
+            &container,
+            crate::backend::build_config_backup(&container),
+            None,
+        )
+        .unwrap();
         let registry = container.actor_registry.clone();
         registry.start();
 
@@ -324,8 +343,12 @@ async fn actor_runtime_import_reconciles_streamers_after_commit_without_deadlock
             .clone();
         let gate = Arc::new(CommitTestGate::default());
         writer.set_commit_gate(phase, Some(gate.clone()));
-        let importer = state.configuration_import_service.clone();
-        let caller = tokio::spawn(async move { importer.import(config, ImportMode::Merge).await });
+        let importer = state.config_backup.clone();
+        let caller = tokio::spawn(async move {
+            importer
+                .import_config(config, ImportMode::Merge, None)
+                .await
+        });
 
         tokio::time::timeout(Duration::from_secs(2), gate.started.notified())
             .await

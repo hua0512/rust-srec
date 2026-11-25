@@ -5,14 +5,13 @@ use async_trait::async_trait;
 use tokio::sync::Barrier;
 
 use super::{AuthConfig, AuthError, AuthService};
-use crate::api::jwt::JwtService;
-use crate::database;
-use crate::database::models::{RefreshTokenDbModel, UserDbModel};
-use crate::database::repositories::refresh_token::RefreshTokenRotation;
-use crate::database::repositories::{
-    RefreshTokenRepository, SqlxApiKeyRepository, SqlxRefreshTokenRepository, SqlxUserRepository,
+use crate::api::auth_store::{
+    AuthSessionDbModel, RefreshTokenDbModel, RefreshTokenRepository, RefreshTokenRotation,
+    SqlxApiKeyRepository, SqlxRefreshTokenRepository, SqlxUserRepository, UserDbModel,
     UserRepository,
 };
+use crate::api::jwt::JwtService;
+use crate::database;
 
 const RAW_TOKEN: &str = "test-rotation-predecessor";
 
@@ -41,7 +40,7 @@ impl RefreshTokenRepository for ConcurrentReaders {
         &self,
         user_id: &str,
         session_id: &str,
-    ) -> crate::Result<Option<crate::database::models::AuthSessionDbModel>> {
+    ) -> crate::Result<Option<AuthSessionDbModel>> {
         self.inner.find_session(user_id, session_id).await
     }
     async fn rotate_session(

@@ -40,7 +40,7 @@ use crate::database::models::JobStatus;
 use crate::database::models::job::{
     DagExecutionStatus, DagPipelineDefinition, DagStep, PipelineStep,
 };
-use crate::database::models::{DagSegmentSource, JobFilters, Pagination};
+use crate::database::models::{DagSegmentSource, Pagination};
 use crate::database::repositories::{
     DagRepository, JobPresetRepository, JobRepository, PipelinePresetRepository,
     StagedOutputRepository, UploadRecordRepository,

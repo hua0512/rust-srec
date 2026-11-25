@@ -11,13 +11,13 @@ pub(crate) enum WriteMode {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum Mutation {
+pub(crate) enum Mutation {
     Insert,
     Update,
     Upsert,
 }
 
-pub(super) struct RowWrite {
+pub(crate) struct RowWrite {
     table: &'static str,
     mutation: Mutation,
     columns: Vec<(&'static str, bool)>,
@@ -25,7 +25,7 @@ pub(super) struct RowWrite {
 }
 
 impl RowWrite {
-    pub(super) fn new(
+    pub(crate) fn new(
         table: &'static str,
         mutation: Mutation,
         id: &str,
@@ -40,7 +40,7 @@ impl RowWrite {
         })
     }
 
-    pub(super) fn field<'a, T: Encode<'a, Sqlite> + Type<Sqlite>>(
+    pub(crate) fn field<'a, T: Encode<'a, Sqlite> + Type<Sqlite>>(
         &mut self,
         name: &'static str,
         value: T,
@@ -95,7 +95,7 @@ impl RowWrite {
         (sql, self.arguments)
     }
 
-    pub(super) async fn execute(
+    pub(crate) async fn execute(
         self,
         connection: &mut SqliteConnection,
     ) -> Result<(), sqlx::Error> {
@@ -106,7 +106,7 @@ impl RowWrite {
         Ok(())
     }
 
-    pub(super) async fn fetch_optional<T>(
+    pub(crate) async fn fetch_optional<T>(
         self,
         connection: &mut SqliteConnection,
     ) -> Result<Option<T>, sqlx::Error>

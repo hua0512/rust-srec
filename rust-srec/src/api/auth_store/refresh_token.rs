@@ -1,12 +1,13 @@
-//! Refresh token repository for database operations.
+//! Refresh token and auth session repository for database operations.
 
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 
 use crate::Result;
 use crate::database::begin_immediate;
-use crate::database::models::{AuthSessionDbModel, RefreshTokenDbModel};
 use crate::database::retry::retry_on_sqlite_busy;
+
+use super::models::{AuthSessionDbModel, RefreshTokenDbModel};
 
 /// The predecessor's state when an atomic rotation obtains the database write lock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,14 +97,14 @@ pub trait RefreshTokenRepository: Send + Sync {
     async fn count_active_by_user(&self, user_id: &str) -> Result<i64>;
 }
 
-/// SQLx implementation of RefreshTokenRepository.
+/// SQLx implementation of [`RefreshTokenRepository`].
 pub struct SqlxRefreshTokenRepository {
     pool: SqlitePool,
     write_pool: SqlitePool,
 }
 
 impl SqlxRefreshTokenRepository {
-    /// Create a new SqlxRefreshTokenRepository with the given connection pool.
+    /// Create a new `SqlxRefreshTokenRepository` with the given connection pools.
     pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
         Self { pool, write_pool }
     }
@@ -142,44 +143,93 @@ impl RefreshTokenRepository for SqlxRefreshTokenRepository {
             let mut tx = begin_immediate(&self.write_pool).await?;
             let now = crate::database::time::now_ms();
             if replacement.revoked_at.is_some() || replacement.expires_at <= now {
-                return Err(crate::Error::validation("Refresh token replacement must be active and unexpired"));
+                return Err(crate::Error::validation(
+                    "Refresh token replacement must be active and unexpired",
+                ));
             }
-            let Some(predecessor) = sqlx::query_as::<_, RefreshTokenDbModel>("SELECT * FROM refresh_tokens WHERE id = ?")
-                .bind(predecessor_id).fetch_optional(&mut *tx).await? else {
-                    return Ok(RefreshTokenRotation::NotFound);
-                };
+            let Some(predecessor) = sqlx::query_as::<_, RefreshTokenDbModel>(
+                "SELECT * FROM refresh_tokens WHERE id = ?",
+            )
+            .bind(predecessor_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            else {
+                return Ok(RefreshTokenRotation::NotFound);
+            };
             if predecessor.user_id != replacement.user_id {
-                return Err(crate::Error::validation("Refresh token replacement belongs to a different user"));
+                return Err(crate::Error::validation(
+                    "Refresh token replacement belongs to a different user",
+                ));
             }
             let session_id = predecessor.session_id.as_deref().unwrap_or(&predecessor.id);
-            if replacement.session_id.as_deref().is_some_and(|id| id != session_id) {
-                return Err(crate::Error::validation("Refresh token replacement changed session lineage"));
+            if replacement
+                .session_id
+                .as_deref()
+                .is_some_and(|id| id != session_id)
+            {
+                return Err(crate::Error::validation(
+                    "Refresh token replacement changed session lineage",
+                ));
             }
             // Nullable legacy rows can be adopted only while their predecessor is active.
-            if predecessor.session_id.is_none() && predecessor.revoked_at.is_none() && predecessor.expires_at > now {
+            if predecessor.session_id.is_none()
+                && predecessor.revoked_at.is_none()
+                && predecessor.expires_at > now
+            {
                 sqlx::query("INSERT INTO auth_sessions(id,user_id,created_at,expires_at) VALUES(?,?,?,?) ON CONFLICT(id) DO NOTHING")
                     .bind(session_id).bind(&predecessor.user_id).bind(predecessor.created_at).bind(predecessor.expires_at)
                     .execute(&mut *tx).await?;
                 sqlx::query("UPDATE refresh_tokens SET session_id = ? WHERE id = ?")
-                    .bind(session_id).bind(predecessor_id).execute(&mut *tx).await?;
+                    .bind(session_id)
+                    .bind(predecessor_id)
+                    .execute(&mut *tx)
+                    .await?;
             }
-            let session = sqlx::query_as::<_, AuthSessionDbModel>("SELECT * FROM auth_sessions WHERE id = ? AND user_id = ?")
-                .bind(session_id).bind(&predecessor.user_id).fetch_optional(&mut *tx).await?;
-            let Some(session) = session else { return Ok(RefreshTokenRotation::SessionRevoked); };
-            if session.revoked_at.is_some() { return Ok(RefreshTokenRotation::SessionRevoked); }
-            if let Some(revoked_at) = predecessor.revoked_at { return Ok(RefreshTokenRotation::Revoked { revoked_at }); }
-            if predecessor.expires_at <= now || session.expires_at <= now { return Ok(RefreshTokenRotation::Expired); }
-            let active: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id = ? AND is_active = 1)")
-                .bind(&predecessor.user_id).fetch_one(&mut *tx).await?;
-            if !active { return Ok(RefreshTokenRotation::SessionRevoked); }
-            sqlx::query("UPDATE refresh_tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL")
-                .bind(now).bind(predecessor_id).execute(&mut *tx).await?;
+            let session = sqlx::query_as::<_, AuthSessionDbModel>(
+                "SELECT * FROM auth_sessions WHERE id = ? AND user_id = ?",
+            )
+            .bind(session_id)
+            .bind(&predecessor.user_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+            let Some(session) = session else {
+                return Ok(RefreshTokenRotation::SessionRevoked);
+            };
+            if session.revoked_at.is_some() {
+                return Ok(RefreshTokenRotation::SessionRevoked);
+            }
+            if let Some(revoked_at) = predecessor.revoked_at {
+                return Ok(RefreshTokenRotation::Revoked { revoked_at });
+            }
+            if predecessor.expires_at <= now || session.expires_at <= now {
+                return Ok(RefreshTokenRotation::Expired);
+            }
+            let active: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM users WHERE id = ? AND is_active = 1)",
+            )
+            .bind(&predecessor.user_id)
+            .fetch_one(&mut *tx)
+            .await?;
+            if !active {
+                return Ok(RefreshTokenRotation::SessionRevoked);
+            }
+            sqlx::query(
+                "UPDATE refresh_tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
+            )
+            .bind(now)
+            .bind(predecessor_id)
+            .execute(&mut *tx)
+            .await?;
             insert_token(&mut tx, replacement, session_id).await?;
             sqlx::query("UPDATE auth_sessions SET expires_at = MAX(expires_at, ?) WHERE id = ?")
-                .bind(session_expires_at.max(replacement.expires_at)).bind(session_id).execute(&mut *tx).await?;
+                .bind(session_expires_at.max(replacement.expires_at))
+                .bind(session_id)
+                .execute(&mut *tx)
+                .await?;
             tx.commit().await?;
             Ok(RefreshTokenRotation::Rotated)
-        }).await
+        })
+        .await
     }
 
     async fn create_session(
@@ -190,23 +240,44 @@ impl RefreshTokenRepository for SqlxRefreshTokenRepository {
     ) -> Result<bool> {
         retry_on_sqlite_busy("create_auth_session", || async {
             let mut tx = begin_immediate(&self.write_pool).await?;
-            let valid: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id = ? AND password_hash = ? AND is_active = 1)")
-                .bind(&session.user_id).bind(expected_password_hash).fetch_one(&mut *tx).await?;
-            if !valid { return Ok(false); }
-            if token.user_id != session.user_id || token.session_id.as_deref() != Some(session.id.as_str())
-                || session.revoked_at.is_some() || token.revoked_at.is_some()
-                || token.expires_at <= crate::database::time::now_ms() || session.expires_at < token.expires_at {
+            let valid: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM users WHERE id = ? AND password_hash = ? AND is_active = 1)",
+            )
+            .bind(&session.user_id)
+            .bind(expected_password_hash)
+            .fetch_one(&mut *tx)
+            .await?;
+            if !valid {
+                return Ok(false);
+            }
+            if token.user_id != session.user_id
+                || token.session_id.as_deref() != Some(session.id.as_str())
+                || session.revoked_at.is_some()
+                || token.revoked_at.is_some()
+                || token.expires_at <= crate::database::time::now_ms()
+                || session.expires_at < token.expires_at
+            {
                 return Err(crate::Error::validation("Invalid auth session issuance"));
             }
             sqlx::query("INSERT INTO auth_sessions(id,user_id,created_at,expires_at) VALUES(?,?,?,?)")
-                .bind(&session.id).bind(&session.user_id).bind(session.created_at).bind(session.expires_at).execute(&mut *tx).await?;
+                .bind(&session.id)
+                .bind(&session.user_id)
+                .bind(session.created_at)
+                .bind(session.expires_at)
+                .execute(&mut *tx)
+                .await?;
             insert_token(&mut tx, token, &session.id).await?;
             let now = crate::database::time::now_ms();
             sqlx::query("UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?")
-                .bind(now).bind(now).bind(&session.user_id).execute(&mut *tx).await?;
+                .bind(now)
+                .bind(now)
+                .bind(&session.user_id)
+                .execute(&mut *tx)
+                .await?;
             tx.commit().await?;
             Ok(true)
-        }).await
+        })
+        .await
     }
 
     async fn create(&self, token: &RefreshTokenDbModel) -> Result<()> {
@@ -214,14 +285,27 @@ impl RefreshTokenRepository for SqlxRefreshTokenRepository {
             let mut tx = begin_immediate(&self.write_pool).await?;
             let session_id = token.session_id.as_deref().unwrap_or(&token.id);
             sqlx::query("INSERT INTO auth_sessions(id,user_id,created_at,expires_at) VALUES(?,?,?,?) ON CONFLICT(id) DO NOTHING")
-                .bind(session_id).bind(&token.user_id).bind(token.created_at).bind(token.expires_at).execute(&mut *tx).await?;
-            let owner: String = sqlx::query_scalar("SELECT user_id FROM auth_sessions WHERE id = ?")
-                .bind(session_id).fetch_one(&mut *tx).await?;
-            if owner != token.user_id { return Err(crate::Error::validation("Session belongs to a different user")); }
+                .bind(session_id)
+                .bind(&token.user_id)
+                .bind(token.created_at)
+                .bind(token.expires_at)
+                .execute(&mut *tx)
+                .await?;
+            let owner: String =
+                sqlx::query_scalar("SELECT user_id FROM auth_sessions WHERE id = ?")
+                    .bind(session_id)
+                    .fetch_one(&mut *tx)
+                    .await?;
+            if owner != token.user_id {
+                return Err(crate::Error::validation(
+                    "Session belongs to a different user",
+                ));
+            }
             insert_token(&mut tx, token, session_id).await?;
             tx.commit().await?;
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn find_session(
@@ -243,13 +327,24 @@ impl RefreshTokenRepository for SqlxRefreshTokenRepository {
             let mut tx = begin_immediate(&self.write_pool).await?;
             let now = crate::database::time::now_ms();
             sqlx::query("UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ? AND user_id = ?")
-                .bind(now).bind(session_id).bind(user_id).execute(&mut *tx).await?;
+                .bind(now)
+                .bind(session_id)
+                .bind(user_id)
+                .execute(&mut *tx)
+                .await?;
             sqlx::query("UPDATE refresh_tokens SET revoked_at = COALESCE(revoked_at, ?) WHERE user_id = ? AND (session_id = ? OR (session_id IS NULL AND id = ?))")
-                .bind(now).bind(user_id).bind(session_id).bind(session_id).execute(&mut *tx).await?;
+                .bind(now)
+                .bind(user_id)
+                .bind(session_id)
+                .bind(session_id)
+                .execute(&mut *tx)
+                .await?;
             tx.commit().await?;
             Ok(())
-        }).await
+        })
+        .await
     }
+
     async fn find_by_token_hash(&self, hash: &str) -> Result<Option<RefreshTokenDbModel>> {
         let token = sqlx::query_as::<_, RefreshTokenDbModel>(
             "SELECT * FROM refresh_tokens WHERE token_hash = ?",
@@ -316,17 +411,35 @@ impl RefreshTokenRepository for SqlxRefreshTokenRepository {
     async fn revoke_all_for_active_session(&self, user_id: &str, session_id: &str) -> Result<()> {
         retry_on_sqlite_busy("revoke_sessions_on_refresh_reuse", || async {
             let mut tx = begin_immediate(&self.write_pool).await?;
-            let open: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM auth_sessions WHERE id = ? AND user_id = ? AND revoked_at IS NULL)")
-                .bind(session_id).bind(user_id).fetch_one(&mut *tx).await?;
-            if !open { return Ok(()); }
+            let open: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM auth_sessions WHERE id = ? AND user_id = ? AND revoked_at IS NULL)",
+            )
+            .bind(session_id)
+            .bind(user_id)
+            .fetch_one(&mut *tx)
+            .await?;
+            if !open {
+                return Ok(());
+            }
             let now = crate::database::time::now_ms();
-            sqlx::query("UPDATE auth_sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL")
-                .bind(now).bind(user_id).execute(&mut *tx).await?;
-            sqlx::query("UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL")
-                .bind(now).bind(user_id).execute(&mut *tx).await?;
+            sqlx::query(
+                "UPDATE auth_sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+            )
+            .bind(now)
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?;
+            sqlx::query(
+                "UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+            )
+            .bind(now)
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?;
             tx.commit().await?;
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn count_active_by_user(&self, user_id: &str) -> Result<i64> {

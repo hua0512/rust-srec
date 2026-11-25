@@ -30,6 +30,7 @@ pub struct CreateChannelParams {
     /// How deliveries connect: inherit (the default, following the global
     /// route), direct, system, or a saved proxy by its ID from proxy_list.
     /// Email channels always connect directly and accept only inherit.
+    #[schemars(with = "Option<crate::api::schemas::ProxyRoute>")]
     pub proxy_route: Option<crate::proxies::ProxyRoute>,
 }
 
@@ -43,6 +44,7 @@ pub struct UpdateChannelParams {
     pub settings: serde_json::Value,
     /// Replaces the channel's proxy route (as for
     /// notification_create_channel); omitted keeps it.
+    #[schemars(with = "Option<crate::api::schemas::ProxyRoute>")]
     pub proxy_route: Option<crate::proxies::ProxyRoute>,
 }
 

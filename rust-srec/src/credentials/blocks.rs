@@ -20,7 +20,7 @@ use super::UnavailableReason;
 const CHANGE_CAPACITY: usize = 256;
 
 /// Why a streamer's checks found no usable account, and since when.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CredentialBlock {
     pub reason: UnavailableReason,
     /// The platform whose accounts the streamer selects from.

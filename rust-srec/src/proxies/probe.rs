@@ -12,7 +12,7 @@ use super::ProxyEndpoint;
 pub const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Why a check failed. Error text is not returned: it can quote addresses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProbeErrorKind {
     /// The proxy refused the login (HTTP 407).
@@ -28,7 +28,7 @@ pub enum ProbeErrorKind {
 }
 
 /// The result of one check.
-#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ProbeOutcome {
     /// The site answered through the proxy. Any HTTP status except 407
     /// counts: the check is about the connection, not the page.

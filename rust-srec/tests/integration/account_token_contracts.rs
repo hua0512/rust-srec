@@ -3,12 +3,10 @@
 use serde::Serialize;
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 
-use rust_srec::database::models::{
-    ApiKeyAccessLevel, ApiKeyDbModel, RefreshTokenDbModel, UserDbModel,
-};
-use rust_srec::database::repositories::{
-    ApiKeyRepository, RefreshTokenRepository, SqlxApiKeyRepository, SqlxRefreshTokenRepository,
-    SqlxUserRepository, UserRepository,
+use rust_srec::api::auth_store::{
+    ApiKeyAccessLevel, ApiKeyDbModel, ApiKeyRepository, RefreshTokenDbModel,
+    RefreshTokenRepository, SqlxApiKeyRepository, SqlxRefreshTokenRepository, SqlxUserRepository,
+    UserDbModel, UserRepository,
 };
 use rust_srec::database::time::now_ms;
 

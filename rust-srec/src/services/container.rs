@@ -126,12 +126,10 @@ pub struct ServiceContainer {
         Arc<dyn crate::database::repositories::UploadRecordRepository>,
     pub(crate) filter_repository: Arc<SqlxFilterRepository>,
     pub(crate) streamer_repository: Arc<SqlxStreamerRepository>,
+    pub(crate) job_preset_repository:
+        Arc<crate::database::repositories::preset::SqliteJobPresetRepository>,
     pub(crate) pipeline_preset_repository:
         Arc<crate::database::repositories::preset::SqlitePipelinePresetRepository>,
-    pub(crate) configuration_import_service:
-        Arc<crate::services::config_import::ConfigurationImportService>,
-    pub(crate) configuration_export_service:
-        Arc<crate::services::config_export::ConfigurationExportService>,
     /// Output-root write gate. Shared by the download manager for
     /// pre-start checks + runtime ENOSPC routing and by the health checker
     /// for aggregated `/health` reporting.
@@ -175,7 +173,6 @@ pub struct ServiceContainer {
         Arc<crate::credentials::login_sessions::CredentialLoginSessions>,
     pub(crate) credential_execution: Arc<crate::credentials::CredentialExecutionService>,
     pub(crate) proxies: Arc<crate::proxies::ProxyService>,
-    pub(crate) playback_contexts: Arc<crate::services::playback_context::PlaybackContextService>,
     /// Live broadcaster for committed check-history rows. Cloned into the
     /// downloads WS route so per-streamer subscribers see new bars appear
     /// without polling. Its wire encoder is injected by the API layer.

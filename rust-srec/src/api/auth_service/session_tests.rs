@@ -1,7 +1,7 @@
 use super::*;
-use crate::database::models::{ApiKeyAccessLevel, UserDbModel};
-use crate::database::repositories::{
-    SqlxApiKeyRepository, SqlxRefreshTokenRepository, SqlxUserRepository,
+use crate::api::auth_store::{
+    ApiKeyAccessLevel, SqlxApiKeyRepository, SqlxRefreshTokenRepository, SqlxUserRepository,
+    UserDbModel,
 };
 use sqlx::{SqlitePool, migrate::Migrator, sqlite::SqlitePoolOptions};
 

@@ -49,7 +49,7 @@ async fn prune_in(connection: &mut sqlx::SqliteConnection, now: i64) -> Result<u
     Ok(expired + deleted)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CredentialLoginTarget {
     Create {
@@ -69,14 +69,14 @@ pub enum CredentialLoginTarget {
     },
 }
 
-#[derive(Serialize, utoipa::ToSchema)]
+#[derive(Serialize)]
 pub struct CredentialLoginGenerated {
     pub login_id: String,
     pub url: String,
     pub expires_at: i64,
 }
 
-#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CredentialLoginReceipt {
     pub status: String,
     pub profile_id: Option<String>,

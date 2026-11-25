@@ -71,25 +71,6 @@ impl PipelineManager {
     // Query and Management Methods
     // ========================================================================
 
-    /// List jobs with filters and pagination.
-    /// Delegates to JobQueue/JobRepository.
-    pub async fn list_jobs(
-        &self,
-        filters: &JobFilters,
-        pagination: &Pagination,
-    ) -> Result<(Vec<Job>, u64)> {
-        self.job_queue.list_jobs(filters, pagination).await
-    }
-
-    /// List jobs with filters and pagination, without running a total `COUNT(*)`.
-    pub async fn list_jobs_page(
-        &self,
-        filters: &JobFilters,
-        pagination: &Pagination,
-    ) -> Result<Vec<Job>> {
-        self.job_queue.list_jobs_page(filters, pagination).await
-    }
-
     /// List job execution logs (paged).
     pub async fn list_job_logs(
         &self,
@@ -449,19 +430,6 @@ impl PipelineManager {
             repo.list_presets_by_category(category).await
         } else {
             Ok(vec![])
-        }
-    }
-
-    /// List job presets with filtering, searching, and pagination.
-    pub async fn list_presets_filtered(
-        &self,
-        filters: &crate::database::repositories::JobPresetFilters,
-        pagination: &crate::database::models::Pagination,
-    ) -> Result<(Vec<crate::database::models::JobPreset>, u64)> {
-        if let Some(repo) = &self.preset_repo {
-            repo.list_presets_filtered(filters, pagination).await
-        } else {
-            Ok((vec![], 0))
         }
     }
 

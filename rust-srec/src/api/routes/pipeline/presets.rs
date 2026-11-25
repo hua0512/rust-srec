@@ -28,16 +28,15 @@ pub async fn list_pipeline_presets(
     ApiQuery(filters): ApiQuery<PipelinePresetFilterParams>,
     ApiQuery(pagination): ApiQuery<PaginationParams>,
 ) -> ApiResult<Json<PipelinePresetListResponse>> {
-    let preset_repo = &state.pipeline_preset_repository;
-
-    let db_filters = crate::database::repositories::PipelinePresetFilters {
+    let db_filters = crate::api::queries::PipelinePresetFilters {
         search: filters.search,
     };
 
     let effective_limit = pagination.effective_limit();
     let db_pagination = Pagination::new(effective_limit, pagination.offset);
 
-    let (presets, total) = preset_repo
+    let (presets, total) = state
+        .queries
         .list_pipeline_presets_filtered(&db_filters, &db_pagination)
         .await?;
 

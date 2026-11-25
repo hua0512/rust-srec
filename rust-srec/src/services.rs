@@ -13,6 +13,5 @@ pub mod legacy_upgrade;
 pub mod maintenance;
 pub(crate) mod notification_bridge;
 pub(crate) mod pipeline_ports;
-pub(crate) mod playback_context;
 
 pub use container::{ActiveRecordingSummary, ServiceContainer, ServiceContainerConfig};

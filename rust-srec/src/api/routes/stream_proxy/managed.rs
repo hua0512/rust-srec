@@ -17,7 +17,7 @@ pub(super) async fn managed_stream_proxy(
     incoming: &HeaderMap,
     principal: &str,
 ) -> ApiResult<Response> {
-    use crate::services::playback_context::PlaybackError;
+    use crate::api::playback_context::PlaybackError;
     let (Some(handle), Some(stream), Some(url)) = (
         query.playback_handle.as_deref(),
         query.stream,
@@ -101,11 +101,11 @@ pub(super) async fn managed_stream_proxy(
 /// Validates a client-supplied target before any of the context's headers are
 /// attached to it. Redirect hops are checked again in `fetch_upstream_bound`.
 pub(super) fn managed_target(
-    data: &crate::services::playback_context::PlaybackData,
+    data: &crate::api::playback_context::PlaybackData,
     stream: usize,
     url: &str,
-) -> Result<url::Url, crate::services::playback_context::PlaybackError> {
-    use crate::services::playback_context::{PlaybackError, checked_url};
+) -> Result<url::Url, crate::api::playback_context::PlaybackError> {
+    use crate::api::playback_context::{PlaybackError, checked_url};
     if stream >= data.media.streams.len() {
         return Err(PlaybackError::InvalidResource);
     }
@@ -117,7 +117,7 @@ pub(super) fn managed_target(
 }
 
 pub(super) fn managed_media_headers(
-    data: &crate::services::playback_context::PlaybackData,
+    data: &crate::api::playback_context::PlaybackData,
     stream_index: usize,
     incoming: &HeaderMap,
 ) -> ApiResult<reqwest::header::HeaderMap> {

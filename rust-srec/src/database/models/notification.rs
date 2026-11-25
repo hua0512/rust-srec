@@ -8,7 +8,7 @@ use crate::domain::proxy::ProxyRoute;
 
 /// Notification channel database model.
 /// Represents a configured destination for system event notifications.
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationChannelDbModel {
     pub id: String,
     pub name: String,
@@ -60,7 +60,7 @@ impl NotificationChannelDbModel {
 }
 
 /// Notification channel types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum ChannelType {
     Discord,
@@ -218,7 +218,7 @@ impl NotificationDeadLetterDbModel {
 /// Notification event log database model.
 ///
 /// Stores a persistent history of notification events (independent of delivery success).
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct NotificationEventLogDbModel {
     pub id: String,
     pub event_type: String,
@@ -234,7 +234,7 @@ pub struct NotificationEventLogDbModel {
 /// Web Push subscription database model.
 ///
 /// Stores per-user browser push subscriptions (VAPID/Web Push).
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct WebPushSubscriptionDbModel {
     pub id: String,
     pub user_id: String,

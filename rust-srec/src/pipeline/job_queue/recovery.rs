@@ -6,7 +6,7 @@ use tracing::{info, warn};
 
 use super::{JobQueue, JobStats, db_model_to_job};
 use crate::Result;
-use crate::database::models::{JobFilters, JobStatus, Pagination};
+use crate::database::models::JobStatus;
 
 impl JobQueue {
     /// Recover jobs from database on startup.
@@ -39,13 +39,7 @@ impl JobQueue {
         }
 
         // Load pending jobs into cache
-        let filters = JobFilters {
-            status: Some(JobStatus::Pending),
-            ..Default::default()
-        };
-        let pagination = Pagination::new(10000, 0); // Load all pending jobs
-
-        let (db_jobs, total) = repo.list_jobs_filtered(&filters, &pagination).await?;
+        let (db_jobs, total) = repo.list_pending_jobs(10000).await?;
 
         self.jobs_cache.clear();
         self.cancellation_tokens.clear();
@@ -67,10 +61,7 @@ impl JobQueue {
     /// Read the current processing count without scanning completed job history.
     pub async fn count_processing_jobs(&self) -> Result<u64> {
         self.job_repository
-            .count_jobs(&JobFilters {
-                status: Some(crate::database::models::JobStatus::Processing),
-                ..Default::default()
-            })
+            .count_jobs_by_status(JobStatus::Processing)
             .await
     }
 

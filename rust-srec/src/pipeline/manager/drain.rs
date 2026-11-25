@@ -113,11 +113,7 @@ impl PipelineManager {
         // carry the streamer id and must finish before its metadata is removed.
         result.jobs = self
             .job_repository
-            .count_jobs(
-                &JobFilters::new()
-                    .with_streamer_id(streamer_id)
-                    .with_statuses([JobStatus::Pending, JobStatus::Processing]),
-            )
+            .count_unfinished_jobs_for_streamer(streamer_id)
             .await?;
         Ok(result)
     }
@@ -239,11 +235,7 @@ impl PipelineManager {
 
         let jobs = self
             .job_repository
-            .count_jobs(
-                &JobFilters::new()
-                    .with_session_id(session_id)
-                    .with_statuses([JobStatus::Pending, JobStatus::Processing]),
-            )
+            .count_unfinished_jobs_for_session(session_id)
             .await?;
 
         Ok(SessionPipelineOutstanding {

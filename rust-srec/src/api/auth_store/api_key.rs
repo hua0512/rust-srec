@@ -4,7 +4,8 @@ use async_trait::async_trait;
 use sqlx::SqlitePool;
 
 use crate::Result;
-use crate::database::models::ApiKeyDbModel;
+
+use super::models::ApiKeyDbModel;
 
 /// API key repository trait for key data access operations.
 #[async_trait]
@@ -36,14 +37,14 @@ pub trait ApiKeyRepository: Send + Sync {
     async fn update_last_used(&self, id: &str, time_ms: i64) -> Result<()>;
 }
 
-/// SQLx implementation of ApiKeyRepository.
+/// SQLx implementation of [`ApiKeyRepository`].
 pub struct SqlxApiKeyRepository {
     pool: SqlitePool,
     write_pool: SqlitePool,
 }
 
 impl SqlxApiKeyRepository {
-    /// Create a new SqlxApiKeyRepository with the given connection pools.
+    /// Create a new `SqlxApiKeyRepository` with the given connection pools.
     pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
         Self { pool, write_pool }
     }
@@ -60,6 +61,7 @@ impl ApiKeyRepository for SqlxApiKeyRepository {
                 .await?,
         )
     }
+
     async fn create(&self, key: &ApiKeyDbModel) -> Result<()> {
         sqlx::query(
             r#"
@@ -125,7 +127,7 @@ impl ApiKeyRepository for SqlxApiKeyRepository {
     }
 }
 
-/// In-memory `ApiKeyRepository` shared by unit tests across the crate
+/// In-memory `ApiKeyRepository` shared by unit tests across the API layer
 /// (`api::auth_service`, `api::middleware::auth`, `api::routes::auth`).
 #[cfg(test)]
 #[derive(Default)]

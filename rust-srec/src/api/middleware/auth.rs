@@ -13,8 +13,8 @@ use axum::{
 };
 
 use crate::api::auth_service::{API_KEY_PREFIX, AuthService, CredentialKind};
+use crate::api::auth_store::ApiKeyAccessLevel;
 use crate::api::error::ApiError;
-use crate::database::models::ApiKeyAccessLevel;
 
 /// Authentication error response.
 #[derive(Debug)]

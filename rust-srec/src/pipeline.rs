@@ -28,6 +28,7 @@ pub use coordination::{
     SessionCoordinationOutstanding, SessionOutputs, SourceType,
 };
 pub use dag_scheduler::{DagCreationResult, DagScheduler};
+pub(crate) use job_queue::db_model_to_job;
 pub use job_queue::{
     ActiveJobInfo, Job, JobExecutionInfo, JobFailureOutcome, JobLogEntry, JobQueue, JobQueueConfig,
     JobResult, JobStats, LogLevel, QueueDepthStatus,

@@ -143,7 +143,7 @@ const REFRESH_DEADLINE: Duration = Duration::from_secs(60);
 const STATUS_PUBLISH_INTERVAL: Duration = Duration::from_secs(1);
 
 /// The listener's connection state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ListenerState {
     /// Notifications are off.
@@ -157,7 +157,7 @@ pub enum ListenerState {
 }
 
 /// How a Bigo streamer's start is noticed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MonitoringMethod {
     Notifications,
@@ -167,7 +167,7 @@ pub enum MonitoringMethod {
 /// Why a Bigo streamer is polled. The first five also say why the listener is
 /// not connected; `NotificationsNotArriving` why a connected one's streamers
 /// are polled.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PollingReason {
     /// The platform's `batch_detection` is off.
@@ -196,7 +196,7 @@ pub enum PollingReason {
     NotificationsNotArriving,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct StreamerNotificationMethod {
     pub streamer_id: String,
     pub method: MonitoringMethod,
@@ -205,7 +205,7 @@ pub struct StreamerNotificationMethod {
 }
 
 /// What `GET /api/config/platforms/bigo/notifications` reports.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BigoNotificationStatus {
     /// The Bigo platform configuration, absent when there is none.
     pub platform_id: Option<String>,

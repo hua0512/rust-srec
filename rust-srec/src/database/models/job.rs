@@ -1,90 +1,9 @@
 //! Job database models.
 
-use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
 use crate::utils::json::{self, JsonContext};
-
-/// Filter criteria for querying jobs.
-#[derive(Debug, Clone, Default)]
-pub struct JobFilters {
-    /// Filter by job status.
-    pub status: Option<JobStatus>,
-    /// Filter by any of several job statuses, for queries a single `status`
-    /// cannot express. Combined with `status` by `AND`, so setting both narrows
-    /// to their intersection.
-    ///
-    /// An empty list means "no status filter", not "no rows", matching how
-    /// `job_types` treats an empty list.
-    pub statuses: Option<Vec<JobStatus>>,
-    /// Filter by streamer ID.
-    pub streamer_id: Option<String>,
-    /// Filter by session ID.
-    pub session_id: Option<String>,
-    /// Filter by pipeline ID.
-    pub pipeline_id: Option<String>,
-    /// Filter jobs created after this date.
-    pub from_date: Option<Timestamp>,
-    /// Filter jobs created before this date.
-    pub to_date: Option<Timestamp>,
-    /// Filter by job type.
-    pub job_type: Option<String>,
-    /// Filter by multiple job types.
-    pub job_types: Option<Vec<String>>,
-    /// Search query.
-    pub search: Option<String>,
-}
-
-impl JobFilters {
-    /// Create a new empty filter.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Filter by status.
-    pub fn with_status(mut self, status: JobStatus) -> Self {
-        self.status = Some(status);
-        self
-    }
-
-    /// Filter by any of `statuses`.
-    pub fn with_statuses(mut self, statuses: impl IntoIterator<Item = JobStatus>) -> Self {
-        self.statuses = Some(statuses.into_iter().collect());
-        self
-    }
-
-    /// Filter by streamer ID.
-    pub fn with_streamer_id(mut self, streamer_id: impl Into<String>) -> Self {
-        self.streamer_id = Some(streamer_id.into());
-        self
-    }
-
-    /// Filter by session ID.
-    pub fn with_session_id(mut self, session_id: impl Into<String>) -> Self {
-        self.session_id = Some(session_id.into());
-        self
-    }
-
-    /// Filter by pipeline ID.
-    pub fn with_pipeline_id(mut self, pipeline_id: impl Into<String>) -> Self {
-        self.pipeline_id = Some(pipeline_id.into());
-        self
-    }
-
-    /// Filter by date range.
-    pub fn with_date_range(mut self, from: Option<Timestamp>, to: Option<Timestamp>) -> Self {
-        self.from_date = from;
-        self.to_date = to;
-        self
-    }
-
-    /// Filter by search query.
-    pub fn with_search(mut self, search: impl Into<String>) -> Self {
-        self.search = Some(search.into());
-        self
-    }
-}
 
 /// Pagination parameters for list queries.
 #[derive(Debug, Clone)]
@@ -353,7 +272,7 @@ impl JobDbModel {
 /// ```
 ///
 /// `CANCELLED` is terminal until the job is retried.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum JobStatus {
     /// Job is queued and waiting to be picked up by a worker.
@@ -465,7 +384,7 @@ impl LogEntry {
 
 /// Pipeline step configuration.
 /// Uses internally tagged enum to disambiguate step types.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum PipelineStep {
     /// Reference to a named job preset (e.g., "remux").
@@ -551,7 +470,7 @@ impl Default for PipelineDefinition {
 
 /// Automatic retries of a workflow step whose job failed, applied before the
 /// failure reaches the workflow.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StepRetryPolicy {
     /// Attempts in total, including the first run; `1` means no retry.
     pub max_attempts: u32,
@@ -585,7 +504,7 @@ impl StepRetryPolicy {
 
 /// A step within a DAG pipeline with explicit dependencies.
 /// Each step has a unique ID and can depend on other steps.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DagStep {
     /// Unique step identifier within the DAG (e.g., "remux", "upload", "notify").
     pub id: String,
@@ -650,7 +569,7 @@ impl DagStep {
 
 /// DAG pipeline definition with named steps and explicit dependencies.
 /// Supports fan-in (multiple inputs to one step) and fan-out (one step to multiple).
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DagPipelineDefinition {
     /// Unique name for the DAG pipeline.
     pub name: String,

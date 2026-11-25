@@ -14,7 +14,7 @@ use super::{
     JobLogEntry, JobQueue, JobResult, LogPersistence, db_model_to_job, is_thumbnail_job_type,
     job_to_db_model, non_empty, upload_kind_for_job_type,
 };
-use crate::database::models::{JobFilters, JobStatus, Pagination};
+use crate::database::models::{JobStatus, Pagination};
 use crate::database::repositories::JobRepository;
 use crate::pipeline::processors::{ConfirmedUpload, UploadItemStatus, UploadResultItem};
 use crate::pipeline::upload_events::{UploadStatusEvent, UploadTerminalStatus};
@@ -498,33 +498,6 @@ impl JobQueue {
             Err(Error::NotFound { .. }) => Ok(None),
             Err(e) => Err(e),
         }
-    }
-
-    /// List jobs with filters and pagination.
-    pub async fn list_jobs(
-        &self,
-        filters: &JobFilters,
-        pagination: &Pagination,
-    ) -> Result<(Vec<Job>, u64)> {
-        let (db_jobs, total) = self
-            .job_repository
-            .list_jobs_filtered(filters, pagination)
-            .await?;
-        let jobs = db_jobs.iter().map(db_model_to_job).collect();
-        Ok((jobs, total))
-    }
-
-    /// List jobs with filters and pagination, without running a total `COUNT(*)`.
-    pub async fn list_jobs_page(
-        &self,
-        filters: &JobFilters,
-        pagination: &Pagination,
-    ) -> Result<Vec<Job>> {
-        let db_jobs = self
-            .job_repository
-            .list_jobs_page_filtered(filters, pagination)
-            .await?;
-        Ok(db_jobs.iter().map(db_model_to_job).collect())
     }
 
     /// Failed jobs whose scheduled retry is due at `now`, earliest first.

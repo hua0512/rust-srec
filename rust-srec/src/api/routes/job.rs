@@ -28,12 +28,14 @@ use crate::api::server::AppState;
 
 #[derive(Clone)]
 pub struct JobPresetRouteState {
+    queries: crate::api::queries::ApiQueries,
     pipeline_manager: std::sync::Arc<crate::pipeline::PipelineManager>,
 }
 
 impl FromRef<AppState> for JobPresetRouteState {
     fn from_ref(state: &AppState) -> Self {
         Self {
+            queries: state.queries.clone(),
             pipeline_manager: state.pipeline_manager.clone(),
         }
     }
@@ -117,6 +119,7 @@ pub struct PresetFilterParams {
 #[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct PresetListResponse {
     /// List of presets.
+    #[schema(value_type = Vec<crate::api::schemas::JobPreset>)]
     pub presets: Vec<crate::database::models::JobPreset>,
     /// Available categories.
     pub categories: Vec<String>,
@@ -145,7 +148,7 @@ pub async fn list_presets(
 ) -> ApiResult<Json<PresetListResponse>> {
     let pipeline_manager = &state.pipeline_manager;
 
-    let db_filters = crate::database::repositories::JobPresetFilters {
+    let db_filters = crate::api::queries::JobPresetFilters {
         category: filters.category,
         processor: filters.processor,
         name: filters.name,
@@ -156,7 +159,8 @@ pub async fn list_presets(
     let db_pagination =
         crate::database::models::Pagination::new(effective_limit, pagination.offset);
 
-    let (presets, total) = pipeline_manager
+    let (presets, total) = state
+        .queries
         .list_presets_filtered(&db_filters, &db_pagination)
         .await?;
 
@@ -177,7 +181,7 @@ pub async fn list_presets(
     tag = "job",
     params(("id" = String, Path, description = "Preset ID")),
     responses(
-        (status = 200, description = "Job preset", body = crate::database::models::JobPreset),
+        (status = 200, description = "Job preset", body = crate::api::schemas::JobPreset),
         (status = 404, description = "Preset not found", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -202,7 +206,7 @@ pub async fn get_preset(
     tag = "job",
     request_body = CreatePresetRequest,
     responses(
-        (status = 201, description = "Preset created", body = crate::database::models::JobPreset),
+        (status = 201, description = "Preset created", body = crate::api::schemas::JobPreset),
         (status = 409, description = "Preset name already exists", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -249,7 +253,7 @@ pub async fn create_preset(
     params(("id" = String, Path, description = "Preset ID")),
     request_body = UpdatePresetRequest,
     responses(
-        (status = 200, description = "Preset updated", body = crate::database::models::JobPreset),
+        (status = 200, description = "Preset updated", body = crate::api::schemas::JobPreset),
         (status = 404, description = "Preset not found", body = crate::api::error::ApiErrorResponse),
         (status = 409, description = "CONFLICT: the name is taken; PRESET_IN_USE: a renamed preset is still referenced by a stored pipeline", body = crate::api::error::ApiErrorResponse)
     ),
@@ -328,7 +332,7 @@ pub async fn delete_preset(
     params(("id" = String, Path, description = "Preset ID to clone")),
     request_body = ClonePresetRequest,
     responses(
-        (status = 201, description = "Preset cloned", body = crate::database::models::JobPreset),
+        (status = 201, description = "Preset cloned", body = crate::api::schemas::JobPreset),
         (status = 404, description = "Preset not found", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))

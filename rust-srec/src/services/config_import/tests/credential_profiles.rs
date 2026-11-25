@@ -40,7 +40,7 @@ async fn acceptance_backup_restart_and_concurrent_qr_keep_account_identity() {
         backup.streamers.push(fixed);
         backup.update_schema_version();
         validate_import(&backup, ImportMode::Merge).unwrap();
-        apply_import(&mut tx, &snapshot, &backup, ImportMode::Merge).await.unwrap();
+        apply_import(&mut tx, &snapshot, &backup, ImportMode::Merge, test_auth_import().as_ref()).await.unwrap();
         tx.commit().await.unwrap();
         // The real export reader retains IDs/material; wire serialization must
         // also survive before import maps the platform to a different local ID.
@@ -52,7 +52,7 @@ async fn acceptance_backup_restart_and_concurrent_qr_keep_account_identity() {
         sqlx::query("UPDATE platform_config SET id = 'restored-bilibili' WHERE id = 'platform-bilibili'").execute(&restored).await.unwrap();
         let mut tx = begin_immediate(&restored).await.unwrap();
         let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
-        apply_import(&mut tx, &snapshot, &backup, ImportMode::Merge).await.unwrap();
+        apply_import(&mut tx, &snapshot, &backup, ImportMode::Merge, test_auth_import().as_ref()).await.unwrap();
         tx.commit().await.unwrap();
 
         for (database, platform_id) in [(&source, "platform-bilibili"), (&restored, "restored-bilibili")] {
@@ -225,9 +225,15 @@ async fn merge_preserves_omitted_policies_but_explicit_inherit_replaces_them() {
     streamer.streamer_specific_config =
         Some(serde_json::json!({"credential_selection":{"mode":"none"}}));
     config.streamers.push(streamer);
-    apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
-        .await
-        .unwrap();
+    apply_import(
+        &mut tx,
+        &snapshot,
+        &config,
+        ImportMode::Merge,
+        test_auth_import().as_ref(),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         stored(&mut tx, bilibili(), "platform-bilibili").await,
         Some(CredentialSelection::None)
@@ -237,9 +243,15 @@ async fn merge_preserves_omitted_policies_but_explicit_inherit_replaces_them() {
     config.templates[0].platform_overrides = Some(serde_json::json!({"bilibili":{"quality":120}}));
     config.streamers[0].streamer_specific_config = None;
     let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
-    apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
-        .await
-        .unwrap();
+    apply_import(
+        &mut tx,
+        &snapshot,
+        &config,
+        ImportMode::Merge,
+        test_auth_import().as_ref(),
+    )
+    .await
+    .unwrap();
     let template = &ImportSnapshot::load(&mut tx).await.unwrap().templates["Template"];
     let overrides: serde_json::Value =
         serde_json::from_str(template.platform_overrides.as_deref().unwrap()).unwrap();
@@ -265,16 +277,28 @@ async fn merge_preserves_omitted_policies_but_explicit_inherit_replaces_them() {
     // An explicit inherit removes the stored selection.
     config.platforms[0].credential_selection = Some(CredentialSelection::Inherit);
     let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
-    apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
-        .await
-        .unwrap();
+    apply_import(
+        &mut tx,
+        &snapshot,
+        &config,
+        ImportMode::Merge,
+        test_auth_import().as_ref(),
+    )
+    .await
+    .unwrap();
     assert_eq!(stored(&mut tx, bilibili(), "platform-bilibili").await, None);
 
     // Replace takes the bundle as written: omitted selections are removed.
     let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
-    apply_import(&mut tx, &snapshot, &config, ImportMode::Replace)
-        .await
-        .unwrap();
+    apply_import(
+        &mut tx,
+        &snapshot,
+        &config,
+        ImportMode::Replace,
+        test_auth_import().as_ref(),
+    )
+    .await
+    .unwrap();
     assert_eq!(stored(&mut tx, template, "platform-bilibili").await, None);
     assert_eq!(stored(&mut tx, streamer, "platform-bilibili").await, None);
 }
@@ -330,9 +354,15 @@ async fn repeated_profile_import_preserves_uuid_and_rejects_collisions_atomicall
     config.streamers.push(streamer);
     config.credential_profiles.push(account.clone());
     validate_import(&config, ImportMode::Merge).unwrap();
-    apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
-        .await
-        .unwrap();
+    apply_import(
+        &mut tx,
+        &snapshot,
+        &config,
+        ImportMode::Merge,
+        test_auth_import().as_ref(),
+    )
+    .await
+    .unwrap();
     tx.commit().await.unwrap();
     for expected_revision in [2_i64, 3] {
         if expected_revision == 3 {
@@ -350,9 +380,15 @@ async fn repeated_profile_import_preserves_uuid_and_rejects_collisions_atomicall
         }
         let mut tx = begin_immediate(&pool).await.unwrap();
         let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
-        apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
-            .await
-            .unwrap();
+        apply_import(
+            &mut tx,
+            &snapshot,
+            &config,
+            ImportMode::Merge,
+            test_auth_import().as_ref(),
+        )
+        .await
+        .unwrap();
         let stored = crate::database::repositories::credential_profiles::load(&mut tx, &account.id)
             .await
             .unwrap();
@@ -408,9 +444,15 @@ async fn repeated_profile_import_preserves_uuid_and_rejects_collisions_atomicall
         .unwrap()
         .clone();
     assert!(
-        apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
-            .await
-            .is_err()
+        apply_import(
+            &mut tx,
+            &snapshot,
+            &config,
+            ImportMode::Merge,
+            test_auth_import().as_ref()
+        )
+        .await
+        .is_err()
     );
     tx.rollback().await.unwrap();
     let output: String = sqlx::query_scalar("SELECT output_folder FROM global_config LIMIT 1")
@@ -434,9 +476,15 @@ async fn managed_profile_graph_and_configuration_credentials_are_rejected_withou
     });
     config.version = "1.0.0".into();
     assert!(
-        apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
-            .await
-            .is_err()
+        apply_import(
+            &mut tx,
+            &snapshot,
+            &config,
+            ImportMode::Merge,
+            test_auth_import().as_ref()
+        )
+        .await
+        .is_err()
     );
     tx.rollback().await.unwrap();
     credential_selections::test_support::set_platform_selection(
@@ -453,9 +501,15 @@ async fn managed_profile_graph_and_configuration_credentials_are_rejected_withou
         Some(serde_json::json!({"refresh_token":"stale-token"}));
     config.version = "0.1.8".into();
     assert!(
-        apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
-            .await
-            .is_err()
+        apply_import(
+            &mut tx,
+            &snapshot,
+            &config,
+            ImportMode::Merge,
+            test_auth_import().as_ref()
+        )
+        .await
+        .is_err()
     );
     tx.rollback().await.unwrap();
     let mut connection = pool.acquire().await.unwrap();
@@ -570,9 +624,15 @@ async fn backups_from_before_profiles_convert_their_cookies_on_import() {
     assert_eq!(config.version, version);
     // The platform account, and one account shared by both streamers.
     assert_eq!(config.credential_profiles.len(), 2);
-    apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
-        .await
-        .unwrap();
+    apply_import(
+        &mut tx,
+        &snapshot,
+        &config,
+        ImportMode::Merge,
+        test_auth_import().as_ref(),
+    )
+    .await
+    .unwrap();
 
     let fields: String = sqlx::query_scalar(
         "SELECT platform_specific_config FROM platform_config WHERE id = 'platform-bilibili'",
@@ -666,9 +726,15 @@ async fn old_backups_turn_a_streamlink_platform_cookie_into_per_streamer_account
         .unwrap();
     assert_eq!(config.credential_profiles.len(), 2);
     assert!(config.platforms[0].credential_selection.is_none());
-    apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
-        .await
-        .unwrap();
+    apply_import(
+        &mut tx,
+        &snapshot,
+        &config,
+        ImportMode::Merge,
+        test_auth_import().as_ref(),
+    )
+    .await
+    .unwrap();
 
     let streamlink = CredentialOwner::Platform {
         platform_id: "platform-streamlink".into(),
@@ -749,9 +815,15 @@ async fn streamlink_platform_and_template_selections_in_backups_move_to_streamer
         config.templates[0].platform_overrides,
         Some(serde_json::json!({"streamlink":{"quality":"best"}}))
     );
-    apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
-        .await
-        .unwrap();
+    apply_import(
+        &mut tx,
+        &snapshot,
+        &config,
+        ImportMode::Merge,
+        test_auth_import().as_ref(),
+    )
+    .await
+    .unwrap();
 
     let fixed = |index: usize| {
         Some(CredentialSelection::Fixed {
@@ -805,9 +877,15 @@ async fn merge_import_keeps_stored_streamlink_selections_the_bundle_omits() {
         streamer.streamer_specific_config = Some(own.clone());
         config.streamers.push(streamer);
     }
-    apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
-        .await
-        .unwrap();
+    apply_import(
+        &mut tx,
+        &snapshot,
+        &config,
+        ImportMode::Merge,
+        test_auth_import().as_ref(),
+    )
+    .await
+    .unwrap();
 
     // The platform selection moves only onto streamers with no selection of
     // their own, stored or in the bundle; an explicit inherit clears one.
@@ -824,9 +902,15 @@ async fn merge_import_keeps_stored_streamlink_selections_the_bundle_omits() {
     snapshot
         .upgrade_bundle(&mut config, ImportMode::Merge)
         .unwrap();
-    apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
-        .await
-        .unwrap();
+    apply_import(
+        &mut tx,
+        &snapshot,
+        &config,
+        ImportMode::Merge,
+        test_auth_import().as_ref(),
+    )
+    .await
+    .unwrap();
     let fixed = |account: &CredentialProfileExport| {
         Some(CredentialSelection::Fixed {
             credential_id: account.id.clone(),
@@ -857,9 +941,15 @@ async fn merge_import_keeps_stored_streamlink_selections_the_bundle_omits() {
     snapshot
         .upgrade_bundle(&mut legacy, ImportMode::Merge)
         .unwrap();
-    apply_import(&mut tx, &snapshot, &legacy, ImportMode::Merge)
-        .await
-        .unwrap();
+    apply_import(
+        &mut tx,
+        &snapshot,
+        &legacy,
+        ImportMode::Merge,
+        test_auth_import().as_ref(),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         streamer_selection(&mut tx, "https://example.test/kept").await,
         fixed(&stored_account)
@@ -900,9 +990,15 @@ async fn streamlink_account_sites_round_trip_and_follow_the_import_mode() {
     config.credential_profiles = vec![youtube.clone(), profile("bilibili")];
     config.update_schema_version();
     validate_import(&config, ImportMode::Merge).unwrap();
-    apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
-        .await
-        .unwrap();
+    apply_import(
+        &mut tx,
+        &snapshot,
+        &config,
+        ImportMode::Merge,
+        test_auth_import().as_ref(),
+    )
+    .await
+    .unwrap();
     tx.commit().await.unwrap();
 
     // Only Streamlink accounts carry their sites, stored normalized.
@@ -920,9 +1016,15 @@ async fn streamlink_account_sites_round_trip_and_follow_the_import_mode() {
     let mut merged = config.clone();
     merged.credential_profiles[0].sites = None;
     let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
-    apply_import(&mut tx, &snapshot, &merged, ImportMode::Merge)
-        .await
-        .unwrap();
+    apply_import(
+        &mut tx,
+        &snapshot,
+        &merged,
+        ImportMode::Merge,
+        test_auth_import().as_ref(),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         sites_of(&mut tx, &youtube.id).await,
         ["kick.com", "youtube.com"]
@@ -942,9 +1044,15 @@ async fn streamlink_account_sites_round_trip_and_follow_the_import_mode() {
     taken.credential_profiles = vec![streamlink_account(Some(&["m.kick.com", "kick.com"]))];
     validate_import(&taken, ImportMode::Merge).unwrap();
     let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
-    let error = apply_import(&mut tx, &snapshot, &taken, ImportMode::Merge)
-        .await
-        .unwrap_err();
+    let error = apply_import(
+        &mut tx,
+        &snapshot,
+        &taken,
+        ImportMode::Merge,
+        test_auth_import().as_ref(),
+    )
+    .await
+    .unwrap_err();
     assert!(error.to_string().contains("kick.com"), "{error}");
     tx.rollback().await.unwrap();
 
@@ -955,9 +1063,15 @@ async fn streamlink_account_sites_round_trip_and_follow_the_import_mode() {
     moved.credential_profiles[0].sites = Some(vec!["youtube.com".into()]);
     moved.credential_profiles.push(mobile.clone());
     let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
-    apply_import(&mut tx, &snapshot, &moved, ImportMode::Merge)
-        .await
-        .unwrap();
+    apply_import(
+        &mut tx,
+        &snapshot,
+        &moved,
+        ImportMode::Merge,
+        test_auth_import().as_ref(),
+    )
+    .await
+    .unwrap();
     assert_eq!(sites_of(&mut tx, &youtube.id).await, ["youtube.com"]);
     assert_eq!(sites_of(&mut tx, &mobile.id).await, ["kick.com"]);
 
@@ -967,9 +1081,15 @@ async fn streamlink_account_sites_round_trip_and_follow_the_import_mode() {
     let successor = streamlink_account(Some(&["youtube.com"]));
     replaced.credential_profiles = vec![successor.clone(), streamlink_account(None)];
     let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
-    apply_import(&mut tx, &snapshot, &replaced, ImportMode::Replace)
-        .await
-        .unwrap();
+    apply_import(
+        &mut tx,
+        &snapshot,
+        &replaced,
+        ImportMode::Replace,
+        test_auth_import().as_ref(),
+    )
+    .await
+    .unwrap();
     assert_eq!(sites_of(&mut tx, &successor.id).await, ["youtube.com"]);
     assert!(sites_of(&mut tx, &mobile.id).await.is_empty());
     assert!(sites_of(&mut tx, &youtube.id).await.is_empty());

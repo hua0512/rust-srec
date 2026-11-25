@@ -1,13 +1,12 @@
-//! User repository for database operations.
-
-mod writes;
-pub(crate) use writes::{EmailSlots, delete_user, import_user, release_email_slots};
+//! User repository for authentication database operations.
 
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 
 use crate::Result;
-use crate::database::models::UserDbModel;
+use crate::database::repositories::row_write::{Mutation, RowWrite, WriteMode};
+
+use super::models::UserDbModel;
 
 /// User repository trait for user data access operations.
 #[async_trait]
@@ -48,26 +47,93 @@ pub trait UserRepository: Send + Sync {
     async fn count(&self) -> Result<i64>;
 }
 
-/// SQLx implementation of UserRepository.
+/// SQLx implementation of [`UserRepository`].
 pub struct SqlxUserRepository {
     pool: SqlitePool,
     write_pool: SqlitePool,
 }
 
 impl SqlxUserRepository {
-    /// Create a new SqlxUserRepository with the given connection pool.
+    /// Create a new `SqlxUserRepository` with the given connection pools.
     pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
         Self { pool, write_pool }
     }
 }
 
+pub(crate) async fn write_user(
+    connection: &mut sqlx::SqliteConnection,
+    model: &UserDbModel,
+    mode: WriteMode,
+    updated_at: i64,
+) -> std::result::Result<(), sqlx::Error> {
+    let mutation = match mode {
+        WriteMode::Insert => Mutation::Insert,
+        WriteMode::Update => Mutation::Update,
+        WriteMode::Import => Mutation::Upsert,
+    };
+    let mut row = RowWrite::new("users", mutation, &model.id)?;
+    row.field("username", &model.username, true)?;
+    row.field("password_hash", &model.password_hash, true)?;
+    row.field("email", &model.email, true)?;
+    row.field("roles", &model.roles, true)?;
+    row.field("is_active", model.is_active, true)?;
+    row.field("must_change_password", model.must_change_password, true)?;
+    row.field("last_login_at", model.last_login_at, true)?;
+    row.field("created_at", model.created_at, false)?;
+    row.field("updated_at", updated_at, true)?;
+    row.execute(connection).await
+}
+
+pub(crate) async fn import_user(
+    connection: &mut sqlx::SqliteConnection,
+    model: &UserDbModel,
+) -> std::result::Result<(), sqlx::Error> {
+    write_user(connection, model, WriteMode::Import, model.updated_at).await
+}
+
+pub(crate) enum EmailSlots<'a> {
+    All,
+    User(&'a str),
+}
+
+pub(crate) async fn release_email_slots(
+    connection: &mut sqlx::SqliteConnection,
+    slots: EmailSlots<'_>,
+) -> std::result::Result<(), sqlx::Error> {
+    match slots {
+        EmailSlots::All => {
+            sqlx::query("UPDATE users SET email = NULL WHERE email IS NOT NULL")
+                .execute(connection)
+                .await?;
+        }
+        EmailSlots::User(id) => {
+            sqlx::query("UPDATE users SET email = NULL WHERE id = ? AND email IS NOT NULL")
+                .bind(id)
+                .execute(connection)
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+pub(crate) async fn delete_user(
+    connection: &mut sqlx::SqliteConnection,
+    id: &str,
+) -> std::result::Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM users WHERE id = ?")
+        .bind(id)
+        .execute(connection)
+        .await?;
+    Ok(())
+}
+
 #[async_trait]
 impl UserRepository for SqlxUserRepository {
     async fn create(&self, user: &UserDbModel) -> Result<()> {
-        writes::write_user(
+        write_user(
             &mut *self.write_pool.acquire().await?,
             user,
-            super::row_write::WriteMode::Insert,
+            WriteMode::Insert,
             user.updated_at,
         )
         .await?;
@@ -100,10 +166,10 @@ impl UserRepository for SqlxUserRepository {
 
     async fn update(&self, user: &UserDbModel) -> Result<()> {
         let now = crate::database::time::now_ms();
-        writes::write_user(
+        write_user(
             &mut *self.write_pool.acquire().await?,
             user,
-            super::row_write::WriteMode::Update,
+            WriteMode::Update,
             now,
         )
         .await?;
@@ -111,7 +177,7 @@ impl UserRepository for SqlxUserRepository {
     }
 
     async fn delete(&self, id: &str) -> Result<()> {
-        writes::delete_user(&mut *self.write_pool.acquire().await?, id).await?;
+        delete_user(&mut *self.write_pool.acquire().await?, id).await?;
         Ok(())
     }
 

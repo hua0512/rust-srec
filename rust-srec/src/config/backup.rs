@@ -139,7 +139,7 @@ pub(crate) fn json_value_to_db_string(v: serde_json::Value) -> String {
 // ============================================================================
 
 /// Complete configuration export bundle.
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigExport {
     /// Schema version for compatibility checking.
     pub version: String,
@@ -177,7 +177,7 @@ pub struct ConfigExport {
 
 /// A saved proxy in a backup. Bundles name proxies; IDs stay local to each
 /// installation.
-#[derive(Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProxyExport {
     pub name: String,
@@ -208,7 +208,7 @@ impl ProxyExport {
 }
 
 /// A route in a backup, naming its proxy.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum BackupRoute {
     Inherit,
@@ -270,7 +270,7 @@ impl BackupRoute {
 }
 
 /// Explicit sensitive backup representation. Ordinary profile DTOs never serialize material.
-#[derive(Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CredentialProfileExport {
     pub id: String,
@@ -539,7 +539,7 @@ fn has_selection(value: &serde_json::Value) -> bool {
 }
 
 /// Global configuration for export (excludes internal ID).
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlobalConfigExport {
     pub output_folder: String,
     pub output_filename_template: String,
@@ -614,7 +614,7 @@ fn default_gpu_health_probe_interval_secs() -> i64 {
 }
 
 /// Template for export (uses name as identifier).
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TemplateExport {
     pub name: String,
     pub output_folder: Option<String>,
@@ -654,7 +654,7 @@ pub struct TemplateExport {
 }
 
 /// Streamer for export (uses URL as identifier).
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamerExport {
     pub name: String,
     pub url: String,
@@ -676,14 +676,14 @@ pub struct StreamerExport {
 }
 
 /// Filter for export.
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FilterExport {
     pub filter_type: String,
     pub config: serde_json::Value,
 }
 
 /// Engine configuration for export (uses name as identifier).
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EngineExport {
     pub name: String,
     pub engine_type: String,
@@ -691,7 +691,7 @@ pub struct EngineExport {
 }
 
 /// Platform configuration for export (uses platform_name as identifier).
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlatformExport {
     pub platform_name: String,
     pub fetch_delay_ms: Option<i64>,
@@ -734,7 +734,7 @@ pub struct PlatformExport {
 }
 
 /// Notification channel for export (uses name as identifier).
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationChannelExport {
     pub name: String,
     pub channel_type: String,
@@ -747,7 +747,7 @@ pub struct NotificationChannelExport {
 }
 
 /// Job preset configuration for export.
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JobPresetExport {
     pub name: String,
     pub description: Option<String>,
@@ -757,7 +757,7 @@ pub struct JobPresetExport {
 }
 
 /// Pipeline preset configuration for export.
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelinePresetExport {
     pub name: String,
     pub description: Option<String>,
@@ -766,7 +766,7 @@ pub struct PipelinePresetExport {
 }
 
 /// User account for export (uses username as identifier).
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserExport {
     pub id: String,
     pub username: String,
@@ -789,7 +789,7 @@ pub struct UserExport {
 // ============================================================================
 
 /// Import mode.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ImportMode {
     /// Merge: Update existing entities, add new ones, keep entities not in import.
@@ -800,7 +800,7 @@ pub enum ImportMode {
 }
 
 /// Import request with optional mode.
-#[derive(Debug, Clone, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct ImportRequest {
     /// The configuration data to import.
     pub config: ConfigExport,
@@ -810,7 +810,7 @@ pub struct ImportRequest {
 }
 
 /// Import result.
-#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ImportResult {
     pub success: bool,
     pub message: String,
@@ -818,7 +818,7 @@ pub struct ImportResult {
 }
 
 /// Statistics about what was imported.
-#[derive(Debug, Clone, serde::Serialize, Default, utoipa::ToSchema)]
+#[derive(Debug, Clone, serde::Serialize, Default)]
 pub struct ImportStats {
     pub templates_created: u32,
     pub templates_updated: u32,

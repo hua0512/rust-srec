@@ -75,7 +75,7 @@ impl std::fmt::Display for HealthStatus {
 /// Attached to the `disk:{path}` entries of [`SystemHealth::components`] by
 /// the disk probe so consumers read numbers directly instead of parsing
 /// [`ComponentHealth::message`], which is empty while a disk is healthy.
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiskUsage {
     /// Monitored path, matching the `disk:` component name suffix.
     pub path: String,

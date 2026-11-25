@@ -8,19 +8,20 @@ use jiff::civil::Time;
 use tokio_util::sync::CancellationToken;
 
 use super::*;
+use crate::api::auth_store::{
+    RefreshTokenDbModel, RefreshTokenRepository as _, SqlxRefreshTokenRepository,
+};
 use crate::database::models::{
     ChannelType, DagExecutionDbModel, DagExecutionStatus, DagStepExecutionDbModel, DagStepStatus,
     JobDbModel, JobExecutionLogDbModel, JobStatus, LiveSessionDbModel, MediaFileType,
     MediaOutputDbModel, NotificationChannelDbModel, NotificationDeadLetterDbModel,
-    NotificationEventLogDbModel, RefreshTokenDbModel, SessionEventDbModel, SessionSegmentDbModel,
-    StreamerDbModel,
+    NotificationEventLogDbModel, SessionEventDbModel, SessionSegmentDbModel, StreamerDbModel,
 };
 use crate::database::repositories::{
     ConfigRepository as _, DagRepository as _, JobRepository as _, NotificationRepository as _,
-    RefreshTokenRepository as _, SessionEventRepository as _, SessionRepository as _,
-    SqlxConfigRepository, SqlxDagRepository, SqlxJobRepository, SqlxNotificationRepository,
-    SqlxRefreshTokenRepository, SqlxSessionEventRepository, SqlxSessionRepository,
-    SqlxStreamerRepository, StreamerRepository as _,
+    SessionEventRepository as _, SessionRepository as _, SqlxConfigRepository, SqlxDagRepository,
+    SqlxJobRepository, SqlxNotificationRepository, SqlxSessionEventRepository,
+    SqlxSessionRepository, SqlxStreamerRepository, StreamerRepository as _,
 };
 
 struct TestDatabase {
