@@ -65,6 +65,7 @@
 - Updating the log filter in global settings or through **Import Configuration** now takes effect right away without restarting rust-srec.
 - **Import Configuration** now rejects a backup with an invalid log filter or a streamer address without a host before changing anything, instead of saving settings that cannot work.
 - Fixed **Import Configuration** failing with a server error when the accounts in a backup do not fit together, such as a platform using an account the backup does not contain or an account for a platform the backup leaves out. Such a backup is now rejected with a message naming the problem, and nothing is changed.
+- Fixed **Import Configuration** silently resetting a streamer's or template's settings, including the account a streamer used, when the backup file stores those settings as a quoted string. Versions before 0.6.0 restored such backups correctly.
 - Fixed the Mesio engine's **Decryption Key Cache TTL (ms)** setting having no effect. When set, it now takes precedence over **Key Cache TTL (ms)**.
 
 ## Notifications

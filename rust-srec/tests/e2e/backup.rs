@@ -43,6 +43,15 @@ fn streamer_named<'a>(bundle: &'a mut Value, name: &str) -> &'a mut Value {
         .unwrap_or_else(|| panic!("the bundle has streamer {name}"))
 }
 
+fn template_named<'a>(bundle: &'a mut Value, name: &str) -> &'a mut Value {
+    bundle["templates"]
+        .as_array_mut()
+        .expect("bundle templates")
+        .iter_mut()
+        .find(|template| template["name"] == name)
+        .unwrap_or_else(|| panic!("the bundle has template {name}"))
+}
+
 /// A bundle without the fields that change on every export or sign-in.
 fn comparable(bundle: &Value) -> Value {
     let mut bundle = bundle.clone();
@@ -1215,18 +1224,29 @@ async fn backups_carry_account_selections_through_replace_and_merge_imports() {
     app.shutdown().await;
 }
 
-/// A bundle may carry a streamer's settings as a JSON string, which
-/// validation accepts. The import must keep those settings.
+/// A bundle may carry a streamer's settings and a template's platform
+/// overrides as JSON strings, as older exports wrote them. The import keeps
+/// those settings, and the account selection among them.
 #[tokio::test]
-#[ignore = "bug: the credential bundle upgrade reads a string-encoded streamer_specific_config as empty, dropping its settings and any account selection in it"]
-async fn known_bug_an_import_keeps_streamer_settings_written_as_a_json_string() {
+async fn an_import_keeps_settings_written_as_json_strings() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
     app.disabled_streamer(&token, "Encoded", "https://www.huya.com/440088")
         .await;
+    app.post(
+        "/api/templates",
+        &token,
+        &json!({ "name": "Encoded", "platform_overrides": {"huya": {"quality": 1}} }),
+    )
+    .await
+    .created();
     let mut bundle = export(&app, &token).await;
-    streamer_named(&mut bundle, "Encoded")["streamer_specific_config"] =
-        json!(json!({ "record_danmu": false }).to_string());
+    // A selection needs the schema that carries accounts.
+    bundle["version"] = json!("1.0.0");
+    let config = json!({ "record_danmu": false, "credential_selection": {"mode": "none"} });
+    streamer_named(&mut bundle, "Encoded")["streamer_specific_config"] = json!(config.to_string());
+    let overrides = json!({"huya": {"quality": 2}});
+    template_named(&mut bundle, "Encoded")["platform_overrides"] = json!(overrides.to_string());
     import(&app, &token, &bundle, "merge")
         .await
         .expect_status(StatusCode::OK);
@@ -1235,7 +1255,11 @@ async fn known_bug_an_import_keeps_streamer_settings_written_as_a_json_string() 
     let mut exported = export(&app, &token).await;
     assert_eq!(
         streamer_named(&mut exported, "Encoded")["streamer_specific_config"],
-        json!({ "record_danmu": false })
+        config
+    );
+    assert_eq!(
+        template_named(&mut exported, "Encoded")["platform_overrides"],
+        overrides
     );
 
     app.shutdown().await;
