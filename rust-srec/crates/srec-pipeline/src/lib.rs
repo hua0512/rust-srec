@@ -66,4 +66,6 @@ pub use upload_events::{
     UploadBroadcastEnvelope, UploadStatusBroadcaster, UploadStatusEvent, UploadTerminalStatus,
     UploadWsEncoder,
 };
+#[cfg(any(test, feature = "test-support"))]
+pub use worker_pool::override_shutdown_drain_grace;
 pub use worker_pool::{StalledOperation, WorkerPool, WorkerPoolConfig, WorkerType};
