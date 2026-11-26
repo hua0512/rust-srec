@@ -439,6 +439,10 @@ async fn failed_logins_are_generic_and_lock_the_account_after_five() {
     assert_eq!(unknown.body, invalid_login_body());
     let too_long = app.login(&"u".repeat(129), "e2e-wrong-password-1").await;
     too_long.assert_error(StatusCode::BAD_REQUEST, "BAD_REQUEST");
+    // The bound counts characters: 128 CJK characters are 384 bytes.
+    let longest = app.login(&"用".repeat(128), "e2e-wrong-password-1").await;
+    assert_eq!(longest.status, StatusCode::UNAUTHORIZED, "{}", longest.text);
+    assert_eq!(longest.body, invalid_login_body());
 
     for _ in 0..4 {
         let wrong = app.login(ADMIN_USERNAME, "e2e-wrong-password-1").await;
@@ -501,6 +505,9 @@ async fn disabling_an_account_cuts_off_sessions_keys_and_sockets() {
     let mut socket = app
         .connect_socket("/api/downloads/ws", Some(&admin.access))
         .await;
+    let mut key_socket = app
+        .connect_socket("/api/downloads/ws", Some(&api_key))
+        .await;
 
     app.run_sql(&format!(
         "UPDATE users SET is_active = 0 WHERE username = '{ADMIN_USERNAME}'"
@@ -532,7 +539,11 @@ async fn disabling_an_account_cuts_off_sessions_keys_and_sockets() {
             (response.status != StatusCode::OK).then_some(response)
         }
     });
-    let (key_response, ()) = tokio::join!(key_rejected, assert_closes(&mut socket));
+    let (key_response, (), ()) = tokio::join!(
+        key_rejected,
+        assert_closes(&mut socket),
+        assert_closes(&mut key_socket)
+    );
     key_response.assert_error(StatusCode::FORBIDDEN, "ACCOUNT_DISABLED");
 
     app.shutdown().await;
@@ -683,6 +694,30 @@ async fn logout_ends_one_lineage_and_logout_all_ends_every_browser_session() {
     }
     assert_eq!(
         app.refresh(&a2.refresh).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(streamers_status(&app, &b.access).await, StatusCode::OK);
+
+    // A session whose refresh rows are gone (cleaned up, or never stored)
+    // is still ended by the access token it authenticates with.
+    let c = app.login_tokens(ADMIN_USERNAME, ADMIN_PASSWORD).await;
+    let c_session = decode_claims(&c.access)["sid"]
+        .as_str()
+        .expect("sid claim")
+        .to_owned();
+    app.run_sql(&format!(
+        "DELETE FROM refresh_tokens WHERE session_id = '{c_session}'"
+    ))
+    .await;
+    logout(
+        &app,
+        authorization(&format!("Bearer {}", c.access)),
+        &c.refresh,
+    )
+    .await
+    .expect_status(StatusCode::OK);
+    assert_eq!(
+        streamers_status(&app, &c.access).await,
         StatusCode::UNAUTHORIZED
     );
     assert_eq!(streamers_status(&app, &b.access).await, StatusCode::OK);
@@ -889,6 +924,20 @@ async fn read_only_keys_reach_only_the_allowlisted_routes() {
         .create_api_key(&token, "read only", "read_only")
         .await
         .raw;
+    // A stored access level the backend does not know grants read-only
+    // access. The key stays unused until then, so no cached state answers.
+    let unknown_level = app.create_api_key(&token, "unknown level", "full").await;
+    app.run_sql(&format!(
+        "UPDATE api_keys SET access_level = 'e2e-unknown' WHERE id = '{}'",
+        unknown_level.id
+    ))
+    .await;
+    app.get("/api/streamers", &unknown_level.raw)
+        .await
+        .assert_error(StatusCode::FORBIDDEN, "API_KEY_READ_ONLY");
+    app.get("/api/sessions", &unknown_level.raw)
+        .await
+        .expect_status(StatusCode::OK);
 
     for path in [
         "/api/sessions",

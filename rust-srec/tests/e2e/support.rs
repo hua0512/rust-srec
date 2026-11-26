@@ -72,10 +72,14 @@ pub const SEEDED_ADMIN_PASSWORD: &str = "admin123!";
 /// Password of the admin in every other app, which has already completed the
 /// forced change.
 pub const ADMIN_PASSWORD: &str = "e2e-admin-Password-1";
-/// [`ADMIN_PASSWORD`] as Argon2id with the parameters the backend hashes new
-/// passwords with (m=19456, t=2, p=1). Writing it at startup saves each test
-/// the three hashes the forced change costs through the API.
-const ADMIN_PASSWORD_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$ZTJlLWFkbWluLXNlZWQtc2FsdA$dEDd0m0NX53FNRqVA3Qtu+okJPsz7g3VpVHeS3olG3I";
+/// [`ADMIN_PASSWORD`] as Argon2id with parameters other than the ones the
+/// backend hashes new passwords with (m=8192, t=1 instead of m=19456, t=2):
+/// every admin login then checks that verification reads the parameters
+/// stored with a hash, which accounts hashed under other settings rely on,
+/// and costs less. The seeded admin keeps the production parameters. Writing
+/// it at startup saves each test the three hashes the forced change costs
+/// through the API.
+const ADMIN_PASSWORD_HASH: &str = "$argon2id$v=19$m=8192,t=1,p=1$ZTJlLWFkbWluLXNlZWQtc2FsdA$328LZkUs0tI10pm34jH5L5PwOLsHO05POLWUo7o4RkI";
 /// Secret the API server signs access tokens with, for tests that mint tokens.
 pub const JWT_SECRET: &str = "e2e-test-jwt-secret-with-enough-entropy-0123456789";
 
