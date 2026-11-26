@@ -759,10 +759,19 @@ mod tests {
             SystemSampler::with_sampling_fn(|_| Ok(SystemMetricsSnapshot::empty()))
         });
         // The first-fill triggers both probes; the panic happens inside
-        // its spawned task, the good probe completes normally.
-        tokio::time::sleep(Duration::from_millis(150)).await;
-
-        let snap = checker.current();
+        // its spawned task, the good probe completes normally, and both
+        // land in one published snapshot.
+        let snap = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let snap = checker.current();
+                if snap.components.contains_key("bomb") && snap.components.contains_key("good") {
+                    return snap;
+                }
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("the first refresh should publish both probes");
         let bomb = snap
             .components
             .get("bomb")
