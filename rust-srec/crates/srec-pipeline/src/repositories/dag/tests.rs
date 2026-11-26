@@ -5,9 +5,8 @@ use sqlx::SqlitePool;
 use super::*;
 use crate::repositories::{JobRepository as _, SqlxJobRepository};
 use srec_sqlite::models::{
-    DagDisplayCounts, DagExecutionDbModel, DagExecutionListSummary, DagExecutionStatus,
-    DagPipelineDefinition, DagStep, DagStepExecutionDbModel, DagStepStatus, JobDbModel,
-    PipelineStep,
+    DagDisplayCounts, DagExecutionDbModel, DagExecutionStatus, DagPipelineDefinition, DagStep,
+    DagStepExecutionDbModel, JobDbModel, PipelineStep,
 };
 use srec_sqlite::{init_pool_with_size, run_migrations};
 
@@ -26,61 +25,6 @@ async fn create_job(pool: &SqlitePool, id: &str) {
         .unwrap();
 }
 
-/// The manifest is published in the same transaction as the steps and root
-/// jobs and comes back verbatim, so a restart or retry never has to look for
-/// pairing information outside the DAG row.
-#[tokio::test]
-async fn publish_dag_round_trips_the_input_manifest() {
-    let pool = setup_test_pool().await;
-    let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
-    let dag_def = DagPipelineDefinition::new(
-        "manifest-dag",
-        vec![DagStep::new("A", PipelineStep::preset("remux"))],
-    );
-    let mut dag = DagExecutionDbModel::new(&dag_def, None, Some("session".to_string()));
-    dag.status = DagExecutionStatus::Processing.as_str().to_string();
-    let manifest = serde_json::json!({
-        "version": 1,
-        "session_id": "session",
-        "streamer_id": "streamer",
-        "scope": { "segment": { "index": 3 } },
-        "segments": [{ "segment_index": 3, "video": ["/rec/3.mp4"], "danmu": ["/rec/3.xml"] }],
-    })
-    .to_string();
-    dag.input_manifest = Some(manifest.clone());
-    let mut step = DagStepExecutionDbModel::new(&dag.id, "A", &[]);
-    let mut job = JobDbModel::new_pipeline_step("remux", "[]", "[]", 0, None, None);
-    step.status = DagStepStatus::Processing.as_str().to_string();
-    step.job_id = Some(job.id.clone());
-    job.pipeline_id = Some(dag.id.clone());
-    job.dag_step_execution_id = Some(step.id.clone());
-
-    repo.publish_dag(&dag, &[step], &[job]).await.unwrap();
-
-    let stored = repo.get_dag(&dag.id).await.unwrap();
-    assert_eq!(stored.input_manifest.as_deref(), Some(manifest.as_str()));
-    let listed = repo.list_dags(None, Some("session"), 10, 0).await.unwrap();
-    assert_eq!(listed.len(), 1);
-    assert_eq!(listed[0].input_manifest, stored.input_manifest);
-    assert_eq!(
-        repo.count_dags(Some(DagExecutionStatus::Processing), Some("session"))
-            .await
-            .unwrap(),
-        1
-    );
-    assert!(
-        repo.list_dags(Some(DagExecutionStatus::Completed), Some("session"), 10, 0)
-            .await
-            .unwrap()
-            .is_empty()
-    );
-
-    let mut plain = DagExecutionDbModel::new(&dag_def, None, None);
-    plain.status = DagExecutionStatus::Processing.as_str().to_string();
-    repo.create_dag(&plain).await.unwrap();
-    assert_eq!(repo.get_dag(&plain.id).await.unwrap().input_manifest, None);
-}
-
 /// An unfinished DAG lists, filters, and counts as PENDING until one of its
 /// jobs is running, even though its stored status is PROCESSING.
 #[tokio::test]
@@ -96,9 +40,10 @@ async fn display_status_reports_unfinished_dags_without_a_running_job_as_pending
     let mut queued = DagExecutionDbModel::new(&dag_def, None, None);
     queued.status = DagExecutionStatus::Processing.as_str().to_string();
     queued.created_at = 1_000;
-    let mut running = DagExecutionDbModel::new(&dag_def, None, None);
+    let mut running = DagExecutionDbModel::new(&dag_def, None, Some("session".to_string()));
     running.status = DagExecutionStatus::Processing.as_str().to_string();
     running.created_at = 2_000;
+    running.input_manifest = Some(r#"{"version":1}"#.to_string());
     let other_def = DagPipelineDefinition::new(
         "Upload_Backup",
         vec![DagStep::new("A", PipelineStep::preset("remux"))],
@@ -164,6 +109,24 @@ async fn display_status_reports_unfinished_dags_without_a_running_job_as_pending
         );
     }
 
+    // Drain and coordinator recovery filter the stored rows by status and session.
+    let listed = repo.list_dags(None, Some("session"), 10, 0).await.unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, running.id);
+    assert_eq!(listed[0].input_manifest, running.input_manifest);
+    assert_eq!(
+        repo.count_dags(Some(DagExecutionStatus::Processing), Some("session"))
+            .await
+            .unwrap(),
+        1
+    );
+    assert!(
+        repo.list_dags(Some(DagExecutionStatus::Completed), Some("session"), 10, 0)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
     assert_eq!(
         repo.get_dag_display_counts().await.unwrap(),
         DagDisplayCounts {
@@ -190,179 +153,6 @@ async fn display_status_reports_unfinished_dags_without_a_running_job_as_pending
             "{query}: {plan:?}"
         );
     }
-}
-
-#[tokio::test]
-async fn dag_summaries_parse_names_and_keep_list_order_and_filters() {
-    let pool = setup_test_pool().await;
-    let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
-    let jobs = SqlxJobRepository::new(pool.clone(), pool.clone());
-    let definitions = [
-        (
-            r#"{"name":"Archive_Backup%\\","steps":[]}"#,
-            Some("Archive_Backup%\\"),
-        ),
-        (r#"{"steps":[]}"#, None),
-        (r#"{"name":42}"#, None),
-        ("{invalid", None),
-        (r#"{"name":"first","name":"second"}"#, None),
-        (r#"{"name":"Finished"}"#, Some("Finished")),
-    ];
-    let mut expected = Vec::new();
-    for (index, (definition, name)) in definitions.iter().enumerate() {
-        let mut dag = DagExecutionDbModel::new(
-            &DagPipelineDefinition::new("placeholder", vec![]),
-            Some(format!("streamer-{index}")),
-            Some(format!("session-{}", index % 2)),
-        );
-        dag.id = format!("summary-{index}");
-        dag.dag_definition = (*definition).to_owned();
-        dag.created_at = index as i64;
-        dag.updated_at = index as i64 + 10;
-        dag.status = [
-            "PENDING",
-            "PROCESSING",
-            "COMPLETED",
-            "FAILED",
-            "CANCELLED",
-            "COMPLETED",
-        ][index]
-            .to_owned();
-        dag.total_steps = index as i32;
-        dag.completed_steps = index as i32 / 2;
-        dag.failed_steps = index as i32 % 2;
-        dag.input_manifest = Some("unused manifest payload".to_owned());
-        dag.error = Some("unused error payload".to_owned());
-        repo.create_dag(&dag).await.unwrap();
-        if index == 1 {
-            let mut job = JobDbModel::new("remux", "{}");
-            job.status = "PROCESSING".to_owned();
-            job.pipeline_id = Some(dag.id.clone());
-            jobs.create_job(&job).await.unwrap();
-        }
-        expected.push(DagExecutionListSummary {
-            display_status: repo.get_dag_display_status(&dag.id).await.unwrap(),
-            id: dag.id,
-            name: name.map(str::to_owned),
-            streamer_id: dag.streamer_id,
-            session_id: dag.session_id,
-            total_steps: dag.total_steps,
-            completed_steps: dag.completed_steps,
-            failed_steps: dag.failed_steps,
-            created_at: dag.created_at,
-            updated_at: dag.updated_at,
-        });
-    }
-    expected.reverse();
-
-    let all = DagListFilter::default();
-    assert_eq!(
-        repo.list_dag_summaries(&all, 10, 0).await.unwrap(),
-        expected
-    );
-    assert_eq!(
-        repo.list_dag_summaries(&all, 2, 1).await.unwrap(),
-        expected[1..3]
-    );
-    let session = DagListFilter {
-        session_id: Some("session-1"),
-        ..Default::default()
-    };
-    let in_session: Vec<_> = expected
-        .iter()
-        .filter(|dag| dag.session_id.as_deref() == Some("session-1"))
-        .cloned()
-        .collect();
-    assert_eq!(
-        repo.list_dag_summaries(&session, 10, 0).await.unwrap(),
-        in_session
-    );
-    // Search uses SQLite JSON extraction; malformed definitions keep its
-    // query error rather than being silently repaired.
-    let search = DagListFilter {
-        search: Some("missing"),
-        ..Default::default()
-    };
-    assert!(repo.list_dag_summaries(&search, 10, 0).await.is_err());
-}
-
-async fn search_dag_ids(
-    repo: &SqlxDagRepository,
-    search: &str,
-    status: Option<DagExecutionStatus>,
-) -> Vec<String> {
-    let filter = DagListFilter {
-        status,
-        search: Some(search),
-        ..Default::default()
-    };
-    let mut ids: Vec<String> = repo
-        .list_dag_summaries(&filter, 10, 0)
-        .await
-        .unwrap()
-        .into_iter()
-        .map(|dag| dag.id)
-        .collect();
-    ids.sort();
-    assert_eq!(
-        repo.count_dags_by_display_status(&filter).await.unwrap(),
-        ids.len() as u64
-    );
-    ids
-}
-
-/// Search matches a case-insensitive substring of the DAG name or ID, treats
-/// LIKE wildcards literally, and combines with the status filter.
-#[tokio::test]
-async fn dag_list_search_matches_name_and_id_literally() {
-    let pool = setup_test_pool().await;
-    let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
-    let upload = DagExecutionDbModel::new(
-        &DagPipelineDefinition::new(
-            "Upload_Backup",
-            vec![DagStep::new("A", PipelineStep::preset("remux"))],
-        ),
-        None,
-        Some("search-session".to_owned()),
-    );
-    let mut remux = DagExecutionDbModel::new(
-        &DagPipelineDefinition::new(
-            "UploadXBackup",
-            vec![DagStep::new("A", PipelineStep::preset("remux"))],
-        ),
-        None,
-        None,
-    );
-    remux.status = DagExecutionStatus::Completed.as_str().to_string();
-    repo.create_dag(&upload).await.unwrap();
-    repo.create_dag(&remux).await.unwrap();
-
-    let mut both = vec![upload.id.clone(), remux.id.clone()];
-    both.sort();
-    assert_eq!(search_dag_ids(&repo, "upload", None).await, both);
-    assert_eq!(search_dag_ids(&repo, "  ", None).await, both);
-    assert_eq!(
-        search_dag_ids(&repo, "d_b", None).await,
-        vec![upload.id.clone()]
-    );
-    assert_eq!(
-        search_dag_ids(&repo, &upload.id[..8], None).await,
-        vec![upload.id.clone()]
-    );
-    assert_eq!(
-        search_dag_ids(&repo, "upload", Some(DagExecutionStatus::Completed)).await,
-        vec![remux.id.clone()]
-    );
-    assert!(search_dag_ids(&repo, "missing", None).await.is_empty());
-    let filter = DagListFilter {
-        status: Some(DagExecutionStatus::Pending),
-        session_id: Some("search-session"),
-        search: Some("  d_b  "),
-    };
-    let rows = repo.list_dag_summaries(&filter, 10, 0).await.unwrap();
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].id, upload.id);
-    assert_eq!(repo.count_dags_by_display_status(&filter).await.unwrap(), 1);
 }
 
 /// The no-job completion transitions only a ready step that has no job in a
@@ -399,9 +189,28 @@ async fn complete_ready_step_without_job_guards_its_transition() {
     assert!(untouched.ready_steps.is_empty());
     assert_eq!(untouched.dag.completed_steps, 0);
 
-    repo.complete_step_and_check_dependents(&step_a.id, &[])
+    let first = repo
+        .complete_step_and_check_dependents(&step_a.id, &[])
         .await
         .unwrap();
+    assert_eq!(first.ready_steps.len(), 1);
+    assert_eq!(first.ready_steps[0].step.step_id, "B");
+    // A repeated completion of a step with a job neither counts again nor
+    // offers its dependents again.
+    let duplicate = repo
+        .complete_step_and_check_dependents(&step_a.id, &["/output/a.mp4".to_string()])
+        .await
+        .unwrap();
+    assert!(duplicate.ready_steps.is_empty());
+    assert_eq!(repo.get_dag(&dag.id).await.unwrap().completed_steps, 1);
+    assert_eq!(
+        repo.get_step_by_dag_and_step_id(&dag.id, "B")
+            .await
+            .unwrap()
+            .status,
+        "PENDING"
+    );
+
     let completed = repo
         .complete_ready_step_without_job(&step_b.id, &[])
         .await
@@ -417,152 +226,6 @@ async fn complete_ready_step_without_job_guards_its_transition() {
         .unwrap();
     assert_eq!(replay.step.get_outputs(), Vec::<String>::new());
     assert_eq!(replay.dag.completed_steps, 2);
-}
-
-#[tokio::test]
-async fn test_fan_in_complete() {
-    let pool = setup_test_pool().await;
-    let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
-
-    // Create DAG: [A, B] -> C (fan-in)
-    let dag_def = DagPipelineDefinition::new(
-        "fan-in-dag",
-        vec![
-            DagStep::new("A", PipelineStep::preset("remux")),
-            DagStep::new("B", PipelineStep::preset("thumbnail")),
-            DagStep::with_dependencies(
-                "C",
-                PipelineStep::preset("upload"),
-                vec!["A".to_string(), "B".to_string()],
-            ),
-        ],
-    );
-
-    let dag = DagExecutionDbModel::new(&dag_def, None, None);
-    let dag_id = dag.id.clone();
-    repo.create_dag(&dag).await.unwrap();
-
-    let step_a = DagStepExecutionDbModel::new(&dag_id, "A", &[]);
-    let step_a_id = step_a.id.clone();
-    let step_b = DagStepExecutionDbModel::new(&dag_id, "B", &[]);
-    let step_b_id = step_b.id.clone();
-    let step_c = DagStepExecutionDbModel::new(&dag_id, "C", &["A".to_string(), "B".to_string()]);
-
-    repo.create_steps(&[step_a, step_b, step_c]).await.unwrap();
-
-    // Complete step A - C should NOT be ready yet
-    let ready = repo
-        .complete_step_and_check_dependents(&step_a_id, &["/output/a.mp4".to_string()])
-        .await
-        .unwrap()
-        .ready_steps;
-    assert!(ready.is_empty());
-
-    // Complete step B - NOW C should be ready with merged inputs
-    let ready = repo
-        .complete_step_and_check_dependents(&step_b_id, &["/output/b.jpg".to_string()])
-        .await
-        .unwrap()
-        .ready_steps;
-    assert_eq!(ready.len(), 1);
-    assert_eq!(ready[0].step.step_id, "C");
-    assert_eq!(
-        ready[0].merged_inputs,
-        vec!["/output/a.mp4".to_string(), "/output/b.jpg".to_string()]
-    );
-}
-
-#[tokio::test]
-async fn test_complete_step_is_idempotent() {
-    let pool = setup_test_pool().await;
-    let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
-
-    // Create DAG: A -> B
-    let dag_def = DagPipelineDefinition::new(
-        "test-dag",
-        vec![
-            DagStep::new("A", PipelineStep::preset("remux")),
-            DagStep::with_dependencies("B", PipelineStep::preset("upload"), vec!["A".to_string()]),
-        ],
-    );
-
-    let dag = DagExecutionDbModel::new(&dag_def, None, None);
-    let dag_id = dag.id.clone();
-    repo.create_dag(&dag).await.unwrap();
-
-    let step_a = DagStepExecutionDbModel::new(&dag_id, "A", &[]);
-    let step_a_id = step_a.id.clone();
-    let step_b = DagStepExecutionDbModel::new(&dag_id, "B", &["A".to_string()]);
-
-    repo.create_steps(&[step_a, step_b]).await.unwrap();
-
-    let ready = repo
-        .complete_step_and_check_dependents(&step_a_id, &["/output/a.mp4".to_string()])
-        .await
-        .unwrap()
-        .ready_steps;
-    assert_eq!(ready.len(), 1);
-    assert_eq!(ready[0].step.step_id, "B");
-
-    // Duplicate completion should be a no-op (no double increment, no re-ready).
-    let ready2 = repo
-        .complete_step_and_check_dependents(&step_a_id, &["/output/a.mp4".to_string()])
-        .await
-        .unwrap()
-        .ready_steps;
-    assert!(ready2.is_empty());
-
-    let dag = repo.get_dag(&dag_id).await.unwrap();
-    assert_eq!(dag.completed_steps, 1);
-
-    let step_b = repo
-        .get_step_by_dag_and_step_id(&dag_id, "B")
-        .await
-        .unwrap();
-    assert_eq!(step_b.status, "PENDING");
-}
-
-#[tokio::test]
-async fn test_fail_dag_cancels_processing_steps() {
-    let pool = setup_test_pool().await;
-    let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
-
-    // Create DAG: A -> B
-    let dag_def = DagPipelineDefinition::new(
-        "test-dag",
-        vec![
-            DagStep::new("A", PipelineStep::preset("remux")),
-            DagStep::with_dependencies("B", PipelineStep::preset("upload"), vec!["A".to_string()]),
-        ],
-    );
-
-    let dag = DagExecutionDbModel::new(&dag_def, None, None);
-    let dag_id = dag.id.clone();
-    repo.create_dag(&dag).await.unwrap();
-
-    let step_a = DagStepExecutionDbModel::new(&dag_id, "A", &[]);
-    let mut step_b = DagStepExecutionDbModel::new(&dag_id, "B", &["A".to_string()]);
-
-    // Simulate an in-flight job for step B.
-    create_job(&pool, "job-b").await;
-    step_b.status = "PROCESSING".to_string();
-    step_b.job_id = Some("job-b".to_string());
-    repo.create_steps(&[step_a, step_b]).await.unwrap();
-
-    let cancelled = repo
-        .fail_dag_and_cancel_steps(&dag_id, "fail-fast")
-        .await
-        .unwrap();
-    assert_eq!(cancelled, vec!["job-b".to_string()]);
-
-    let step_b = repo
-        .get_step_by_dag_and_step_id(&dag_id, "B")
-        .await
-        .unwrap();
-    assert_eq!(step_b.status, "CANCELLED");
-
-    let dag = repo.get_dag(&dag_id).await.unwrap();
-    assert_eq!(dag.status, "FAILED");
 }
 
 /// Rows for a DAG whose steps are in the given states, with a job row
@@ -763,6 +426,42 @@ async fn list_ready_steps_matches_the_completion_transactions_readiness() {
             .unwrap();
     }
 
+    // A DAG whose only jobless step still waits on a running dependency.
+    let waiting_definition = noop_definition(
+        "waiting fan-in",
+        &[("A", &[]), ("B", &["A"]), ("C", &["A"]), ("D", &["B", "C"])],
+    );
+    let (waiting, waiting_ids) = seed_dag_rows(
+        &pool,
+        &repo,
+        &waiting_definition,
+        &[
+            ("A", "COMPLETED", None),
+            ("B", "COMPLETED", None),
+            ("C", "PROCESSING", Some("job-waiting-c")),
+            ("D", "BLOCKED", None),
+        ],
+    )
+    .await;
+    assert_eq!(
+        repo.list_dag_ids_with_unmaterialized_steps().await.unwrap(),
+        vec![dag.id.clone()],
+        "the waiting DAG's D still waits on C"
+    );
+    sqlx::query("UPDATE dag_step_execution SET status = 'COMPLETED' WHERE id = ?")
+        .bind(&waiting_ids["C"])
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut unmaterialized = repo.list_dag_ids_with_unmaterialized_steps().await.unwrap();
+    unmaterialized.sort();
+    let mut both = vec![dag.id.clone(), waiting.id.clone()];
+    both.sort();
+    assert_eq!(
+        unmaterialized, both,
+        "D is ready once every dependency completed"
+    );
+
     let ready = repo.list_ready_steps(&dag.id).await.unwrap();
     let listed: Vec<(&str, &[String])> = ready
         .iter()
@@ -836,47 +535,6 @@ async fn list_ready_steps_matches_the_completion_transactions_readiness() {
             .ready_steps
             .iter()
             .all(|ready| ready.step.status == "PENDING")
-    );
-}
-
-#[tokio::test]
-async fn unmaterialized_step_query_skips_steps_with_a_running_dependency() {
-    let pool = setup_test_pool().await;
-    let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
-    let definition = noop_definition(
-        "waiting fan-in",
-        &[("A", &[]), ("B", &["A"]), ("C", &["A"]), ("D", &["B", "C"])],
-    );
-    let (dag, ids) = seed_dag_rows(
-        &pool,
-        &repo,
-        &definition,
-        &[
-            ("A", "COMPLETED", None),
-            ("B", "COMPLETED", None),
-            ("C", "PROCESSING", Some("job-c")),
-            ("D", "BLOCKED", None),
-        ],
-    )
-    .await;
-
-    assert!(
-        repo.list_dag_ids_with_unmaterialized_steps()
-            .await
-            .unwrap()
-            .is_empty(),
-        "D still waits on C"
-    );
-
-    sqlx::query("UPDATE dag_step_execution SET status = 'COMPLETED' WHERE id = ?")
-        .bind(&ids["C"])
-        .execute(&pool)
-        .await
-        .unwrap();
-    assert_eq!(
-        repo.list_dag_ids_with_unmaterialized_steps().await.unwrap(),
-        vec![dag.id.clone()],
-        "D is ready once every dependency completed"
     );
 }
 

@@ -2235,7 +2235,7 @@ async fn dag_list_stats_detail_and_graph_agree_on_status_strings() {
     let diamond = created_id(create_pipeline_as(&app, &token, ids, inputs, diamond).await);
     let completed = app.settled_dag(&token, &diamond).await;
     let ids = ("session-failed", "streamer-gone");
-    let fails = definition("Fails", vec![execute("run", "exit 1", &[])]);
+    let fails = definition("Fails_Fast", vec![execute("run", "exit 1", &[])]);
     let failed = created_id(create_pipeline_as(&app, &token, ids, inputs, fails).await);
     let failed_detail = app.settled_dag(&token, &failed).await;
     seed_queued_dag(&app, "dag-queued").await;
@@ -2347,6 +2347,7 @@ async fn dag_list_stats_detail_and_graph_agree_on_status_strings() {
     let item = listed(&diamond);
     assert_eq!(item["name"], "Diamond");
     assert_eq!(item["status"], "COMPLETED");
+    assert_eq!(item["streamer_id"], streamer_id.as_str());
     assert_eq!(item["streamer_name"], streamer_name);
     assert_eq!(item["session_id"], "session-diamond");
     assert_eq!(item["total_steps"], 4);
@@ -2363,6 +2364,18 @@ async fn dag_list_stats_detail_and_graph_agree_on_status_strings() {
             .map(|item| item["id"].as_str().expect("id").to_string())
             .collect()
     };
+    // Newest first.
+    let newest_first = vec!["dag-queued".to_string(), failed.clone(), diamond.clone()];
+    assert_eq!(list_ids(&all), newest_first);
+    let page = app
+        .get_ok("/api/pipeline/dags?limit=1&offset=1", &token)
+        .await;
+    assert_eq!(list_ids(&page), [failed.as_str()]);
+    assert_eq!(page["total"], 3);
+
+    // Search is a case-insensitive substring of the name, id, session, streamer id or
+    // streamer name, takes `_` literally, and ignores surrounding blanks.
+    let failed_prefix = format!("search={}", &failed[..8]);
     for (query, expected) in [
         ("status=completed", vec![diamond.clone()]),
         ("status=FAILED", vec![failed.clone()]),
@@ -2370,6 +2383,19 @@ async fn dag_list_stats_detail_and_graph_agree_on_status_strings() {
         ("status=processing", vec![]),
         ("session_id=session-failed", vec![failed.clone()]),
         ("search=e2e%20pipeline%20streamer", vec![diamond.clone()]),
+        ("search=s_f", vec![failed.clone()]),
+        ("search=dag_queued", vec![]),
+        ("search=DIAMOND", vec![diamond.clone()]),
+        (failed_prefix.as_str(), vec![failed.clone()]),
+        ("search=%20%20", newest_first.clone()),
+        (
+            "status=pending&search=queued",
+            vec!["dag-queued".to_string()],
+        ),
+        (
+            "status=failed&session_id=session-failed&search=%20s_f%20",
+            vec![failed.clone()],
+        ),
     ] {
         let listed = app
             .get_ok(&format!("/api/pipeline/dags?{query}"), &token)
