@@ -2225,6 +2225,19 @@ impl ActorRegistry {
             config_revision: 1,
         };
         let (actor, handle) = StreamerActor::new(generation, snapshot, self.deps.clone());
+        self.supervise_actor_for_test(streamer_id, generation, actor, handle);
+    }
+
+    /// Install `actor` as `streamer_id`'s resident actor and run it under the
+    /// same supervision as `spawn_actor`, including exit handling.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn supervise_actor_for_test(
+        self: &Arc<Self>,
+        streamer_id: &str,
+        generation: u64,
+        actor: StreamerActor,
+        handle: ActorHandle,
+    ) {
         let (exit_tx, exit_rx) = watch::channel(false);
         self.actors.insert(
             streamer_id.to_owned(),

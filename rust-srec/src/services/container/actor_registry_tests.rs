@@ -729,3 +729,242 @@ async fn trailing_closed_segment_persists_to_db_after_actor_exits() {
 
     harness.shutdown().await;
 }
+
+/// Poll `condition` every 20 ms for up to `limit`.
+async fn eventually(limit: Duration, mut condition: impl FnMut() -> bool) -> bool {
+    tokio::time::timeout(limit, async {
+        while !condition() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .is_ok()
+}
+
+#[tokio::test]
+#[ignore = "bug: a streamer re-enabled while its previous actor is still stopping is left \
+            without an actor, because the exiting generation triggers no reconcile"]
+async fn known_bug_streamer_reenabled_during_its_stop_is_monitored_once_the_stop_ends() {
+    use crate::streamer::manager::StreamerUpdateParams;
+
+    let harness = ActorHarness::new().await;
+    let row = harness
+        .seed_streamer("s-reenable", StreamerState::Live)
+        .await;
+    let mut session = LiveSessionDbModel::new(&row.id);
+    session.id = "sess-reenable".to_owned();
+    session.streamer_name = Some(row.name.clone());
+    harness
+        .container
+        .session_repository
+        .create_session(&session)
+        .await
+        .unwrap();
+
+    // Hand-step an actor into a running download of that session.
+    let snapshot = InitialStreamerSnapshot {
+        streamer_id: row.id.clone(),
+        state: StreamerState::NotLive,
+        deleted: false,
+        consecutive_error_count: 0,
+        disabled_until: None,
+        last_error: None,
+        config: ResolvedActorConfig {
+            streamer_name: row.name.clone(),
+            streamer_url: row.url.clone(),
+            platform: "huya".to_owned(),
+            check_interval_ms: 600_000,
+            offline_check_interval_ms: 600_000,
+            offline_check_count: 1,
+            ..ResolvedActorConfig::default()
+        },
+        config_revision: 1,
+    };
+    let (mut actor, handle) = harness.registry.build_actor_for_test(1, snapshot);
+    let ctx = crate::recorder::fsm::StepContext::deterministic(
+        std::time::Instant::now(),
+        Timestamp::now(),
+    );
+    let _ = actor.fsm_mut().step(ctx, FsmInput::TimerFired);
+    let probe_id = actor
+        .fsm_mut()
+        .in_flight_probe
+        .as_ref()
+        .expect("probe")
+        .probe_id;
+    let start_effects = actor.fsm_mut().step(
+        ctx,
+        FsmInput::ProbeCompleted {
+            probe_id,
+            result: Ok(ProbeStatus::Live(dummy_live_payload("Re-enable"))),
+        },
+    );
+    let start_op_id = start_effects
+        .iter()
+        .find_map(|effect| match effect {
+            crate::recorder::FsmEffect::CommitDb { op_id, .. } => Some(*op_id),
+            _ => None,
+        })
+        .expect("start commit");
+    let started_effects = actor.fsm_mut().step(
+        ctx,
+        FsmInput::DbCommitted {
+            op_id: start_op_id,
+            result: Ok(DbCommitOutcome::SessionStarted {
+                session_id: session.id.clone(),
+                started_at: Timestamp::now(),
+                disposition: SessionStartDisposition::ReusedActive,
+                credential_binding: None,
+            }),
+        },
+    );
+    let attempt_id = started_effects
+        .iter()
+        .find_map(|effect| match effect {
+            crate::recorder::FsmEffect::StartAttempt(spec) => Some(spec.attempt_id),
+            _ => None,
+        })
+        .expect("start attempt");
+    let _ = actor.fsm_mut().step(
+        ctx,
+        FsmInput::AttemptStarted {
+            attempt_id,
+            session_id: session.id.clone(),
+            download_id: "dl-reenable".to_owned(),
+            engine_type: crate::downloader::engine::EngineType::Mesio,
+            protocol: crate::downloader::DownloadProtocol::Flv,
+        },
+    );
+    harness
+        .registry
+        .supervise_actor_for_test(&row.id, 1, actor, handle.clone());
+    harness.registry.start();
+
+    let set_state = |state| StreamerUpdateParams {
+        id: row.id.clone(),
+        name: None,
+        url: None,
+        platform_config_id: None,
+        template_config_id: None,
+        priority: None,
+        state: Some(state),
+        streamer_specific_config: None,
+    };
+    let monitor_state = || {
+        harness
+            .registry
+            .runtime_view(&row.id)
+            .map(|view| view.monitor_state)
+    };
+
+    // Disable: the actor waits for the engine to confirm the stop.
+    harness
+        .container
+        .streamer_manager
+        .partial_update_streamer(set_state(StreamerState::Disabled))
+        .await
+        .unwrap();
+    assert!(
+        eventually(Duration::from_secs(5), || monitor_state()
+            == Some(StreamerState::Disabled))
+        .await,
+        "the actor enters its stop"
+    );
+
+    // Re-enable while the old generation is still stopping.
+    harness
+        .container
+        .streamer_manager
+        .partial_update_streamer(set_state(StreamerState::NotLive))
+        .await
+        .unwrap();
+    harness
+        .registry
+        .reconcile_streamer_for_test(&row.id, false)
+        .await;
+
+    // The engine confirms the stop and the old generation ends its session.
+    assert!(handle.send_input(FsmInput::DownloadEnded {
+        attempt_id,
+        event: DownloadTerminalEvent::Cancelled {
+            download_id: "dl-reenable".to_owned(),
+            streamer_id: row.id.clone(),
+            streamer_name: row.name.clone(),
+            session_id: session.id.clone(),
+            cause: crate::downloader::DownloadStopCause::StreamerDisabled,
+        },
+    }));
+
+    let monitored = eventually(Duration::from_secs(5), || {
+        harness.registry.has_actor(&row.id)
+            && monitor_state().is_some_and(|state| state != StreamerState::Disabled)
+    })
+    .await;
+    let state = monitor_state();
+    harness.shutdown().await;
+    assert!(monitored, "re-enabled streamer is not monitored: {state:?}");
+}
+
+#[tokio::test]
+#[ignore = "bug: every reconfigure sends CredentialMaterialChanged, so a global settings save \
+            forces an immediate check of every streamer"]
+async fn known_bug_global_settings_save_reconfigures_actors_without_forcing_checks() {
+    use crate::config::ConfigUpdateEvent;
+    use crate::recorder::actor::{ActorHandle, ActorMessage};
+
+    let harness = ActorHarness::new().await;
+    let row = harness
+        .seed_streamer("s-config", StreamerState::NotLive)
+        .await;
+    let (handle, mut inbox) = ActorHandle::detached_for_test();
+    let _exit = harness
+        .registry
+        .register_actor_handle_for_test(row.id.clone(), 1, handle);
+    harness.registry.start();
+
+    harness
+        .registry
+        .handle_config_event(&ConfigUpdateEvent::GlobalUpdated);
+    // Queued behind the global update, so its arrival means the update was handled.
+    harness
+        .registry
+        .handle_config_event(&ConfigUpdateEvent::StreamerErrorCleared {
+            streamer_id: row.id.clone(),
+        });
+
+    let mut inputs = Vec::new();
+    let saw_both = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let Some(message) = inbox.recv().await else {
+                return false;
+            };
+            if let ActorMessage::Input(input) = message {
+                inputs.push(input);
+            }
+            let configured = inputs
+                .iter()
+                .any(|input| matches!(input, FsmInput::ConfigUpdated { .. }));
+            let marker = inputs
+                .iter()
+                .any(|input| matches!(input, FsmInput::ErrorCleared));
+            if configured && marker {
+                return true;
+            }
+        }
+    })
+    .await
+    .unwrap_or(false);
+    while let Ok(ActorMessage::Input(input)) = inbox.try_recv() {
+        inputs.push(input);
+    }
+    harness.shutdown().await;
+
+    assert!(saw_both, "config update and marker arrive: {inputs:?}");
+    assert!(
+        !inputs.iter().any(|input| matches!(
+            input,
+            FsmInput::CredentialMaterialChanged | FsmInput::CheckNow
+        )),
+        "a settings save must not force a check: {inputs:?}"
+    );
+}

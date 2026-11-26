@@ -114,6 +114,13 @@ impl ActorHandle {
     pub(crate) fn send_message(&self, msg: ActorMessage) -> bool {
         self.tx.send(msg).is_ok()
     }
+
+    /// A handle with no actor behind it, and the mailbox its messages reach.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn detached_for_test() -> (Self, mpsc::UnboundedReceiver<ActorMessage>) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        (Self { tx }, rx)
+    }
 }
 
 /// Single-streamer actor owning one [`StreamerFsm`] and driving its effects

@@ -5,11 +5,11 @@ use crate::downloader::engine::{DownloadProtocol, EngineType};
 use crate::downloader::{DownloadFailureKind, EngineEndSignal};
 use crate::recorder::fsm::hysteresis::QUIET_PERIOD_COMMIT_RETRY_DELAY;
 use crate::recorder::fsm::state::{
-    BlockedKind, FsmEffect, FsmInput, MonitorPhase, SessionSlot, StreamerFsm,
+    AttemptPhase, BlockedKind, FsmEffect, FsmInput, MonitorPhase, SessionSlot, StreamerFsm,
 };
 use crate::recorder::ports::{
-    ActorStopReason, DanmuStopKind, DbCommitFailure, DbCommitOp, DbCommitOutcome,
-    PipelineNotification, ProbeStatus, SessionStartDisposition,
+    ActorStopReason, AttemptStartFailure, DanmuStopKind, DbCommitFailure, DbCommitOp,
+    DbCommitOutcome, PipelineNotification, ProbeStatus, SessionStartDisposition,
 };
 use crate::session::{OfflineSignal, TerminalCause};
 use srec_core::domain::StreamerState;
@@ -18,7 +18,8 @@ use srec_core::domain::streamer::FatalErrorType;
 use super::{
     TestClock, base_config, base_snapshot, completed_event,
     enter_quiet_period_ready_for_direct_backstop, failed_event, find_db_commit, find_probe,
-    find_start_attempt, live_payload, open_running_session, sample_binding, session_ended_outcome,
+    find_start_attempt, live_payload, open_running_session, reach_starting_attempt, sample_binding,
+    session_ended_outcome,
 };
 
 #[test]
@@ -866,4 +867,95 @@ fn runtime_view_reports_attempt_started_at_only_while_running() {
     let stopping_view = fsm.runtime_view();
     assert!(!stopping_view.attempt_active);
     assert_eq!(stopping_view.recording_started_at, None);
+}
+
+#[test]
+#[ignore = "bug: attempt ids restart at the same sequence in every actor generation, so a \
+            restarted generation adopts the previous generation's download as its own"]
+fn known_bug_restarted_generation_does_not_adopt_the_previous_generations_attempt() {
+    let clock = TestClock::new();
+    let (_previous, previous_attempt) = reach_starting_attempt(&clock, base_config());
+    let (mut current, current_attempt) = reach_starting_attempt(&clock, base_config());
+    assert_ne!(previous_attempt, current_attempt);
+
+    // The previous generation's surviving startup task starts its download.
+    current.step(
+        clock.ctx(),
+        FsmInput::AttemptStarted {
+            attempt_id: previous_attempt,
+            session_id: "sess-1".into(),
+            download_id: "dl-previous".into(),
+            engine_type: EngineType::Mesio,
+            protocol: DownloadProtocol::Flv,
+        },
+    );
+    match &current.session {
+        SessionSlot::Open(open) => assert!(matches!(
+            open.attempt,
+            AttemptPhase::Starting { attempt_id, .. } if attempt_id == current_attempt
+        )),
+        other => panic!("expected Open, got {other:?}"),
+    }
+}
+
+#[test]
+#[ignore = "bug: an attempt that starts after a teardown outside Stopping (danmu StreamClosed, \
+            offline end, fatal probe) is promoted to Running and never stopped"]
+fn known_bug_attempt_started_after_a_teardown_is_stopped() {
+    let clock = TestClock::new();
+    let (mut fsm, attempt_id) = reach_starting_attempt(&clock, base_config());
+    let effects = fsm.step(
+        clock.ctx(),
+        FsmInput::DanmuControl {
+            session_id: "sess-1".into(),
+            control: DanmuControlEvent::StreamClosed {
+                message: None,
+                action: None,
+            },
+        },
+    );
+    assert!(effects.iter().any(|e| matches!(
+        e,
+        FsmEffect::StopAttempt {
+            download_id: None,
+            ..
+        }
+    )));
+
+    let effects = fsm.step(
+        clock.ctx(),
+        FsmInput::AttemptStarted {
+            attempt_id,
+            session_id: "sess-1".into(),
+            download_id: "dl-late".into(),
+            engine_type: EngineType::Mesio,
+            protocol: DownloadProtocol::Flv,
+        },
+    );
+    assert!(effects.iter().any(|e| matches!(
+        e,
+        FsmEffect::StopAttempt { attempt_id: id, download_id: Some(download), .. }
+            if *id == attempt_id && download == "dl-late"
+    )));
+    if let SessionSlot::Open(open) = &fsm.session {
+        assert!(!matches!(open.attempt, AttemptPhase::Running { .. }));
+    }
+}
+
+#[test]
+#[ignore = "bug: a startup refused because the previous download is still active reports \
+            Cancelled and waits for the 5-minute stall probe instead of the lease release"]
+fn known_bug_startup_refused_by_an_active_download_retries_once_it_is_released() {
+    let clock = TestClock::new();
+    let (mut fsm, attempt_id) = reach_starting_attempt(&clock, base_config());
+    fsm.step(
+        clock.ctx(),
+        FsmInput::AttemptStartFailed {
+            attempt_id,
+            session_id: "sess-1".into(),
+            reason: AttemptStartFailure::Cancelled,
+        },
+    );
+    let effects = fsm.step(clock.ctx(), FsmInput::PhysicalLeaseReleased);
+    assert!(find_start_attempt(&effects).is_some());
 }

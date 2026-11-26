@@ -1,5 +1,6 @@
 mod credentials;
 mod hysteresis;
+mod invariants;
 mod lifecycle;
 mod schedule;
 mod segment;
@@ -274,6 +275,59 @@ fn open_running_session_with_snapshot(
         },
     );
     (fsm, attempt_id)
+}
+
+/// Probe live and commit a new session, stopping at the `StartAttempt` the
+/// commit emits.
+fn reach_starting_attempt(clock: &TestClock, config: ResolvedActorConfig) -> (StreamerFsm, u64) {
+    let mut fsm = StreamerFsm::new(
+        base_snapshot(StreamerState::NotLive, config),
+        clock.now,
+        clock.wall,
+    );
+    let probe_id = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
+        .unwrap()
+        .probe_id;
+    let effects = fsm.step(
+        clock.ctx(),
+        FsmInput::ProbeCompleted {
+            probe_id,
+            result: Ok(ProbeStatus::Live(live_payload("Live Title"))),
+        },
+    );
+    let (op_id, _) = find_db_commit(&effects).unwrap();
+    let effects = fsm.step(
+        clock.ctx(),
+        FsmInput::DbCommitted {
+            op_id,
+            result: Ok(DbCommitOutcome::SessionStarted {
+                session_id: "sess-1".into(),
+                started_at: clock.wall,
+                disposition: SessionStartDisposition::Created,
+                credential_binding: None,
+            }),
+        },
+    );
+    let attempt_id = find_start_attempt(&effects).unwrap().attempt_id;
+    (fsm, attempt_id)
+}
+
+/// Assert that the next wake-up is at least the jitter floor of the shortest
+/// configured poll interval away, so a failure never re-probes immediately.
+#[track_caller]
+fn assert_waits_a_poll_interval(fsm: &StreamerFsm, clock: &TestClock) {
+    let shortest = fsm
+        .config
+        .offline_check_interval_ms
+        .min(fsm.config.check_interval_ms);
+    let floor = clock.now + super::schedule::jittered_delay(shortest, 9_000);
+    let deadline = fsm.next_deadline(clock.now, clock.wall);
+    assert!(
+        deadline.is_some_and(|deadline| deadline >= floor),
+        "next deadline {:?} is sooner than {:?} from now",
+        deadline.map(|deadline| deadline.saturating_duration_since(clock.now)),
+        floor - clock.now
+    );
 }
 
 fn open_running_session(

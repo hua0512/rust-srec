@@ -4,7 +4,7 @@ use std::time::Duration;
 use jiff::SignedDuration;
 
 use crate::downloader::engine::DownloadProgress;
-use crate::downloader::{DownloadStopCause, IoErrorKindSer};
+use crate::downloader::{DownloadStopCause, EngineEndSignal, IoErrorKindSer};
 use crate::monitor::{FilterReason, InfraBlockReason};
 use crate::recorder::fsm::error::{
     BASE_BACKOFF_SECS, MAX_BACKOFF_SECS, backoff_duration_for_error_count,
@@ -19,15 +19,16 @@ use crate::recorder::fsm::state::{
     StreamerFsm,
 };
 use crate::recorder::ports::{
-    AttemptStartFailure, DanmuStopKind, DanmuStopResult, DbCommitOp, DbCommitOutcome, ProbeFailure,
-    ProbePurpose, ProbeStatus, SessionStartDisposition,
+    AttemptStartFailure, DanmuStopKind, DanmuStopResult, DbCommitFailure, DbCommitOp,
+    DbCommitOutcome, ProbeFailure, ProbePurpose, ProbeStatus, SessionStartDisposition,
 };
 use crate::session::TerminalCause;
 use srec_core::domain::StreamerState;
 
 use super::{
-    TestClock, base_config, base_snapshot, cancelled_event, find_db_commit, find_probe,
-    find_start_attempt, live_payload, open_running_session, open_running_session_with_snapshot,
+    TestClock, assert_waits_a_poll_interval, base_config, base_snapshot, cancelled_event,
+    completed_event, find_db_commit, find_probe, find_start_attempt, live_payload,
+    open_running_session, open_running_session_with_snapshot, reach_starting_attempt,
     session_ended_outcome,
 };
 
@@ -903,4 +904,101 @@ fn out_of_space_suppression_preserves_cooldown_and_offline_does_not_overwrite() 
         },
     );
     assert!(find_db_commit(&effects).is_none());
+}
+
+#[test]
+#[ignore = "bug: Other and NotLiveAfterQueue attempt-start failures schedule the next probe \
+            for now, so a live streamer loops probe -> start -> failure with no delay"]
+fn known_bug_attempt_start_failures_wait_a_poll_interval_before_reprobing() {
+    for reason in [
+        AttemptStartFailure::Other {
+            message: "Engine ffmpeg is not available".into(),
+        },
+        AttemptStartFailure::NotLiveAfterQueue,
+    ] {
+        let clock = TestClock::new();
+        let (mut fsm, attempt_id) = reach_starting_attempt(&clock, base_config());
+        fsm.step(
+            clock.ctx(),
+            FsmInput::AttemptStartFailed {
+                attempt_id,
+                session_id: "sess-1".into(),
+                reason: reason.clone(),
+            },
+        );
+        assert_waits_a_poll_interval(&fsm, &clock);
+    }
+}
+
+#[test]
+#[ignore = "bug: a failed StartOrResumeSession commit re-probes immediately, so a failing \
+            database turns into a probe and commit loop per live streamer"]
+fn known_bug_failed_session_start_commit_waits_a_poll_interval_before_reprobing() {
+    let clock = TestClock::new();
+    let mut fsm = StreamerFsm::new(
+        base_snapshot(StreamerState::NotLive, base_config()),
+        clock.now,
+        clock.wall,
+    );
+    let probe_id = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
+        .unwrap()
+        .probe_id;
+    let effects = fsm.step(
+        clock.ctx(),
+        FsmInput::ProbeCompleted {
+            probe_id,
+            result: Ok(ProbeStatus::Live(live_payload("t"))),
+        },
+    );
+    let (op_id, _) = find_db_commit(&effects).unwrap();
+    fsm.step(
+        clock.ctx(),
+        FsmInput::DbCommitted {
+            op_id,
+            result: Err(DbCommitFailure::Transient {
+                message: "database is locked".into(),
+            }),
+        },
+    );
+    assert_waits_a_poll_interval(&fsm, &clock);
+}
+
+#[test]
+#[ignore = "bug: a title or category filter result on an open session outside LiveWatchdog \
+            returns without rescheduling, so probes run back to back"]
+fn known_bug_metadata_filter_on_an_open_session_waits_a_poll_interval() {
+    let mut clock = TestClock::new();
+    let (mut fsm, attempt_id) = open_running_session(&clock, base_config(), "sess-1", None);
+    let effects = fsm.step(
+        clock.ctx(),
+        FsmInput::DownloadEnded {
+            attempt_id,
+            event: completed_event("sess-1", EngineEndSignal::CleanDisconnect),
+        },
+    );
+    let (op_id, _) = find_db_commit(&effects).unwrap();
+    fsm.step(
+        clock.ctx(),
+        FsmInput::DbCommitted {
+            op_id,
+            result: Ok(DbCommitOutcome::HysteresisEnteredRecorded),
+        },
+    );
+    clock.advance(Duration::from_secs(20));
+    let probe_id = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
+        .expect("quiet-period check")
+        .probe_id;
+    fsm.step(
+        clock.ctx(),
+        FsmInput::ProbeCompleted {
+            probe_id,
+            result: Ok(ProbeStatus::Filtered {
+                reason: FilterReason::TitleMismatch,
+                title: "rerun".into(),
+                category: None,
+            }),
+        },
+    );
+    assert!(matches!(fsm.session, SessionSlot::Open(_)));
+    assert_waits_a_poll_interval(&fsm, &clock);
 }

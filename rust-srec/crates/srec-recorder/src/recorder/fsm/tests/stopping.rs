@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use jiff::SignedDuration;
 
-use crate::downloader::DownloadStopCause;
 use crate::downloader::engine::{DownloadProtocol, EngineType};
+use crate::downloader::{DownloadStopCause, EngineEndSignal};
 use crate::monitor::FilterReason;
 use crate::recorder::fsm::schedule::STOP_DEADLINE_DURATION;
 use crate::recorder::fsm::state::{
@@ -18,8 +18,9 @@ use crate::session::TerminalCause;
 use srec_core::domain::StreamerState;
 
 use super::{
-    TestClock, base_config, base_snapshot, cancelled_event, find_db_commit, find_probe,
-    find_start_attempt, live_payload, open_running_session, sample_binding, session_ended_outcome,
+    TestClock, base_config, base_snapshot, cancelled_event, completed_event, find_db_commit,
+    find_probe, find_start_attempt, live_payload, open_running_session, sample_binding,
+    session_ended_outcome,
 };
 
 #[test]
@@ -686,4 +687,252 @@ fn credential_retire_clears_open_session_when_registry_committed_first() {
         )),
         "losing committer must not emit a duplicate SessionEnded pipeline notification"
     );
+}
+
+#[test]
+#[ignore = "bug: next_deadline offers the elapsed quiet-period backstop while Stopping, where \
+            TimerFired ignores it, so the actor loop spins until the stop settles"]
+fn known_bug_disable_after_an_elapsed_quiet_backstop_waits_for_the_stop_deadline() {
+    let mut clock = TestClock::new();
+    let mut cfg = base_config();
+    cfg.record_danmu = true;
+    cfg.offline_check_count = 3;
+    cfg.offline_check_interval_ms = 20_000; // backstop window = 80 s
+    let (mut fsm, attempt_id) = open_running_session(&clock, cfg, "sess-1", None);
+    fsm.step(
+        clock.ctx(),
+        FsmInput::DanmuCollectionStarted {
+            session_id: "sess-1".into(),
+        },
+    );
+    let effects = fsm.step(
+        clock.ctx(),
+        FsmInput::DownloadEnded {
+            attempt_id,
+            event: completed_event("sess-1", EngineEndSignal::CleanDisconnect),
+        },
+    );
+    let (op_id, _) = find_db_commit(&effects).expect("hysteresis audit commit");
+    fsm.step(
+        clock.ctx(),
+        FsmInput::DbCommitted {
+            op_id,
+            result: Ok(DbCommitOutcome::HysteresisEnteredRecorded),
+        },
+    );
+
+    // Disable 5 s before the backstop; the danmu stop stays unconfirmed.
+    clock.advance(Duration::from_secs(75));
+    let stop_deadline = clock.now + STOP_DEADLINE_DURATION;
+    fsm.step(clock.ctx(), FsmInput::Disable);
+    assert!(matches!(fsm.monitor, MonitorPhase::Stopping(_)));
+
+    // The backstop has elapsed; the stop deadline is the next wake-up.
+    clock.advance(Duration::from_secs(6));
+    assert_eq!(
+        fsm.next_deadline(clock.now, clock.wall),
+        Some(stop_deadline)
+    );
+
+    // At the stop deadline the final EndSession goes out, and nothing is due
+    // again while it is in flight.
+    clock.advance(stop_deadline - clock.now);
+    let effects = fsm.step(clock.ctx(), FsmInput::TimerFired);
+    let (_, op) = find_db_commit(&effects).expect("EndSession after the stop deadline");
+    assert!(matches!(op, DbCommitOp::EndSession { .. }));
+    assert!(
+        fsm.next_deadline(clock.now, clock.wall)
+            .is_none_or(|deadline| deadline > clock.now)
+    );
+}
+
+#[test]
+#[ignore = "bug: Shutdown emits ActorStopped while an EndSession commit is in flight, so its \
+            SessionEnded pipeline notification is never sent"]
+fn known_bug_shutdown_waits_for_an_in_flight_end_session() {
+    let clock = TestClock::new();
+    let (mut fsm, attempt_id) = open_running_session(&clock, base_config(), "sess-1", None);
+    let effects = fsm.step(
+        clock.ctx(),
+        FsmInput::DownloadEnded {
+            attempt_id,
+            event: completed_event("sess-1", EngineEndSignal::HlsEndlist),
+        },
+    );
+    let (end_op, op) = find_db_commit(&effects).unwrap();
+    assert!(matches!(op, DbCommitOp::EndSession { .. }));
+
+    let effects = fsm.step(clock.ctx(), FsmInput::Shutdown);
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, FsmEffect::ActorStopped { .. })),
+        "the actor must not stop while EndSession is in flight"
+    );
+
+    let effects = fsm.step(
+        clock.ctx(),
+        FsmInput::DbCommitted {
+            op_id: end_op,
+            result: Ok(session_ended_outcome(Some("sess-1"), clock.wall, true)),
+        },
+    );
+    assert!(effects.iter().any(|e| matches!(
+        e,
+        FsmEffect::NotifyPipeline(PipelineNotification::SessionEnded { session_id, .. })
+            if session_id == "sess-1"
+    )));
+    assert!(effects.iter().any(|e| matches!(
+        e,
+        FsmEffect::ActorStopped {
+            reason: ActorStopReason::Shutdown
+        }
+    )));
+}
+
+#[test]
+#[ignore = "bug: after a credential retirement times out, the late Cancelled(StreamerDisabled) \
+            terminal parks the monitor with no next check, so the streamer is never checked again"]
+fn known_bug_credential_retire_that_times_out_keeps_monitoring_after_the_late_cancel() {
+    let mut clock = TestClock::new();
+    let binding = sample_binding("p1", 1);
+    let mut cfg = base_config();
+    cfg.managed_credentials = true;
+    let (mut fsm, attempt_id) = open_running_session(&clock, cfg, "sess-1", Some(binding.clone()));
+    fsm.step(
+        clock.ctx(),
+        FsmInput::CredentialRetire {
+            session_id: "sess-1".into(),
+            binding,
+        },
+    );
+    clock.advance(STOP_DEADLINE_DURATION + Duration::from_secs(1));
+    fsm.step(clock.ctx(), FsmInput::TimerFired);
+    assert!(matches!(fsm.session, SessionSlot::Open(_)));
+
+    // The engine exits with the stop cause the retirement requested.
+    fsm.step(
+        clock.ctx(),
+        FsmInput::DownloadEnded {
+            attempt_id,
+            event: cancelled_event("sess-1", DownloadStopCause::StreamerDisabled),
+        },
+    );
+    fsm.step(clock.ctx(), FsmInput::PhysicalLeaseReleased);
+
+    let next = fsm
+        .next_deadline(clock.now, clock.wall)
+        .expect("the streamer is still checked");
+    assert!(next <= clock.now + Duration::from_millis(fsm.config.check_interval_ms) * 2);
+}
+
+#[test]
+#[ignore = "bug: a stop whose download exits after an offline EndSession closed the session \
+            ignores that exit, so the deadline sets lingering_physical_lease after its release \
+            and no later session starts a download"]
+fn known_bug_stop_confirmed_after_the_session_ended_does_not_block_later_downloads() {
+    let mut clock = TestClock::new();
+    let binding = sample_binding("p1", 1);
+    let mut cfg = base_config();
+    cfg.managed_credentials = true;
+    cfg.offline_check_count = 1;
+    let (mut fsm, attempt_id) = open_running_session(&clock, cfg, "sess-1", Some(binding.clone()));
+
+    // A watchdog probe confirms offline: StopAttempt plus EndSession in flight.
+    clock.advance(Duration::from_secs(301));
+    let probe_id = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
+        .unwrap()
+        .probe_id;
+    let effects = fsm.step(
+        clock.ctx(),
+        FsmInput::ProbeCompleted {
+            probe_id,
+            result: Ok(ProbeStatus::Offline {
+                batch_live_hint_armed: false,
+            }),
+        },
+    );
+    let (end_op, _) = find_db_commit(&effects).expect("offline EndSession");
+
+    // Credential retirement for the still-open session arrives meanwhile.
+    fsm.step(
+        clock.ctx(),
+        FsmInput::CredentialRetire {
+            session_id: "sess-1".into(),
+            binding,
+        },
+    );
+    fsm.step(
+        clock.ctx(),
+        FsmInput::DbCommitted {
+            op_id: end_op,
+            result: Ok(session_ended_outcome(Some("sess-1"), clock.wall, true)),
+        },
+    );
+    fsm.step(
+        clock.ctx(),
+        FsmInput::DownloadEnded {
+            attempt_id,
+            event: cancelled_event("sess-1", DownloadStopCause::StreamerOffline),
+        },
+    );
+    fsm.step(clock.ctx(), FsmInput::PhysicalLeaseReleased);
+    clock.advance(STOP_DEADLINE_DURATION + Duration::from_secs(1));
+    fsm.step(clock.ctx(), FsmInput::TimerFired);
+    assert!(!fsm.lingering_physical_lease);
+
+    // The streamer goes live again later and recording starts.
+    clock.advance(Duration::from_secs(3600));
+    let probe_id = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
+        .unwrap()
+        .probe_id;
+    let effects = fsm.step(
+        clock.ctx(),
+        FsmInput::ProbeCompleted {
+            probe_id,
+            result: Ok(ProbeStatus::Live(live_payload("t"))),
+        },
+    );
+    let (op_id, _) = find_db_commit(&effects).unwrap();
+    let effects = fsm.step(
+        clock.ctx(),
+        FsmInput::DbCommitted {
+            op_id,
+            result: Ok(DbCommitOutcome::SessionStarted {
+                session_id: "sess-2".into(),
+                started_at: clock.wall,
+                disposition: SessionStartDisposition::Created,
+                credential_binding: None,
+            }),
+        },
+    );
+    assert!(find_start_attempt(&effects).is_some());
+}
+
+#[test]
+#[ignore = "bug: DanmuCollectionStopped from any session confirms the current stop's danmu leg"]
+fn known_bug_danmu_stop_from_another_session_does_not_confirm_the_stop() {
+    let clock = TestClock::new();
+    let mut cfg = base_config();
+    cfg.record_danmu = true;
+    let (mut fsm, _attempt_id) = open_running_session(&clock, cfg, "sess-2", None);
+    fsm.step(
+        clock.ctx(),
+        FsmInput::DanmuCollectionStarted {
+            session_id: "sess-2".into(),
+        },
+    );
+    fsm.step(clock.ctx(), FsmInput::Disable);
+    fsm.step(
+        clock.ctx(),
+        FsmInput::DanmuCollectionStopped {
+            session_id: "sess-old".into(),
+            total_count: 0,
+            result: DanmuStopResult::Terminated,
+        },
+    );
+    match &fsm.monitor {
+        MonitorPhase::Stopping(stopping) => assert!(!stopping.danmu_confirmed),
+        other => panic!("expected Stopping, got {other:?}"),
+    }
 }
