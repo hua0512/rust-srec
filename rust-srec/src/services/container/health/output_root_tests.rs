@@ -15,7 +15,7 @@ fn gate(roots: Vec<PathBuf>) -> Arc<OutputRootGate> {
 }
 
 #[test]
-fn inferred_probe_key_matches_runtime_and_respects_explicit_prefixes() {
+fn inferred_probe_key_matches_runtime_and_respects_explicit_prefixes_and_escapes() {
     let gate = gate(vec![]);
     assert!(
         gate.probe_path_for_template("/rec/{platform}/{streamer}")
@@ -55,6 +55,32 @@ fn inferred_probe_key_matches_runtime_and_respects_explicit_prefixes() {
     assert_eq!(
         paths,
         HashSet::from([PathBuf::from("/rec"), PathBuf::from("/rec/huya/special")])
+    );
+
+    // Escaped `%%` in streamer metadata keeps the probe's identity with the
+    // runtime path without expanding real strftime tokens.
+    let gate = self::gate(vec![]);
+    let template = "/rec/Alice%%Y%%n%%%%/%Y/{title}";
+    let probe = gate.probe_path_for_template(template).unwrap();
+    assert_eq!(probe, PathBuf::from("/rec/Alice%Y%n%%"));
+    let runtime = pipeline_common::expand_path_template(&template.replace("{title}", "actual"));
+    assert_eq!(
+        gate.resolve_path(&probe),
+        gate.resolve_path(Path::new(&runtime))
+    );
+    assert!(gate.probe_path_for_template("/rec/%Y/Alice%%n").is_none());
+    let gate = self::gate(vec![
+        PathBuf::from("/rec"),
+        PathBuf::from("/rec/Alice%Y/special"),
+    ]);
+    assert!(
+        gate.probe_path_for_template("/rec/Alice%%Y/{title}")
+            .is_none(),
+        "unknown title might select a deeper explicit root"
+    );
+    assert_eq!(
+        gate.probe_path_for_template("/rec/Alice%%Y/special/{title}"),
+        Some(PathBuf::from("/rec/Alice%Y/special"))
     );
 }
 
@@ -145,107 +171,105 @@ async fn offline_streamer_missing_directory_does_not_fail_startup_probe() {
     assert!(recording_dir.is_dir());
 }
 
+/// `probe_root_writable` checks the destination itself: a missing root, a file,
+/// a dangling symlink or an unwritable directory fails rather than falling
+/// back to a writable ancestor, and a probe never leaves files behind.
 #[test]
-fn missing_explicit_root_does_not_fall_back_to_writable_outer_root() {
-    let dir = tempfile::tempdir().unwrap();
-    let missing_root = dir.path().join("missing-mount");
-    let gate = gate(vec![dir.path().to_path_buf(), missing_root.clone()]);
-    for output in [&missing_root, &missing_root.join("0601/2026")] {
-        assert_eq!(
-            probe_root_writable(output, &gate).unwrap_err().kind(),
-            std::io::ErrorKind::NotFound
-        );
+fn probe_classifies_destinations_without_leaving_their_root() {
+    // A missing explicit root is not replaced by the writable outer root, and
+    // nothing is created.
+    {
+        let dir = tempfile::tempdir().unwrap();
+        let missing_root = dir.path().join("missing-mount");
+        let gate = gate(vec![dir.path().to_path_buf(), missing_root.clone()]);
+        for output in [&missing_root, &missing_root.join("0601/2026")] {
+            assert_eq!(
+                probe_root_writable(output, &gate).unwrap_err().kind(),
+                std::io::ErrorKind::NotFound
+            );
+        }
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
     }
-    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
-}
-
-#[test]
-fn file_in_output_path_does_not_fall_back_to_writable_parent() {
-    let dir = tempfile::tempdir().unwrap();
-    let output = dir.path().join("0601");
-    std::fs::write(&output, b"existing file").unwrap();
-    let gate = gate(vec![dir.path().to_path_buf()]);
-    assert!(probe_root_writable(&output, &gate).is_err());
-    assert!(probe_root_writable(&output.join("2026"), &gate).is_err());
-    assert_eq!(std::fs::read(&output).unwrap(), b"existing file");
-}
-
-#[cfg(unix)]
-#[test]
-fn dangling_output_symlinks_do_not_fall_back_to_writable_parent() {
-    let dir = tempfile::tempdir().unwrap();
-    let output = dir.path().join("0601");
-    std::os::unix::fs::symlink(dir.path().join("missing-target"), &output).unwrap();
-    let gate = gate(vec![dir.path().to_path_buf()]);
-    for path in [&output, &output.join("2026/09/10")] {
-        assert_eq!(
-            probe_root_writable(path, &gate).unwrap_err().kind(),
-            std::io::ErrorKind::NotFound
-        );
+    // A file in the output path fails and stays intact.
+    {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("0601");
+        std::fs::write(&output, b"existing file").unwrap();
+        let gate = gate(vec![dir.path().to_path_buf()]);
+        assert!(probe_root_writable(&output, &gate).is_err());
+        assert!(probe_root_writable(&output.join("2026"), &gate).is_err());
+        assert_eq!(std::fs::read(&output).unwrap(), b"existing file");
     }
-}
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
 
-#[cfg(unix)]
-#[test]
-fn missing_subdirectories_under_valid_symlink_can_be_probed() {
-    let dir = tempfile::tempdir().unwrap();
-    let target = tempfile::tempdir().unwrap();
-    let output = dir.path().join("0601");
-    std::os::unix::fs::symlink(target.path(), &output).unwrap();
-    let gate = gate(vec![dir.path().to_path_buf()]);
-    assert!(probe_root_writable(&output.join("2026/09/10"), &gate).is_ok());
-    assert_eq!(std::fs::read_dir(target.path()).unwrap().count(), 0);
-}
+        // A dangling symlink is NotFound, for itself and below it.
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("0601");
+        std::os::unix::fs::symlink(dir.path().join("missing-target"), &output).unwrap();
+        let gate = self::gate(vec![dir.path().to_path_buf()]);
+        for path in [&output, &output.join("2026/09/10")] {
+            assert_eq!(
+                probe_root_writable(path, &gate).unwrap_err().kind(),
+                std::io::ErrorKind::NotFound
+            );
+        }
 
-#[cfg(unix)]
-#[test]
-fn unwritable_destination_does_not_fall_back_to_writable_parent() {
-    use std::os::unix::fs::PermissionsExt;
+        // Missing subdirectories under a valid symlink can be probed, and the
+        // target is left empty.
+        let dir = tempfile::tempdir().unwrap();
+        let target = tempfile::tempdir().unwrap();
+        let output = dir.path().join("0601");
+        std::os::unix::fs::symlink(target.path(), &output).unwrap();
+        let gate = self::gate(vec![dir.path().to_path_buf()]);
+        assert!(probe_root_writable(&output.join("2026/09/10"), &gate).is_ok());
+        assert_eq!(std::fs::read_dir(target.path()).unwrap().count(), 0);
 
-    let dir = tempfile::tempdir().unwrap();
-    let output = dir.path().join("0601");
-    std::fs::create_dir(&output).unwrap();
-    let previous = std::fs::metadata(&output).unwrap().permissions();
-    std::fs::set_permissions(&output, std::fs::Permissions::from_mode(0o555)).unwrap();
-    // Privileged users can bypass mode bits, so first check that this environment
-    // can exercise permission failures. Restore permissions before any assertion.
-    let permissions_enforced = tempfile::tempfile_in(&output).is_err();
-    let gate = gate(vec![dir.path().to_path_buf()]);
-    let existing_result = probe_root_writable(&output, &gate);
-    let missing_result = probe_root_writable(&output.join("2026/09"), &gate);
-    std::fs::set_permissions(&output, previous).unwrap();
-    if permissions_enforced {
-        assert_eq!(
-            existing_result.unwrap_err().kind(),
-            std::io::ErrorKind::PermissionDenied
+        // An unwritable destination is PermissionDenied, for itself and for a
+        // missing child.
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("0601");
+        std::fs::create_dir(&output).unwrap();
+        let previous = std::fs::metadata(&output).unwrap().permissions();
+        std::fs::set_permissions(&output, std::fs::Permissions::from_mode(0o555)).unwrap();
+        // Privileged users can bypass mode bits, so first check that this environment
+        // can exercise permission failures. Restore permissions before any assertion.
+        let permissions_enforced = tempfile::tempfile_in(&output).is_err();
+        let gate = self::gate(vec![dir.path().to_path_buf()]);
+        let existing_result = probe_root_writable(&output, &gate);
+        let missing_result = probe_root_writable(&output.join("2026/09"), &gate);
+        std::fs::set_permissions(&output, previous).unwrap();
+        if permissions_enforced {
+            assert_eq!(
+                existing_result.unwrap_err().kind(),
+                std::io::ErrorKind::PermissionDenied
+            );
+            assert_eq!(
+                missing_result.unwrap_err().kind(),
+                std::io::ErrorKind::PermissionDenied
+            );
+        }
+
+        // A read-only ancestor does not stop probing a writable child: the
+        // probe writes in the child.
+        let dir = tempfile::tempdir().unwrap();
+        let child = dir.path().join("recordings/Alice");
+        std::fs::create_dir_all(&child).unwrap();
+        let previous = std::fs::metadata(dir.path()).unwrap().permissions();
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
+        let gate = self::gate(vec![]);
+        let probe = gate
+            .probe_path_for_template(child.to_str().unwrap())
+            .unwrap();
+        let result = probe_root_writable(&probe, &gate);
+        std::fs::set_permissions(dir.path(), previous).unwrap();
+        assert!(
+            result.is_ok(),
+            "the probe must not create its temporary file in the read-only ancestor"
         );
-        assert_eq!(
-            missing_result.unwrap_err().kind(),
-            std::io::ErrorKind::PermissionDenied
-        );
+        assert_eq!(probe, child);
     }
-}
-
-#[cfg(unix)]
-#[test]
-fn read_only_parent_does_not_prevent_probing_writable_child() {
-    use std::os::unix::fs::PermissionsExt;
-    let dir = tempfile::tempdir().unwrap();
-    let child = dir.path().join("recordings/Alice");
-    std::fs::create_dir_all(&child).unwrap();
-    let previous = std::fs::metadata(dir.path()).unwrap().permissions();
-    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
-    let gate = gate(vec![]);
-    let probe = gate
-        .probe_path_for_template(child.to_str().unwrap())
-        .unwrap();
-    let result = probe_root_writable(&probe, &gate);
-    std::fs::set_permissions(dir.path(), previous).unwrap();
-    assert!(
-        result.is_ok(),
-        "the probe must not create its temporary file in the read-only ancestor"
-    );
-    assert_eq!(probe, child);
 }
 
 #[tokio::test]
@@ -328,33 +352,6 @@ async fn discovered_startup_failure_blocks_actual_runtime_key_and_heals_once() {
     assert!(
         gate.check(Path::new("/existing/root/path")).is_err(),
         "failed discovery must not remove prior gate state"
-    );
-}
-
-#[test]
-fn escaped_percent_metadata_keeps_probe_identity_without_expanding_real_time_tokens() {
-    let gate = gate(vec![]);
-    let template = "/rec/Alice%%Y%%n%%%%/%Y/{title}";
-    let probe = gate.probe_path_for_template(template).unwrap();
-    assert_eq!(probe, PathBuf::from("/rec/Alice%Y%n%%"));
-    let runtime = pipeline_common::expand_path_template(&template.replace("{title}", "actual"));
-    assert_eq!(
-        gate.resolve_path(&probe),
-        gate.resolve_path(Path::new(&runtime))
-    );
-    assert!(gate.probe_path_for_template("/rec/%Y/Alice%%n").is_none());
-    let gate = self::gate(vec![
-        PathBuf::from("/rec"),
-        PathBuf::from("/rec/Alice%Y/special"),
-    ]);
-    assert!(
-        gate.probe_path_for_template("/rec/Alice%%Y/{title}")
-            .is_none(),
-        "unknown title might select a deeper explicit root"
-    );
-    assert_eq!(
-        gate.probe_path_for_template("/rec/Alice%%Y/special/{title}"),
-        Some(PathBuf::from("/rec/Alice%Y/special"))
     );
 }
 

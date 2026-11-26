@@ -498,7 +498,7 @@ async fn migration_rebuilds_outbox_with_set_null_and_preserves_rows_and_retentio
         })
         .await;
         cancel.cancel();
-        let _ = handle.await;
+        handle.await.expect("maintenance scheduler task");
         assert!(
             pruned.is_ok(),
             "expected maintenance to leave rows [20, 30, 40], last observed: {last_remaining:?}"

@@ -80,18 +80,30 @@ impl crate::downloader::engine::DownloadEngine for ActiveRecordingEngine {
     }
 }
 
+/// VACUUM runs only when a live, idle download manager admits it: never
+/// without one (before wiring, or after shutdown dropped it), while another
+/// admission holds it, while a recording runs, or with a negative activity
+/// limit. SQL job rows are not a second source of recording activity.
 #[tokio::test]
-async fn vacuum_admission_uses_live_recordings_without_download_job_rows() {
+async fn vacuum_runs_only_when_a_live_idle_admission_owner_admits_it() {
     let mut database = setup_with_config(MaintenanceConfig {
         vacuum_threshold_bytes: 0,
         ..MaintenanceConfig::default()
     })
     .await;
+    assert!(!database.scheduler.run_vacuum_if_needed().await.unwrap());
     let manager = Arc::new(DownloadManager::new());
     manager.register_engine(Arc::new(ActiveRecordingEngine));
     Arc::get_mut(&mut database.scheduler)
         .unwrap()
         .download_manager = Arc::downgrade(&manager);
+    let admission = manager.try_admit_maintenance(0).unwrap();
+    assert!(
+        !database.scheduler.run_vacuum_if_needed().await.unwrap(),
+        "another admission owner defers vacuum"
+    );
+    drop(admission);
+
     let config = crate::downloader::engine::DownloadConfig::new(
         "https://invalid.test/live",
         database._directory.path().join("recording"),
@@ -119,36 +131,13 @@ async fn vacuum_admission_uses_live_recordings_without_download_job_rows() {
         .unwrap();
     assert_eq!(manager.active_count(), 0);
     assert!(database.scheduler.run_vacuum_if_needed().await.unwrap());
-    // SQL job rows are not a second source of recording activity.
     insert_job(&database, "synthetic-download", JobStatus::Pending, 0).await;
     sqlx::query("UPDATE job SET job_type = 'DOWNLOAD' WHERE id = 'synthetic-download'")
         .execute(&database.pool)
         .await
         .unwrap();
     assert!(database.scheduler.run_vacuum_if_needed().await.unwrap());
-}
 
-/// VACUUM runs only when a live download manager admits it: never
-/// without one (before wiring, or after shutdown dropped it), while
-/// another admission holds it, or with a negative activity limit.
-#[tokio::test]
-async fn vacuum_admission_is_conservative_without_a_live_owner_or_valid_limit() {
-    let mut database = setup_with_config(MaintenanceConfig {
-        vacuum_threshold_bytes: 0,
-        ..MaintenanceConfig::default()
-    })
-    .await;
-    assert!(!database.scheduler.run_vacuum_if_needed().await.unwrap());
-    let manager = Arc::new(DownloadManager::new());
-    Arc::get_mut(&mut database.scheduler)
-        .unwrap()
-        .download_manager = Arc::downgrade(&manager);
-    let admission = manager.try_admit_maintenance(0).unwrap();
-    assert!(
-        !database.scheduler.run_vacuum_if_needed().await.unwrap(),
-        "another admission owner defers vacuum"
-    );
-    drop(admission);
     Arc::get_mut(&mut database.scheduler)
         .unwrap()
         .config
@@ -803,43 +792,11 @@ async fn zero_retention_preserves_pipeline_and_notification_history() {
     assert_eq!(count, 3);
 }
 
+/// A failing policy skips only its own task. One unparsable retention field
+/// disables only that policy, and a policy source that cannot be read at all
+/// still leaves token cleanup running.
 #[tokio::test]
-async fn policy_failure_does_not_skip_token_cleanup() {
-    let database = setup(10).await;
-    let now = 2_000_000_000_000_i64;
-    database
-        .refresh_token_repository
-        .create(&RefreshTokenDbModel {
-            session_id: None,
-            id: "expired-token".to_string(),
-            user_id: "default-admin-00000000-0000-0000-0000-000000000001".to_string(),
-            token_hash: "expired-hash".to_string(),
-            expires_at: now - 1,
-            created_at: now - MILLIS_PER_DAY,
-            revoked_at: None,
-            device_info: None,
-        })
-        .await
-        .expect("expired token");
-    sqlx::query("DROP TABLE global_config")
-        .execute(&database.pool)
-        .await
-        .expect("drop policy source");
-
-    let report = database.scheduler.run_maintenance_at(now).await;
-    assert_eq!(report.refresh_tokens_deleted, 1);
-    assert!(
-        report
-            .failures
-            .iter()
-            .any(|failure| failure.task == "load_retention_policy")
-    );
-}
-
-/// One unparsable retention field disables only its own policy; the
-/// other policies in the same sweep still prune.
-#[tokio::test]
-async fn invalid_retention_field_does_not_disable_other_policy() {
+async fn a_failing_retention_policy_skips_only_its_own_task() {
     let database = setup(10).await;
     let now = 2_000_000_000_000_i64;
     let old = now - 31 * MILLIS_PER_DAY;
@@ -885,6 +842,34 @@ async fn invalid_retention_field_does_not_disable_other_policy() {
             .await
             .expect("preserved job");
     assert_eq!(job_count, 1);
+
+    database
+        .refresh_token_repository
+        .create(&RefreshTokenDbModel {
+            session_id: None,
+            id: "expired-token".to_string(),
+            user_id: "default-admin-00000000-0000-0000-0000-000000000001".to_string(),
+            token_hash: "expired-hash".to_string(),
+            expires_at: now - 1,
+            created_at: now - MILLIS_PER_DAY,
+            revoked_at: None,
+            device_info: None,
+        })
+        .await
+        .expect("expired token");
+    sqlx::query("DROP TABLE global_config")
+        .execute(&database.pool)
+        .await
+        .expect("drop policy source");
+
+    let report = database.scheduler.run_maintenance_at(now).await;
+    assert_eq!(report.refresh_tokens_deleted, 1);
+    assert!(
+        report
+            .failures
+            .iter()
+            .any(|failure| failure.task == "load_retention_policy")
+    );
 }
 
 #[tokio::test]
@@ -895,45 +880,4 @@ async fn new_database_enables_incremental_auto_vacuum() {
         .await
         .expect("auto-vacuum mode");
     assert_eq!(mode, AUTO_VACUUM_INCREMENTAL);
-}
-
-#[tokio::test]
-async fn scheduler_runs_lightweight_cleanup_immediately() {
-    let database = setup(10).await;
-    let now = crate::database::time::now_ms();
-    database
-        .refresh_token_repository
-        .create(&RefreshTokenDbModel {
-            session_id: None,
-            id: "startup-expired".to_string(),
-            user_id: "default-admin-00000000-0000-0000-0000-000000000001".to_string(),
-            token_hash: "startup-expired-hash".to_string(),
-            expires_at: now - 1,
-            created_at: now - MILLIS_PER_DAY,
-            revoked_at: None,
-            device_info: None,
-        })
-        .await
-        .expect("expired token");
-
-    let cancellation = CancellationToken::new();
-    let handle = database.scheduler.clone().start(cancellation.child_token());
-    tokio::time::timeout(Duration::from_secs(2), async {
-        loop {
-            let count: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM refresh_tokens WHERE id = 'startup-expired'",
-            )
-            .fetch_one(&database.pool)
-            .await
-            .expect("token count");
-            if count == 0 {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .expect("startup maintenance sweep");
-    cancellation.cancel();
-    handle.await.expect("maintenance task");
 }
