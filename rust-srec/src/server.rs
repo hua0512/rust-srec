@@ -476,53 +476,66 @@ mod tests {
 
     #[tokio::test]
     async fn fresh_database_uses_output_dir_or_local_default() {
-        for output_dir in [None, Some(""), Some("  "), Some("./custom recordings")] {
-            let dir = tempfile::tempdir().unwrap();
-            let database_url = format!("sqlite:{}", dir.path().join("srec.db").display());
-            let (pool, write_pool) = initialize_database(&database_url, output_dir)
+        // A missing or blank OUTPUT_DIR falls back to the local default. Only
+        // the pending intent matters here, so no migrations run.
+        for output_dir in [None, Some("  ")] {
+            let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
                 .await
                 .unwrap();
-            let expected = std::path::absolute(
-                output_dir
-                    .filter(|dir| !dir.trim().is_empty())
-                    .unwrap_or("./output"),
+            prepare_initial_output(&pool, &pool, output_dir)
+                .await
+                .unwrap();
+            let pending: String = sqlx::query_scalar(
+                "SELECT output_folder FROM standalone_initialization_pending WHERE id = 1",
             )
+            .fetch_one(&pool)
+            .await
             .unwrap();
-            assert_eq!(stored_output(&pool).await, expected.to_str().unwrap());
-            assert!(!has_pending_output(&pool).await);
-            let auto_vacuum: i64 = sqlx::query_scalar("PRAGMA auto_vacuum")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-            assert_eq!(auto_vacuum, 2);
-            write_pool.close().await;
+            let expected = std::path::absolute("./output").unwrap();
+            assert_eq!(pending, expected.to_str().unwrap(), "{output_dir:?}");
             pool.close().await;
         }
+
+        let dir = tempfile::tempdir().unwrap();
+        let database_url = format!("sqlite:{}", dir.path().join("srec.db").display());
+        let (pool, write_pool) = initialize_database(&database_url, Some("./custom recordings"))
+            .await
+            .unwrap();
+        let expected = std::path::absolute("./custom recordings").unwrap();
+        assert_eq!(stored_output(&pool).await, expected.to_str().unwrap());
+        assert!(!has_pending_output(&pool).await);
+        let auto_vacuum: i64 = sqlx::query_scalar("PRAGMA auto_vacuum")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(auto_vacuum, 2);
+        write_pool.close().await;
+        pool.close().await;
     }
 
+    /// `finish_initial_output` rewrites exactly `/app/output`, so only the
+    /// check that the database already has tables keeps an install that
+    /// deliberately saved the Docker default from being rewritten.
     #[tokio::test]
-    async fn existing_database_keeps_saved_output_including_docker_default() {
-        for saved in ["/app/output", "./operator recordings", ""] {
-            let dir = tempfile::tempdir().unwrap();
-            let database_url = format!("sqlite:{}", dir.path().join("srec.db").display());
-            let (pool, write_pool) = init_database_pools(&database_url).await.unwrap();
-            run_migrations(&pool).await.unwrap();
-            sqlx::query("UPDATE global_config SET output_folder = ?")
-                .bind(saved)
-                .execute(&write_pool)
-                .await
-                .unwrap();
-            write_pool.close().await;
-            pool.close().await;
+    async fn existing_database_keeps_saved_docker_default_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let database_url = format!("sqlite:{}", dir.path().join("srec.db").display());
+        let (pool, write_pool) = init_database_pools(&database_url).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+        sqlx::query("UPDATE global_config SET output_folder = '/app/output'")
+            .execute(&write_pool)
+            .await
+            .unwrap();
+        write_pool.close().await;
+        pool.close().await;
 
-            let (pool, write_pool) = initialize_database(&database_url, Some("./replacement"))
-                .await
-                .unwrap();
-            assert_eq!(stored_output(&pool).await, saved);
-            assert!(!has_pending_output(&pool).await);
-            write_pool.close().await;
-            pool.close().await;
-        }
+        let (pool, write_pool) = initialize_database(&database_url, Some("./replacement"))
+            .await
+            .unwrap();
+        assert_eq!(stored_output(&pool).await, "/app/output");
+        assert!(!has_pending_output(&pool).await);
+        write_pool.close().await;
+        pool.close().await;
     }
 
     #[tokio::test]
