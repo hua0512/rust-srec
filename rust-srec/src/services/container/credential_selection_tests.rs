@@ -1,19 +1,16 @@
-//! Account selections written through the HTTP API and backups reach the next
-//! resolution, and backups carry them inside the configuration they belong to.
+//! Account selections written through the HTTP API reach the next resolution.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Json;
 use axum::extract::{FromRef, State};
-use axum::response::IntoResponse;
 use serde_json::{Value, json};
 
 use super::ServiceContainer;
 use crate::api::extract::{ApiJson, ApiPath};
-use crate::api::routes::{config, export_import, streamers, templates};
+use crate::api::routes::{config, streamers, templates};
 use crate::api::server::{ApiServices, AppState};
-use crate::config::backup::{ConfigExport, ImportMode};
 use crate::credentials::{CredentialMaterial, CredentialOwner, CredentialSelection};
 
 struct Fixture {
@@ -144,28 +141,6 @@ impl Fixture {
                 .unwrap();
         serde_json::to_value(response).unwrap()
     }
-
-    async fn export(&self) -> ConfigExport {
-        let response = export_import::export_config(State(self.state.clone()))
-            .await
-            .unwrap()
-            .into_response();
-        let bytes = axum::body::to_bytes(response.into_body(), 4 * 1024 * 1024)
-            .await
-            .unwrap();
-        let mut config: ConfigExport = serde_json::from_slice(&bytes).unwrap();
-        config.users.clear();
-        config
-    }
-
-    async fn selections(&self) -> usize {
-        self.container
-            .config_service
-            .list_credential_selections()
-            .await
-            .unwrap()
-            .len()
-    }
 }
 
 fn fixed(id: &str) -> CredentialSelection {
@@ -280,147 +255,4 @@ async fn selection_changes_through_the_api_reach_the_next_resolution() {
     })
     .await
     .expect("selection changes must settle");
-}
-
-#[tokio::test]
-async fn backups_carry_selections_through_replace_and_merge_imports() {
-    tokio::time::timeout(Duration::from_secs(30), async {
-        let f = fixture().await;
-        // Without accounts or selections the export keeps the older schema.
-        assert_eq!(f.export().await.version, "0.1.8");
-
-        let a = f.profile("platform-huya", "huya=a").await;
-        let b = f.profile("platform-huya", "huya=b").await;
-        f.replace_platform("platform-huya", Some(json!({"mode": "fixed", "credential_id": a})))
-            .await;
-        let (_, Json(template)) = templates::create_template(
-            State(templates::TemplateRouteState::from_ref(&f.state)),
-            ApiJson(
-                serde_json::from_value(json!({
-                    "name": "Backed up",
-                    "platform_overrides": {"huya": {"credential_selection": {"mode": "pool", "credential_ids": [b, a]}, "quality": 1}}
-                }))
-                .unwrap(),
-            ),
-        )
-        .await
-        .unwrap();
-        let (_, Json(streamer)) = streamers::create_streamer(
-            State(streamers::StreamerRouteState::from_ref(&f.state)),
-            ApiJson(
-                serde_json::from_value(json!({
-                    "name": "Backed up",
-                    "url": "https://www.huya.com/1002",
-                    "template_id": template.id,
-                    "streamer_specific_config": {"credential_selection": {"mode": "none"}}
-                }))
-                .unwrap(),
-            ),
-        )
-        .await
-        .unwrap();
-
-        let bundle = f.export().await;
-        assert_eq!(bundle.version, "1.0.0");
-        assert_eq!(bundle.credential_profiles.len(), 2);
-        let huya = bundle
-            .platforms
-            .iter()
-            .find(|platform| platform.platform_name == "huya")
-            .unwrap();
-        assert_eq!(huya.credential_selection, Some(fixed(&a)));
-        assert_eq!(
-            bundle.templates[0].platform_overrides,
-            Some(json!({"huya": {"credential_selection": {"mode": "pool", "credential_ids": [b, a], "strategy": "priority", "failover": true, "max_attempts": 3}, "quality": 1}}))
-        );
-        assert_eq!(
-            bundle.streamers[0].streamer_specific_config,
-            Some(json!({"credential_selection": {"mode": "none"}}))
-        );
-
-        // Replace restores exactly what the bundle holds.
-        let service = &f.state.config_backup;
-        f.update_streamer(&streamer.id, json!({"streamer_specific_config": {"credential_selection": {"mode": "inherit"}}}))
-            .await;
-        f.replace_platform("platform-huya", Some(json!({"mode": "inherit"})))
-            .await;
-        assert_eq!(f.selections().await, 1);
-        service
-            .import_config(bundle.clone(), ImportMode::Replace, None)
-            .await
-            .unwrap();
-        assert_eq!(f.selections().await, 3);
-        let restored = f.export().await;
-        assert_eq!(
-            serde_json::to_value(&restored.platforms).unwrap(),
-            serde_json::to_value(&bundle.platforms).unwrap()
-        );
-        assert_eq!(restored.templates[0].platform_overrides, bundle.templates[0].platform_overrides);
-        assert_eq!(
-            restored.streamers[0].streamer_specific_config,
-            bundle.streamers[0].streamer_specific_config
-        );
-        let streamer_id = f
-            .container
-            .streamer_manager
-            .get_streamer_by_url("https://www.huya.com/1002")
-            .unwrap()
-            .id;
-        assert_eq!(
-            f.resolved(&streamer_id).await,
-            Some((streamer_owner(&streamer_id), CredentialSelection::None))
-        );
-
-        // Merge keeps a selection the bundle omits and applies the ones it carries.
-        let mut merge = bundle.clone();
-        for platform in &mut merge.platforms {
-            platform.credential_selection = None;
-        }
-        merge.templates[0].platform_overrides = Some(json!({"huya": {"quality": 2}}));
-        merge.streamers[0].streamer_specific_config =
-            Some(json!({"credential_selection": {"mode": "fixed", "credential_id": b}}));
-        service
-            .import_config(merge, ImportMode::Merge, None)
-            .await
-            .unwrap();
-        let merged = f.export().await;
-        assert_eq!(
-            serde_json::to_value(&merged.platforms).unwrap(),
-            serde_json::to_value(&bundle.platforms).unwrap()
-        );
-        assert_eq!(
-            merged.templates[0].platform_overrides,
-            Some(json!({"huya": {"credential_selection": {"mode": "pool", "credential_ids": [b, a], "strategy": "priority", "failover": true, "max_attempts": 3}, "quality": 2}}))
-        );
-        assert_eq!(
-            f.resolved(&streamer_id).await,
-            Some((streamer_owner(&streamer_id), fixed(&b)))
-        );
-
-        // A bundle written before selections existed replaces them all.
-        let mut legacy = bundle;
-        legacy.version = "0.1.8".into();
-        legacy.credential_profiles.clear();
-        for platform in &mut legacy.platforms {
-            platform.credential_selection = None;
-        }
-        legacy.templates[0].platform_overrides = Some(json!({"huya": {"quality": 3}}));
-        legacy.streamers[0].streamer_specific_config = None;
-        service
-            .import_config(legacy, ImportMode::Replace, None)
-            .await
-            .unwrap();
-        assert_eq!(f.selections().await, 0);
-        let streamer_id = f
-            .container
-            .streamer_manager
-            .get_streamer_by_url("https://www.huya.com/1002")
-            .unwrap()
-            .id;
-        assert_eq!(f.resolved(&streamer_id).await, None);
-        // Profiles are not part of an older bundle, so they stay.
-        assert_eq!(f.export().await.credential_profiles.len(), 2);
-    })
-    .await
-    .expect("backup imports must settle");
 }

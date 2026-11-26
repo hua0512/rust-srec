@@ -864,9 +864,15 @@ async fn omitted_time_filter_zones_mean_local_before_schema_0_1_8_and_utc_from_i
     let mut token = app.admin_token().await;
     app.disabled_streamer(&token, "Zoned", "https://www.huya.com/440001")
         .await;
+    // Fields the app does not know survive the zone normalisation.
     let unzoned = json!([{
         "filter_type": "TIME_BASED",
-        "config": { "days_of_week": ["Monday"], "start_time": "09:00", "end_time": "17:00" },
+        "config": {
+            "days_of_week": ["Monday"],
+            "start_time": "09:00",
+            "end_time": "17:00",
+            "extension": { "kept": true },
+        },
     }]);
 
     for (version, expected) in [("0.1.7", "local"), ("0.1.8", "UTC")] {
@@ -884,6 +890,11 @@ async fn omitted_time_filter_zones_mean_local_before_schema_0_1_8_and_utc_from_i
         assert_eq!(filters.as_array().map(Vec::len), Some(1), "{version}");
         assert_eq!(
             filters[0]["config"]["timezone"], expected,
+            "version {version}"
+        );
+        assert_eq!(
+            filters[0]["config"]["extension"],
+            json!({ "kept": true }),
             "version {version}"
         );
     }
@@ -960,6 +971,217 @@ async fn merge_keeps_and_replace_removes_omitted_streamers_and_a_case_only_url_u
     })
     .await;
     assert_eq!(remaining[0]["id"], kept.as_str());
+
+    app.shutdown().await;
+}
+
+/// Account selections on the platform, a template and a streamer travel with
+/// the bundle: the export spells out a pool's defaults, a replace restores
+/// them exactly, a merge keeps what the bundle omits, and a bundle from before
+/// accounts existed clears every selection but keeps the accounts.
+#[tokio::test]
+async fn backups_carry_account_selections_through_replace_and_merge_imports() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    let streamer = app
+        .disabled_streamer(&token, "Selecting", "https://www.huya.com/440077")
+        .await;
+
+    let mut accounts = Vec::new();
+    for label in ["Huya a", "Huya b"] {
+        let created = app
+            .post(
+                "/api/credentials/profiles",
+                &token,
+                &json!({
+                    "platform_id": "platform-huya",
+                    "label": label,
+                    "enabled": true,
+                    "material": { "cookies": format!("session={label}") },
+                }),
+            )
+            .await
+            .expect_status(StatusCode::OK);
+        accounts.push(id_of(&created.body));
+    }
+    let (a, b) = (accounts[0].as_str(), accounts[1].as_str());
+    let fixed = |id: &str| json!({ "mode": "fixed", "credential_id": id });
+    let set_platform_selection = |selection: Value| {
+        let app = &app;
+        let token = &token;
+        async move {
+            let mut huya = app
+                .get_ok("/api/config/platforms/platform-huya", token)
+                .await;
+            huya["credential_selection"] = json!(selection.to_string());
+            app.put("/api/config/platforms/platform-huya", token, &huya)
+                .await
+                .expect_status(StatusCode::OK);
+        }
+    };
+    set_platform_selection(fixed(a)).await;
+    let template = app
+        .post(
+            "/api/templates",
+            &token,
+            &json!({
+                "name": "Selecting",
+                "platform_overrides": {"huya": {
+                    "credential_selection": {"mode": "pool", "credential_ids": [b, a]},
+                    "quality": 1,
+                }},
+            }),
+        )
+        .await
+        .created();
+    let streamer_path = format!("/api/streamers/{streamer}");
+    app.put(
+        &streamer_path,
+        &token,
+        &json!({
+            "template_id": id_of(&template),
+            "streamer_specific_config": {"credential_selection": {"mode": "none"}},
+        }),
+    )
+    .await
+    .ok();
+
+    // The export moves to schema 1.0.0 and spells out the pool's defaults.
+    let selected = export(&app, &token).await;
+    assert_eq!(selected["version"], "1.0.0");
+    assert_eq!(
+        selected["credential_profiles"].as_array().map(Vec::len),
+        Some(2)
+    );
+    let huya_selection = |bundle: &Value| {
+        bundle["platforms"]
+            .as_array()
+            .expect("platforms")
+            .iter()
+            .find(|platform| platform["platform_name"] == "huya")
+            .expect("the huya platform")["credential_selection"]
+            .clone()
+    };
+    let template_overrides = |bundle: &Value| {
+        bundle["templates"]
+            .as_array()
+            .expect("templates")
+            .iter()
+            .find(|template| template["name"] == "Selecting")
+            .expect("the selecting template")["platform_overrides"]
+            .clone()
+    };
+    let spelled_pool = |quality: i64| {
+        json!({"huya": {
+            "credential_selection": {
+                "mode": "pool",
+                "credential_ids": [b, a],
+                "strategy": "priority",
+                "failover": true,
+                "max_attempts": 3,
+            },
+            "quality": quality,
+        }})
+    };
+    assert_eq!(huya_selection(&selected), fixed(a));
+    assert_eq!(template_overrides(&selected), spelled_pool(1));
+    let mut bundle = selected.clone();
+    assert_eq!(
+        streamer_named(&mut bundle, "Selecting")["streamer_specific_config"],
+        json!({"credential_selection": {"mode": "none"}})
+    );
+
+    // A replace restores exactly the selections the bundle holds.
+    set_platform_selection(json!({"mode": "inherit"})).await;
+    app.put(
+        &streamer_path,
+        &token,
+        &json!({"streamer_specific_config": {"credential_selection": {"mode": "inherit"}}}),
+    )
+    .await
+    .ok();
+    import(&app, &token, &selected, "replace")
+        .await
+        .expect_status(StatusCode::OK);
+    let token = sign_in_again(&app, ADMIN_PASSWORD).await;
+    let mut restored = export(&app, &token).await;
+    assert_eq!(huya_selection(&restored), fixed(a));
+    assert_eq!(template_overrides(&restored), spelled_pool(1));
+    assert_eq!(
+        streamer_named(&mut restored, "Selecting")["streamer_specific_config"],
+        json!({"credential_selection": {"mode": "none"}})
+    );
+    let effective = app
+        .get_ok(
+            &format!(
+                "/api/credentials/selection?scope_type=streamer&scope_id={streamer}&platform_id=platform-huya"
+            ),
+            &token,
+        )
+        .await;
+    assert_eq!(
+        effective["resolved"]["owner"],
+        json!({"type": "streamer", "streamer_id": streamer})
+    );
+    assert_eq!(effective["resolved"]["selection"], json!({"mode": "none"}));
+
+    // A merge keeps the selections the bundle omits and applies the ones it
+    // carries.
+    let mut merge = selected.clone();
+    for platform in merge["platforms"].as_array_mut().expect("platforms") {
+        platform["credential_selection"] = Value::Null;
+    }
+    for template in merge["templates"].as_array_mut().expect("templates") {
+        if template["name"] == "Selecting" {
+            template["platform_overrides"] = json!({"huya": {"quality": 2}});
+        }
+    }
+    streamer_named(&mut merge, "Selecting")["streamer_specific_config"] =
+        json!({"credential_selection": fixed(b)});
+    import(&app, &token, &merge, "merge")
+        .await
+        .expect_status(StatusCode::OK);
+    let token = sign_in_again(&app, ADMIN_PASSWORD).await;
+    let mut merged = export(&app, &token).await;
+    assert_eq!(huya_selection(&merged), fixed(a));
+    assert_eq!(template_overrides(&merged), spelled_pool(2));
+    assert_eq!(
+        streamer_named(&mut merged, "Selecting")["streamer_specific_config"],
+        json!({"credential_selection": fixed(b)})
+    );
+
+    // A bundle from before accounts existed replaces every selection but
+    // leaves the accounts, which it cannot carry.
+    let mut legacy = selected;
+    legacy["version"] = json!("0.1.8");
+    legacy
+        .as_object_mut()
+        .expect("bundle")
+        .remove("credential_profiles");
+    for platform in legacy["platforms"].as_array_mut().expect("platforms") {
+        platform["credential_selection"] = Value::Null;
+    }
+    for template in legacy["templates"].as_array_mut().expect("templates") {
+        if template["name"] == "Selecting" {
+            template["platform_overrides"] = json!({"huya": {"quality": 3}});
+        }
+    }
+    streamer_named(&mut legacy, "Selecting")["streamer_specific_config"] = Value::Null;
+    import(&app, &token, &legacy, "replace")
+        .await
+        .expect_status(StatusCode::OK);
+    assert_eq!(
+        app.query_i64("SELECT COUNT(*) FROM credential_selections")
+            .await,
+        0
+    );
+    let token = sign_in_again(&app, ADMIN_PASSWORD).await;
+    assert_eq!(
+        export(&app, &token).await["credential_profiles"]
+            .as_array()
+            .map(Vec::len),
+        Some(2)
+    );
 
     app.shutdown().await;
 }
