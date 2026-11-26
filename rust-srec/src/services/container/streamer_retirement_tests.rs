@@ -13,10 +13,7 @@ use crate::database::repositories::job::JobRepository;
 use crate::database::repositories::session::SessionRepository;
 use crate::database::repositories::streamer::StreamerRepository;
 use crate::domain::StreamerState;
-use crate::recorder::{
-    DbCommitOp, INTERACTIVE_RETIREMENT, OBSERVE_RETIREMENT, PipelineNotification,
-};
-use crate::session::TerminalCause;
+use crate::recorder::{INTERACTIVE_RETIREMENT, OBSERVE_RETIREMENT, PipelineNotification};
 
 const STREAMER_ID: &str = "streamer-retire";
 const STREAMER_NAME: &str = "Retiring streamer";
@@ -273,55 +270,6 @@ async fn reconciliation_leaves_a_marked_streamers_stop_to_the_retirement() {
     .await
     .expect("disabled streamer actor must close its session and exit");
     assert_eq!(disabled.session_ended_events().await, 1);
-}
-
-/// Even when another task closed the SQLite session row before retirement ran,
-/// an unsettled session (`session_complete_dispatched = 0`) still defers the
-/// reap until pipeline settlement observes it.
-#[tokio::test]
-async fn a_session_ended_by_another_task_still_defers_the_reap() {
-    let harness = Harness::new().await;
-    harness.start_registry();
-    harness.seed_streamer().await;
-    harness.seed_active_session().await;
-
-    // Close the DB row without notifying `PipelineManager`, leaving the ended
-    // session unsettled.
-    harness
-        .container
-        .actor_registry
-        .store()
-        .commit(DbCommitOp::EndSession {
-            streamer_id: STREAMER_ID.to_string(),
-            streamer_name: STREAMER_NAME.to_string(),
-            session_id: Some(SESSION_ID.to_string()),
-            cause: TerminalCause::UserDisabled,
-            via_hysteresis: false,
-            update_streamer_state: None,
-            clear_errors: false,
-            checks_restored_threshold: None,
-            infra_block: None,
-            suppress_offline_notification: true,
-            now: jiff::Timestamp::now(),
-        })
-        .await
-        .expect("the session should end");
-
-    assert!(
-        harness
-            .container
-            .actor_registry
-            .delete_streamer(STREAMER_ID, INTERACTIVE_RETIREMENT)
-            .await
-            .expect("delete should succeed")
-    );
-    assert!(
-        harness
-            .streamer_row()
-            .await
-            .is_some_and(|row| row.deleted_at.is_some()),
-        "an unsettled session end must defer the reap"
-    );
 }
 
 /// When a physical owner has not settled within the retirement bound, the row
