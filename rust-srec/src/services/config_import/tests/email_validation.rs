@@ -79,23 +79,46 @@ async fn assert_unchanged(pool: &SqlitePool, before: &[UserDbModel], output: &st
     assert_eq!(stored, output);
 }
 
+/// An imported user that conflicts with a stored one, by email or by an id
+/// owned by another username, is a validation error raised before any
+/// write. The email message must not name the stored user.
 #[tokio::test]
-async fn retained_email_collision_is_validation_before_any_writes() {
-    for email in ["private@example.com", ""] {
+async fn conflicting_imported_users_are_rejected_before_any_writes() {
+    let cases = [
+        (ImportMode::Merge, "private@example.com", false),
+        (ImportMode::Merge, "", false),
+        (ImportMode::Merge, "email", true),
+        (ImportMode::Replace, "email", true),
+    ];
+    for (mode, email, reuse_id) in cases {
+        let case = format!("{mode:?} {email:?} reuse id {reuse_id}");
         let (pool, mut config) = fixture(&[("retained", Some(email))]).await;
         let before = users(&pool).await;
         let output = config.global_config.output_folder.clone();
         config.global_config.output_folder = "/must-not-write".to_string();
-        config.users = vec![user("incoming", Some(email))];
+        let mut incoming = user("incoming", Some(email));
+        if reuse_id {
+            incoming.id = before[0].id.clone();
+        }
+        config.users = vec![incoming];
         // A write trap distinguishes validation from a database failure/rollback.
         sqlx::query("CREATE TRIGGER reject_global_write BEFORE UPDATE ON global_config BEGIN SELECT RAISE(ABORT, 'unexpected write'); END")
             .execute(&pool).await.unwrap();
-        let error = checked_import(&pool, &config, ImportMode::Merge)
-            .await
-            .unwrap_err();
-        assert!(matches!(error, ConfigurationImportError::Validation(_)));
-        assert!(error.to_string().contains("email already assigned"));
-        assert!(!error.to_string().contains("retained"));
+        let error = checked_import(&pool, &config, mode).await.unwrap_err();
+        assert!(
+            matches!(error, ConfigurationImportError::Validation(_)),
+            "{case}: {error}"
+        );
+        let message = error.to_string();
+        if reuse_id {
+            assert!(message.contains("User id"), "{case}: {message}");
+        } else {
+            assert!(
+                message.contains("email already assigned"),
+                "{case}: {message}"
+            );
+            assert!(!message.contains("retained"), "{case}: {message}");
+        }
         assert_unchanged(&pool, &before, &output).await;
     }
 }
@@ -174,26 +197,6 @@ async fn email_validation_matches_sqlite_binary_and_null_semantics() {
         checked_import(&pool, &config, ImportMode::Merge).await,
         Err(ConfigurationImportError::Validation(_))
     ));
-}
-
-#[tokio::test]
-async fn email_reassignment_does_not_override_existing_user_id_conflicts() {
-    for mode in [ImportMode::Merge, ImportMode::Replace] {
-        let (pool, mut config) = fixture(&[("old", Some("email"))]).await;
-        let before = users(&pool).await;
-        let mut replacement = user("new", Some("email"));
-        replacement.id = before
-            .iter()
-            .find(|user| user.username == "old")
-            .unwrap()
-            .id
-            .clone();
-        config.users = vec![replacement];
-        let error = checked_import(&pool, &config, mode).await.unwrap_err();
-        assert!(matches!(error, ConfigurationImportError::Validation(_)));
-        assert!(error.to_string().contains("User id"));
-        assert_unchanged(&pool, &before, &config.global_config.output_folder).await;
-    }
 }
 
 #[tokio::test]
