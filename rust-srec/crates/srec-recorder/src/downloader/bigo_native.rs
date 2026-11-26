@@ -19,6 +19,10 @@ use srec_core::domain::proxy::{ProxyTarget, SystemProxy};
 pub(crate) struct BigoNativeFlvOpener;
 
 impl NativeFlvOpener for BigoNativeFlvOpener {
+    fn stream_name(&self) -> &'static str {
+        "native Bigo stream"
+    }
+
     fn can_open(&self, url: &str) -> bool {
         NativeRoom::parse(url).is_some()
     }

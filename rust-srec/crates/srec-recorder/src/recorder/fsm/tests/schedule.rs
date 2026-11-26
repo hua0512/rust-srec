@@ -947,6 +947,45 @@ fn attempt_start_failures_wait_a_poll_interval_before_reprobing() {
 }
 
 #[test]
+fn a_start_refused_for_lane_capacity_retries_once_the_lane_has_room() {
+    let busy = |fsm: &mut StreamerFsm, clock: &TestClock, attempt_id| {
+        fsm.step(
+            clock.ctx(),
+            FsmInput::AttemptStartFailed {
+                attempt_id,
+                session_id: "sess-1".into(),
+                reason: AttemptStartFailure::RecorderFeedbackBusy,
+            },
+        );
+    };
+    let checks_now = |fsm: &StreamerFsm, clock: &TestClock| {
+        fsm.next_deadline(clock.now, clock.wall) == Some(clock.now)
+    };
+
+    // Refused while the lane is full: wait for the lane, not the watchdog.
+    let clock = TestClock::new();
+    let (mut fsm, attempt_id) = reach_starting_attempt(&clock, base_config());
+    busy(&mut fsm, &clock, attempt_id);
+    assert!(!checks_now(&fsm, &clock), "retried while the lane is full");
+    fsm.step(clock.ctx(), FsmInput::RetryAdmission);
+    assert!(checks_now(&fsm, &clock), "room in the lane did not retry");
+
+    // Room that freed before the refusal arrived still counts.
+    let clock = TestClock::new();
+    let (mut fsm, attempt_id) = reach_starting_attempt(&clock, base_config());
+    fsm.step(clock.ctx(), FsmInput::RetryAdmission);
+    assert!(
+        !checks_now(&fsm, &clock),
+        "a starting attempt was interrupted"
+    );
+    busy(&mut fsm, &clock, attempt_id);
+    assert!(
+        checks_now(&fsm, &clock),
+        "room reported during the start was lost"
+    );
+}
+
+#[test]
 fn metadata_filter_on_an_open_session_waits_a_poll_interval() {
     let mut clock = TestClock::new();
     let (mut fsm, attempt_id) = open_running_session(&clock, base_config(), "sess-1", None);

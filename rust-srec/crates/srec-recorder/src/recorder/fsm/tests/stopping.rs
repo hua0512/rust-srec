@@ -735,9 +735,7 @@ fn disable_after_an_elapsed_quiet_backstop_waits_for_the_stop_deadline() {
 }
 
 #[test]
-#[ignore = "bug: Shutdown emits ActorStopped while an EndSession commit is in flight, so its \
-            SessionEnded pipeline notification is never sent"]
-fn known_bug_shutdown_waits_for_an_in_flight_end_session() {
+fn shutdown_waits_for_an_in_flight_end_session() {
     let clock = TestClock::new();
     let (mut fsm, attempt_id) = open_running_session(&clock, base_config(), "sess-1", None);
     let effects = fsm.step(

@@ -60,7 +60,7 @@ export type ProcessorType = keyof typeof PROCESSOR_META;
 
 /**
  * Alternate names the backend also accepts for a processor (each processor's
- * `job_types()` under `rust-srec/src/pipeline/processors`). Steps created
+ * `job_types()` under `rust-srec/crates/srec-processors/src/processors`). Steps created
  * through the API or an import may use them.
  */
 const PROCESSOR_ALIASES: Record<string, ProcessorType> = {

@@ -8,13 +8,15 @@ Production-ready recorder backend (REST API + MCP + actor-based recorder control
 ## STRUCTURE
 - `crates/srec-core/` (Layer 0): Storage-free domain value objects, shared ports, proxy value types, engine configs, processor contracts, and utilities.
 - `crates/srec-sqlite/` (Layer 0): SQLite connection pools, `CommittedWriter`, retry/time helpers, base models/repositories, and schema migration runner (`migrations/` stays at `rust-srec/migrations/`).
-- `crates/srec-engines/` (Layer 1): Download engines (`ffmpeg`, `streamlink`, `mesio`) and danmu runner.
+- `crates/srec-engines/` (Layer 1): Download engines (`ffmpeg`, `streamlink`, `mesio`).
 - `crates/srec-processors/` (Layer 1): Post-processing operators and BaiduPCS-Go runner (no SQLite dependency).
 - `crates/srec-notify/` (Layer 1): Event-driven notification channels, Web Push (VAPID), backend `locales/`, and durable outbox drainer.
 - `crates/srec-pipeline/` (Layer 2): Post-processing DAG scheduler, job queue, worker pools, throttling, and pipeline repositories.
-- `crates/srec-recorder/` (Layer 2): Recording control plane (FSM, per-streamer actors, prober, batch precheck, Bigo notifications), download orchestration, danmu service, credentials, proxies, config service, and streamer state.
+- `crates/srec-recorder/` (Layer 2): Recording control plane (FSM, per-streamer actors, prober, batch precheck, Bigo notifications), download orchestration, danmu service and runner, credentials, proxies, config service, and streamer state.
 - `crates/srec-api/` (Layer 3): Axum REST/WebSocket server, Protobuf generated types (`proto/` stays at `rust-srec/proto/`), OpenAPI/Swagger, MCP server (`mcp/`), auth store/service, CQRS read queries, playback contexts, dynamic logging, and health metrics.
 - `src/` (Layer 4, thin root `rust-srec`): `ServiceContainer` wiring, `ConfigBackupPort` export/import, maintenance scheduler, legacy startup upgrades, `StoredLoginAuthenticator`, process supervision (`runtime/`), desktop/server facade (`backend.rs`, `server.rs`), and binaries (`main.rs`, `bin/rust-srec-vapid.rs`).
+
+Each crate depends only on crates in lower layers, except `srec-sqlite`, which depends on `srec-core` in the same layer. `tests/integration/domain_boundaries.rs` enforces the exact allowed dependencies.
 
 ## WHERE TO LOOK
 - `crates/srec-pipeline/src/manager.rs`: Pipeline execution engine (hotspot).

@@ -13,7 +13,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use rust_srec::metrics::HealthChecker;
+//! use srec_api::metrics::HealthChecker;
 //!
 //! let health = HealthChecker::new();
 //! let status = health.current();

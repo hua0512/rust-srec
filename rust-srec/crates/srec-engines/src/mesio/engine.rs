@@ -30,16 +30,16 @@ use crate::traits::{
 use crate::utils::sanitize_engine_message;
 use srec_core::domain::engine_config::MesioEngineConfig;
 
-fn map_native_stream_error(error: NativeStreamError) -> DownloadError {
+fn map_native_stream_error(stream: &str, error: NativeStreamError) -> DownloadError {
     match error {
         NativeStreamError::Unsupported(what) => {
-            DownloadError::source_exhausted(format!("unsupported native stream: {what}"))
+            DownloadError::source_exhausted(format!("unsupported {stream}: {what}"))
         }
         NativeStreamError::Timeout(what) => DownloadError::Timeout {
-            reason: format!("native stream: timed out waiting for {what}"),
+            reason: format!("{stream}: timed out waiting for {what}"),
         },
         NativeStreamError::Network(reason) => DownloadError::StreamNetwork {
-            reason: format!("native stream: {reason}"),
+            reason: format!("{stream}: {reason}"),
         },
     }
 }
@@ -145,9 +145,10 @@ impl DownloadEngine for MesioEngine {
             .filter(|opener| opener.can_open(&config_snapshot.url))
         {
             let token = handle.cancellation_token.child_token();
+            let stream = opener.stream_name();
             let flv = opener
                 .open(&config_snapshot.url, &config_snapshot.proxy)?
-                .map_err(map_native_stream_error);
+                .map_err(move |error| map_native_stream_error(stream, error));
             FlvDownloader::new(handle, self.config.clone())
                 .download(token, Box::pin(flv))
                 .await

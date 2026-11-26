@@ -115,7 +115,7 @@ fn credential_diagnostic_commits_authoritative_epoch_enforces_30s_ttl_and_wakes_
         },
     );
     let spec = find_start_attempt(&effects).unwrap();
-    assert!(spec.using_recovered_media);
+    assert!(spec.recovered_media_extracted_at.is_some());
     assert!(spec.payload.is_some());
     assert_eq!(spec.credential_binding, Some(committed_binding.clone()));
     let attempt2 = spec.attempt_id;
@@ -135,7 +135,7 @@ fn credential_diagnostic_commits_authoritative_epoch_enforces_30s_ttl_and_wakes_
     ));
     let effects = fsm.step(clock.ctx(), FsmInput::CredentialMaterialChanged);
     let resumed_spec = find_start_attempt(&effects).unwrap();
-    assert!(!resumed_spec.using_recovered_media);
+    assert!(resumed_spec.recovered_media_extracted_at.is_none());
     assert_eq!(resumed_spec.credential_binding, Some(committed_binding));
 
     // Verify 30s RecoveredMedia TTL expiry end-to-end through `step()`.
@@ -191,7 +191,7 @@ fn credential_diagnostic_commits_authoritative_epoch_enforces_30s_ttl_and_wakes_
         },
     );
     let expired_spec = find_start_attempt(&effects).unwrap();
-    assert!(!expired_spec.using_recovered_media);
+    assert!(expired_spec.recovered_media_extracted_at.is_none());
     assert!(expired_spec.payload.is_none());
     assert_eq!(expired_spec.credential_binding, Some(committed_exp));
 }
@@ -390,6 +390,70 @@ fn credential_unavailable_and_source_changed_bypass_error_tracking_in_idle_and_w
     assert!(matches!(wd_fsm.monitor, MonitorPhase::LiveWatchdog { .. }));
     assert_eq!(
         wd_fsm.next_deadline(clock.now, clock.wall),
+        Some(clock.now + WATCHDOG_ERROR_BACKOFF)
+    );
+}
+
+/// A bound poll never switches accounts, so a recording waiting for one
+/// retries its start, whose freshness check may move it to another account of
+/// the pool, whenever a check finds the bound account unusable.
+#[test]
+fn a_recording_waiting_for_an_account_retries_its_start_after_each_unusable_check() {
+    let mut clock = TestClock::new();
+    let binding = sample_binding("prof-1", 1);
+    let (mut fsm, attempt_id) =
+        open_running_session(&clock, base_config(), "sess-wait", Some(binding.clone()));
+    fsm.step(
+        clock.ctx(),
+        FsmInput::DownloadEnded {
+            attempt_id,
+            event: failed_event(
+                "sess-wait",
+                "dl-1",
+                EngineType::Mesio,
+                DownloadProtocol::Hls,
+                DownloadFailureKind::CredentialUnavailable,
+                "no usable account",
+            ),
+        },
+    );
+    assert!(matches!(
+        &fsm.session,
+        SessionSlot::Open(open) if matches!(open.attempt, AttemptPhase::WaitingCredentials)
+    ));
+
+    clock.advance(STALL_WINDOW);
+    let req = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
+        .unwrap()
+        .clone();
+    assert_eq!(req.purpose, ProbePurpose::BoundPoll);
+    let effects = fsm.step(
+        clock.ctx(),
+        FsmInput::ProbeCompleted {
+            probe_id: req.probe_id,
+            result: Err(ProbeFailure::CredentialUnavailable {
+                reason: UnavailableReason::BoundProfileUnavailable,
+                policy_generation: "gen-1".into(),
+            }),
+        },
+    );
+    let spec = find_start_attempt(&effects).expect("the waiting recording retries its start");
+    assert!(spec.payload.is_none());
+    assert_eq!(spec.credential_binding, Some(binding));
+
+    // No account works yet: the start parks again until the next check.
+    let effects = fsm.step(
+        clock.ctx(),
+        FsmInput::AttemptStartFailed {
+            attempt_id: spec.attempt_id,
+            session_id: "sess-wait".into(),
+            reason: AttemptStartFailure::CredentialsUnavailable,
+        },
+    );
+    assert!(find_start_attempt(&effects).is_none());
+    assert!(find_probe(&effects).is_none());
+    assert_eq!(
+        fsm.next_deadline(clock.now, clock.wall),
         Some(clock.now + WATCHDOG_ERROR_BACKOFF)
     );
 }

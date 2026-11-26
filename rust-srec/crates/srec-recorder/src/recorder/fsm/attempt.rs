@@ -134,7 +134,7 @@ impl StreamerFsm {
                 }
 
                 let recovered = take_valid_recovered_media(open, ctx.now);
-                let (effective_payload, binding, using_recovered_media) =
+                let (effective_payload, binding, recovered_media_extracted_at) =
                     if let Some(media) = recovered {
                         let recovered_payload = LiveProbePayload {
                             title: open.title.clone(),
@@ -147,15 +147,20 @@ impl StreamerFsm {
                             credential_snapshot: Some(media.snapshot),
                             next_check_hint: None,
                         };
-                        (Some(recovered_payload), Some(media.binding), true)
+                        (
+                            Some(recovered_payload),
+                            Some(media.binding),
+                            Some(media.extracted_at),
+                        )
                     } else {
-                        (payload, open.credential_binding.clone(), false)
+                        (payload, open.credential_binding.clone(), None)
                     };
 
                 open.attempt = AttemptPhase::Starting {
                     attempt_id,
                     queued: false,
                     credential_binding: binding.clone(),
+                    admission_rechecked: false,
                 };
                 open.segment_guard.download_ended = false;
 
@@ -169,7 +174,7 @@ impl StreamerFsm {
                     credential_binding: binding,
                     from_hysteresis_resume,
                     priority: self.config.priority,
-                    using_recovered_media,
+                    recovered_media_extracted_at,
                 }
             }
             _ => return,
@@ -365,8 +370,22 @@ impl StreamerFsm {
                 }
             }
             AttemptStartFailure::RecorderFeedbackBusy => {
+                // The lane sends `RetryAdmission` once it has room again. Room
+                // that freed while this attempt was starting is not reported
+                // twice, so the check runs now.
+                let mut rechecked = false;
                 if let SessionSlot::Open(open) = &mut self.session {
+                    rechecked = matches!(
+                        open.attempt,
+                        AttemptPhase::Starting {
+                            admission_rechecked: true,
+                            ..
+                        }
+                    );
                     open.attempt = AttemptPhase::Idle;
+                }
+                if rechecked {
+                    self.monitor = schedule::schedule_idle_immediate(ctx.now);
                 }
             }
             AttemptStartFailure::NotLiveAfterQueue => {

@@ -207,6 +207,9 @@ impl StreamerFsm {
                             effects,
                         );
                     }
+                    // The fatal state is final and its commit ended the open
+                    // session, so writes queued behind it no longer apply.
+                    self.queued_db.clear();
                     self.monitor = MonitorPhase::Terminated;
                     effects.push(FsmEffect::ActorStopped {
                         reason: ActorStopReason::FatalError { state: new_state },

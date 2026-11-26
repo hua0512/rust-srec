@@ -219,6 +219,9 @@ impl ServiceContainer {
         // final segment and terminal fact after auxiliary loops stop.
         self.download_manager.shutdown_queue();
         self.cancellation_token.cancel();
+        // Stop monitoring before the drains, so no actor probes, opens a
+        // session or starts a recording while downloads finish.
+        self.actor_registry.begin_shutdown();
 
         info!("Stopping download manager...");
         let download_report = self.download_manager.shutdown_until(deadline).await;

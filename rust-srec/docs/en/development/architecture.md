@@ -38,10 +38,12 @@ flowchart LR
 Inside the runtime, the workspace is split into a unidirectional crate DAG composed by the thin `rust-srec` root package:
 
 - **Layer 0 (`srec-core`, `srec-sqlite`)**: storage-free domain types, ports, and utilities; SQLite pools, `CommittedWriter`, base models/repositories, and migrations.
-- **Layer 1 (`srec-engines`, `srec-processors`, `srec-notify`)**: download engines (`ffmpeg`, `streamlink`, `mesio`) and danmu runner; post-processing operators and BaiduPCS-Go; notification channels, Web Push, backend locales, and `NotificationOutboxDrainer`.
-- **Layer 2 (`srec-pipeline`, `srec-recorder`)**: post-processing `PipelineManager` / `DagScheduler` / worker pools; recording control plane (`ActorRegistry`, `StreamerActor`, `StreamerFsm`, `RecorderProber`, `RecorderStore`), `DownloadManager`, `DanmuService`, `ConfigService`, `StreamerManager`, credentials, and proxies.
+- **Layer 1 (`srec-engines`, `srec-processors`, `srec-notify`)**: download engines (`ffmpeg`, `streamlink`, `mesio`); post-processing operators and BaiduPCS-Go; notification channels, Web Push, backend locales, and `NotificationOutboxDrainer`.
+- **Layer 2 (`srec-pipeline`, `srec-recorder`)**: post-processing `PipelineManager` / `DagScheduler` / worker pools; recording control plane (`ActorRegistry`, `StreamerActor`, `StreamerFsm`, `RecorderProber`, `RecorderStore`), `DownloadManager`, `DanmuService` and its danmu runner, `ConfigService`, `StreamerManager`, credentials, and proxies.
 - **Layer 3 (`srec-api`)**: Axum REST/WebSocket routes, Protobuf, OpenAPI, MCP server, auth store, CQRS queries, dynamic logging, and health metrics.
 - **Layer 4 (`rust-srec`)**: `ServiceContainer` wiring, `ConfigBackupPort` export/import, `MaintenanceScheduler`, startup migrations, process supervision, and the `backend` facade used by the standalone binary and `src-tauri`.
+
+Each crate depends only on crates in lower layers, except `srec-sqlite`, which depends on `srec-core` in the same layer.
 
 Inside the recording runtime, services pass events along these routes:
 
@@ -178,9 +180,11 @@ an already scheduled check. Smart-wake hints, admission/cooldown deadlines, expl
 and live watchdog states keep their own timing.
 
 Expected terminal stops (`Disabled`, `FatalError`, `Retired`, `Shutdown`) clear credential blocks
-and exit without restart. If an actor task panics, `ActorRegistry` schedules supervised restarts
-with exponential backoff (2 s base, 60 s cap) up to `MAX_CRASH_RESTARTS` (5) attempts; a clean exit
-clears the crash counter.
+and exit without restart. If an actor task panics, `ActorRegistry` first stops the startups,
+downloads and danmu collection it left behind, then restarts it with exponential backoff (2 s base,
+60 s cap). A streamer gets `MAX_CRASH_RESTARTS` (5) restarts; a clean exit, or a crash after at
+least 10 minutes of uptime, starts a fresh count. Once the restarts are used up the streamer is no
+longer monitored, and the health check reports it as degraded.
 
 ### `RecorderProber` and `RecorderStore` (probing, persistence, and outbox) {#recorder-prober-and-store}
 
@@ -474,11 +478,11 @@ Exposed in `/api/health` as a single aggregated `output-root` component listing 
 
 ## Backend Rust Interfaces {#backend-rust-interfaces}
 
-The canonical streamer state type is `rust_srec::domain::StreamerState`, including `ERROR` and `DISABLED`. Database model constructors and API transition checks use that type. `StreamerState::can_transition_to` remains the transition validator; recording state and error backoff are persisted by the runtime services, not by mutating the configuration-facing `domain::Streamer` entity.
+The canonical streamer state type is `srec_core::domain::StreamerState`, including `ERROR` and `DISABLED`. Database model constructors and API transition checks use that type. `StreamerState::can_transition_to` remains the transition validator; recording state and error backoff are persisted by the runtime services, not by mutating the configuration-facing `domain::Streamer` entity.
 
-Use the persisted session and media models under `database::models`, and use `HealthChecker::check_disk_space_with_thresholds` for disk classification. The streamer repository keeps both `list_streamers` (excludes rows marked for deletion) and `list_all_streamers` (includes them so startup can finish retirement).
+Use the persisted session and media models under `srec_sqlite::models`, and use `HealthChecker::check_disk_space_with_thresholds` for disk classification. The streamer repository keeps both `list_streamers` (excludes rows marked for deletion) and `list_all_streamers` (includes them so startup can finish retirement).
 
-Workflow transitions are decided in `pipeline::DagScheduler`: a worker reports a job outcome through `on_job_attempt_completed` or `on_job_attempt_failed`, which decide between retrying, failing and ignoring the attempt, and the manager retries a workflow through `retry_dag`, which validates, resets, restarts and replays under one entry point. `DagRepository` keeps the guarded transactions that make each transition durable and exposes `list_ready_steps` as the single readiness rule shared with the completion transaction.
+Workflow transitions are decided in `srec_pipeline::DagScheduler`: a worker reports a job outcome through `on_job_attempt_completed` or `on_job_attempt_failed`, which decide between retrying, failing and ignoring the attempt, and the manager retries a workflow through `retry_dag`, which validates, resets, restarts and replays under one entry point. `DagRepository` keeps the guarded transactions that make each transition durable and exposes `list_ready_steps` as the single readiness rule shared with the completion transaction.
 
 ### Actor terminal and wake policies {#actor-terminal-and-wake-policies}
 

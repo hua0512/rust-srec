@@ -585,7 +585,7 @@ async fn graceful_shutdown_flushes_and_persists_the_final_segment_before_pool_cl
             credential_binding: None,
             from_hysteresis_resume: true,
             priority: Priority::Normal,
-            using_recovered_media: false,
+            recovered_media_extracted_at: None,
         },
         actor_tx,
     );

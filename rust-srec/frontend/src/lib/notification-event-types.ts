@@ -11,7 +11,7 @@ import type { MessageDescriptor } from '@lingui/core';
  * page, so neither source can follow the language picked in the browser.
  *
  * Keys must stay in step with `NOTIFICATION_EVENT_TYPES` in
- * `rust-srec/src/notification/events/catalog.rs`; `eventTypeLabel` falls back for anything
+ * `rust-srec/crates/srec-notify/src/events/catalog.rs`; `eventTypeLabel` falls back for anything
  * missing.
  */
 const EVENT_TYPE_LABELS: Record<string, MessageDescriptor> = {

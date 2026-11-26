@@ -698,6 +698,7 @@ impl StreamerFsm {
         *recurring_interval_ms = None;
     }
 
+    /// The lifecycle lane has room again after refusing a start.
     fn on_retry_admission(&mut self, ctx: StepContext) {
         if matches!(
             self.monitor,
@@ -705,19 +706,23 @@ impl StreamerFsm {
         ) {
             return;
         }
-        let has_active_attempt = matches!(
-            &self.session,
-            SessionSlot::Open(open)
-                if matches!(
-                    open.attempt,
-                    AttemptPhase::Starting { .. }
-                        | AttemptPhase::Running { .. }
-                        | AttemptPhase::StoppingAttempt { .. }
-                )
-        );
-        if !has_active_attempt {
-            self.monitor = schedule::schedule_idle_immediate(ctx.now);
+        if let SessionSlot::Open(open) = &mut self.session {
+            match &mut open.attempt {
+                // The refusal for this attempt may still be on its way.
+                AttemptPhase::Starting {
+                    admission_rechecked,
+                    ..
+                } => {
+                    *admission_rechecked = true;
+                    return;
+                }
+                AttemptPhase::Running { .. } | AttemptPhase::StoppingAttempt { .. } => return,
+                AttemptPhase::Idle
+                | AttemptPhase::WaitingCredentials
+                | AttemptPhase::DiagnosingCredentials { .. } => {}
+            }
         }
+        self.monitor = schedule::schedule_idle_immediate(ctx.now);
     }
 
     fn on_config_updated(

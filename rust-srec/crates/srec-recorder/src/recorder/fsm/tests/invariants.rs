@@ -122,14 +122,8 @@ fn random_inputs_keep_the_state_machine_invariants() {
         Invariant::BoundedQueue,
         Invariant::ProbeRateFloor,
         Invariant::SingleAttempt,
+        Invariant::StopAfterCommits,
     ]);
-}
-
-#[test]
-#[ignore = "bug: Shutdown and non-quiescent Retire emit ActorStopped with a commit in flight, \
-            losing the SessionEnded notification of a committed EndSession"]
-fn known_bug_actor_stops_only_after_database_work_settles() {
-    assert_holds(&[Invariant::StopAfterCommits]);
 }
 
 /// Small deterministic xorshift generator.
@@ -282,9 +276,12 @@ impl Harness {
             self.reprobe_floor_from = None;
         }
         let arms_floor = match &input {
-            FsmInput::AttemptStartFailed { reason, .. } => {
-                !matches!(reason, AttemptStartFailure::Cancelled)
-            }
+            // A start refused for lane capacity retries only once the lane
+            // reports room, which can arrive before the refusal does.
+            FsmInput::AttemptStartFailed { reason, .. } => !matches!(
+                reason,
+                AttemptStartFailure::Cancelled | AttemptStartFailure::RecorderFeedbackBusy
+            ),
             FsmInput::ProbeCompleted { result, .. } => {
                 matches!(result, Err(_) | Ok(ProbeStatus::Filtered { .. }))
             }

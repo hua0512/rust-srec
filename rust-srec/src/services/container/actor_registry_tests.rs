@@ -1052,3 +1052,44 @@ async fn failed_config_lookup_keeps_the_last_good_config_and_retries() {
     );
     assert!(retried.is_ok(), "the lookup is retried after it recovers");
 }
+
+#[tokio::test]
+async fn a_busy_lane_asks_for_a_retry_only_once_it_has_room() {
+    use crate::recorder::actor::{ActorHandle, ActorMessage};
+
+    let harness = ActorHarness::new().await;
+    let row = harness.seed_streamer("s-busy", StreamerState::Live).await;
+    let (handle, mut inbox) = ActorHandle::detached_for_test();
+    let _exit = harness
+        .registry
+        .register_actor_handle_for_test(row.id.clone(), 1, handle);
+    let feedback = harness.registry.download_feedback();
+
+    let mut held = Vec::new();
+    while let Ok(permit) = feedback.reserve(&row.id) {
+        held.push(permit);
+    }
+    assert!(!held.is_empty(), "the lane has room for this streamer");
+    feedback.request_recheck(&row.id);
+
+    let retry_admission = async {
+        loop {
+            match inbox.recv().await {
+                Some(ActorMessage::Input(FsmInput::RetryAdmission)) => return,
+                Some(_) => {}
+                None => panic!("actor inbox closed"),
+            }
+        }
+    };
+    tokio::pin!(retry_admission);
+    let early = tokio::time::timeout(Duration::from_millis(200), &mut retry_admission).await;
+    held.clear();
+    let after_room = tokio::time::timeout(Duration::from_secs(5), &mut retry_admission).await;
+    harness.shutdown().await;
+
+    assert!(
+        early.is_err(),
+        "retry requested while the lane was still full"
+    );
+    assert!(after_room.is_ok(), "no retry once the lane had room");
+}

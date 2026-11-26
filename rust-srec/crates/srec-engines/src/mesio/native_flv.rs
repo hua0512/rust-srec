@@ -27,6 +27,9 @@ pub type NativeFlvStream =
 /// (such as `bigo://room/...`) so the engine layer remains independent of
 /// platform extractors.
 pub trait NativeFlvOpener: Send + Sync {
+    /// The stream's name in download errors, such as `native Bigo stream`.
+    fn stream_name(&self) -> &'static str;
+
     /// Whether this opener handles `url`.
     fn can_open(&self, url: &str) -> bool;
 

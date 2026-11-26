@@ -28,6 +28,7 @@ use crate::downloader::{
 };
 use crate::recorder::actor::ActorMessage;
 use crate::recorder::fsm::FsmInput;
+use crate::recorder::fsm::credentials::RECOVERED_MEDIA_TTL;
 use crate::recorder::ports::{
     AttemptStartFailure, AttemptStartSpec, DanmuStopResult, DbCommitFailure, DbCommitOp,
     DbCommitOutcome, ProbeFailure, ProbePurpose, ProbeRequest, ProbeStatus,
@@ -382,7 +383,7 @@ async fn run_startup_task(
         mut credential_binding,
         from_hysteresis_resume,
         priority,
-        using_recovered_media,
+        recovered_media_extracted_at,
     } = spec;
 
     if lease.is_cancelled() {
@@ -690,9 +691,13 @@ async fn run_startup_task(
 
     let waited_ms = slot.waited_ms();
 
-    // 3. Freshness check.
+    // 3. Freshness check. Recovered media skip it only while they are still
+    // fresh: a wait for a slot can outlast their lifetime.
+    let using_recovered_media = recovered_media_extracted_at
+        .is_some_and(|extracted_at| extracted_at.elapsed() < RECOVERED_MEDIA_TTL);
     let needs_fresh_probe = !using_recovered_media
-        && (managed
+        && (recovered_media_extracted_at.is_some()
+            || managed
             || streams.is_empty()
             || waited_ms > deps.download_manager.queue_freshness_threshold_ms());
     if using_recovered_media {

@@ -333,6 +333,9 @@ pub enum AttemptPhase {
         attempt_id: u64,
         queued: bool,
         credential_binding: Option<CredentialBinding>,
+        /// The lifecycle lane reported room again (`RetryAdmission`) while
+        /// this attempt was starting.
+        admission_rechecked: bool,
     },
     /// Engine actively recording.
     Running {

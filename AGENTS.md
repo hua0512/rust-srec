@@ -8,7 +8,7 @@ Use the map below to locate the task. Read supporting docs, examples, and skills
 
 | Area | Location / task-specific guidance |
 | --- | --- |
-| Backend: REST API, scheduler, pipeline, SQLite | `rust-srec/`, package `rust-srec`; [backend rules](rust-srec/AGENTS.md) |
+| Backend: REST API, recorder, pipeline, SQLite | `rust-srec/`: package `rust-srec` and the `srec-*` crates in `rust-srec/crates/`; [backend rules](rust-srec/AGENTS.md) |
 | CLIs | `strev-cli/` (package `strev`), `mesio-cli/` (package `mesio`) |
 | Protocols, containers, platform extractors, download engine | `crates/*`; [crate map and module guide](crates/AGENTS.md) |
 | Web UI and desktop frontend | `rust-srec/frontend/`; [frontend rules](rust-srec/frontend/AGENTS.md) |

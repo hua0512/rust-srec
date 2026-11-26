@@ -38,10 +38,12 @@ flowchart LR
 后端代码按单向依赖 DAG 拆分为内部 workspace crate，由精简的 `rust-srec` 根包组装：
 
 - **Layer 0（`srec-core`、`srec-sqlite`）**：无存储依赖的领域模型、端口契约与工具；SQLite 连接池、`CommittedWriter`、基础模型/仓储与迁移执行器。
-- **Layer 1（`srec-engines`、`srec-processors`、`srec-notify`）**：下载引擎（`ffmpeg`、`streamlink`、`mesio`）与弹幕采集器；后处理算子与 BaiduPCS-Go；通知通道、Web Push、后端多语言与 `NotificationOutboxDrainer`。
-- **Layer 2（`srec-pipeline`、`srec-recorder`）**：后处理 `PipelineManager` / `DagScheduler` / WorkerPool；录制控制面（`ActorRegistry`、`StreamerActor`、`StreamerFsm`、`RecorderProber`、`RecorderStore`）、`DownloadManager`、`DanmuService`、`ConfigService`、`StreamerManager`、凭据与代理服务。
+- **Layer 1（`srec-engines`、`srec-processors`、`srec-notify`）**：下载引擎（`ffmpeg`、`streamlink`、`mesio`）；后处理算子与 BaiduPCS-Go；通知通道、Web Push、后端多语言与 `NotificationOutboxDrainer`。
+- **Layer 2（`srec-pipeline`、`srec-recorder`）**：后处理 `PipelineManager` / `DagScheduler` / WorkerPool；录制控制面（`ActorRegistry`、`StreamerActor`、`StreamerFsm`、`RecorderProber`、`RecorderStore`）、`DownloadManager`、`DanmuService` 及其弹幕采集器、`ConfigService`、`StreamerManager`、凭据与代理服务。
 - **Layer 3（`srec-api`）**：Axum REST/WebSocket 路由、Protobuf、OpenAPI、MCP 服务、认证存储、CQRS 查询、动态日志与健康指标。
 - **Layer 4（`rust-srec`）**：`ServiceContainer` 组装、`ConfigBackupPort` 导出/导入、`MaintenanceScheduler`、启动迁移、进程监督，以及面向独立二进制与 `src-tauri` 的 `backend` 门面。
+
+除 `srec-sqlite` 依赖同层的 `srec-core` 外，每个 crate 只依赖更低层的 crate。
 
 运行时内部，各服务沿以下路径传递控制指令与事件：
 
@@ -161,7 +163,8 @@ SQLite 行是权威数据。`StreamerManager` 为 actor 检查提供不可变的
 有效间隔未变时保留原定检查时间，变化时可提前检查但不推迟已安排的期限。智能唤醒、准入/冷却期限、显式立即检查与在线 watchdog 保留各自时序约束。
 
 预期内的终止退出（`Disabled`、`FatalError`、`Retired`、`Shutdown`）会清理凭据阻断记录并正常退出，不会自动重启。
-当 Actor 任务 panic 时，`ActorRegistry` 按指数退避（基础 2 秒、上限 60 秒）最多自动重启 `MAX_CRASH_RESTARTS`（5）次；正常退出会清零崩溃计数。
+当 Actor 任务 panic 时，`ActorRegistry` 会先停止它遗留的启动任务、下载与弹幕采集，再按指数退避（基础 2 秒、上限 60 秒）重启它。
+每个主播最多自动重启 `MAX_CRASH_RESTARTS`（5）次；正常退出，或运行至少 10 分钟后才崩溃，都会重新计数。重启次数用尽后，该主播不再被监控，健康检查会将其报告为降级。
 
 ### `RecorderProber` 与 `RecorderStore`（探测、持久化与 Outbox） {#探测与持久化存储}
 
@@ -424,11 +427,11 @@ Healthy ◄───────────────────────
 
 ## 后端 Rust 接口 {#后端-rust-接口}
 
-主播状态的统一类型为 `rust_srec::domain::StreamerState`，包含 `ERROR` 和 `DISABLED`。数据库模型构造函数与 API 状态转换检查均使用此类型。`StreamerState::can_transition_to` 保留为状态转换校验入口；录制状态和错误退避由运行时服务持久化，不通过修改配置层的 `domain::Streamer` 实体来驱动。
+主播状态的统一类型为 `srec_core::domain::StreamerState`，包含 `ERROR` 和 `DISABLED`。数据库模型构造函数与 API 状态转换检查均使用此类型。`StreamerState::can_transition_to` 保留为状态转换校验入口；录制状态和错误退避由运行时服务持久化，不通过修改配置层的 `domain::Streamer` 实体来驱动。
 
-会话和媒体数据使用 `database::models` 中的持久化模型；磁盘状态分类使用 `HealthChecker::check_disk_space_with_thresholds`。主播仓库保留 `list_streamers`（排除已标记删除的记录）和 `list_all_streamers`（包含这些记录，以便启动时完成退出与清理）。
+会话和媒体数据使用 `srec_sqlite::models` 中的持久化模型；磁盘状态分类使用 `HealthChecker::check_disk_space_with_thresholds`。主播仓库保留 `list_streamers`（排除已标记删除的记录）和 `list_all_streamers`（包含这些记录，以便启动时完成退出与清理）。
 
-工作流状态转换统一由 `pipeline::DagScheduler` 决定：Worker 通过 `on_job_attempt_completed` 或 `on_job_attempt_failed` 上报任务结果，由调度器决定该次尝试是重试、失败还是忽略；管理器通过 `retry_dag` 重试工作流，校验、重置、重启和回放都在这一个入口内完成。`DagRepository` 继续持有让每次转换持久化的受保护的事务，并提供 `list_ready_steps` 作为与完成事务共用的唯一就绪规则。
+工作流状态转换统一由 `srec_pipeline::DagScheduler` 决定：Worker 通过 `on_job_attempt_completed` 或 `on_job_attempt_failed` 上报任务结果，由调度器决定该次尝试是重试、失败还是忽略；管理器通过 `retry_dag` 重试工作流，校验、重置、重启和回放都在这一个入口内完成。`DagRepository` 继续持有让每次转换持久化的受保护的事务，并提供 `list_ready_steps` 作为与完成事务共用的唯一就绪规则。
 
 ### Actor 终止与唤醒策略 {#actor-终止与唤醒策略}
 

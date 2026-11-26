@@ -544,8 +544,9 @@ pub struct AttemptStartSpec {
     pub credential_binding: Option<CredentialBinding>,
     pub from_hysteresis_resume: bool,
     pub priority: Priority,
-    /// `true` when the payload originates from a 30s-bounded credential diagnostic.
-    pub using_recovered_media: bool,
+    /// When a credential diagnostic extracted the payload's media, if it did.
+    /// They are reused only within `RECOVERED_MEDIA_TTL` (30 seconds) of that.
+    pub recovered_media_extracted_at: Option<Instant>,
 }
 
 impl std::fmt::Debug for AttemptStartSpec {
@@ -556,7 +557,10 @@ impl std::fmt::Debug for AttemptStartSpec {
             .field("streamer_id", &self.streamer_id)
             .field("from_hysteresis_resume", &self.from_hysteresis_resume)
             .field("priority", &self.priority)
-            .field("using_recovered_media", &self.using_recovered_media)
+            .field(
+                "recovered_media_extracted_at",
+                &self.recovered_media_extracted_at,
+            )
             .field("credential_binding", &self.credential_binding)
             .field("has_payload", &self.payload.is_some())
             .finish()

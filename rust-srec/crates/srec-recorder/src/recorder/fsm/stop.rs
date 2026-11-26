@@ -171,6 +171,12 @@ impl StreamerFsm {
 
     /// Advance the active [`StoppingState`] machine whenever physical resources
     /// confirm, a DB op completes, or the stop deadline elapses.
+    /// No database write is in flight or queued. The actor exits only then,
+    /// so every committed write is followed through.
+    fn db_work_settled(&self) -> bool {
+        self.pending_db.is_none() && self.queued_db.is_empty()
+    }
+
     pub(super) fn advance_stopping(&mut self, ctx: StepContext, effects: &mut Vec<FsmEffect>) {
         // Wait for an in-flight `CommittingStart` to finish so we learn the
         // authoritative `session_id` before deciding what to end in SQLite.
@@ -184,8 +190,12 @@ impl StreamerFsm {
         };
 
         // Shutdown never closes the open DB session (restart can resume it).
+        // It still waits for database work already started: an `EndSession`
+        // in flight owes its session's `SessionEnded` notification.
         if matches!(stopping.kind, StopKind::Shutdown) {
-            if stopping.physical_confirmed() || stopping.deadline_expired {
+            if (stopping.physical_confirmed() || stopping.deadline_expired)
+                && self.db_work_settled()
+            {
                 self.monitor = MonitorPhase::Terminated;
                 effects.push(FsmEffect::ActorStopped {
                     reason: ActorStopReason::Shutdown,
@@ -280,6 +290,9 @@ impl StreamerFsm {
             && stopping.deadline_expired
             && !stopping.physical_confirmed()
         {
+            if !self.db_work_settled() {
+                return;
+            }
             self.monitor = MonitorPhase::Terminated;
             effects.push(FsmEffect::ActorStopped {
                 reason: ActorStopReason::Retired { quiescent: false },

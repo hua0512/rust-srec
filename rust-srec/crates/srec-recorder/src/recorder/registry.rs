@@ -116,6 +116,8 @@ enum ReconcileCommand {
 struct RecorderFeedbackState {
     capacity_limit: usize,
     per_streamer: HashMap<String, Arc<Semaphore>>,
+    /// Streamers waiting for room before their actor retries a start.
+    rechecks: HashSet<String>,
 }
 
 /// Reserved-capacity download lifecycle sink implementing
@@ -135,6 +137,7 @@ impl RecorderFeedbackSink {
             state: Mutex::new(RecorderFeedbackState {
                 capacity_limit: MAX_GLOBAL_FEEDBACK_PERMITS,
                 per_streamer: HashMap::new(),
+                rechecks: HashSet::new(),
             }),
             registry: parking_lot::RwLock::new(None),
         }
@@ -146,6 +149,15 @@ impl RecorderFeedbackSink {
 
     fn mark_stopped(&self) {
         self.monitoring_stopped.store(true, Ordering::Release);
+    }
+
+    fn streamer_capacity(&self, streamer_id: &str) -> Arc<Semaphore> {
+        self.state
+            .lock()
+            .per_streamer
+            .entry(streamer_id.to_owned())
+            .or_insert_with(|| Arc::new(Semaphore::new(MAX_STREAMER_FEEDBACK_PERMITS)))
+            .clone()
     }
 }
 
@@ -173,14 +185,8 @@ impl RecorderDownloadFeedback for RecorderFeedbackSink {
             .clone()
             .try_acquire_owned()
             .map_err(|_| "recorder lifecycle capacity is full".to_owned())?;
-        let streamer_sem = self
-            .state
-            .lock()
-            .per_streamer
-            .entry(streamer_id.to_owned())
-            .or_insert_with(|| Arc::new(Semaphore::new(MAX_STREAMER_FEEDBACK_PERMITS)))
-            .clone();
-        let streamer = streamer_sem
+        let streamer = self
+            .streamer_capacity(streamer_id)
             .try_acquire_owned()
             .map_err(|_| "streamer lifecycle capacity is full".to_owned())?;
         Ok(RecorderFeedbackPermit::new(
@@ -204,10 +210,41 @@ impl RecorderDownloadFeedback for RecorderFeedbackSink {
         registry.deliver_reserved_download_event(event, permit);
     }
 
+    /// Tell the actor to retry once the lane has room for an attempt's start
+    /// and end events again, rather than right away while it is still full.
+    /// One wait runs per streamer.
     fn request_recheck(&self, streamer_id: &str) {
-        if let Some(registry) = self.registry.read().as_ref().and_then(Weak::upgrade) {
-            registry.request_retry_admission(streamer_id);
+        let Some(registry) = self.registry.read().as_ref().and_then(Weak::upgrade) else {
+            return;
+        };
+        if !self.state.lock().rechecks.insert(streamer_id.to_owned()) {
+            return;
         }
+        let streamer = self.streamer_capacity(streamer_id);
+        let global = self.global_capacity.clone();
+        let cancel = registry.root_cancel.child_token();
+        let weak = Arc::downgrade(&registry);
+        let id = streamer_id.to_owned();
+        registry
+            .reconcile_tasks
+            .spawn("recorder admission recheck", async move {
+                // Each wait releases its permits at once, so it never holds
+                // room an event needs.
+                let room = async {
+                    let streamer = streamer.acquire_many(2).await.is_ok();
+                    streamer && global.acquire_many(2).await.is_ok()
+                };
+                let room = tokio::select! {
+                    _ = cancel.cancelled() => false,
+                    room = room => room,
+                };
+                if let Some(registry) = weak.upgrade() {
+                    registry.feedback.state.lock().rechecks.remove(&id);
+                    if room {
+                        registry.request_retry_admission(&id);
+                    }
+                }
+            });
     }
 
     fn stop_monitoring(&self) {
@@ -935,19 +972,9 @@ impl ActorRegistry {
 
     /// Gracefully shut down all resident actors, startup leases, and the reconciler.
     pub async fn shutdown_until(&self, deadline: tokio::time::Instant) -> bool {
-        self.shutting_down.store(true, Ordering::Release);
+        self.begin_shutdown();
         self.feedback.mark_stopped();
         self.root_cancel.cancel();
-
-        // Broadcast `Shutdown` to every resident actor (does NOT close open DB sessions).
-        let handles: Vec<ActorHandle> = self
-            .actors
-            .iter()
-            .map(|entry| entry.value().handle.clone())
-            .collect();
-        for handle in handles {
-            let _ = handle.send_input(FsmInput::Shutdown);
-        }
 
         let remaining = deadline
             .saturating_duration_since(tokio::time::Instant::now())
@@ -968,6 +995,23 @@ impl ActorRegistry {
             .await;
 
         leases_ok && actors_ok && reconciler_ok
+    }
+
+    /// First step of process shutdown, taken before downloads and danmu drain:
+    /// no actor starts or restarts again, and every resident actor stops
+    /// monitoring and asks its download and danmu collection to stop. Their
+    /// events still reach the actors during the drain, so each actor confirms
+    /// its own stop. Open DB sessions stay open for the next run to resume.
+    pub fn begin_shutdown(&self) {
+        self.shutting_down.store(true, Ordering::Release);
+        let handles: Vec<ActorHandle> = self
+            .actors
+            .iter()
+            .map(|entry| entry.value().handle.clone())
+            .collect();
+        for handle in handles {
+            let _ = handle.send_input(FsmInput::Shutdown);
+        }
     }
 
     /// Abort remaining actors and startup tasks after the shutdown force deadline.
@@ -1378,7 +1422,7 @@ impl ActorRegistry {
                 .remove_if(&streamer_id, |_, entry| entry.generation == generation);
             let _ = exit_tx.send(true);
         } else if self.shutting_down.load(Ordering::Acquire) {
-            // Close the race window where `shutdown_until` iterated `self.actors`
+            // Close the race window where `begin_shutdown` iterated `self.actors`
             // just before our insert.
             let _ = shutdown_handle.send_input(FsmInput::Shutdown);
         }

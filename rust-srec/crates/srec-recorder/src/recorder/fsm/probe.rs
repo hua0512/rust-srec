@@ -619,6 +619,16 @@ impl StreamerFsm {
                         ctx,
                     );
                 }
+                // A bound poll never switches accounts, but a start's freshness
+                // check may move the session to another account of its pool,
+                // so a recording waiting for one retries its start each check.
+                let waiting = matches!(
+                    &self.session,
+                    SessionSlot::Open(open) if matches!(open.attempt, AttemptPhase::WaitingCredentials)
+                );
+                if waiting {
+                    self.start_attempt_for_open_session(ctx, None, false, effects);
+                }
             }
             ProbeFailure::Transient { message } | ProbeFailure::Permanent { message } => {
                 // Live watchdog failures stay side-effect free: no error count increment,
