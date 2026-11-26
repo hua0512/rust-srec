@@ -90,10 +90,9 @@ async fn hls_recordings_end_with_the_playlist_for_ts_and_fmp4_segments() {
     let app = TestApp::start_with(Seed::live()).await;
     let token = app.admin_token().await;
 
-    for (media, segment, extension) in [
-        (HlsMedia::Ts, "segment0.ts", "ts"),
-        (HlsMedia::Fmp4, "segment0.m4s", "m4s"),
-    ] {
+    // The two recordings run side by side; each waits for its playlist's
+    // one-second refreshes.
+    let record = async |media: HlsMedia, segment: &str, extension: &str| {
         let name = media.media_format();
         let room = fake.room(name);
         let playlist = cdn.publish_hls(name, media, 1, false);
@@ -133,7 +132,11 @@ async fn hls_recordings_end_with_the_playlist_for_ts_and_fmp4_segments() {
         }
         assert_eq!(cdn.requests_to(&format!("/{name}/{segment}")).len(), 1);
         assert_eq!(fake.requests_to(&room, "live.flv").len(), 0);
-    }
+    };
+    tokio::join!(
+        record(HlsMedia::Ts, "segment0.ts", "ts"),
+        record(HlsMedia::Fmp4, "segment0.m4s", "m4s"),
+    );
 
     app.shutdown().await;
 }
