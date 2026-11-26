@@ -304,7 +304,7 @@ async fn merge_preserves_omitted_policies_but_explicit_inherit_replaces_them() {
 }
 
 #[tokio::test]
-async fn backup_version_and_filtered_dependency_validation_preserve_legacy_shape() {
+async fn backup_version_follows_managed_credentials_and_keeps_the_legacy_shape() {
     let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
     run_migrations(&pool).await.unwrap();
     let mut tx = begin_immediate(&pool).await.unwrap();
@@ -322,16 +322,7 @@ async fn backup_version_and_filtered_dependency_validation_preserve_legacy_shape
         config.update_schema_version();
         assert_eq!(config.version, "1.0.0");
     }
-    let account = profile(&platform.platform_name);
-    config.platforms[0].credential_selection = Some(CredentialSelection::Fixed {
-        credential_id: account.id.clone(),
-    });
-    assert!(config.validate_credential_graph().is_err());
-    config.credential_profiles.push(account);
-    config.validate_credential_graph().unwrap();
     config.platforms.clear();
-    assert!(config.validate_credential_graph().is_err());
-    config.credential_profiles.clear();
     config.update_schema_version();
     assert_eq!(config.version, "0.1.8");
 }

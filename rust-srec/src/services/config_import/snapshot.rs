@@ -2,7 +2,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::{ConfigurationImportError, profiles, proxies, validation, validation_error};
+use super::{
+    ConfigurationImportError, bundle_error, profiles, proxies, validation, validation_error,
+};
 use crate::config::backup::{
     ConfigExport, ImportMode, NotificationChannelExport, PipelinePresetExport,
 };
@@ -150,16 +152,14 @@ impl ImportSnapshot {
                             .get(&streamer.platform)
                             .is_some_and(|platform| platform.id == row.platform_config_id)
                 })
-        })?;
+        })
+        .map_err(bundle_error)?;
         let legacy = config.version.starts_with("0.");
         if legacy || crate::services::legacy_upgrade::proxies::bundle_has_legacy_settings(config) {
-            crate::services::legacy_upgrade::proxies::upgrade_bundle(
-                config,
-                &self.proxies,
-                legacy,
-            )?;
+            crate::services::legacy_upgrade::proxies::upgrade_bundle(config, &self.proxies, legacy)
+                .map_err(bundle_error)?;
         }
-        config.validate_credential_graph()?;
+        config.validate_credential_graph().map_err(bundle_error)?;
         Ok(())
     }
 

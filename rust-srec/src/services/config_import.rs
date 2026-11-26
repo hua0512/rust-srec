@@ -371,6 +371,15 @@ fn write_error(error: impl Into<crate::Error>) -> ConfigurationImportError {
     }
 }
 
+/// A bundle the import rejects as invalid becomes a validation error. Every
+/// other failure, such as IO or a database error, stays a server fault.
+fn bundle_error(error: impl Into<crate::Error>) -> ConfigurationImportError {
+    match error.into() {
+        crate::Error::Core(CoreError::Validation(message)) => validation_error(message),
+        error => error.into(),
+    }
+}
+
 fn validation<T>(message: impl Into<String>) -> Result<T, ConfigurationImportError> {
     Err(validation_error(message))
 }

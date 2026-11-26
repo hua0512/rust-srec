@@ -1164,8 +1164,7 @@ async fn a_rejected_import_changes_nothing_and_a_successful_one_ends_every_sessi
 }
 
 #[tokio::test]
-#[ignore = "bug: an import whose account graph is invalid fails with 500 instead of 400"]
-async fn known_bug_an_import_with_a_broken_account_graph_is_rejected_and_changes_nothing() {
+async fn an_import_with_a_broken_account_graph_is_rejected_and_changes_nothing() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
     let account = app
