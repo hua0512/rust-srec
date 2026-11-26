@@ -222,6 +222,10 @@ pub struct ProbeRequest {
     pub purpose: ProbePurpose,
     pub session_id: Option<String>,
     pub credential_binding: Option<CredentialBinding>,
+    /// Test the streamer's output root before checking the platform, while an
+    /// unwritable root holds the streamer back. A session opened before the
+    /// root can be written would only be refused and ended again.
+    pub test_output_root: bool,
 }
 
 /// Extracted live media payload returned by a probe.
@@ -291,6 +295,8 @@ pub enum ProbeFailure {
     },
     /// Bound credential profile or policy changed mid-probe.
     CredentialSourceChanged,
+    /// The output root that held the streamer back still cannot be written.
+    OutputRootUnavailable { message: String },
 }
 
 pub use srec_core::domain::notification::OutboxEvent;

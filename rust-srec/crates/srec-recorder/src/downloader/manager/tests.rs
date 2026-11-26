@@ -1391,6 +1391,43 @@ async fn prepare_output_dir_recovers_after_path_becomes_valid() {
     assert_eq!(snap[0].state, crate::downloader::RootHealthState::Healthy);
 }
 
+/// A degraded root's write test waits out the gate cooldown, and a test that
+/// writes recovers the root once, which resumes the streamers it held back.
+#[tokio::test]
+async fn probe_output_root_tests_a_degraded_root_once_its_cooldown_ends() {
+    use super::super::output_root_gate::{OutputRootGate, RecoveryHook};
+    use std::sync::atomic::AtomicUsize;
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let recoveries = Arc::new(AtomicUsize::new(0));
+    let hook: RecoveryHook = Arc::new({
+        let recoveries = recoveries.clone();
+        move |_root: &std::path::Path| {
+            recoveries.fetch_add(1, Ordering::SeqCst);
+        }
+    });
+    let root = temp.path().to_path_buf();
+    let gate = OutputRootGate::new(None, hook, vec![root.clone()], Duration::from_secs(1));
+    let manager = DownloadManager::new();
+    manager.set_output_root_gate(gate.clone());
+    let template = root.join("{streamer}").to_string_lossy().into_owned();
+    gate.record_failure(
+        &root,
+        &std::io::Error::new(std::io::ErrorKind::StorageFull, "disk full"),
+    );
+
+    assert!(manager.probe_output_root(&template).await.is_err());
+    assert_eq!(recoveries.load(Ordering::SeqCst), 0);
+
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+    assert!(manager.probe_output_root(&template).await.is_ok());
+    assert_eq!(recoveries.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        gate.snapshot()[0].state,
+        crate::downloader::RootHealthState::Healthy
+    );
+}
+
 #[tokio::test]
 async fn required_terminal_event_survives_lagged_observer() {
     let (coordination_tx, mut coordination_rx) = download_coordination_channel();

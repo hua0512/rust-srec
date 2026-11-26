@@ -431,9 +431,18 @@ impl StreamerActor {
         if let Some(req) = signals.spawn_probe {
             let probe_id = req.probe_id;
             let prober = self.deps.prober.clone();
+            let config_service = self.deps.config_service.clone();
+            let download_manager = self.deps.download_manager.clone();
             self.in_flight_probe = Some((
                 probe_id,
                 Box::pin(async move {
+                    if req.test_output_root
+                        && let Err(message) =
+                            test_output_root(&config_service, &download_manager, &req.streamer_id)
+                                .await
+                    {
+                        return Ok((Err(ProbeFailure::OutputRootUnavailable { message }), None));
+                    }
                     // A panic while probing (an extractor meeting a malformed
                     // response, say) fails this check instead of the actor.
                     AssertUnwindSafe(prober.probe_with_hint(req))
@@ -458,6 +467,26 @@ impl StreamerActor {
         }
         signals.stopped
     }
+}
+
+/// Test the output root of `streamer_id`'s output folder. A failed config
+/// lookup leaves the decision to the recording start.
+async fn test_output_root(
+    config_service: &ConfigService<SqlxConfigRepository, SqlxStreamerRepository>,
+    download_manager: &DownloadManager,
+    streamer_id: &str,
+) -> std::result::Result<(), String> {
+    let config = match config_service.get_config_for_streamer(streamer_id).await {
+        Ok(config) => config,
+        Err(error) => {
+            debug!(%streamer_id, %error, "No config to test the output root with");
+            return Ok(());
+        }
+    };
+    download_manager
+        .probe_output_root(&config.output_folder)
+        .await
+        .map_err(|blocked| blocked.to_string())
 }
 
 async fn poll_in_flight_commit(

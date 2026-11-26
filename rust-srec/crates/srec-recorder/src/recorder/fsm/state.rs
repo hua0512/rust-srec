@@ -98,6 +98,10 @@ pub struct StreamerFsm {
     pub lingering_physical_lease: bool,
     /// Whether the most recent offline probe armed a batch-live watch hint.
     pub batch_live_hint_armed: bool,
+    /// A check was requested while a status probe ran. The probe may have
+    /// started too early to see what the request reports (a Bigo live push,
+    /// say), so an offline result checks again at once.
+    pub check_requested_during_probe: bool,
     /// Segment discard/dedupe guards for sessions whose DB row already closed
     /// while trailing download segments or danmu `CollectionStopped` still drain.
     pub(super) draining_segment_guards: HashMap<String, SessionSegmentGuard>,

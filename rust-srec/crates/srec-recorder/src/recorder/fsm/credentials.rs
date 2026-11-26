@@ -158,6 +158,7 @@ impl StreamerFsm {
             purpose: ProbePurpose::Recovery,
             session_id: Some(session_id),
             credential_binding: binding,
+            test_output_root: false,
         }));
     }
 

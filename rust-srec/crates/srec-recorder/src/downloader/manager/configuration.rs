@@ -8,13 +8,19 @@ use crate::Result;
 #[cfg(test)]
 use crate::downloader::engine::DownloadConfig;
 use crate::downloader::engine::{
-    DownloadEngine, EngineStartError, EngineType, FfmpegEngine, MesioEngine, StreamlinkEngine,
+    DownloadEngine, EngineStartError, EngineType, FfmpegEngine, IoErrorKindSer, MesioEngine,
+    StreamlinkEngine,
 };
+use crate::downloader::output_root_gate::{GateBlocked, probe_root_writable};
 use crate::downloader::resilience::EngineKey;
 use srec_core::CoreError;
 use srec_sqlite::models::engine::{FfmpegEngineConfig, MesioEngineConfig, StreamlinkEngineConfig};
 
 use super::{DownloadManager, io_error_in_chain, parse_engine_config};
+
+/// How long an output root write test may take before the root counts as
+/// unwritable, as in the startup probe; a hung mount never answers.
+const OUTPUT_ROOT_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 impl DownloadManager {
     /// Prepare the output directory before starting an engine.
@@ -47,6 +53,45 @@ impl DownloadManager {
                 Err(EngineStartError::from(crate_err))
             }
         }
+    }
+
+    /// Test whether the output root of the folder `template` can be written,
+    /// the way a recording start would find out, without creating a recording
+    /// directory or a session. A degraded root is tried at most once per gate
+    /// cooldown, and a write that succeeds marks it healthy, which resumes the
+    /// streamers it held back. Returns `Ok` when the root cannot be resolved
+    /// from the template alone, so the recording start decides.
+    pub async fn probe_output_root(&self, template: &str) -> std::result::Result<(), GateBlocked> {
+        let Some(gate) = self.output_root_gate.get().cloned() else {
+            return Ok(());
+        };
+        let Some(path) = gate.probe_path_for_template(template) else {
+            return Ok(());
+        };
+        gate.check(&path)?;
+        let probe = tokio::task::spawn_blocking({
+            let gate = gate.clone();
+            let path = path.clone();
+            move || probe_root_writable(&path, &gate)
+        });
+        let error = match tokio::time::timeout(OUTPUT_ROOT_PROBE_TIMEOUT, probe).await {
+            Ok(Ok(Ok(()))) => {
+                gate.mark_healthy(&path);
+                return Ok(());
+            }
+            Ok(Ok(Err(error))) => error,
+            Ok(Err(_)) => std::io::Error::other("output root probe panicked"),
+            Err(_) => {
+                std::io::Error::new(std::io::ErrorKind::TimedOut, "output root probe timed out")
+            }
+        };
+        warn!(root = %path.display(), %error, "Output root is still unwritable");
+        gate.record_failure(&path, &error);
+        Err(GateBlocked {
+            root: gate.resolve_path(&path),
+            kind: IoErrorKindSer::from_io_kind(error.kind()),
+            message: error.to_string(),
+        })
     }
 
     /// Resolves an engine instance, its type, and its circuit-breaker key.

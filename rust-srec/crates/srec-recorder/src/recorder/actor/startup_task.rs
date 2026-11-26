@@ -716,6 +716,7 @@ async fn run_startup_task(
             purpose: ProbePurpose::QueueStart,
             session_id: Some(session_id.clone()),
             credential_binding: credential_binding.clone(),
+            test_output_root: false,
         };
         let fresh = tokio::select! {
             biased;

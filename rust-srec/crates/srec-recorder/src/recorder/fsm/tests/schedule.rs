@@ -268,6 +268,156 @@ fn persisted_out_of_space_is_dormant_while_temporal_disabled_blocks_and_runtime_
     assert_eq!(fsm.next_deadline(clock.now, clock.wall), Some(clock.now));
 }
 
+/// While an unwritable output root holds a streamer back, each retry tests
+/// the root before checking the platform, so no session opens (and no online
+/// or offline alert goes out) until the root can be written again.
+#[test]
+fn an_unwritable_output_root_is_retried_without_opening_sessions() {
+    let mut clock = TestClock::new();
+    let mut fsm = StreamerFsm::new(
+        base_snapshot(StreamerState::NotLive, base_config()),
+        clock.now,
+        clock.wall,
+    );
+    let probe = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
+        .unwrap()
+        .clone();
+    assert!(!probe.test_output_root);
+    let (start_op, _) = find_db_commit(&fsm.step(
+        clock.ctx(),
+        FsmInput::ProbeCompleted {
+            probe_id: probe.probe_id,
+            result: Ok(ProbeStatus::Live(live_payload("Live"))),
+        },
+    ))
+    .unwrap();
+    let attempt_id = find_start_attempt(&fsm.step(
+        clock.ctx(),
+        FsmInput::DbCommitted {
+            op_id: start_op,
+            result: Ok(DbCommitOutcome::SessionStarted {
+                session_id: "sess-disk".into(),
+                started_at: clock.wall,
+                disposition: SessionStartDisposition::Created,
+                credential_binding: None,
+            }),
+        },
+    ))
+    .unwrap()
+    .attempt_id;
+    let (end_op, _) = find_db_commit(&fsm.step(
+        clock.ctx(),
+        FsmInput::AttemptStartFailed {
+            attempt_id,
+            session_id: "sess-disk".into(),
+            reason: AttemptStartFailure::OutputRootUnavailable {
+                path: PathBuf::from("/mnt/rec"),
+                io_kind: IoErrorKindSer::StorageFull,
+                reason: "disk full".into(),
+                retry_after_secs: 30,
+            },
+        },
+    ))
+    .unwrap();
+    fsm.step(
+        clock.ctx(),
+        FsmInput::DbCommitted {
+            op_id: end_op,
+            result: Ok(session_ended_outcome(Some("sess-disk"), clock.wall, true)),
+        },
+    );
+
+    for _ in 0..2 {
+        clock.advance(Duration::from_secs(30));
+        let probe = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
+            .unwrap()
+            .clone();
+        assert!(probe.test_output_root);
+        let effects = fsm.step(
+            clock.ctx(),
+            FsmInput::ProbeCompleted {
+                probe_id: probe.probe_id,
+                result: Err(ProbeFailure::OutputRootUnavailable {
+                    message: "disk full".into(),
+                }),
+            },
+        );
+        assert!(find_db_commit(&effects).is_none());
+        assert_eq!(
+            fsm.monitor,
+            MonitorPhase::Blocked {
+                kind: BlockedKind::OutputRootCooldown,
+                retry_at: clock.now + Duration::from_secs(30),
+            }
+        );
+        assert_eq!(fsm.errors.consecutive_error_count, 0);
+    }
+
+    // The root can be written again: the check goes on to open a session.
+    clock.advance(Duration::from_secs(30));
+    let probe = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
+        .unwrap()
+        .clone();
+    let effects = fsm.step(
+        clock.ctx(),
+        FsmInput::ProbeCompleted {
+            probe_id: probe.probe_id,
+            result: Ok(ProbeStatus::Live(live_payload("Live"))),
+        },
+    );
+    assert!(matches!(
+        find_db_commit(&effects),
+        Some((_, DbCommitOp::StartOrResumeSession { .. }))
+    ));
+}
+
+/// A check requested while a probe runs (a Bigo live push, say) may report a
+/// change the probe started too early to see, so an offline result checks
+/// again at once instead of waiting for the next poll.
+#[test]
+fn a_check_requested_during_a_probe_rechecks_after_an_offline_result() {
+    let clock = TestClock::new();
+    let mut fsm = StreamerFsm::new(
+        base_snapshot(StreamerState::NotLive, base_config()),
+        clock.now,
+        clock.wall,
+    );
+    // Skip the first offline result's state write, which holds checks back
+    // until it settles.
+    fsm.initial_reconcile_pending = false;
+    let offline = || {
+        Ok(ProbeStatus::Offline {
+            batch_live_hint_armed: false,
+        })
+    };
+
+    let probe = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
+        .unwrap()
+        .probe_id;
+    fsm.step(clock.ctx(), FsmInput::CheckNow);
+    fsm.step(
+        clock.ctx(),
+        FsmInput::ProbeCompleted {
+            probe_id: probe,
+            result: offline(),
+        },
+    );
+    assert_eq!(fsm.next_deadline(clock.now, clock.wall), Some(clock.now));
+
+    // Without a request in between, the next check waits for the poll.
+    let probe = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
+        .unwrap()
+        .probe_id;
+    fsm.step(
+        clock.ctx(),
+        FsmInput::ProbeCompleted {
+            probe_id: probe,
+            result: offline(),
+        },
+    );
+    assert!(fsm.next_deadline(clock.now, clock.wall) > Some(clock.now));
+}
+
 #[test]
 fn config_revision_fence_and_config_rescheduling_rules() {
     // Jitter clamps out-of-range basis points strictly to ±10%.

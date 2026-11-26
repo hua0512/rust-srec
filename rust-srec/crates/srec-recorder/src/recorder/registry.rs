@@ -162,6 +162,12 @@ impl RecorderFeedbackSink {
             .or_insert_with(|| Arc::new(Semaphore::new(MAX_STREAMER_FEEDBACK_PERMITS)))
             .clone()
     }
+
+    /// Drop a reaped streamer's capacity. A permit still held keeps its own
+    /// semaphore alive, so it is released as usual.
+    fn forget_streamer(&self, streamer_id: &str) {
+        self.state.lock().per_streamer.remove(streamer_id);
+    }
 }
 
 impl RecorderDownloadFeedback for RecorderFeedbackSink {
@@ -764,6 +770,7 @@ impl ActorRegistry {
             self.config_revisions.remove(streamer_id);
             self.crash_counts.remove(streamer_id);
             self.clear_config_retry(streamer_id);
+            self.feedback.forget_streamer(streamer_id);
         }
         Ok(reaped)
     }

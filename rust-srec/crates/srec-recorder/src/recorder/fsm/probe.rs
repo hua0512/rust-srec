@@ -1,8 +1,9 @@
 //! Status probe dispatch and outcome handling (`Live`, `Offline`, `Filtered`,
 //! `Fatal`, and probe failures).
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
+use crate::downloader::output_root_gate::DEFAULT_GATE_COOLDOWN_SECS;
 use crate::monitor::FilterReason;
 use crate::session::TerminalCause;
 use crate::streamer::download_failure_threshold;
@@ -32,6 +33,13 @@ impl StreamerFsm {
             ),
             _ => (None, None, ProbePurpose::Discovery),
         };
+        let test_output_root = matches!(
+            self.monitor,
+            MonitorPhase::Blocked {
+                kind: BlockedKind::OutputRootCooldown,
+                ..
+            }
+        );
         let probe_id = self.next_id();
         self.in_flight_probe = Some(InFlightProbe { probe_id, purpose });
         effects.push(FsmEffect::SpawnProbe(ProbeRequest {
@@ -40,6 +48,7 @@ impl StreamerFsm {
             purpose,
             session_id,
             credential_binding,
+            test_output_root,
         }));
     }
 
@@ -78,6 +87,8 @@ impl StreamerFsm {
             _ => None,
         };
 
+        let recheck = std::mem::take(&mut self.check_requested_during_probe)
+            && matches!(result, Ok(ProbeStatus::Offline { .. }));
         match result {
             Ok(status) => {
                 if let MonitorPhase::LiveWatchdog {
@@ -92,6 +103,20 @@ impl StreamerFsm {
             Err(failure) => {
                 self.handle_probe_failure(ctx, failure, effects);
             }
+        }
+        if recheck
+            && matches!(
+                self.session,
+                SessionSlot::None | SessionSlot::RecentlyEnded { .. }
+            )
+            && let MonitorPhase::Idle {
+                next_check,
+                recurring_interval_ms,
+                ..
+            } = &mut self.monitor
+        {
+            *next_check = Some(ctx.now);
+            *recurring_interval_ms = None;
         }
     }
 
@@ -629,6 +654,17 @@ impl StreamerFsm {
                 if waiting {
                     self.start_attempt_for_open_session(ctx, None, false, effects);
                 }
+            }
+            ProbeFailure::OutputRootUnavailable { .. } => {
+                // Nothing was checked on the platform: wait out another gate
+                // cooldown without counting an error or opening a session.
+                self.monitor = MonitorPhase::Blocked {
+                    kind: BlockedKind::OutputRootCooldown,
+                    retry_at: ctx
+                        .now
+                        .checked_add(Duration::from_secs(DEFAULT_GATE_COOLDOWN_SECS))
+                        .unwrap_or(ctx.now),
+                };
             }
             ProbeFailure::Transient { message } | ProbeFailure::Permanent { message } => {
                 // Live watchdog failures stay side-effect free: no error count increment,

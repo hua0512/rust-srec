@@ -35,7 +35,7 @@ use self::attempt::AttemptStartedInput;
 use self::segment::{SegmentStartedInput, VideoSegmentInput};
 use self::state::QueuedDbOp;
 use crate::recorder::ports::{
-    DbCommitOp, InitialStreamerSnapshot, ResolvedActorConfig, StreamerRuntimeView,
+    DbCommitOp, InitialStreamerSnapshot, ProbePurpose, ResolvedActorConfig, StreamerRuntimeView,
     should_spawn_actor,
 };
 
@@ -116,6 +116,7 @@ impl StreamerFsm {
             network_failures: SlidingFailureWindow::default(),
             lingering_physical_lease: false,
             batch_live_hint_armed: false,
+            check_requested_during_probe: false,
             draining_segment_guards: HashMap::new(),
             detached_attempts: HashMap::new(),
             next_seq: 1,
@@ -634,6 +635,15 @@ impl StreamerFsm {
             return;
         }
         self.batch_live_hint_armed = false;
+        if matches!(
+            self.in_flight_probe,
+            Some(InFlightProbe {
+                purpose: ProbePurpose::Discovery | ProbePurpose::BoundPoll,
+                ..
+            })
+        ) {
+            self.check_requested_during_probe = true;
+        }
         match &mut self.monitor {
             MonitorPhase::Idle {
                 next_check,

@@ -487,6 +487,64 @@ fn contains_placeholder(path: &Path) -> bool {
     false
 }
 
+/// Synchronous writability probe for the startup probe and for
+/// [`crate::downloader::DownloadManager::probe_output_root`].
+///
+/// Probes the destination if it exists, otherwise its nearest existing ancestor
+/// within the same gate root. Recording startup creates missing subdirectories;
+/// an offline streamer's absent directory does not make its storage unwritable.
+/// Missing gate roots and dangling symlinks still fail instead of falling back
+/// to a different root. No recording directories are created by this probe.
+///
+/// Creates a temporary file with restrictive permissions and removes it on drop.
+/// Returns the underlying `io::Error` so the gate can classify the failure.
+///
+/// Kept separate from `OutputRootGate::record_failure` so the gate itself
+/// stays ignorant of how failures are discovered — it just accepts an
+/// `io::Error` from any caller.
+pub fn probe_root_writable(output_dir: &Path, gate: &OutputRootGate) -> std::io::Result<()> {
+    let gate_root = gate.resolve_path(output_dir);
+    let mut probe_dir = output_dir;
+    let meta = loop {
+        match std::fs::metadata(probe_dir) {
+            Ok(meta) => break meta,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                // A dangling symlink also returns NotFound from metadata, but is
+                // a broken destination, not a directory recording startup can create.
+                match std::fs::symlink_metadata(probe_dir) {
+                    Err(missing) if missing.kind() == std::io::ErrorKind::NotFound => {}
+                    Ok(_) => return Err(error),
+                    Err(error) => return Err(error),
+                }
+                let Some(parent) = probe_dir
+                    .parent()
+                    .filter(|parent| gate.resolve_path(parent) == gate_root)
+                else {
+                    return Err(error);
+                };
+                probe_dir = parent;
+            }
+            Err(error) => return Err(error),
+        }
+    };
+    if !meta.is_dir() {
+        return Err(std::io::Error::other(format!(
+            "output path {} is not a directory",
+            probe_dir.display()
+        )));
+    }
+
+    // tempfile::Builder::tempfile_in uses O_EXCL + restrictive mode by
+    // default on Unix, which is what we want: no symlink/TOCTOU window
+    // and no leftover probe file even if the process is killed.
+    let mut file = tempfile::Builder::new()
+        .prefix(".rust-srec-probe-")
+        .tempfile_in(probe_dir)?;
+    std::io::Write::write_all(&mut file, b"")?;
+    // `file` drops here and the tempfile crate unlinks it.
+    Ok(())
+}
+
 /// Keeps whole concrete components, including a final static directory without a slash.
 pub(crate) fn concrete_template_prefix(template: &str) -> PathBuf {
     let prefix: PathBuf = Path::new(template)
