@@ -898,7 +898,7 @@ async fn api_keys_are_validated_created_listed_used_revoked_and_expire() {
     let created = create_key(
         &app,
         &token,
-        &json!({ "name": "short-lived", "access_level": "read_only", "expires_at": now_ms() + 5000 }),
+        &json!({ "name": "short-lived", "access_level": "read_only", "expires_at": now_ms() + 1000 }),
     )
     .await;
     let short_lived = raw_key(&created);
