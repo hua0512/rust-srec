@@ -629,38 +629,7 @@ pub enum DanmuStopResult {
     Unconfirmed { error: String },
 }
 
-/// The five post-commit notifications forwarded to the pipeline engine.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PipelineNotification {
-    VideoSegmentCompleted {
-        session_id: String,
-        streamer_id: String,
-        segment_index: u32,
-        path: PathBuf,
-        auto_thumbnail_candidate: bool,
-    },
-    DanmuCollectionStarted {
-        session_id: String,
-        streamer_id: String,
-    },
-    DanmuSegmentCompleted {
-        session_id: String,
-        streamer_id: String,
-        segment_index: u32,
-        path: PathBuf,
-        message_count: u64,
-    },
-    DanmuCollectionStopped {
-        session_id: String,
-        total_count: u64,
-    },
-    SessionEnded {
-        session_id: String,
-        streamer_id: String,
-        cause: TerminalCause,
-        should_run_session_complete: bool,
-    },
-}
+pub use srec_core::domain::pipeline_notification::PipelineNotification;
 
 /// Result of attempting to drain outstanding pipeline work for a streamer.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]

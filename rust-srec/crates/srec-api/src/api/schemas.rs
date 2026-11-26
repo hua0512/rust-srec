@@ -4,7 +4,9 @@
 //! Keeping schema derivation here ensures core domain, database, credential,
 //! proxy, notification, and monitoring modules stay completely free of
 //! `utoipa` and `schemars` dependencies while preserving identical OpenAPI
-//! component names and JSON wire schemas.
+//! component names and JSON wire schemas. Each mirror has the name of the type
+//! it copies; `rust-srec/tests/integration/schema_mirrors.rs` fails when their
+//! fields, field types or `serde` settings drift apart.
 
 #![allow(dead_code)]
 

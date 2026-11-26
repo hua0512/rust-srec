@@ -1,35 +1,12 @@
-//! Conversions from pure domain proxy types to `platforms-parser` proxy,
-//! danmu tunnel, and extractor HTTP client types.
+//! Danmu tunnels and extractor HTTP clients for rust-srec proxy routes.
 
 use std::time::Duration;
 
 use platforms_parser::danmaku::{DanmakuError, DanmuProxy};
 use tracing::warn;
 
-use srec_core::domain::proxy::{
-    ProxyEndpoint, ProxyError, ProxyTarget, ResolvedRoute, SystemProxy,
-};
+use srec_core::domain::proxy::{ProxyError, ProxyTarget, ResolvedRoute, SystemProxy};
 use srec_core::utils::http_client::{apply_proxy, build_client, install_rustls_provider};
-
-/// Convert a domain [`ProxyEndpoint`] into a `platforms_parser::proxy::ProxyEndpoint`.
-pub fn to_platforms_endpoint(endpoint: &ProxyEndpoint) -> platforms_parser::proxy::ProxyEndpoint {
-    platforms_parser::proxy::ProxyEndpoint {
-        url: endpoint.url.clone(),
-        username: endpoint.username.clone(),
-        password: endpoint.password.clone(),
-    }
-}
-
-/// Convert a domain [`ProxyTarget`] into a `platforms_parser::proxy::ProxyTarget`.
-pub fn to_platforms_target(target: &ProxyTarget) -> platforms_parser::proxy::ProxyTarget {
-    match target {
-        ProxyTarget::Direct => platforms_parser::proxy::ProxyTarget::Direct,
-        ProxyTarget::System => platforms_parser::proxy::ProxyTarget::System,
-        ProxyTarget::Explicit(endpoint) => {
-            platforms_parser::proxy::ProxyTarget::Explicit(to_platforms_endpoint(endpoint))
-        }
-    }
-}
 
 /// The danmu tunnel for the environment's proxy; `None` when none is set.
 pub fn system_danmu_proxy(
@@ -53,9 +30,7 @@ pub fn danmu_proxy_for(
     match target {
         ProxyTarget::Direct => Ok(None),
         ProxyTarget::System => system_danmu_proxy(system),
-        ProxyTarget::Explicit(endpoint) => {
-            DanmuProxy::new(to_platforms_endpoint(endpoint)).map(Some)
-        }
+        ProxyTarget::Explicit(endpoint) => DanmuProxy::new(endpoint.clone()).map(Some),
     }
 }
 
@@ -102,7 +77,7 @@ pub fn build_platforms_client(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use srec_core::domain::proxy::RouteSource;
+    use srec_core::domain::proxy::{ProxyEndpoint, RouteSource};
 
     #[test]
     fn danmu_follows_the_route() {

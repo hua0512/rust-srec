@@ -36,8 +36,8 @@ use store::{LogStore, LogWriter};
 /// Internal backend crate targets governed by the user-facing `rust_srec` filter prefix.
 ///
 /// Users, persisted database configs, `RUST_LOG`, and the web UI configure `rust_srec=<level>`
-/// for the application as a whole. Expanding `rust_srec` to these extracted workspace crates
-/// preserves that single-target contract without exposing internal crate boundaries.
+/// for the application as a whole, so `rust_srec` expands to these extracted workspace crates.
+/// Log lines still name the module that logged them, such as `srec_recorder::recorder::registry`.
 const INTERNAL_CRATE_TARGETS: &[&str] = &[
     "srec_core",
     "srec_sqlite",
@@ -49,8 +49,10 @@ const INTERNAL_CRATE_TARGETS: &[&str] = &[
     "srec_api",
 ];
 
-/// Module prefixes that moved from root `rust_srec::*` into extracted workspace crates.
-/// Ordered longest-prefix-first so nested submodules match before their parent module.
+/// Module prefixes that moved from root `rust_srec::*` into extracted workspace crates or other
+/// root modules, so saved filters on the old names keep matching that code.
+/// Ordered longest-prefix-first so nested submodules match before their parent module. A filter
+/// with a sub-path below an entry maps only onto the entry's first target.
 const LEGACY_MODULE_ALIASES: &[(&str, &[&str])] = &[
     (
         "rust_srec::pipeline::processors",
@@ -72,27 +74,69 @@ const LEGACY_MODULE_ALIASES: &[(&str, &[&str])] = &[
         "rust_srec::database::repositories::upload_record",
         &["srec_pipeline::repositories::upload_record"],
     ),
+    (
+        "rust_srec::database::repositories",
+        &["srec_sqlite::repositories", "srec_pipeline::repositories"],
+    ),
+    (
+        "rust_srec::database::maintenance",
+        &["rust_srec::services::maintenance"],
+    ),
+    (
+        "rust_srec::database::legacy_credential_upgrade",
+        &["rust_srec::services::legacy_upgrade::credentials"],
+    ),
+    (
+        "rust_srec::database::legacy_proxy_upgrade",
+        &["rust_srec::services::legacy_upgrade::proxies"],
+    ),
+    ("rust_srec::danmu::live", &["srec_api::api::live_danmu"]),
     ("rust_srec::downloader::engine", &["srec_engines"]),
     ("rust_srec::domain", &["srec_core::domain"]),
     ("rust_srec::utils", &["srec_core::utils"]),
     (
         "rust_srec::database",
-        &["srec_sqlite", "srec_pipeline::repositories"],
+        &[
+            "srec_sqlite",
+            "srec_pipeline::repositories",
+            "rust_srec::services::maintenance",
+            "rust_srec::services::legacy_upgrade",
+        ],
     ),
-    ("rust_srec::baidupcs", &["srec_processors::baidupcs"]),
+    (
+        "rust_srec::baidupcs",
+        &[
+            "srec_processors::baidupcs",
+            "rust_srec::services::baidupcs_auth",
+        ],
+    ),
     ("rust_srec::i18n", &["srec_notify::i18n"]),
-    ("rust_srec::pipeline", &["srec_pipeline", "srec_processors"]),
+    (
+        "rust_srec::pipeline",
+        &[
+            "srec_pipeline",
+            "srec_processors::processors",
+            "rust_srec::services::pipeline_ports",
+        ],
+    ),
     ("rust_srec::notification", &["srec_notify"]),
     ("rust_srec::config", &["srec_recorder::config"]),
     ("rust_srec::credentials", &["srec_recorder::credentials"]),
-    ("rust_srec::danmu", &["srec_recorder::danmu"]),
+    (
+        "rust_srec::danmu",
+        &["srec_recorder::danmu", "srec_api::api::live_danmu"],
+    ),
     (
         "rust_srec::downloader",
         &["srec_recorder::downloader", "srec_engines"],
     ),
-    ("rust_srec::monitor", &["srec_recorder::monitor"]),
+    (
+        "rust_srec::monitor",
+        &["srec_recorder::monitor", "srec_recorder::recorder::prober"],
+    ),
     ("rust_srec::proxies", &["srec_recorder::proxies"]),
     ("rust_srec::recorder", &["srec_recorder::recorder"]),
+    ("rust_srec::scheduler", &["srec_recorder::recorder"]),
     ("rust_srec::session", &["srec_recorder::session"]),
     ("rust_srec::streamer", &["srec_recorder::streamer"]),
     ("rust_srec::api", &["srec_api::api"]),
@@ -621,6 +665,116 @@ mod tests {
             assert_eq!(rx.try_recv().unwrap().message, "api subtarget debug");
             assert!(rx.try_recv().is_err());
         });
+    }
+
+    /// Whether the filter `directive` expands to a target that `EnvFilter`
+    /// matches against events from `module` (a plain prefix match).
+    fn filter_reaches(directive: &str, module: &str) -> bool {
+        expand_filter_directive(directive)
+            .split(',')
+            .any(|expanded| module.starts_with(split_target_and_rest(expanded).0))
+    }
+
+    /// The source file of a workspace module path such as `srec_recorder::recorder::prober`.
+    fn module_source(module: &str) -> PathBuf {
+        let backend = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut segments = module.split("::");
+        let crate_name = segments.next().unwrap();
+        let mut path = if crate_name == "rust_srec" {
+            backend.join("src")
+        } else {
+            backend
+                .join("crates")
+                .join(crate_name.replace('_', "-"))
+                .join("src")
+        };
+        let segments: Vec<_> = segments.collect();
+        if segments.is_empty() {
+            return path.join("lib.rs");
+        }
+        for segment in &segments {
+            path.push(segment);
+        }
+        path.with_extension("rs")
+    }
+
+    #[test]
+    fn filters_on_old_module_names_reach_the_code_that_moved() {
+        // Old filter targets and a module that now logs what the old module logged.
+        let moved = [
+            ("rust_srec::scheduler", "srec_recorder::recorder::registry"),
+            ("rust_srec::monitor", "srec_recorder::recorder::prober"),
+            ("rust_srec::danmu", "srec_api::api::live_danmu"),
+            ("rust_srec::danmu::live", "srec_api::api::live_danmu"),
+            (
+                "rust_srec::database",
+                "rust_srec::services::maintenance::housekeeping",
+            ),
+            (
+                "rust_srec::database",
+                "rust_srec::services::legacy_upgrade::proxies",
+            ),
+            (
+                "rust_srec::database::maintenance::pruning",
+                "rust_srec::services::maintenance::pruning",
+            ),
+            (
+                "rust_srec::database::legacy_credential_upgrade",
+                "rust_srec::services::legacy_upgrade::credentials",
+            ),
+            (
+                "rust_srec::database::repositories",
+                "srec_pipeline::repositories::job",
+            ),
+            (
+                "rust_srec::database::repositories",
+                "srec_sqlite::repositories::streamer",
+            ),
+            ("rust_srec::baidupcs", "rust_srec::services::baidupcs_auth"),
+            ("rust_srec::pipeline", "srec_processors::processors::remux"),
+            ("rust_srec::pipeline", "rust_srec::services::pipeline_ports"),
+        ];
+        for (old, module) in moved {
+            assert!(
+                module_source(module).is_file(),
+                "{module} moved again; point the `{old}` alias at its new module"
+            );
+            assert!(
+                filter_reaches(&format!("{old}=debug"), module),
+                "a `{old}` filter misses {module}"
+            );
+        }
+        assert!(
+            !filter_reaches(
+                "rust_srec::pipeline=debug",
+                "srec_processors::baidupcs::login"
+            ),
+            "BaiduPCS logged under `rust_srec::baidupcs`, not `rust_srec::pipeline`"
+        );
+
+        // Every module the backend re-exports at its root from a workspace
+        // crate keeps its `rust_srec::<name>` filter.
+        let lib = std::fs::read_to_string(module_source("rust_srec")).unwrap();
+        let mut reexports = 0;
+        for line in lib.lines() {
+            let Some(path) = line
+                .strip_prefix("pub use ")
+                .and_then(|rest| rest.strip_suffix(';'))
+                .filter(|path| path.starts_with("srec_"))
+            else {
+                continue;
+            };
+            let (path, name) = match path.split_once(" as ") {
+                Some((path, name)) => (path, name),
+                None => (path, path.rsplit("::").next().unwrap()),
+            };
+            reexports += 1;
+            assert!(
+                filter_reaches(&format!("rust_srec::{name}=debug"), path),
+                "a `rust_srec::{name}` filter misses the re-exported {path}"
+            );
+        }
+        assert!(reexports > 0, "no re-exports found in the backend's lib.rs");
     }
 
     #[test]

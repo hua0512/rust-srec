@@ -8,6 +8,7 @@ pub mod engine_config;
 pub mod filename;
 pub mod filter;
 pub mod notification;
+pub mod pipeline_notification;
 pub mod processor;
 pub mod proxy;
 pub mod session;

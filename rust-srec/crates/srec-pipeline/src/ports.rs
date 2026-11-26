@@ -1,50 +1,13 @@
 //! Narrow ports decoupling the pipeline engine from recorder, configuration,
 //! and session/streamer persistence internals.
 
-use std::path::PathBuf;
-
 use async_trait::async_trait;
 use jiff::Timestamp;
 
 use crate::PipelineResult as Result;
 use srec_sqlite::models::job::DagPipelineDefinition;
 
-/// Post-commit notifications forwarded from the recording control plane to the
-/// pipeline engine.
-///
-/// Video and danmu segment rows and session-end state are already durably
-/// committed before these notifications are delivered.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PipelineNotification {
-    VideoSegmentCompleted {
-        session_id: String,
-        streamer_id: String,
-        segment_index: u32,
-        path: PathBuf,
-        auto_thumbnail_candidate: bool,
-    },
-    DanmuCollectionStarted {
-        session_id: String,
-        streamer_id: String,
-    },
-    DanmuSegmentCompleted {
-        session_id: String,
-        streamer_id: String,
-        segment_index: u32,
-        path: PathBuf,
-        message_count: u64,
-    },
-    DanmuCollectionStopped {
-        session_id: String,
-        total_count: u64,
-    },
-    SessionEnded {
-        session_id: String,
-        streamer_id: String,
-        cause: String,
-        should_run_session_complete: bool,
-    },
-}
+pub use srec_core::domain::pipeline_notification::PipelineNotification;
 
 /// Effective pipeline rules resolved for a streamer/session.
 #[derive(Debug, Clone, Default)]

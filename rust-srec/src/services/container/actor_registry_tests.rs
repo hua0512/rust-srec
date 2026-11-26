@@ -281,7 +281,7 @@ async fn actor_commit_survives_caller_drop_and_stays_nonblocking_during_gated_wr
             .deliver_pipeline_notification_for_test(PipelineNotification::SessionEnded {
                 session_id: session.id.clone(),
                 streamer_id: row.id.clone(),
-                cause: TerminalCause::UserDisabled,
+                cause: TerminalCause::UserDisabled.as_str().to_owned(),
                 should_run_session_complete: false,
             })
             .await;

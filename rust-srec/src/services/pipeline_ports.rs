@@ -13,13 +13,11 @@ use crate::database::models::{
 };
 use crate::database::repositories::{ConfigRepository, SessionRepository, StreamerRepository};
 use crate::pipeline::{
-    PipelineError, PipelineManager, PipelineNotification as EnginePipelineNotification,
-    PipelineResult, PipelineSessionMeta, PipelineSessionPort, PipelineSessionSegment,
-    PipelineSessionSummary, PipelineStreamerMeta, SessionPipelineConfig, SessionPipelineConfigPort,
+    PipelineError, PipelineManager, PipelineNotification, PipelineResult, PipelineSessionMeta,
+    PipelineSessionPort, PipelineSessionSegment, PipelineSessionSummary, PipelineStreamerMeta,
+    SessionPipelineConfig, SessionPipelineConfigPort,
 };
-use crate::recorder::{
-    PipelineDrainStatus, PipelineNotification as RecorderPipelineNotification, RecorderPipelinePort,
-};
+use crate::recorder::{PipelineDrainStatus, RecorderPipelinePort};
 use srec_recorder::{RecorderError, RecorderResult};
 
 fn to_pipeline_error(error: RecorderError) -> PipelineError {
@@ -374,69 +372,11 @@ impl PipelineManagerRecorderPort {
     }
 }
 
-fn map_recorder_notification(
-    notification: RecorderPipelineNotification,
-) -> EnginePipelineNotification {
-    match notification {
-        RecorderPipelineNotification::VideoSegmentCompleted {
-            session_id,
-            streamer_id,
-            segment_index,
-            path,
-            auto_thumbnail_candidate,
-        } => EnginePipelineNotification::VideoSegmentCompleted {
-            session_id,
-            streamer_id,
-            segment_index,
-            path,
-            auto_thumbnail_candidate,
-        },
-        RecorderPipelineNotification::DanmuCollectionStarted {
-            session_id,
-            streamer_id,
-        } => EnginePipelineNotification::DanmuCollectionStarted {
-            session_id,
-            streamer_id,
-        },
-        RecorderPipelineNotification::DanmuSegmentCompleted {
-            session_id,
-            streamer_id,
-            segment_index,
-            path,
-            message_count,
-        } => EnginePipelineNotification::DanmuSegmentCompleted {
-            session_id,
-            streamer_id,
-            segment_index,
-            path,
-            message_count,
-        },
-        RecorderPipelineNotification::DanmuCollectionStopped {
-            session_id,
-            total_count,
-        } => EnginePipelineNotification::DanmuCollectionStopped {
-            session_id,
-            total_count,
-        },
-        RecorderPipelineNotification::SessionEnded {
-            session_id,
-            streamer_id,
-            cause,
-            should_run_session_complete,
-        } => EnginePipelineNotification::SessionEnded {
-            session_id,
-            streamer_id,
-            cause: cause.as_str().to_owned(),
-            should_run_session_complete,
-        },
-    }
-}
-
 #[async_trait]
 impl RecorderPipelinePort for PipelineManagerRecorderPort {
-    async fn notify(&self, notification: RecorderPipelineNotification) -> RecorderResult<()> {
+    async fn notify(&self, notification: PipelineNotification) -> RecorderResult<()> {
         self.pipeline_manager
-            .handle_recorder_notification(map_recorder_notification(notification))
+            .handle_recorder_notification(notification)
             .await
             .map_err(pipeline_to_recorder_error)
     }

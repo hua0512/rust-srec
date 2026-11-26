@@ -640,7 +640,7 @@ impl ActorRegistry {
                         PipelineNotification::SessionEnded {
                             session_id: sid,
                             streamer_id: streamer_id.to_owned(),
-                            cause: TerminalCause::UserDisabled,
+                            cause: TerminalCause::UserDisabled.as_str().to_owned(),
                             should_run_session_complete: TerminalCause::UserDisabled
                                 .should_run_session_complete_pipeline(),
                         },
@@ -914,7 +914,7 @@ impl ActorRegistry {
                     PipelineNotification::SessionEnded {
                         session_id,
                         streamer_id: streamer_id.to_owned(),
-                        cause: TerminalCause::UserDisabled,
+                        cause: TerminalCause::UserDisabled.as_str().to_owned(),
                         should_run_session_complete: TerminalCause::UserDisabled
                             .should_run_session_complete_pipeline(),
                     },

@@ -4901,6 +4901,7 @@ dependencies = [
  "prost",
  "prost-build",
  "protox",
+ "proxy-target",
  "rand 0.10.4",
  "regex",
  "reqwest",
@@ -5264,6 +5265,17 @@ dependencies = [
  "miette",
  "prost-types",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "proxy-target"
+version = "0.1.0"
+dependencies = [
+ "percent-encoding",
+ "reqwest",
+ "thiserror 2.0.21",
+ "tokio",
+ "url",
 ]
 
 [[package]]
@@ -6782,8 +6794,8 @@ dependencies = [
  "jiff",
  "jiff-cron",
  "parking_lot",
- "percent-encoding",
  "pipeline-common",
+ "proxy-target",
  "rand 0.10.4",
  "regex",
  "reqwest",

@@ -8,7 +8,7 @@ Lower layers never depend on higher ones. Changing a lower crate affects every c
 
 | Layer | Crates | Purpose |
 | --- | --- | --- |
-| Primitives | `bytes-util`, `expgolomb`, `media-types`, `amf0`, `tars-codec`, `process-utils` | Bit/byte readers, Exp-Golomb, shared `Resolution`/`SplitReason`/codec info, AMF0, Tencent TARS codec (Huya), child-process helpers |
+| Primitives | `bytes-util`, `expgolomb`, `media-types`, `amf0`, `tars-codec`, `process-utils`, `proxy-target` | Bit/byte readers, Exp-Golomb, shared `Resolution`/`SplitReason`/codec info, AMF0, Tencent TARS codec (Huya), child-process helpers, the proxy endpoint and target types shared by `platforms-parser` and the backend (`srec-core` re-exports them) |
 | Codecs | `aac`, `h264`, `h265`, `av1` | Bitstream headers and parameter sets |
 | Containers | `flv`, `ts`, `mp4`, `hls` | FLV tag/header parsing and writing (incl. Enhanced RTMP, see `flv/enhanced-rtmp-v2.md`), MPEG-TS packets/PSI/PES/SCTE-35, ISOBMFF/fMP4 boxes and track merging, HLS segment data (`HlsData`, TS/fMP4 segments, stream profiles) |
 | Processing | `pipeline-common`, `flv-fix`, `hls-fix` | Generic processor pipeline and writer task; FLV and HLS repair/split operators |

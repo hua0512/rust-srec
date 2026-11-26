@@ -32,6 +32,7 @@ members = [
     "crates/tars-codec",
     "crates/pipeline-common",
     "crates/process-utils",
+    "crates/proxy-target",
     "crates/ts",
 ]
 

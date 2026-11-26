@@ -27,5 +27,6 @@ mod preset_template_timestamps;
 mod proxy_route_migration;
 mod recorder_store;
 mod retired_notification_subscription_migration;
+mod schema_mirrors;
 mod sqlite_claim_stress;
 mod timestamp_contract_inventory;

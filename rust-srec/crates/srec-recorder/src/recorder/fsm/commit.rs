@@ -614,7 +614,7 @@ impl StreamerFsm {
             PipelineNotification::SessionEnded {
                 session_id,
                 streamer_id: self.streamer_id.clone(),
-                cause,
+                cause: cause.as_str().to_owned(),
                 should_run_session_complete,
             },
         ));

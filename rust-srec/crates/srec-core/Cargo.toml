@@ -18,8 +18,8 @@ hex = { workspace = true }
 jiff = { workspace = true, features = ["tzdb-bundle-always"] }
 jiff-cron = { workspace = true }
 parking_lot = { workspace = true }
-percent-encoding = { workspace = true }
 pipeline-common = { path = "../../../crates/pipeline-common" }
+proxy-target = { path = "../../../crates/proxy-target" }
 rand = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true }

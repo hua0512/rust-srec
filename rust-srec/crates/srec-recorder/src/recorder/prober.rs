@@ -94,8 +94,7 @@ impl PlatformExtractorRunner {
                 Error::Proxy(proxy_error) => proxy_error,
                 other => crate::proxies::ProxyError::invalid(other.to_string()),
             })?;
-        let mut factory =
-            ExtractorFactory::new(client).with_proxy(crate::proxies::to_platforms_target(proxy));
+        let mut factory = ExtractorFactory::new(client).with_proxy(proxy.clone());
         match crate::proxies::danmu_proxy_for(crate::proxies::SystemProxy::current(), proxy) {
             Ok(tunnel) => factory = factory.with_tunnel(tunnel),
             Err(error) => debug!(%error, "no tunnel for raw connections on this route"),
