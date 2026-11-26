@@ -35,7 +35,8 @@ const RUNS: u64 = 1_000;
 const MAX_STEPS: usize = 6_000;
 /// Steps a stop may take to converge before it counts as stuck.
 const STOP_CONVERGENCE_STEPS: usize = 3_000;
-/// Steps of history kept for a violation report.
+/// Steps of history kept for a violation report. Runs skip the trace, which
+/// costs more than the steps; a seed that violates is replayed with it on.
 const TRACE_LEN: usize = 25;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -76,8 +77,19 @@ struct Violation {
 fn violations_of(checked: &[Invariant]) -> Vec<(Invariant, Violation)> {
     let mut found: HashMap<Invariant, Violation> = HashMap::new();
     for seed in 1..=RUNS {
-        let mut harness = Harness::new(seed);
+        let mut harness = Harness::new(seed, false);
         harness.run();
+        if !harness.violations.is_empty() {
+            // The harness is deterministic per seed, so the replay finds the
+            // same violations, now with their traces. A replay that diverges
+            // is ignored, so it cannot swap one invariant's report for another's.
+            let mut traced = Harness::new(seed, true);
+            traced.run();
+            let invariants = |h: &Harness| h.violations.iter().map(|v| v.0).collect::<Vec<_>>();
+            if invariants(&traced) == invariants(&harness) {
+                harness = traced;
+            }
+        }
         for (invariant, detail, trace) in harness.violations {
             if !checked.contains(&invariant) {
                 continue;
@@ -196,12 +208,14 @@ struct Harness {
     stop: Option<(Stop, usize)>,
     stopped: bool,
     step_no: usize,
+    /// Whether `trace` records the steps.
+    tracing: bool,
     trace: VecDeque<String>,
     violations: Vec<(Invariant, String, String)>,
 }
 
 impl Harness {
-    fn new(seed: u64) -> Self {
+    fn new(seed: u64, tracing: bool) -> Self {
         let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
         let clock = TestClock::new();
         let record_danmu = rng.pct(50);
@@ -239,6 +253,7 @@ impl Harness {
             stop: None,
             stopped: false,
             step_no: 0,
+            tracing,
             trace: VecDeque::new(),
             violations: Vec::new(),
         }
@@ -252,15 +267,17 @@ impl Harness {
 
     fn step(&mut self, input: FsmInput) {
         self.step_no += 1;
-        let label: String = format!("{input:?}").chars().take(160).collect();
-        self.trace.push_back(format!(
-            "#{} t+{:?} {label} :: {}",
-            self.step_no,
-            self.clock.now.duration_since(self.started_at),
-            phase_name(&self.fsm)
-        ));
-        if self.trace.len() > TRACE_LEN {
-            self.trace.pop_front();
+        if self.tracing {
+            let label: String = format!("{input:?}").chars().take(160).collect();
+            self.trace.push_back(format!(
+                "#{} t+{:?} {label} :: {}",
+                self.step_no,
+                self.clock.now.duration_since(self.started_at),
+                phase_name(&self.fsm)
+            ));
+            if self.trace.len() > TRACE_LEN {
+                self.trace.pop_front();
+            }
         }
 
         if matches!(
