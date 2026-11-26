@@ -6932,7 +6932,6 @@ name = "srec-recorder"
 version = "0.8.0"
 dependencies = [
  "async-trait",
- "base64 0.23.1",
  "bytes",
  "dashmap",
  "flate2",

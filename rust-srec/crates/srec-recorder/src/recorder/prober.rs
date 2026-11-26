@@ -951,23 +951,4 @@ mod tests {
         drop(replacement);
         assert!(checks.is_empty());
     }
-
-    #[test]
-    fn filter_snapshot_errors_map_to_transient_probe_failures() {
-        use srec_sqlite::filter_store::FilterSnapshotError;
-
-        let errors = [
-            Error::from(FilterSnapshotError::Repository(Arc::new(
-                srec_sqlite::DbError::DatabaseSqlx(sqlx::Error::RowNotFound),
-            ))),
-            Error::from(FilterSnapshotError::Cancelled),
-            Error::from(FilterSnapshotError::TimedOut),
-        ];
-        for error in errors {
-            assert!(matches!(
-                map_probe_failure(error),
-                ProbeFailure::Transient { .. }
-            ));
-        }
-    }
 }

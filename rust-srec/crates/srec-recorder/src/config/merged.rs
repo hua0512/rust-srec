@@ -786,10 +786,13 @@ mod tests {
         );
     }
 
-    /// With no layer stating anything, the resolved config is the default rather
-    /// than zeros, and `build` clamps whatever it is handed.
+    /// With no layer stating anything, the resolved danmu statistics are the
+    /// default rather than zeros, and `build` clamps whatever it is handed:
+    /// statistics limits, and the offline-check count and delay (count >= 1,
+    /// delay_ms >= 1000) so a typo can't park sessions in a pathological
+    /// hysteresis window.
     #[test]
-    fn danmu_statistics_defaults_and_clamps() {
+    fn build_defaults_and_clamps_unsafe_values() {
         let unset = MergedConfig::builder()
             .with_global(global_layer("mesio"))
             .build();
@@ -803,28 +806,14 @@ mod tests {
                     rate_bucket_secs: 0,
                     ..Default::default()
                 }),
-                ..Default::default()
-            })
-            .build();
-        assert!(clamped.danmu_statistics.top_talkers <= 500);
-        assert_eq!(clamped.danmu_statistics.rate_bucket_secs, 1);
-    }
-
-    /// Verifies floors: out-of-range values are clamped to safe minimums
-    /// (count >= 1, delay_ms >= 1000) so a typo can't park sessions in a
-    /// pathological hysteresis window.
-    #[test]
-    fn test_offline_check_floors() {
-        let config = MergedConfig::builder()
-            .with_global(global_layer("mesio"))
-            .with_platform(PlatformConfigLayer {
                 offline_check_count: Some(0),
                 offline_check_delay_ms: Some(50),
                 ..Default::default()
             })
             .build();
-
-        assert_eq!(config.offline_check_count, 1);
-        assert_eq!(config.offline_check_delay_ms, 1_000);
+        assert!(clamped.danmu_statistics.top_talkers <= 500);
+        assert_eq!(clamped.danmu_statistics.rate_bucket_secs, 1);
+        assert_eq!(clamped.offline_check_count, 1);
+        assert_eq!(clamped.offline_check_delay_ms, 1_000);
     }
 }

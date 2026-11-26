@@ -425,13 +425,13 @@ mod tests {
     use serde_json::json;
     use srec_core::domain::StreamerUrl;
     use srec_sqlite::repositories::SqlxConfigRepository;
-    use srec_sqlite::{init_pool, run_migrations};
+    use srec_sqlite::{init_pool_with_size, run_migrations};
 
     /// Extras reach extractors: account fields from any layer are removed
     /// once the layers are merged, nested option objects included.
     #[tokio::test]
     async fn merged_extras_carry_no_account_fields() {
-        let pool = init_pool("sqlite::memory:").await.unwrap();
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
         run_migrations(&pool).await.unwrap();
         sqlx::query("UPDATE platform_config SET platform_specific_config = ? WHERE id = 'platform-bilibili'")
             .bind(json!({"quality": 20000, "refresh_token": "platform-secret"}).to_string())
@@ -476,7 +476,7 @@ mod tests {
 
     #[tokio::test]
     async fn bilibili_quality_inherits_through_saved_template_and_streamer_options() {
-        let pool = init_pool("sqlite::memory:").await.unwrap();
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
         run_migrations(&pool).await.unwrap();
         sqlx::query("UPDATE platform_config SET platform_specific_config = ? WHERE id = 'platform-bilibili'")
             .bind(json!({"quality": 20000, "end_stream_on_danmu_stream_closed": false}).to_string())

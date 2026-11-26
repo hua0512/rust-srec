@@ -278,11 +278,15 @@ mod tests {
         // skip the broadcast on failure.
         use async_trait::async_trait;
 
-        struct AlwaysFailRepo;
+        /// Rejects the rows of streamer `s1` only.
+        struct FailingRepo;
         #[async_trait]
-        impl StreamerCheckHistoryRepository for AlwaysFailRepo {
-            async fn insert(&self, _: &StreamerCheckHistoryDbModel) -> srec_sqlite::DbResult<()> {
-                Err(srec_sqlite::DbError::other("simulated DB failure"))
+        impl StreamerCheckHistoryRepository for FailingRepo {
+            async fn insert(&self, row: &StreamerCheckHistoryDbModel) -> srec_sqlite::DbResult<()> {
+                if row.streamer_id == "s1" {
+                    return Err(srec_sqlite::DbError::other("simulated DB failure"));
+                }
+                Ok(())
             }
             async fn list_recent(
                 &self,
@@ -293,19 +297,28 @@ mod tests {
             }
         }
 
-        let repo = Arc::new(AlwaysFailRepo);
+        let repo = Arc::new(FailingRepo);
         let (writer, rx) = CheckHistoryWriter::new();
         let broadcaster = CheckHistoryBroadcaster::new(test_encoder());
         let mut sub = broadcaster.subscribe();
-        let cancel = CancellationToken::new();
-        let task = tokio::spawn(run(repo, rx, Some(broadcaster.clone()), cancel.clone()));
+        let task = tokio::spawn(run(
+            repo,
+            rx,
+            Some(broadcaster.clone()),
+            CancellationToken::new(),
+        ));
 
         writer.record(record("s1", "x"));
+        writer.record(record("s2", "y"));
+        // Closing the channel lets the drain task finish both records and exit.
+        drop(writer);
+        task.await.unwrap();
 
-        let res = tokio::time::timeout(std::time::Duration::from_millis(100), sub.recv()).await;
-        assert!(res.is_err(), "no broadcast on insert failure");
-
-        cancel.cancel();
-        let _ = task.await;
+        let delivered = sub.try_recv().expect("the stored record is broadcast");
+        assert_eq!(delivered.record.streamer_id, "s2");
+        assert!(
+            matches!(sub.try_recv(), Err(broadcast::error::TryRecvError::Empty)),
+            "no broadcast on insert failure"
+        );
     }
 }

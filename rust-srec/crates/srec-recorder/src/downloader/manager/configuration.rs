@@ -344,7 +344,6 @@ mod tests {
     async fn manager_with_repository() -> (DownloadManager, sqlx::SqlitePool) {
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
-            .acquire_timeout(std::time::Duration::from_millis(50))
             .connect("sqlite::memory:")
             .await
             .unwrap();
@@ -413,28 +412,10 @@ mod tests {
         );
     }
 
+    /// Anything but a missing row fails the resolution instead of falling back
+    /// to the default engine configuration.
     #[tokio::test]
-    async fn repository_timeouts_never_fall_back_to_default() {
-        let (manager, pool) = manager_with_repository().await;
-        let _occupied_connection = pool.acquire().await.unwrap();
-        let overrides = serde_json::json!({"FFMPEG": {"timeout_secs": 7}});
-        for (id, overrides) in [("custom", None), ("FFMPEG", Some(&overrides))] {
-            let result = manager.resolve_engine(Some(id), overrides).await;
-            assert!(matches!(
-                result,
-                Err(crate::Error::Db(DbError::DatabaseSqlx(
-                    sqlx::Error::PoolTimedOut
-                )))
-            ));
-        }
-        assert!(
-            manager.resolve_engine(None, None).await.is_ok(),
-            "unspecified engine does not require repository lookup"
-        );
-    }
-
-    #[tokio::test]
-    async fn malformed_base_and_overrides_fail_instead_of_resetting_configuration() {
+    async fn resolution_errors_fail_instead_of_falling_back_to_defaults() {
         let (manager, pool) = manager_with_repository().await;
         insert_config(&pool, "malformed", "{").await;
         assert!(
@@ -465,6 +446,29 @@ mod tests {
             };
             assert!(!error.to_string().contains("private-token"));
         }
+
+        // A repository error other than a missing row.
+        sqlx::query("DROP TABLE engine_configuration")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let overrides = serde_json::json!({"FFMPEG": {"timeout_secs": 7}});
+        for (id, overrides) in [("custom", None), ("FFMPEG", Some(&overrides))] {
+            let result = manager.resolve_engine(Some(id), overrides).await;
+            assert!(
+                matches!(
+                    result,
+                    Err(crate::Error::Db(DbError::DatabaseSqlx(
+                        sqlx::Error::Database(_)
+                    )))
+                ),
+                "{id}"
+            );
+        }
+        assert!(
+            manager.resolve_engine(None, None).await.is_ok(),
+            "unspecified engine does not require repository lookup"
+        );
     }
 
     #[test]

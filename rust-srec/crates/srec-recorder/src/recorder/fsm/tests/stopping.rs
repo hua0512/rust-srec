@@ -239,8 +239,9 @@ fn credential_retire_requires_exact_match_and_never_commits_on_unconfirmed_or_ti
     assert!(matches!(fsm.session, SessionSlot::Open(_)));
     assert!(matches!(fsm.monitor, MonitorPhase::Idle { .. }));
 
-    // Case 2: 20s deadline timeout without download confirmation -> NEVER commits EndForCredentialRetirement.
-    let (mut fsm_to, _) =
+    // Case 2: 20s deadline timeout without download confirmation -> NEVER commits
+    // EndForCredentialRetirement, and the streamer is still checked after the late cancel.
+    let (mut fsm_to, attempt_to) =
         open_running_session(&clock, base_config(), "sess-ret-to", Some(binding.clone()));
     fsm_to.step(
         clock.ctx(),
@@ -255,6 +256,18 @@ fn credential_retire_requires_exact_match_and_never_commits_on_unconfirmed_or_ti
     assert!(fsm_to.lingering_physical_lease);
     assert!(matches!(fsm_to.session, SessionSlot::Open(_)));
     assert!(matches!(fsm_to.monitor, MonitorPhase::Idle { .. }));
+    fsm_to.step(
+        clock.ctx(),
+        FsmInput::DownloadEnded {
+            attempt_id: attempt_to,
+            event: cancelled_event("sess-ret-to", DownloadStopCause::StreamerDisabled),
+        },
+    );
+    fsm_to.step(clock.ctx(), FsmInput::PhysicalLeaseReleased);
+    let next = fsm_to
+        .next_deadline(clock.now, clock.wall)
+        .expect("the streamer is still checked");
+    assert!(next <= clock.now + Duration::from_millis(fsm_to.config.check_interval_ms) * 2);
 
     // Case 3: Both download and danmu confirm before 20s -> commits EndForCredentialRetirement and stays Idle.
     let (mut fsm_ok, attempt_ok) =
@@ -701,40 +714,6 @@ fn credential_retirement_matches_the_account_its_startup_switched_to() {
         },
     );
     assert!(matches!(fsm.monitor, MonitorPhase::Stopping(_)));
-}
-
-#[test]
-fn credential_retire_that_times_out_keeps_monitoring_after_the_late_cancel() {
-    let mut clock = TestClock::new();
-    let binding = sample_binding("p1", 1);
-    let mut cfg = base_config();
-    cfg.managed_credentials = true;
-    let (mut fsm, attempt_id) = open_running_session(&clock, cfg, "sess-1", Some(binding.clone()));
-    fsm.step(
-        clock.ctx(),
-        FsmInput::CredentialRetire {
-            session_id: "sess-1".into(),
-            binding,
-        },
-    );
-    clock.advance(STOP_DEADLINE_DURATION + Duration::from_secs(1));
-    fsm.step(clock.ctx(), FsmInput::TimerFired);
-    assert!(matches!(fsm.session, SessionSlot::Open(_)));
-
-    // The engine exits with the stop cause the retirement requested.
-    fsm.step(
-        clock.ctx(),
-        FsmInput::DownloadEnded {
-            attempt_id,
-            event: cancelled_event("sess-1", DownloadStopCause::StreamerDisabled),
-        },
-    );
-    fsm.step(clock.ctx(), FsmInput::PhysicalLeaseReleased);
-
-    let next = fsm
-        .next_deadline(clock.now, clock.wall)
-        .expect("the streamer is still checked");
-    assert!(next <= clock.now + Duration::from_millis(fsm.config.check_interval_ms) * 2);
 }
 
 #[test]

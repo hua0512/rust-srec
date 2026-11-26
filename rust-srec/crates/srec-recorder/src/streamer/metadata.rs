@@ -213,30 +213,6 @@ impl StreamerMetadata {
 mod tests {
     use super::*;
 
-    fn create_test_metadata() -> StreamerMetadata {
-        StreamerMetadata {
-            id: "streamer-1".to_string(),
-            name: "Test Streamer".to_string(),
-            url: "https://twitch.tv/test".to_string(),
-            avatar_url: None,
-            platform_config_id: "platform-twitch".to_string(),
-            template_config_id: None,
-            state: StreamerState::NotLive,
-            priority: Priority::Normal,
-            consecutive_error_count: 0,
-            last_error: None,
-            disabled_until: None,
-            last_live_time: None,
-            streamer_specific_config: None,
-            platform_metadata: None,
-            offline_check_count: default_offline_check_count(),
-            offline_check_delay_ms: default_offline_check_delay_ms(),
-            created_at: Timestamp::now(),
-            updated_at: Timestamp::now(),
-            deleted_at: None,
-        }
-    }
-
     #[test]
     fn download_failure_threshold_tracks_offline_check_count_with_safety_floor() {
         assert_eq!(download_failure_threshold(1), 2);
@@ -280,32 +256,6 @@ mod tests {
         for (url, expected) in cases {
             let parsed = StreamerUrl::new(url).unwrap();
             assert_eq!(detect_platform_name(&parsed), expected, "{url}");
-        }
-    }
-
-    mod deprecated_compatibility {
-        #![allow(deprecated)]
-
-        use super::*;
-
-        #[test]
-        #[deprecated(
-            note = "effective_offline_check_* aliases and this test will be removed in a future release"
-        )]
-        fn effective_offline_check_aliases_remove_in_future_release() {
-            let mut value = serde_json::to_value(create_test_metadata()).unwrap();
-            let object = value.as_object_mut().unwrap();
-            let count = object.remove("offline_check_count").unwrap();
-            let delay = object.remove("offline_check_delay_ms").unwrap();
-            object.insert("effective_offline_check_count".to_string(), count);
-            object.insert("effective_offline_check_delay_ms".to_string(), delay);
-
-            let restored: StreamerMetadata = serde_json::from_value(value).unwrap();
-            assert_eq!(restored.offline_check_count, DEFAULT_OFFLINE_CHECK_COUNT);
-            assert_eq!(
-                restored.offline_check_delay_ms,
-                DEFAULT_OFFLINE_CHECK_DELAY_MS
-            );
         }
     }
 }

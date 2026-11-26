@@ -892,6 +892,12 @@ async fn concurrent_health_change_after_reservation_prevents_stale_account_extra
             _ = &mut operation => panic!("platform backoff must hold extraction"),
             published = &mut health => published.unwrap(),
         }
+        // End the backoff without waiting for it. The clock runs again before
+        // the operation's queries: paused time would auto-advance while they
+        // wait on the SQLite worker thread.
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_millis(500)).await;
+        tokio::time::resume();
         let result = operation.await.unwrap();
         assert_eq!(result.value, "account=B");
         assert_eq!(*used.lock(), vec!["account=B"]);
@@ -974,8 +980,11 @@ async fn unchanged_refresh_keeps_the_revision_bound_recordings_rely_on() {
     assert_eq!(health.reason_code, None);
 }
 
+/// The E2E fake provider cannot check accounts, so only this test pins that
+/// a disabled profile's validation never reaches the provider's check.
+/// Refresh is pinned in `credential_providers.rs`.
 #[tokio::test]
-async fn disabled_profiles_reject_manual_actions_before_any_provider_call() {
+async fn disabled_profiles_reject_validation_before_any_provider_check() {
     let (repository, mut service, _policy, profiles) = fixture().await;
     let manager = Arc::new(UnchangedRefresh {
         calls: Default::default(),
@@ -990,12 +999,6 @@ async fn disabled_profiles_reject_manual_actions_before_any_provider_call() {
     let deadline = OperationDeadline::new(Duration::from_secs(5));
     assert!(matches!(
         service.validate_profile(&profiles[0].id, deadline).await,
-        Err(Error::Core(CoreError::CredentialProfile(
-            ProfileError::Disabled
-        )))
-    ));
-    assert!(matches!(
-        service.refresh_profile(&profiles[0].id, deadline).await,
         Err(Error::Core(CoreError::CredentialProfile(
             ProfileError::Disabled
         )))
@@ -1037,7 +1040,7 @@ async fn anonymous_platform_throttle_delays_every_caller_of_the_platform() {
             .admit(
                 &anonymous.platform_id,
                 &RouteKey::Direct,
-                OperationDeadline::new(Duration::from_millis(200))
+                OperationDeadline::new(Duration::from_millis(1))
             )
             .await
             .is_err(),

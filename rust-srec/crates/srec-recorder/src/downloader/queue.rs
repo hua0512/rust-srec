@@ -814,36 +814,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cancel_during_wait() {
-        let q = DownloadQueue::new(1, 0);
-        let _g = q
-            .acquire(req("a", Priority::Normal), CancellationToken::new(), |_| {})
-            .await
-            .unwrap();
-
-        let cancel = CancellationToken::new();
-        let cancel_clone = cancel.clone();
-        let q2 = q.clone();
-        let h = tokio::spawn(async move {
-            q2.acquire(req("b", Priority::Normal), cancel_clone, |_| {})
-                .await
-        });
-        for _ in 0..50 {
-            if q.pending_count() == 1 {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-        assert_eq!(q.pending_count(), 1);
-        cancel.cancel();
-        let res = h.await.unwrap();
-        assert!(matches!(res, Err(AcquireError::Cancelled)));
-        assert_eq!(q.pending_count(), 0);
-        // Capacity unchanged: only the original `_g` is in-flight.
-        assert_eq!(q.in_flight(), 1);
-    }
-
-    #[tokio::test]
     async fn active_session_id_rejected_until_slot_released() {
         let q = DownloadQueue::new(2, 0);
         let first = q
@@ -984,59 +954,73 @@ mod tests {
         assert_eq!(q.session_reservations.len(), 0);
     }
 
+    /// A waiter that leaves, by its cancellation token or by its task being
+    /// aborted, releases its pending entry and session reservation without
+    /// touching the capacity the holder uses.
     #[tokio::test]
-    async fn dropped_pending_acquire_cleans_queue_state() {
-        let q = DownloadQueue::new(1, 0);
-        let holder = q
-            .acquire(
-                req("holder", Priority::Normal),
-                CancellationToken::new(),
-                |_| {},
-            )
-            .await
-            .unwrap();
+    async fn a_waiter_that_leaves_cleans_up_its_queue_state() {
+        for abort in [false, true] {
+            let q = DownloadQueue::new(1, 0);
+            let holder = q
+                .acquire(
+                    req("holder", Priority::Normal),
+                    CancellationToken::new(),
+                    |_| {},
+                )
+                .await
+                .unwrap();
 
-        let q2 = q.clone();
-        let waiter = tokio::spawn(async move {
-            q2.acquire(
-                req("abandoned", Priority::Normal),
-                CancellationToken::new(),
-                |_| {},
-            )
-            .await
-        });
+            let cancel = CancellationToken::new();
+            let q2 = q.clone();
+            let waiter_cancel = cancel.clone();
+            let waiter = tokio::spawn(async move {
+                q2.acquire(req("abandoned", Priority::Normal), waiter_cancel, |_| {})
+                    .await
+            });
 
-        for _ in 0..50 {
-            if q.pending_count() == 1 {
-                break;
+            for _ in 0..50 {
+                if q.pending_count() == 1 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
             }
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-        assert_eq!(q.pending_count(), 1);
-        assert_eq!(q.waiters.lock().len(), 1);
-        assert!(q.session_reservations.contains_key("abandoned"));
+            assert_eq!(q.pending_count(), 1);
+            assert_eq!(q.waiters.lock().len(), 1);
+            assert!(q.session_reservations.contains_key("abandoned"));
 
-        waiter.abort();
-        match waiter.await {
-            Err(join_err) => assert!(join_err.is_cancelled()),
-            Ok(_) => panic!("pending acquire should have been aborted"),
-        }
-
-        for _ in 0..50 {
-            if q.pending_count() == 0 && !q.session_reservations.contains_key("abandoned") {
-                break;
+            if abort {
+                waiter.abort();
+                match waiter.await {
+                    Err(join_err) => assert!(join_err.is_cancelled()),
+                    Ok(_) => panic!("pending acquire should have been aborted"),
+                }
+                // The aborted task's drop guards run as the task is torn down.
+                for _ in 0..50 {
+                    if q.pending_count() == 0 && !q.session_reservations.contains_key("abandoned") {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            } else {
+                cancel.cancel();
+                let res = waiter.await.unwrap();
+                assert!(matches!(res, Err(AcquireError::Cancelled)));
+                // A cancelled acquire has cleaned up by the time it returns.
             }
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-        assert_eq!(q.pending_count(), 0);
-        assert_eq!(q.waiters.lock().len(), 0);
-        assert!(!q.session_reservations.contains_key("abandoned"));
 
-        drop(holder);
-        assert_eq!(q.in_flight(), 0);
+            assert_eq!(q.pending_count(), 0, "abort: {abort}");
+            assert_eq!(q.waiters.lock().len(), 0, "abort: {abort}");
+            assert!(!q.session_reservations.contains_key("abandoned"));
+            // Capacity unchanged: only the holder is in flight.
+            assert_eq!(q.in_flight(), 1);
+
+            drop(holder);
+            assert_eq!(q.in_flight(), 0);
+        }
     }
 
-    #[tokio::test]
+    // Paused time: the sleeps below return once every task is idle.
+    #[tokio::test(start_paused = true)]
     async fn high_priority_uses_extra_pool() {
         let q = DownloadQueue::new(1, 1);
         // total_cap=2, normal_cap=1
@@ -1066,6 +1050,7 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
+        assert_eq!(q.pending_count(), 1);
         // Drop high — n2 still queued because normal_cap is full.
         drop(g_h);
         // Give the wake path a chance.

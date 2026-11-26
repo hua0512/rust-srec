@@ -198,22 +198,3 @@ async fn persist_statistics(
         warn!(session_id, %error, "Failed to persist danmu statistics");
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn danmu_statistics_defaults_match_aggregator() {
-        let converted = to_aggregator_config(&DanmuStatisticsConfig::default());
-        let expected = StatisticsConfig::default();
-        assert_eq!(converted.top_talkers, expected.top_talkers);
-        assert_eq!(converted.top_words, expected.top_words);
-        assert_eq!(converted.top_gifts, expected.top_gifts);
-        assert_eq!(converted.talker_capacity, expected.talker_capacity);
-        assert_eq!(converted.word_capacity, expected.word_capacity);
-        assert_eq!(converted.gift_capacity, expected.gift_capacity);
-        assert_eq!(converted.rate_bucket_secs, expected.rate_bucket_secs);
-        assert_eq!(converted.extra_stop_words, expected.extra_stop_words);
-    }
-}

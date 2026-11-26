@@ -437,6 +437,20 @@ impl OutputRootGate {
         resolve_root(output_dir, &self.configured_roots)
     }
 
+    /// Ends the cooldown of every tracked root, as if a cooldown had passed
+    /// since its last attempt. The cooldown counts wall-clock seconds, which
+    /// paused Tokio time does not move.
+    #[cfg(test)]
+    pub(crate) fn end_cooldown_for_test(&self) {
+        let cooldown = self.cooldown.as_secs().max(1);
+        for entry in self.roots.iter() {
+            let last = entry.last_attempt_unix.load(Ordering::Acquire);
+            entry
+                .last_attempt_unix
+                .store(last.saturating_sub(cooldown), Ordering::Release);
+        }
+    }
+
     /// Snapshot for the `/health` endpoint. Returns one entry per tracked
     /// root, including healthy entries (which exist if the gate previously
     /// flipped to Degraded and back).
@@ -684,18 +698,14 @@ mod tests {
     // ---------- resolve_root ----------
 
     #[test]
-    fn resolve_root_picks_longest_configured_match() {
+    fn resolve_root_prefers_the_longest_configured_root_then_two_components() {
         let configured = vec![PathBuf::from("/rec"), PathBuf::from("/rec/sub")];
         assert_eq!(
             resolve_root(Path::new("/rec/sub/X"), &configured),
             PathBuf::from("/rec/sub")
         );
-    }
 
-    #[test]
-    fn resolve_root_fallback_two_components_for_home_layout() {
-        let configured: Vec<PathBuf> = vec![];
-        let r = resolve_root(Path::new("/home/user/recordings/X/20260415"), &configured);
+        let r = resolve_root(Path::new("/home/user/recordings/X/20260415"), &[]);
         // Critically NOT /home alone — that would short-circuit other users.
         assert!(r.starts_with("/home/user"), "got: {:?}", r);
     }
@@ -703,7 +713,7 @@ mod tests {
     // ---------- check / record_failure / mark_healthy ----------
 
     #[tokio::test]
-    async fn record_failure_then_check_returns_blocked() {
+    async fn a_failure_blocks_its_own_root_only() {
         let gate = make_gate(30);
         gate.record_failure(Path::new("/rec/huya/X"), &enoent());
         // Subsequent check on the same root, before cooldown, must be blocked.
@@ -721,13 +731,7 @@ mod tests {
             "unexpected root: {}",
             root_str
         );
-    }
-
-    #[tokio::test]
-    async fn record_failure_unrelated_root_does_not_block_other_root() {
-        let gate = make_gate(30);
-        gate.record_failure(Path::new("/rec/huya/X"), &enoent());
-        // A path under a different root should be unaffected.
+        // A path under a different root is unaffected.
         assert!(gate.check(Path::new("/data/twitch/Y")).is_ok());
     }
 

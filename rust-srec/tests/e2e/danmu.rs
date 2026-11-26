@@ -10,6 +10,7 @@
 
 use std::path::Path;
 
+use reqwest::StatusCode;
 use serde_json::{Value, json};
 
 use crate::support::fake_danmu::FakeDanmu;
@@ -128,6 +129,18 @@ async fn danmu_chat_is_recorded_beside_the_video_as_a_danmu_output() {
         "{contents}"
     );
     assert_eq!(danmu.connections(), 1);
+
+    // The session's statistics count the chat the recording collected. The
+    // collector saves them as it stops, which can be after the outputs appear.
+    let path = format!("/api/sessions/{session_id}/danmu-statistics");
+    let stats = eventually(WAIT, "the session's danmu statistics", || async {
+        let response = app.get(&path, &token).await;
+        (response.status == StatusCode::OK).then_some(response.body)
+    })
+    .await;
+    assert_eq!(stats["total_danmus"], 2, "{stats}");
+    assert_eq!(stats["chat_count"], 2, "{stats}");
+    assert_eq!(stats["unique_talkers"], 2, "{stats}");
 
     app.shutdown().await;
 }
