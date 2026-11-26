@@ -60,6 +60,8 @@ impl ActorHarness {
                 Box::pin(async { Ok(crate::monitor::LiveStatus::Offline) })
             })));
         let registry = container.actor_registry.clone();
+        // The crash-restart and config-retry tests wait out these delays.
+        registry.set_retry_delays_for_test(Duration::from_millis(50), Duration::from_millis(50));
         Self {
             container,
             pool,
@@ -1201,7 +1203,7 @@ async fn a_panicking_actor_has_its_recording_stopped_and_restarts() {
         .registry
         .supervise_panicking_actor_for_test(&row.id, 1_000);
     let stopped = tokio::time::timeout(Duration::from_secs(5), engine.stopping.notified()).await;
-    // The first restart waits out a two-second backoff.
+    // The first restart waits out the harness's 50 ms backoff.
     let restarted = eventually(Duration::from_secs(10), || {
         harness.registry.has_actor(&row.id)
     })
