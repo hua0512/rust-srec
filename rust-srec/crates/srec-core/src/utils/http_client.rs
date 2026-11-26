@@ -121,11 +121,14 @@ mod tests {
         install_rustls_provider();
         let cache = ClientCache::new(2);
         let builds = std::cell::Cell::new(0);
+        // Building a reqwest client loads the TLS roots, so the cache stores
+        // clones of one client; the counter still counts every build call.
+        let prototype = reqwest::Client::new();
         let client = |key: u8| {
             cache
                 .get_or_try_build(&key, || {
                     builds.set(builds.get() + 1);
-                    Ok::<_, ()>(reqwest::Client::new())
+                    Ok::<_, ()>(prototype.clone())
                 })
                 .unwrap()
         };
