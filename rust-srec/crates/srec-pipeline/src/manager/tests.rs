@@ -548,11 +548,8 @@ impl SessionRepository for TestSessionRepository {
             .lock()
             .expect("lock poisoned")
             .get(session_id)
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .take(limit)
-            .collect())
+            .map(|segments| segments.iter().take(limit).cloned().collect())
+            .unwrap_or_default())
     }
 
     async fn list_session_segments_page(
@@ -566,12 +563,15 @@ impl SessionRepository for TestSessionRepository {
             .lock()
             .expect("lock poisoned")
             .get(session_id)
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .skip(start)
-            .take(pagination.limit as usize)
-            .collect())
+            .map(|segments| {
+                segments
+                    .iter()
+                    .skip(start)
+                    .take(pagination.limit as usize)
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default())
     }
 
     async fn next_session_segment_index(&self, session_id: &str) -> DbResult<u32> {
