@@ -20,7 +20,6 @@ jiff-cron = { workspace = true }
 parking_lot = { workspace = true }
 pipeline-common = { path = "../../../crates/pipeline-common" }
 proxy-target = { path = "../../../crates/proxy-target" }
-rand = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true }
 rustls = { workspace = true }

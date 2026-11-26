@@ -980,6 +980,21 @@ async fn transient_errors_alert_only_at_the_threshold_and_clearing_them_restores
                 }
                 other => panic!("unexpected outcome: {other:?}"),
             }
+            // Below the threshold the row stays NOT_LIVE with no backoff.
+            let (state, until): (String, Option<i64>) =
+                sqlx::query_as("SELECT state, disabled_until FROM streamers WHERE id = 's1'")
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            assert_eq!(
+                state,
+                if step >= 3 {
+                    "TEMPORAL_DISABLED"
+                } else {
+                    "NOT_LIVE"
+                }
+            );
+            assert_eq!(until.is_some(), step >= 3);
         }
 
         store
