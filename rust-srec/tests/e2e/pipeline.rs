@@ -2010,6 +2010,41 @@ async fn cancelling_a_dag_stops_its_steps_and_retry_failed_reruns_every_failed_a
     assert_eq!(job(&app, &token, &failed_job).await["retry_count"], 1);
     assert_eq!(app.dag(&token, &completed).await["status"], "COMPLETED");
 
+    // A step whose failed job waits an hour for its automatic retry still counts as a
+    // stopped step; one that has no job yet does not.
+    let now = now_ms();
+    let steps = vec![
+        inline("waits", UNCLAIMED_JOB_TYPE, Value::Null, &[]),
+        inline("after", UNCLAIMED_JOB_TYPE, Value::Null, &["waits"]),
+    ];
+    let definition = definition("Awaiting retry", steps).to_string();
+    app.run_sql(&format!(
+        "INSERT INTO dag_execution (id, dag_definition, status, created_at, updated_at, \
+             total_steps, completed_steps, failed_steps) VALUES ('dag-awaiting-retry', \
+             '{definition}', 'PROCESSING', {now}, {now}, 2, 0, 0);
+         INSERT INTO job (id, job_type, status, config, state, created_at, updated_at, input, \
+             outputs, priority, retry_count, pipeline_id, started_at, completed_at, error, \
+             retry_after) VALUES ('dag-awaiting-retry-job', '{UNCLAIMED_JOB_TYPE}', 'FAILED', \
+             '{{}}', '{{}}', {now}, {now}, '[\"/recordings/clip.flv\"]', '[]', 0, 0, \
+             'dag-awaiting-retry', {now}, {now}, 'boom', {retry_after});
+         INSERT INTO dag_step_execution (id, dag_id, step_id, job_id, status, \
+             depends_on_step_ids, created_at, updated_at) VALUES \
+             ('dag-awaiting-retry-waits', 'dag-awaiting-retry', 'waits', \
+             'dag-awaiting-retry-job', 'PROCESSING', '[]', {now}, {now}), \
+             ('dag-awaiting-retry-after', 'dag-awaiting-retry', 'after', NULL, 'BLOCKED', \
+             '[\"waits\"]', {now}, {now});
+         UPDATE job SET dag_step_execution_id = 'dag-awaiting-retry-waits' \
+             WHERE id = 'dag-awaiting-retry-job';",
+        retry_after = now + 3_600_000,
+    ))
+    .await;
+    let cancelled = delete_ok(&app, &token, "/api/pipeline/dag/dag-awaiting-retry").await;
+    assert_eq!(cancelled["cancelled_steps"], 1, "{cancelled}");
+    let after = app.dag(&token, "dag-awaiting-retry").await;
+    assert_eq!(after["status"], "CANCELLED", "{after}");
+    assert_eq!(step(&after, "waits")["status"], "CANCELLED", "{after}");
+    assert_eq!(step(&after, "after")["status"], "CANCELLED", "{after}");
+
     app.shutdown().await;
 }
 
@@ -2713,10 +2748,43 @@ async fn a_step_timeout_fails_a_job_that_outlives_it() {
     app.shutdown().await;
 }
 
-/// A queued job whose type no worker pool claims would wait forever, so
-/// startup fails it; a queued job of a known type is left to run.
+/// SQL for a workflow `A -> B` interrupted while A was PROCESSING, where A's job row is
+/// `job` (`None` when the row is gone).
+fn interrupted_chain_sql(dag_id: &str, job: Option<(&str, &str)>, now: i64) -> String {
+    let steps = vec![execute("A", "exit 0", &[]), execute("B", "exit 0", &["A"])];
+    let definition = definition(&format!("Interrupted {dag_id}"), steps).to_string();
+    let (job_column, job_rows, link) = match job {
+        Some((job_id, error)) => (
+            format!("'{job_id}'"),
+            format!(
+                "INSERT INTO job (id, job_type, status, config, state, created_at, updated_at, \
+                     input, outputs, priority, retry_count, pipeline_id, started_at, \
+                     completed_at, error, retry_after) VALUES ('{job_id}', 'execute', 'FAILED', \
+                     '{{}}', '{{}}', {now}, {now}, '[\"/recordings/clip.flv\"]', '[]', 0, 0, \
+                     '{dag_id}', {now}, {now}, '{error}', NULL);"
+            ),
+            format!("UPDATE job SET dag_step_execution_id = '{dag_id}-A' WHERE id = '{job_id}';"),
+        ),
+        None => ("NULL".to_string(), String::new(), String::new()),
+    };
+    format!(
+        "INSERT INTO dag_execution (id, dag_definition, status, created_at, updated_at, \
+             total_steps, completed_steps, failed_steps) VALUES ('{dag_id}', '{definition}', \
+             'PROCESSING', {now}, {now}, 2, 0, 0);
+         {job_rows}
+         INSERT INTO dag_step_execution (id, dag_id, step_id, job_id, status, \
+             depends_on_step_ids, created_at, updated_at) VALUES \
+             ('{dag_id}-A', '{dag_id}', 'A', {job_column}, 'PROCESSING', '[]', {now}, {now}), \
+             ('{dag_id}-B', '{dag_id}', 'B', NULL, 'BLOCKED', '[\"A\"]', {now}, {now});
+         {link}"
+    )
+}
+
+/// Startup fails what nothing can run any more: a queued job no processor claims, and a
+/// workflow whose running step lost its job row or whose job failed without the failure
+/// reaching the workflow. Everything else is left to run.
 #[tokio::test]
-async fn startup_fails_queued_jobs_no_processor_claims_and_leaves_the_rest_to_run() {
+async fn startup_fails_unclaimable_jobs_and_workflows_stranded_by_a_lost_or_failed_job() {
     let now = now_ms();
     let app = TestApp::start_seeded(&format!(
         "INSERT INTO job (id, job_type, status, config, state, created_at, updated_at, input, \
@@ -2724,10 +2792,29 @@ async fn startup_fails_queued_jobs_no_processor_claims_and_leaves_the_rest_to_ru
          ('job-orphaned', 'totally_not_a_processor', 'PENDING', '{{}}', '{{}}', {now}, {now}, \
              '[\"/recordings/orphaned.flv\"]', '[]', 0, 'streamer-seeded', 'session-seeded', 0), \
          ('job-known', 'execute', 'PENDING', '{{\"command\":\"exit 0\"}}', '{{}}', {now}, {now}, \
-             '[\"/recordings/known.flv\"]', '[]', 0, 'streamer-seeded', 'session-seeded', 0);"
+             '[\"/recordings/known.flv\"]', '[]', 0, 'streamer-seeded', 'session-seeded', 0);
+         {lost}
+         {stranded}",
+        lost = interrupted_chain_sql("dag-lost-job", None, now),
+        stranded =
+            interrupted_chain_sql("dag-stranded", Some(("dag-stranded-job", "disk full")), now),
     ))
     .await;
     let token = app.admin_token().await;
+
+    // Startup recovery has already run when the API answers.
+    for (dag_id, reason) in [
+        ("dag-lost-job", "job row no longer exists"),
+        ("dag-stranded", "disk full"),
+    ] {
+        let dag = app.dag(&token, dag_id).await;
+        assert_eq!(dag["status"], "FAILED", "{dag}");
+        let error = dag["error"].as_str().unwrap_or_default();
+        assert!(error.contains(reason), "{dag}");
+        assert_eq!(step(&dag, "A")["status"], "FAILED", "{dag}");
+        assert_eq!(step(&dag, "B")["status"], "CANCELLED", "{dag}");
+        assert_eq!(step(&dag, "B")["job_id"], Value::Null, "{dag}");
+    }
 
     let orphaned = job(&app, &token, "job-orphaned").await;
     assert_eq!(orphaned["status"], "FAILED", "{orphaned}");
