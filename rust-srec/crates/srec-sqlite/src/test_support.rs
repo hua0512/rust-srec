@@ -1,4 +1,5 @@
-//! Per-connection SQL observations for migrated SQLite regression fixtures.
+//! Fixtures for tests on migrated SQLite databases: per-connection SQL
+//! observations and migrated database files.
 
 use std::collections::HashMap;
 use std::ffi::{CStr, c_int, c_uint, c_void};
@@ -92,4 +93,31 @@ impl Drop for SqlTrace {
             traces.remove(&self.key);
         }
     }
+}
+
+/// Write a database with every migration applied to a new file at `path`, for
+/// fixtures that need a file, such as a pool of several connections. The
+/// migrations run on a single-connection in-memory database, so the template
+/// [`crate::run_migrations`] keeps for those is reused, and its image is
+/// written out as the file. The file is in rollback-journal mode; the pool
+/// the caller opens on it switches it to WAL.
+///
+/// # Panics
+///
+/// When the database cannot be migrated or the file cannot be written.
+pub async fn write_migrated_database(path: &std::path::Path) {
+    let pool = crate::init_pool_with_size("sqlite::memory:", 1)
+        .await
+        .expect("open an in-memory database");
+    crate::run_migrations(&pool)
+        .await
+        .expect("migrate the in-memory database");
+    let mut connection = pool.acquire().await.expect("acquire its connection");
+    let image = connection
+        .serialize(None)
+        .await
+        .expect("serialize the migrated database");
+    drop(connection);
+    pool.close().await;
+    std::fs::write(path, &*image).expect("write the migrated database file");
 }

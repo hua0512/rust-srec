@@ -23,7 +23,9 @@ impl Fixture {
             .connect("sqlite::memory:")
             .await
             .unwrap();
-        MIGRATOR.run(&pool).await.unwrap();
+        // A single-connection in-memory database restores the migrated
+        // template `run_migrations` keeps for tests.
+        crate::database::run_migrations(&pool).await.unwrap();
         let users = Arc::new(SqlxUserRepository::new(pool.clone(), pool.clone()));
         let mut user = UserDbModel::new(
             "session-user",
