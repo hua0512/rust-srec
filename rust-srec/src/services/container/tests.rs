@@ -6,19 +6,23 @@ use async_trait::async_trait;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Notify, mpsc};
 
-use super::{RECOVERY_PROGRESS_MIN_BYTES, should_record_recovery_from_progress};
+use super::{ServiceContainer, ServiceContainerConfig};
 use crate::danmu::test_support::FakeProvider;
-use crate::danmu::{CollectionSpec, DanmuService, ProviderRegistry};
+use crate::danmu::{CollectionSpec, ProviderRegistry};
 use crate::database::models::{LiveSessionDbModel, StreamerDbModel};
 use crate::database::repositories::{
     SessionRepository, SqlxSessionRepository, SqlxStreamerRepository, StreamerRepository,
 };
-use crate::domain::StreamerState;
-use crate::downloader::engine::{DownloadProgress, EngineStartError, EngineType};
+use crate::domain::{Priority, StreamerState};
+use crate::downloader::engine::{EngineStartError, EngineType};
 use crate::downloader::{
     DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadManagerConfig,
     DownloadManagerEvent, DownloadProgressEvent, DownloadProtocol, DownloadStopCause,
     DownloadTerminalEvent, EngineEndSignal, SegmentEvent, SegmentInfo,
+};
+use crate::recorder::actor::startup_task::spawn_startup_task;
+use crate::recorder::{
+    AttemptStartSpec, DbCommitOp, DbCommitOutcome, LiveProbePayload, SessionStartDisposition,
 };
 
 const SHUTDOWN_STREAMER_ID: &str = "shutdown-tracer-streamer";
@@ -224,40 +228,43 @@ async fn graceful_shutdown_flushes_and_persists_the_final_segment_before_pool_cl
         .await
         .expect("shutdown tracer session should persist");
 
-    let mut container = super::ServiceContainer::with_full_config(
+    let (_danmu_items_tx, danmu_items_rx) = mpsc::channel(8);
+    let mut providers = ProviderRegistry::new();
+    providers.register(Arc::new(FakeProvider::new(vec![danmu_items_rx])));
+
+    let container = ServiceContainer::with_full_config_and_danmu_providers(
         pool,
         write_pool,
-        super::ServiceContainerConfig {
+        ServiceContainerConfig {
             cache_ttl: Duration::from_secs(60),
             event_capacity: 8,
             download_config: DownloadManagerConfig::default(),
             pipeline_config: crate::pipeline::PipelineManagerConfig::default(),
-            api_config: crate::api::server::ApiServerConfig::default(),
-            local_desktop_mode: false,
         },
+        providers,
     )
     .await
     .expect("service container should initialize");
 
-    let (_danmu_items_tx, danmu_items_rx) = mpsc::channel(8);
-    let mut providers = ProviderRegistry::new();
-    providers.register(Arc::new(FakeProvider::new(vec![danmu_items_rx])));
-    let (danmu_coordination_sender, danmu_coordination_receiver) =
-        crate::danmu::events::danmu_coordination_channel();
-    let danmu_service = Arc::new(
-        DanmuService::with_providers(providers)
-            .with_session_repository(container.session_repository.clone())
-            .with_coordination_sender(danmu_coordination_sender.clone()),
-    );
-    container.danmu_service = danmu_service.clone();
-    container.danmu_coordination_sender = danmu_coordination_sender;
-    *container.danmu_coordination_receiver.lock() = Some(danmu_coordination_receiver);
-
     container.pipeline_manager.clone().start();
-    container.setup_download_event_subscriptions();
-    container.setup_session_lifecycle_subscriptions();
-    container.setup_danmu_event_subscriptions();
-    danmu_service
+    let download_rx = container
+        .download_coordination_receiver
+        .lock()
+        .take()
+        .expect("download coordination receiver should exist");
+    container
+        .actor_registry
+        .spawn_download_bridges(download_rx, &container.task_supervisor);
+    let danmu_rx = container
+        .danmu_coordination_receiver
+        .lock()
+        .take()
+        .expect("danmu coordination receiver should exist");
+    container
+        .actor_registry
+        .spawn_danmu_bridge(danmu_rx, &container.task_supervisor);
+    container
+        .danmu_service
         .start_collection(CollectionSpec {
             session_id: SHUTDOWN_SESSION_ID.to_string(),
             streamer_id: SHUTDOWN_STREAMER_ID.to_string(),
@@ -302,7 +309,7 @@ async fn graceful_shutdown_flushes_and_persists_the_final_segment_before_pool_cl
     // A collection that ended earlier in the run reaches `shutdown_until`
     // as a `runtime_failures` entry. Only `shutdown_failures` may make
     // `shutdown_with_grace_period` return `Err`.
-    danmu_service.seed_runtime_failure_for_test(
+    container.danmu_service.seed_runtime_failure_for_test(
         "danmu collection earlier-session failed: websocket connect timed out".to_string(),
     );
 
@@ -484,16 +491,14 @@ async fn graceful_shutdown_flushes_and_persists_the_final_segment_before_pool_cl
     .expect("resume probe config should update");
     assert_eq!(updated.rows_affected(), 1);
 
-    let resumed_container = super::ServiceContainer::with_full_config(
+    let resumed_container = ServiceContainer::with_full_config(
         reopened_pool.clone(),
         reopened_write_pool.clone(),
-        super::ServiceContainerConfig {
+        ServiceContainerConfig {
             cache_ttl: Duration::from_secs(60),
             event_capacity: 8,
             download_config: DownloadManagerConfig::default(),
             pipeline_config: crate::pipeline::PipelineManagerConfig::default(),
-            api_config: crate::api::server::ApiServerConfig::default(),
-            local_desktop_mode: false,
         },
     )
     .await
@@ -503,8 +508,14 @@ async fn graceful_shutdown_flushes_and_persists_the_final_segment_before_pool_cl
         .hydrate()
         .await
         .expect("resumed streamer metadata should hydrate");
-    resumed_container.setup_download_event_subscriptions();
-    resumed_container.setup_session_lifecycle_subscriptions();
+    let resumed_download_rx = resumed_container
+        .download_coordination_receiver
+        .lock()
+        .take()
+        .expect("resumed download coordination receiver should exist");
+    resumed_container
+        .actor_registry
+        .spawn_download_bridges(resumed_download_rx, &resumed_container.task_supervisor);
 
     let resumed_segment_path = output_dir.join("segment-1.flv");
     let resumed_started = Arc::new(Notify::new());
@@ -523,49 +534,61 @@ async fn graceful_shutdown_flushes_and_persists_the_final_segment_before_pool_cl
         )
         .build(),
     ];
-    let live_args = |now| crate::session::LiveDetectedArgs {
-        credential_binding: None,
-        streamer_id: SHUTDOWN_STREAMER_ID,
-        streamer_name: "Shutdown tracer",
-        streamer_url: "https://example.com/shutdown-tracer",
-        current_avatar: None,
-        new_avatar: None,
-        title: "Resumed shutdown tracer",
-        category: None,
-        streams: &resume_streams,
-        media_headers: None,
-        media_extras: None,
-        now,
-    };
 
-    let hydrated = resumed_container
-        .session_lifecycle
-        .on_live_detected(live_args(jiff::Timestamp::now()))
-        .await
-        .expect("active persisted session should hydrate into the lifecycle");
-    assert_eq!(hydrated.session_id(), SHUTDOWN_SESSION_ID);
-    resumed_container
-        .session_lifecycle
-        .on_download_terminal(&DownloadTerminalEvent::Completed {
-            download_id: "pre-restart-download".to_string(),
+    let resumed_outcome = resumed_container
+        .actor_registry
+        .store()
+        .commit(DbCommitOp::StartOrResumeSession {
             streamer_id: SHUTDOWN_STREAMER_ID.to_string(),
             streamer_name: "Shutdown tracer".to_string(),
-            session_id: SHUTDOWN_SESSION_ID.to_string(),
-            total_bytes: expected_size as u64,
-            total_duration_secs: 1.0,
-            total_segments: 1,
-            file_path: Some(segment_path_string.clone()),
-            engine_signal: EngineEndSignal::CleanDisconnect,
-            stop_cause: None,
+            title: "Resumed shutdown tracer".to_string(),
+            category: None,
+            current_avatar: None,
+            new_avatar: None,
+            credential_binding: None,
+            now: jiff::Timestamp::now(),
         })
         .await
-        .expect("clean disconnect should enter hysteresis");
-    let resumed = resumed_container
-        .session_lifecycle
-        .on_live_detected(live_args(jiff::Timestamp::now()))
-        .await
-        .expect("hysteresis resume should publish the production restart payload");
-    assert_eq!(resumed.session_id(), SHUTDOWN_SESSION_ID);
+        .expect("active persisted session should resume through RecorderStore");
+    let DbCommitOutcome::SessionStarted {
+        session_id,
+        disposition: SessionStartDisposition::ReusedActive,
+        ..
+    } = resumed_outcome
+    else {
+        panic!("expected resumed session outcome, got {resumed_outcome:?}");
+    };
+    assert_eq!(session_id, SHUTDOWN_SESSION_ID);
+
+    let (actor_tx, _actor_rx) = mpsc::unbounded_channel();
+    spawn_startup_task(
+        resumed_container
+            .actor_registry
+            .startup_task_deps_for_test(),
+        AttemptStartSpec {
+            attempt_id: 1,
+            session_id: SHUTDOWN_SESSION_ID.to_string(),
+            streamer_id: SHUTDOWN_STREAMER_ID.to_string(),
+            streamer_name: "Shutdown tracer".to_string(),
+            title: "Resumed shutdown tracer".to_string(),
+            payload: Some(LiveProbePayload {
+                title: "Resumed shutdown tracer".to_string(),
+                category: None,
+                avatar: None,
+                streams: resume_streams,
+                media_headers: None,
+                media_extras: None,
+                credential_binding: None,
+                credential_snapshot: None,
+                next_check_hint: None,
+            }),
+            credential_binding: None,
+            from_hysteresis_resume: true,
+            priority: Priority::Normal,
+            recovered_media_extracted_at: None,
+        },
+        actor_tx,
+    );
     tokio::time::timeout(Duration::from_secs(5), resumed_started.notified())
         .await
         .expect("production resume pipeline should open its segment");
@@ -648,16 +671,20 @@ async fn hard_cap_aborts_supervised_work_that_never_settles() {
 #[tokio::test]
 async fn hard_cap_shutdown_under_the_cap_closes_pools() {
     let pool = migrated_test_pool().await;
-    let container = super::ServiceContainer::with_config(
-        pool.clone(),
-        pool.clone(),
-        Duration::from_secs(60),
-        8,
-    )
-    .await
-    .expect("service container should initialize");
-    container.setup_download_event_subscriptions();
-    container.setup_session_lifecycle_subscriptions();
+    let container =
+        ServiceContainer::with_config(pool.clone(), pool.clone(), Duration::from_secs(60), 8)
+            .await
+            .expect("service container should initialize");
+    if let Some(download_rx) = container.download_coordination_receiver.lock().take() {
+        container
+            .actor_registry
+            .spawn_download_bridges(download_rx, &container.task_supervisor);
+    }
+    if let Some(danmu_rx) = container.danmu_coordination_receiver.lock().take() {
+        container
+            .actor_registry
+            .spawn_danmu_bridge(danmu_rx, &container.task_supervisor);
+    }
 
     container
         .shutdown_with_hard_cap(Duration::from_millis(500), Duration::from_secs(5))
@@ -665,26 +692,6 @@ async fn hard_cap_shutdown_under_the_cap_closes_pools() {
         .expect("a quiescent container should shut down within the cap");
 
     assert!(pool.is_closed());
-}
-
-#[test]
-fn test_recovery_progress_requires_strong_signal() {
-    assert!(!should_record_recovery_from_progress(&DownloadProgress {
-        bytes_downloaded: RECOVERY_PROGRESS_MIN_BYTES - 1,
-        speed_bytes_per_sec: 1024,
-        ..DownloadProgress::default()
-    }));
-
-    assert!(should_record_recovery_from_progress(&DownloadProgress {
-        bytes_downloaded: RECOVERY_PROGRESS_MIN_BYTES,
-        speed_bytes_per_sec: 1024,
-        ..DownloadProgress::default()
-    }));
-
-    assert!(should_record_recovery_from_progress(&DownloadProgress {
-        segments_completed: 1,
-        ..DownloadProgress::default()
-    }));
 }
 
 // ========== static_root_prefix (startup probe config discovery) ==========

@@ -1,0 +1,577 @@
+//! Storage-free download engine configuration value objects.
+
+use serde::{Deserialize, Serialize};
+
+/// Engine types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum EngineType {
+    Ffmpeg,
+    Streamlink,
+    Mesio,
+}
+
+impl EngineType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Ffmpeg => "FFMPEG",
+            Self::Streamlink => "STREAMLINK",
+            Self::Mesio => "MESIO",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "FFMPEG" => Some(Self::Ffmpeg),
+            "STREAMLINK" => Some(Self::Streamlink),
+            "MESIO" => Some(Self::Mesio),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for EngineType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for EngineType {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_ascii_uppercase().as_str() {
+            "FFMPEG" => Ok(Self::Ffmpeg),
+            "STREAMLINK" => Ok(Self::Streamlink),
+            "MESIO" => Ok(Self::Mesio),
+            _ => Err(format!("Unknown engine type: {s}")),
+        }
+    }
+}
+
+/// FFmpeg engine configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FfmpegEngineConfig {
+    /// Opt into experimental chunked recording for lossless manual cuts.
+    #[serde(default)]
+    pub enable_lossless_cutting: bool,
+    /// Path to ffmpeg binary
+    #[serde(default = "default_ffmpeg_path")]
+    pub binary_path: String,
+    /// Additional input arguments
+    #[serde(default)]
+    pub input_args: Vec<String>,
+    /// Additional output arguments
+    #[serde(default)]
+    pub output_args: Vec<String>,
+    /// Timeout for connection in seconds
+    #[serde(default = "default_timeout")]
+    pub timeout_secs: u32,
+    /// User agent string
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_agent: Option<String>,
+    /// How long to wait for ffmpeg to exit gracefully before killing it (seconds).
+    /// Increase this on slow hardware to prevent unplayable files missing the moov atom.
+    #[serde(default = "default_graceful_stop_timeout")]
+    pub graceful_stop_timeout_secs: u32,
+}
+
+fn default_ffmpeg_path() -> String {
+    crate::utils::tools::resolve(None, "FFMPEG_PATH", "ffmpeg")
+}
+
+fn default_timeout() -> u32 {
+    30
+}
+
+fn default_graceful_stop_timeout() -> u32 {
+    60
+}
+
+impl Default for FfmpegEngineConfig {
+    fn default() -> Self {
+        Self {
+            enable_lossless_cutting: false,
+            binary_path: default_ffmpeg_path(),
+            input_args: Vec::new(),
+            output_args: Vec::new(),
+            timeout_secs: default_timeout(),
+            user_agent: None,
+            graceful_stop_timeout_secs: default_graceful_stop_timeout(),
+        }
+    }
+}
+
+/// Streamlink engine configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamlinkEngineConfig {
+    /// Opt into experimental chunked recording for lossless manual cuts.
+    #[serde(default)]
+    pub enable_lossless_cutting: bool,
+    /// Path to streamlink binary
+    #[serde(default = "default_streamlink_path")]
+    pub binary_path: String,
+    /// FFmpeg executable used to remux Streamlink output.
+    /// Falls back to `FFMPEG_PATH`, then `ffmpeg`, when omitted or null.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ffmpeg_path: Option<String>,
+    /// Quality preference (e.g., "best", "720p")
+    #[serde(default = "default_quality")]
+    pub quality: String,
+    /// Additional arguments
+    #[serde(default)]
+    pub extra_args: Vec<String>,
+    /// Twitch proxy playlist (ttv-lol)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub twitch_proxy_playlist: Option<String>,
+    /// Twitch proxy playlist exclude (ttv-lol)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub twitch_proxy_playlist_exclude: Option<String>,
+    /// How long to wait for ffmpeg to exit gracefully before killing it (seconds).
+    /// Increase this on slow hardware to prevent unplayable files missing the moov atom.
+    #[serde(default = "default_graceful_stop_timeout")]
+    pub graceful_stop_timeout_secs: u32,
+}
+
+fn default_streamlink_path() -> String {
+    "streamlink".to_string()
+}
+
+fn default_quality() -> String {
+    "best".to_string()
+}
+
+impl Default for StreamlinkEngineConfig {
+    fn default() -> Self {
+        Self {
+            enable_lossless_cutting: false,
+            binary_path: default_streamlink_path(),
+            ffmpeg_path: None,
+            quality: default_quality(),
+            extra_args: Vec::new(),
+            twitch_proxy_playlist: None,
+            twitch_proxy_playlist_exclude: None,
+            graceful_stop_timeout_secs: default_graceful_stop_timeout(),
+        }
+    }
+}
+
+/// How the FLV splitter should detect audio/video sequence-header changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MesioSequenceHeaderChangeMode {
+    /// Split when the raw CRC32 of the sequence header changes (legacy behavior).
+    Crc32,
+    /// Split only when the codec configuration meaningfully changes.
+    SemanticSignature,
+}
+
+/// Overrides for the FLV duplicate media-tag filter.
+///
+/// Fields are optional so they can be used as a partial override payload.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioDuplicateTagFilterConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_capacity_tags: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_capacity_bytes: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replay_backjump_threshold_ms: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_replay_offset_matching: Option<bool>,
+}
+
+/// Mesio-configurable knobs for the FLV download engine itself.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioFlvConfig {
+    /// Fail the stream when no audio/video tag arrives for this long.
+    /// `null` disables the watchdog; absent keeps the engine default.
+    #[serde(
+        default,
+        deserialize_with = "crate::utils::json::deserialize_field_present_nullable"
+    )]
+    pub media_stall_timeout_ms: Option<Option<u64>>,
+}
+
+/// Mesio-configurable knobs for FLV fixing.
+///
+/// This config is applied only when FLV pipeline processing is enabled.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioFlvFixConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sequence_header_change_mode: Option<MesioSequenceHeaderChangeMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drop_duplicate_sequence_headers: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duplicate_tag_filtering: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duplicate_tag_filter_config: Option<MesioDuplicateTagFilterConfig>,
+}
+
+/// Mesio engine configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MesioEngineConfig {
+    /// Initial capacity of the FLV read buffer, in bytes. Mesio raises values
+    /// below 64 KiB to 64 KiB.
+    #[serde(default = "default_buffer_size")]
+    pub buffer_size: usize,
+    /// Enable FLV fixing
+    #[serde(default = "default_true")]
+    pub fix_flv: bool,
+    /// Enable HLS fixing
+    #[serde(default = "default_true")]
+    pub fix_hls: bool,
+    /// Enable fixing of MPEG-DASH output (the same fMP4 pipeline as HLS).
+    #[serde(default = "default_true")]
+    pub fix_dash: bool,
+    /// Extra FLV-fix tuning knobs for Mesio.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flv_fix: Option<MesioFlvFixConfig>,
+    /// Extra FLV protocol tuning knobs for Mesio.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flv: Option<MesioFlvConfig>,
+    /// Extra HLS runtime tuning knobs for Mesio.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hls: Option<MesioHlsConfig>,
+    /// MPEG-DASH settings; `None` uses the engine defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dash: Option<MesioDashConfig>,
+}
+
+/// Mesio MPEG-DASH settings. Fields missing from the stored JSON take the
+/// engine defaults.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MesioDashConfig {
+    /// Which video Representation is recorded.
+    pub video_quality: MesioDashVideoQuality,
+    /// Which audio Representation is recorded within the chosen language.
+    pub audio_quality: MesioDashAudioQuality,
+    /// Preferred audio language as a language tag (e.g. `en`, `pt-BR`); any
+    /// language is used when none matches.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio_language: Option<String>,
+    /// Record the video track.
+    pub include_video: bool,
+    /// Record separately delivered audio tracks. Audio carried inside the
+    /// video Representation is kept either way.
+    pub include_audio: bool,
+    /// Concurrent segment downloads per track (at least 1).
+    pub download_concurrency: usize,
+    /// Timeout of one MPD request.
+    pub manifest_timeout_ms: u64,
+    /// Lower bound of the live MPD refresh interval; the MPD's
+    /// `minimumUpdatePeriod` applies when longer.
+    pub min_refresh_interval_ms: u64,
+    /// Consecutive failed MPD refreshes tolerated before the stream fails.
+    pub max_refresh_retries: u32,
+    /// Timeout of one segment download.
+    pub segment_timeout_ms: u64,
+    /// Retries of a failed segment download.
+    pub max_segment_retries: u32,
+    /// Where recording of a live presentation starts.
+    pub live_start: MesioDashLiveStart,
+}
+
+impl Default for MesioDashConfig {
+    fn default() -> Self {
+        Self {
+            video_quality: MesioDashVideoQuality::default(),
+            audio_quality: MesioDashAudioQuality::default(),
+            audio_language: None,
+            include_video: true,
+            include_audio: true,
+            download_concurrency: 5,
+            manifest_timeout_ms: 15_000,
+            min_refresh_interval_ms: 1_000,
+            max_refresh_retries: 5,
+            segment_timeout_ms: 10_000,
+            max_segment_retries: 3,
+            live_start: MesioDashLiveStart::default(),
+        }
+    }
+}
+
+/// DASH video Representation policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum MesioDashVideoQuality {
+    /// Highest bandwidth.
+    #[default]
+    Highest,
+    /// Lowest bandwidth.
+    Lowest,
+    /// Highest bandwidth at most `height` pixels tall; the smallest picture
+    /// when none fits.
+    MaxHeight { height: u32 },
+    /// Bandwidth closest to `bandwidth` bits per second.
+    ClosestBandwidth { bandwidth: u64 },
+}
+
+/// DASH audio Representation policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum MesioDashAudioQuality {
+    /// Highest bandwidth.
+    #[default]
+    Highest,
+    /// Lowest bandwidth.
+    Lowest,
+    /// Bandwidth closest to `bandwidth` bits per second.
+    ClosestBandwidth { bandwidth: u64 },
+}
+
+/// Where recording of a live DASH presentation starts. Static presentations
+/// always start at their first segment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum MesioDashLiveStart {
+    /// The MPD's `suggestedPresentationDelay` behind the live edge, else three
+    /// segment durations.
+    #[default]
+    Auto,
+    /// The newest available segment.
+    LiveEdge,
+    /// This far behind the live edge.
+    Delay { delay_ms: u64 },
+}
+
+/// Mesio HLS tuning configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioHlsConfig {
+    /// Override low-level HTTP client tuning for HLS requests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<MesioDownloaderBaseOverride>,
+    /// Override playlist polling/parsing behavior.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub playlist_config: Option<MesioHlsPlaylistConfigOverride>,
+    /// Override scheduler settings (download concurrency, buffers).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheduler_config: Option<MesioHlsSchedulerConfigOverride>,
+    /// Override segment/key fetcher settings (timeouts/retries).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fetcher_config: Option<MesioHlsFetcherConfigOverride>,
+    /// Override processor settings (processed segment cache TTL).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub processor_config: Option<MesioHlsProcessorConfigOverride>,
+    /// Override decryption settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decryption_config: Option<MesioHlsDecryptionConfigOverride>,
+    /// Override cache TTLs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_config: Option<MesioHlsCacheConfigOverride>,
+    /// Override output buffering, gap handling, stall timeouts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_config: Option<MesioHlsOutputConfigOverride>,
+}
+
+/// Serializable HTTP version preference for Mesio downloader.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MesioHttpVersionPreference {
+    Auto,
+    Http2Only,
+    Http1Only,
+}
+
+/// Low-level HTTP client overrides for Mesio downloader.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioDownloaderBaseOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connect_timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub write_timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub follow_redirects: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_agent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub params: Option<Vec<(String, String)>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub danger_accept_invalid_certs: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub force_ipv4: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub force_ipv6: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_version: Option<MesioHttpVersionPreference>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http2_keep_alive_interval_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pool_max_idle_per_host: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pool_idle_timeout_ms: Option<u64>,
+}
+
+/// Serializable HLS variant selection policy.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum MesioHlsVariantSelectionPolicy {
+    HighestBitrate,
+    LowestBitrate,
+    ClosestToBitrate { target_bitrate: u64 },
+    AudioOnly,
+    VideoOnly,
+    MatchingResolution { width: u32, height: u32 },
+    Custom { value: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioHlsPlaylistConfigOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial_playlist_fetch_timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live_refresh_interval_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live_max_refresh_retries: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live_refresh_retry_delay_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant_selection_policy: Option<MesioHlsVariantSelectionPolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adaptive_refresh_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adaptive_refresh_min_interval_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adaptive_refresh_max_interval_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioHlsSchedulerConfigOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub download_concurrency: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub processed_segment_buffer_multiplier: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioHlsFetcherConfigOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segment_download_timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_segment_retries: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segment_retry_delay_base_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_segment_retry_delay_ms: Option<u64>,
+    /// Total time budget for one segment, counted from its first attempt.
+    /// `null` removes the cap.
+    #[serde(
+        default,
+        deserialize_with = "crate::utils::json::deserialize_field_present_nullable"
+    )]
+    pub segment_retry_deadline_ms: Option<Option<u64>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_download_timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_key_retries: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_retry_delay_base_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_key_retry_delay_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress_emit_min_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress_emit_min_interval_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioHlsProcessorConfigOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub processed_segment_ttl_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioHlsDecryptionConfigOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_cache_ttl_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offload_decryption_to_cpu_pool: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioHlsCacheConfigOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub playlist_ttl_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segment_ttl_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decryption_key_ttl_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioBufferLimitsOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_segments: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_bytes: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioHlsOutputConfigOverride {
+    /// How often to wake up and re-evaluate gap policies when stalled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gap_evaluation_interval_ms: Option<u64>,
+    /// Maximum number of pending fMP4 init segments to keep (`0` disables the limit).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_pending_init_segments: Option<usize>,
+
+    #[serde(
+        default,
+        deserialize_with = "crate::utils::json::deserialize_field_present_nullable"
+    )]
+    pub live_max_overall_stall_duration_ms: Option<Option<u64>>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live_gap_strategy: Option<MesioGapSkipStrategy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vod_gap_strategy: Option<MesioGapSkipStrategy>,
+
+    #[serde(
+        default,
+        deserialize_with = "crate::utils::json::deserialize_field_present_nullable"
+    )]
+    pub vod_segment_timeout_ms: Option<Option<u64>>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub buffer_limits: Option<MesioBufferLimitsOverride>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metrics_enabled: Option<bool>,
+}
+
+/// Serializable gap-skip strategy for Mesio HLS.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum MesioGapSkipStrategy {
+    WaitIndefinitely,
+    SkipAfterCount { count: u64 },
+    SkipAfterDuration { duration_ms: u64 },
+    SkipAfterBoth { count: u64, duration_ms: u64 },
+}
+
+fn default_buffer_size() -> usize {
+    64 * 1024
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for MesioEngineConfig {
+    fn default() -> Self {
+        Self {
+            buffer_size: default_buffer_size(),
+            fix_flv: true,
+            fix_hls: true,
+            fix_dash: true,
+            flv_fix: None,
+            flv: None,
+            hls: None,
+            dash: None,
+        }
+    }
+}

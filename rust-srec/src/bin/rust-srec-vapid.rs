@@ -1,7 +1,3 @@
-use base64::Engine as _;
-use p256::ecdsa::SigningKey;
-use p256::elliptic_curve::Generate;
-
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "-h" || a == "--help") {
@@ -10,23 +6,16 @@ fn main() -> anyhow::Result<()> {
     }
 
     let json = args.iter().any(|a| a == "--json");
-
-    let signing_key = SigningKey::generate_from_rng(&mut rand::rng());
-    let private_key_raw = signing_key.to_bytes();
-    // VAPID keys are exchanged in the uncompressed SEC1 form, so pass compress = false.
-    let public_key_raw = signing_key.verifying_key().to_sec1_point(false).to_bytes();
-
-    let public_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(public_key_raw);
-    let private_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(private_key_raw);
+    let keypair = srec_notify::web_push::generate_vapid_keypair();
 
     if json {
         println!(
             "{{\"public_key\":\"{}\",\"private_key\":\"{}\"}}",
-            public_b64, private_b64
+            keypair.public_key_b64, keypair.private_key_b64
         );
     } else {
-        println!("Public Key: {}", public_b64);
-        println!("Private Key: {}", private_b64);
+        println!("Public Key: {}", keypair.public_key_b64);
+        println!("Private Key: {}", keypair.private_key_b64);
     }
 
     Ok(())

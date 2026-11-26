@@ -2,18 +2,16 @@
 
 use std::collections::{HashMap, HashSet};
 
-use argon2::password_hash::phc::PasswordHash;
-
 use super::{ConfigurationImportError, profiles, proxies, validation, validation_error};
-use crate::api::auth_service::MAX_USERNAME_LENGTH;
 use crate::config::backup::{
     ConfigExport, ImportMode, NotificationChannelExport, PipelinePresetExport,
 };
 use crate::database::models::{
     ChannelType, EngineConfigurationDbModel, EngineType, FilterDbModel, FilterType,
     GlobalConfigDbModel, JobPreset, NotificationChannelDbModel, PipelinePreset,
-    PlatformConfigDbModel, RetentionDays, StreamerDbModel, TemplateConfigDbModel, UserDbModel,
+    PlatformConfigDbModel, RetentionDays, StreamerDbModel, TemplateConfigDbModel,
 };
+use crate::domain::MAX_USERNAME_LENGTH;
 
 pub(super) struct ImportSnapshot {
     pub(super) global: GlobalConfigDbModel,
@@ -31,7 +29,6 @@ pub(super) struct ImportSnapshot {
     pub(super) channels: HashMap<String, NotificationChannelDbModel>,
     pub(super) job_presets: HashMap<String, JobPreset>,
     pub(super) pipeline_presets: HashMap<String, PipelinePreset>,
-    pub(super) users: HashMap<String, UserDbModel>,
 }
 
 impl ImportSnapshot {
@@ -116,12 +113,6 @@ impl ImportSnapshot {
                 .into_iter()
                 .map(|model| (model.name.clone(), model))
                 .collect();
-        let users = sqlx::query_as::<_, UserDbModel>("SELECT * FROM users")
-            .fetch_all(&mut *tx)
-            .await?
-            .into_iter()
-            .map(|model| (model.username.clone(), model))
-            .collect();
 
         Ok(Self {
             global,
@@ -135,7 +126,6 @@ impl ImportSnapshot {
             channels,
             job_presets,
             pipeline_presets,
-            users,
         })
     }
 
@@ -151,7 +141,7 @@ impl ImportSnapshot {
         config: &mut ConfigExport,
         mode: ImportMode,
     ) -> Result<(), ConfigurationImportError> {
-        crate::database::legacy_credential_upgrade::upgrade_bundle(config, |streamer| {
+        crate::services::legacy_upgrade::credentials::upgrade_bundle(config, |streamer| {
             mode == ImportMode::Merge
                 && self.streamer_for_update(&streamer.url).is_some_and(|row| {
                     self.selected_streamers.contains(&row.id)
@@ -162,8 +152,12 @@ impl ImportSnapshot {
                 })
         })?;
         let legacy = config.version.starts_with("0.");
-        if legacy || crate::database::legacy_proxy_upgrade::bundle_has_legacy_settings(config) {
-            crate::database::legacy_proxy_upgrade::upgrade_bundle(config, &self.proxies, legacy)?;
+        if legacy || crate::services::legacy_upgrade::proxies::bundle_has_legacy_settings(config) {
+            crate::services::legacy_upgrade::proxies::upgrade_bundle(
+                config,
+                &self.proxies,
+                legacy,
+            )?;
         }
         config.validate_credential_graph()?;
         Ok(())
@@ -248,63 +242,6 @@ impl ImportSnapshot {
             }
         }
 
-        let existing_ids: HashMap<&str, &str> = self
-            .users
-            .values()
-            .map(|user| (user.id.as_str(), user.username.as_str()))
-            .collect();
-        for user in &config.users {
-            if self.users.contains_key(&user.username) {
-                continue;
-            }
-            if let Some(existing_username) = existing_ids.get(user.id.as_str()) {
-                return validation(format!(
-                    "User id '{}' is already in use by username '{}'",
-                    user.id, existing_username
-                ));
-            }
-        }
-
-        self.validate_user_emails(config, mode)?;
-
-        Ok(())
-    }
-
-    fn validate_user_emails(
-        &self,
-        config: &ConfigExport,
-        mode: ImportMode,
-    ) -> Result<(), ConfigurationImportError> {
-        if !includes_imported_users(config) {
-            return Ok(());
-        }
-        let replaced: HashSet<&str> = config
-            .users
-            .iter()
-            .map(|user| user.username.as_str())
-            .collect();
-        let mut emails = HashSet::new();
-        if mode == ImportMode::Merge {
-            for user in self
-                .users
-                .values()
-                .filter(|user| !replaced.contains(user.username.as_str()))
-            {
-                if let Some(email) = user.email.as_deref() {
-                    emails.insert(email);
-                }
-            }
-        }
-        for user in &config.users {
-            if let Some(email) = user.email.as_deref()
-                && !emails.insert(email)
-            {
-                return validation(format!(
-                    "Imported user '{}' has an email already assigned to another user",
-                    user.username,
-                ));
-            }
-        }
         Ok(())
     }
 }
@@ -362,7 +299,7 @@ pub(super) fn validate_import(
     }
     if let Some(directive) = config.global_config.log_filter_directive.as_deref() {
         validate_non_empty("global log_filter_directive", directive)?;
-        tracing_subscriber::EnvFilter::try_new(directive).map_err(|error| {
+        crate::logging::validate_filter_directive(directive).map_err(|error| {
             validation_error(format!(
                 "Invalid log_filter_directive '{directive}': {error}"
             ))
@@ -592,18 +529,6 @@ pub(super) fn validate_import(
             if user.roles.is_empty() || user.roles.iter().any(|role| role.trim().is_empty()) {
                 return validation(format!(
                     "User '{}' must have at least one non-empty role",
-                    user.username
-                ));
-            }
-            let parsed = PasswordHash::new(&user.password_hash).map_err(|error| {
-                validation_error(format!(
-                    "Invalid password hash for user '{}': {}",
-                    user.username, error
-                ))
-            })?;
-            if parsed.algorithm.as_str() != "argon2id" {
-                return validation(format!(
-                    "Password hash for user '{}' must use Argon2id",
                     user.username
                 ));
             }

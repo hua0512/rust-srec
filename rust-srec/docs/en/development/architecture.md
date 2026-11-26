@@ -35,55 +35,57 @@ flowchart LR
   OPS --> FS
 ```
 
-Inside the runtime, services pass events along these routes:
+Inside the runtime, the workspace is split into a unidirectional crate DAG composed by the thin `rust-srec` root package:
+
+- **Layer 0 (`srec-core`, `srec-sqlite`)**: storage-free domain types, ports, and utilities; SQLite pools, `CommittedWriter`, base models/repositories, and migrations.
+- **Layer 1 (`srec-engines`, `srec-processors`, `srec-notify`)**: download engines (`ffmpeg`, `streamlink`, `mesio`); post-processing operators and BaiduPCS-Go; notification channels, Web Push, backend locales, and `NotificationOutboxDrainer`.
+- **Layer 2 (`srec-pipeline`, `srec-recorder`)**: post-processing `PipelineManager` / `DagScheduler` / worker pools; recording control plane (`ActorRegistry`, `StreamerActor`, `StreamerFsm`, `RecorderProber`, `RecorderStore`), `DownloadManager`, `DanmuService` and its danmu runner, `ConfigService`, `StreamerManager`, credentials, and proxies.
+- **Layer 3 (`srec-api`)**: Axum REST/WebSocket routes, Protobuf, OpenAPI, MCP server, auth store, CQRS queries, dynamic logging, and health metrics.
+- **Layer 4 (`rust-srec`)**: `ServiceContainer` wiring, `ConfigBackupPort` export/import, `MaintenanceScheduler`, startup migrations, process supervision, and the `backend` facade used by the standalone binary and `src-tauri`.
+
+Each crate depends only on crates in lower layers, except `srec-sqlite`, which depends on `srec-core` in the same layer.
+
+Inside the recording runtime, services pass events along these routes:
 
 ```mermaid
 flowchart TB
   CFG["ConfigService<br/>StreamerManager"]
-  SCH["Scheduler actors"]
-  MON["StreamMonitor<br/>filters / outbox"]
-  SESS["SessionLifecycle"]
+  REG["ActorRegistry<br/>StreamerActor + StreamerFsm"]
+  PRB["RecorderProber<br/>PlatformExtractorRunner"]
+  STO["RecorderStore<br/>CommittedWriter + Outbox"]
   DL["DownloadManager<br/>queue / engines"]
   DM["DanmuService"]
   PL["PipelineManager<br/>DAG / workers"]
-  NOTI["NotificationService"]
+  NOTI["NotificationService<br/>NotificationOutboxDrainer"]
 
-  CFG -->|"config events"| SCH
-  SCH -->|"scheduled checks"| MON
-  MON -->|"session commands"| SESS
-  MON -->|"committed live event"| DL
+  CFG -->|"config events &amp; post-publication"| REG
+  REG -->|"status / freshness probes"| PRB
+  REG -->|"serialized DB commits"| STO
+  STO -.->|"OutboxEvent rows"| NOTI
+  REG -->|"startup_task / start_with_slot"| DL
   DL -->|"successful start enables"| DM
-  DL -->|"video segment events"| PL
-  DM -->|"danmu segment events"| PL
-  SESS -->|"session transitions"| PL
-  SESS -.->|"hysteresis resume"| DL
-  DL -.->|"terminal outcomes"| SESS
-  DL -.->|"download feedback"| SCH
+  DL -->|"reserved feedback &amp; coordination"| REG
+  DM -->|"FIFO danmu coordination"| REG
+  REG -->|"PipelineNotification"| PL
 
-  MON -.->|"monitor events"| NOTI
   DL -.->|"download events"| NOTI
-  SESS -.->|"session events"| NOTI
   PL -.->|"job events"| NOTI
 ```
 
-Arrows between runtime services show logical event routes. `ServiceContainer` implements that
-wiring with broadcast subscriptions, bounded queues, and handler tasks rather than direct service
-coupling.
+Arrows between runtime services show logical control and event routes. `ServiceContainer` wires the services with broadcast subscriptions, reserved feedback permits, acknowledged coordination channels, and post-publication listeners rather than direct circular coupling.
 
 Three ownership boundaries are important in this topology:
 
 - `ServiceContainer` is the composition root and event-wiring layer, not the owner of domain state.
-- `StreamMonitor` detects and filters platform status; `SessionLifecycle` exclusively owns the
-  in-memory session state machine and durable start/end decisions.
-- A live event starts the download path first. Danmu collection starts only after the download
-  manager's `start_with_slot` call returns a real download ID.
+- `StreamerFsm` is a pure synchronous state machine driven by one `StreamerActor` per active streamer under `ActorRegistry`. `RecorderProber` performs status/freshness extraction, and `RecorderStore` serializes durable SQLite commits and `OutboxEvent` persistence.
+- A live commit starts the download path first through `startup_task` and `StartupLeaseRegistry`. Danmu collection starts only after `DownloadManager::start_with_slot` returns a real download ID.
 
 ## Runtime root: `ServiceContainer` {#runtime-root-servicecontainer}
 
 The `ServiceContainer` (in `rust-srec/src/services/container.rs`) initializes and connects the runtime services:
 
 - Initializes repositories and services (DB, config cache, managers)
-- Starts background tasks (scheduler actors, pipeline workers, outbox flushers)
+- Starts background tasks (`ActorRegistry`, `NotificationOutboxDrainer`, pipeline workers, maintenance, and Bigo live notifications)
 - Subscribes to event streams and forwards events between services
 - Owns the `CancellationToken` used for graceful shutdown
 
@@ -97,21 +99,20 @@ Startup logs time database/configuration I/O, engine discovery, awaited initiali
 
 ## Core components (what each one actually does) {#core-components-what-each-one-actually-does}
 
-### `RuntimeCoordinator` (recording startup and cancellation) {#runtimecoordinator-recording-startup-and-cancellation}
+### Recording startup and cancellation (`startup_task` / `StartupLeaseRegistry`) {#recording-startup-and-cancellation}
 
-The coordinator binds download startup and danmu collection to the session that caused them.
-An Offline event naming an older session stops only that session's work; it cannot select a
-successor by streamer ID. Disable and out-of-schedule events also cancel startup that has
-registered its session token but has not entered the download queue yet.
+Download startup and danmu setup are bound to the session and attempt that initiated them through
+`StartupLeaseRegistry` (`srec-recorder/src/recorder/actor/startup_task.rs`). An offline decision
+for an older session stops only that session's attempt; it cannot select a successor by streamer ID.
+Disable, out-of-schedule, credential-retirement, and deletion stops also cancel startup leases that
+have registered before entering the download queue.
 
-Startup observes cancellation during configuration, preflight, queue acquisition, freshness
-checks and final admission. Cancelled work releases its reservation and does not start danmu.
-Danmu setup and predecessor handoff also observe session cancellation. Once a collector is
-registered, cancellation waits for its owned cleanup instead of abandoning the readiness wait.
-A resumed Started transition needs both an active lifecycle session and its download payload.
-Queue waits strictly greater than the freshness threshold refresh URLs, headers and extras
-together. Equality uses cached media with the short-wait state guard; missing/offline results
-dequeue, while checker errors preserve the cached media fallback.
+Startup observes cancellation during configuration lookup, preflight, queue acquisition, freshness
+checks, credential-binding validation, and final admission. Cancelled work releases its lease and
+does not start danmu. Once a danmu collector is started, shutdown and retirement wait for confirmed
+cleanup rather than abandoning the collection task. Queue waits strictly greater than the freshness
+threshold re-probe URLs, headers, and extras together; missing or offline results dequeue, while
+transient probe errors fall back to the cached media payload.
 
 ### `ConfigService` (configuration + hot reload) {#configservice-configuration-hot-reload}
 
@@ -160,83 +161,77 @@ The actor also applies its first confirmed offline observation even when both st
 suppressed application remains pending for another check. A live observation reuses the unfinished
 session, preserving recording continuity across a restart.
 
-### `Scheduler` (actor model orchestration) {#scheduler-actor-model-orchestration}
+### `ActorRegistry` and `StreamerActor` (control-plane orchestration) {#recorder-control-plane}
 
-The scheduler is a supervisor that manages self-scheduling actors:
+`ActorRegistry` (`srec-recorder/src/recorder/registry.rs`) supervises resident per-streamer actors:
 
-- `StreamerActor`: owns the timing and state loop for one streamer
-- `Supervisor`: handles actor lifecycle, restart tracking, and shutdown reporting
+- `StreamerActor`: one non-blocking `tokio::select!` loop per active streamer driving a `StreamerFsm`, polling its mailbox, at most one in-flight `CommitDb` future, at most one in-flight `Probe` future, an optional batch-precheck live hint, its next FSM deadline timer, and side-effect tasks.
+- `ActorRegistry`: reconciles active streamers from `PostPublicationListener` batches and `ConfigUpdateEvent`s, tracks actor generations and monotonic config revisions, bridges download/danmu coordination into actors, enforces 4-owner physical retirement (`retire_streamer` / `retire_and_reap`), and supervises panicking actors.
 
-Each actor checks its own streamer individually through `StreamMonitor`; the scheduler also
-reacts to configuration events to spawn/stop actors dynamically.
+Before spawning an actor or pushing updated configuration, `ActorRegistry` resolves the
+Global → Platform → Template → Streamer hierarchy through `ConfigService` and allocates a monotonic
+config revision before awaiting resolution so slower lookups cannot overwrite newer updates.
+If a lookup fails, a running actor keeps its last good configuration, no actor starts, and the
+lookup is retried with exponential backoff (5 s base, 5 min cap).
+Configuration updates never force a check; only credential, filter and error-clear events request one.
+Recurring checks sample an interval within ±10% of the configured cadence. An unchanged effective
+interval preserves the pending deadline; a changed interval can bring it forward without postponing
+an already scheduled check. Smart-wake hints, admission/cooldown deadlines, explicit immediate checks,
+and live watchdog states keep their own timing.
 
-Before spawning an actor or delivering updated timing, the scheduler resolves the
-Global → Platform → Template → Streamer hierarchy through the shared configuration
-service. It reads current layers independently of the container's metadata refresh,
-so publication order cannot leave an actor using default offline-confirmation
-counts or delays. Updates use the same resolved configuration for delivery and
-restart recovery. Resolution failures retain an existing actor's last good timing;
-new actors are not started with unresolved defaults. Update resolution is bounded
-to eight concurrent lookups and responds to shutdown cancellation.
-Queued crash restarts resolve again when due, including configuration changes
-made during backoff. A failed lookup defers that restart for five seconds instead
-of starting it with the captured old configuration.
+Expected terminal stops (`Disabled`, `FatalError`, `Retired`, `Shutdown`) clear credential blocks
+and exit without restart. If an actor task panics, `ActorRegistry` first stops the startups,
+downloads and danmu collection it left behind, then restarts it with exponential backoff (2 s base,
+60 s cap). A streamer gets `MAX_CRASH_RESTARTS` (5) restarts; a clean exit, or a crash after at
+least 10 minutes of uptime, starts a fresh count. Once the restarts are used up the streamer is no
+longer monitored, and the health check reports it as degraded.
 
-Recurring checks sample an interval within ±10% of the configured cadence. An
-unchanged effective interval preserves the pending deadline; a changed interval
-can bring it forward but never postpone an already scheduled check. Smart-wake
-hints, admission/cooldown deadlines, explicit immediate checks and parked/live
-states keep their own timing.
+### `RecorderProber` and `RecorderStore` (probing, persistence, and outbox) {#recorder-prober-and-store}
 
-Non-recoverable actor errors represent terminal decisions, such as a removed
-streamer. Both timer and mailbox paths stop gracefully and run configured state
-persistence; the supervisor does not restart them. Recoverable task failures and
-panics remain eligible for restart. Ten consecutive crashes exhaust automatic
-restarts even when older crashes have left the 60-second backoff window. The
-window still determines restart delay; actor removal restores the crash budget.
+- **`RecorderProber`** (`srec-recorder/src/recorder/prober.rs`) wraps the shared
+  `PlatformExtractorRunner` (pooled HTTP clients and proxy/tunnel `ExtractorFactory`), deduplicates
+  in-flight probes by `CredentialCheckKey`, runs optional batch precheck and Bigo live-notification
+  gating, tracks credential blocks, persists platform metadata via CAS, and records check history
+  non-blockingly.
+- **`RecorderStore`** (`srec-recorder/src/recorder/store.rs`) executes every `DbCommitOp`
+  (`StartOrResumeSession`, `ResumeHysteresis`, `EndSession`, `RecordFatalError`,
+  `RecordTransientError`, `SetInfraBlocked`, etc.) under a per-streamer serialization lease and
+  `CommittedWriter` (`committed_write_supervisor`). Sealed commits finish even if the actor stops
+  or is dropped, synchronously publish committed rows to `StreamerCache`, release the SQLite write
+  connection and streamer lease, and then notify `NotificationOutboxDrainer` and
+  `PostPublicationListener`.
 
-Download terminal feedback preserves lifecycle authority. Shutdown and
-streamer-disable stops park the actor's local polling without publishing an
-Offline observation: shutdown preserves the session for recovery, and disable
-cleanup owns its session closure. Unknown internal stops resume status checking
-to verify the platform state. Authoritative streamer-offline feedback still
-publishes Offline through the monitor.
+**Outbox pattern:** User-facing notification records (`OutboxEvent` in `srec-core`) are written to
+`monitor_event_outbox` in the same SQLite transaction as state/session updates. `NotificationOutboxDrainer`
+(in `srec-notify`) scans undelivered rows in ascending `id` order, decodes both current `OutboxEvent`
+records and pre-v2 `LegacyOutboxEvent` rows left behind across upgrades, and marks `delivered_at`
+only after `NotificationService::deliver_durable_for_outbox` settles. Up to 32 rows settle at once,
+so an alert that waits on a slow or failing channel does not hold back other streamers' alerts; each
+streamer's rows still settle one at a time in `id` order.
 
-### `StreamMonitor` (detect + filter + outbox) {#streammonitor-detect-filter-outbox}
+### `StreamerFsm` (single owner of session and monitoring state) {#streamerfsm-state-machine}
 
-`StreamMonitor` is the data-plane detector. It:
+`StreamerFsm` (`srec-recorder/src/recorder/fsm.rs`) is a pure synchronous state machine that owns
+monitoring cadence, offline confirmation, quiet-period hysteresis, terminal-cause classification,
+credential diagnostic recovery, and stop coordination for one streamer.
 
-- Resolves platform information and checks live status
-- Applies filters (time/keyword/category, etc.)
-- Delegates session changes to `SessionLifecycle`
-- Emits `MonitorEvent` **via a DB-backed outbox** for consistency
+Fresh starts (`CommittingStart`) and durable ends commit their SQLite mutations through
+`RecorderStore` before starting downloads or emitting `PipelineNotification::SessionEnded`.
+Quiet-period entry keeps the SQLite session open (`end_time IS NULL`) while writing a best-effort
+hysteresis audit row; live probes within the window commit `ResumeHysteresis` and restart recording
+on the same session, whereas backstop expiry or confirmed offline commits `EndSession`. If a
+quiet-period expiry commit fails transiently, the FSM retains the open session and retries on a
+1-second timer. Graceful shutdown drains in-flight commits and actors; forced shutdown respects the
+hard deadline without aborting a sealed `COMMIT`.
 
-**Outbox pattern:** Monitor events are written in the same DB transaction as state/session updates,
-then a background task flushes the outbox to a Tokio `broadcast` channel. This reduces the chance of
-“state changed but event lost” during crashes or restarts.
-
-### `SessionLifecycle` (single owner of session state) {#sessionlifecycle-single-owner-of-session-state}
-
-`SessionLifecycle` owns the recording state machine, including hysteresis and terminal-cause
-classification. Fresh starts and durable ends commit their required database changes before
-broadcasting `Started` or `Ended`. Hysteresis `Ending` and `Resumed` are in-memory transitions: their
-audit rows are best-effort, and the session `end_time` remains unset until the lifecycle reaches
-`Ended`. Download terminal events feed back into this service. `Ended` drives session-complete
-pipelines, danmu cleanup, and download bookkeeping; a resumed `Started` restarts the same session.
-Operations for one streamer share an async lock through database commit, memory changes, and
-transition publication; timer expiry follows the same order and rechecks cancellation before
-claiming a handle. Database end writes only affect active rows, so late events do not rewrite end
-times or duplicate completion events. An explicit offline signal for an older session cannot
-change the state of a newer active session.
-
-An admitted operation owns its admission and streamer lock through completion. Caller cancellation
-can roll back work before COMMIT or the first irreversible memory transition. Once that boundary
-starts, the supervised operation finishes cache publication, session maps, best-effort audit work,
-and required and observer transitions even if the caller disappears. SQL errors during an end leave
-the existing hysteresis handle intact; the lock keeps a resume or timer behind that end attempt.
-A failed timer end retries in the same timer task, releasing admission and the lock between tries.
-Graceful shutdown drains these owners. Forced shutdown observes the hard deadline without aborting
-an in-progress COMMIT; an unfinished operation stays supervised and database pools remain open.
+Because `step` is pure, an incident can be replayed in a unit test from the inputs that caused it.
+Each actor therefore keeps a trace (`srec-recorder/src/recorder/trace.rs`): the snapshot it started
+from and its last 64 inputs, each with its monotonic offset, wall time and jitter, as `Debug` text
+that leaves out signed stream URLs, request headers and credential material. Consecutive download
+heartbeats fold into one entry. After every step the actor checks that a timer step leaves no
+deadline already due, that no more than 20 probes start within a minute, and that no more than 8
+database writes wait in the queue. The first failure of each check, and an actor panic, logs the
+trace at `warn`; `GET /api/streamers/{id}/trace` returns it while the actor runs.
 
 ### `DownloadManager` (downloads + engine abstraction) {#downloadmanager-downloads-engine-abstraction}
 
@@ -245,7 +240,7 @@ The download manager owns:
 - Concurrency limits (including extra slots for high priority downloads)
 - Failure classification and circuit breakers keyed by engine type, configuration, and optional
   streamer scope
-- Failure/rejection events and retry-after hints; scheduler actors decide when to check again and
+- Failure/rejection events and retry-after hints; `StreamerFsm` decides when to check again and
   re-enter the download-start path
 - Engine abstraction:
   - External processes: `ffmpeg`, `streamlink`
@@ -336,51 +331,53 @@ process budget; see [Streamlink stopping](../concepts/engines.md#stopping-stream
 ```mermaid
 sequenceDiagram
   autonumber
-  participant SCH as Scheduler actors
-  participant MON as StreamMonitor
-  participant SESS as SessionLifecycle
+  participant ACT as StreamerActor / StreamerFsm
+  participant PRB as RecorderProber
+  participant STO as RecorderStore
   participant DB as SQLite
-  participant SC as ServiceContainer handlers
   participant DL as DownloadManager
   participant ENG as Selected download engine
   participant DM as DanmuService
   participant PL as PipelineManager
-  participant NOTI as NotificationService
+  participant NOTI as NotificationService / OutboxDrainer
 
-  SCH->>MON: check platform status and apply filters
-  MON->>SESS: apply detected session state
-  SESS->>DB: transaction for session, streamer state, audit, and outbox
-  DB-->>SESS: commit
-  SESS-->>SC: SessionTransition::Started
-  MON-->>SC: committed MonitorEvent via outbox flush
+  ACT->>PRB: probe platform status and apply filters
+  PRB-->>ACT: ProbeStatus::Live
+  ACT->>STO: CommitDb(StartOrResumeSession)
+  STO->>DB: transaction for session, streamer state, audit, and OutboxEvent
+  DB-->>STO: commit
+  STO-->>ACT: DbCommitOutcome::SessionStarted
+  DB-->>NOTI: NotificationOutboxDrainer delivers OutboxEvent
 
-  SC->>DL: preflight, queue, and call start_with_slot
+  ACT->>DL: startup_task preflight, queue, and start_with_slot
   DL->>ENG: spawn selected engine
-  DL-->>SC: return registered download ID
-  SC->>DM: start collection after start_with_slot succeeds
+  DL-->>ACT: reserved AttemptStarted feedback
+  ACT->>DM: start collection after start_with_slot succeeds
   ENG-->>DL: segment started or completed
-  DL-->>SC: DownloadManagerEvent
-  DM-->>SC: DanmuEvent
-  SC->>PL: handle segment events and enqueue DAG jobs
+  DL-->>ACT: acknowledged SegmentStarted / SegmentCompleted
+  DM-->>ACT: FIFO DanmuEvent
+  ACT->>PL: PipelineNotification (segments and danmu)
 
-  SC->>SESS: apply download terminal outcome
+  DL-->>ACT: reserved DownloadEnded feedback
   alt authoritative end
-    SESS->>DB: commit durable session end
-    SESS-->>SC: SessionTransition::Ended
-    SC->>PL: handle Ended transition
+    ACT->>STO: CommitDb(EndSession)
+    STO->>DB: commit durable session end and OutboxEvent
+    STO-->>ACT: DbCommitOutcome::SessionEnded
+    ACT->>PL: PipelineNotification::SessionEnded
   else ambiguous or recoverable outcome
-    SESS-->>SC: SessionTransition::Ending
-    Note over SESS: Hysteresis audit is best-effort
+    Note over ACT: Enter QuietPeriod (best-effort hysteresis audit)
     alt live status returns within the window
-      SESS-->>SC: Resumed and Started
-      SC->>DL: restart download for the same session
+      ACT->>STO: CommitDb(ResumeHysteresis)
+      STO-->>ACT: DbCommitOutcome::HysteresisResumed
+      ACT->>DL: restart download for the same session
     else window expires or offline is confirmed
-      SESS->>DB: commit durable session end
-      SESS-->>SC: SessionTransition::Ended
-      SC->>PL: handle Ended transition
+      ACT->>STO: CommitDb(EndSession)
+      STO->>DB: commit durable session end and OutboxEvent
+      STO-->>ACT: DbCommitOutcome::SessionEnded
+      ACT->>PL: PipelineNotification::SessionEnded
     end
   end
-  SC-->>NOTI: monitor, download, and session events
+  DL-->>NOTI: download events
   PL-->>NOTI: PipelineEvent
 ```
 
@@ -412,31 +409,32 @@ which case every route is unauthenticated. The full health and readiness handler
 tokens themselves; liveness and idle checks are public. WebSocket, media, and stream-proxy routes use their documented
 query-parameter authentication paths.
 
-## Scheduler State and Backoff {#scheduler-state-and-backoff}
+## Recorder state and backoff {#scheduler-state-and-backoff}
 
-Streamer actors use in-memory scheduling state and the database-backed metadata cache. Runtime recovery uses the database and session lifecycle; no actor state files are required.
+Streamer actors keep scheduling state in `StreamerFsm` and read immutable snapshots from `StreamerManager`'s database-backed cache. Runtime recovery relies on SQLite sessions and streamer state; no actor state files are required.
 
-Monitoring uses transactional error writes and the `disabled_until_for_error_count` calculation. Backoff preserves the configured threshold, starts at 60 seconds, doubles and caps at one hour; very large stored error counts reach that cap without overflowing. Database/cache publication shares the committed writer boundary described above.
+Monitoring uses transactional error writes in `RecorderStore` and `disabled_until_for_error_count`. Backoff preserves the configured threshold, starts at 60 seconds, doubles, and caps at one hour; very large stored error counts reach that cap without overflowing. Database/cache publication shares the `CommittedWriter` boundary described above.
 
 ### Reliable lifecycle feedback {#reliable-lifecycle-feedback}
 
-Recording startup and terminal scheduling feedback use an owned lane, separate from progress broadcasts and persistence acknowledgements. The container wires it during construction; Rust embedders use `Scheduler::connect_download_manager` before starting either service. Each admitted attempt reserves capacity for Started and Terminal before it starts. Admission never waits for the actor to apply a message; terminal feedback is published after the recording slot is released. Actor generations and recording identities fence delayed messages, and a replacement starts with the recording owner's current identity.
+Recording startup and terminal feedback use a reserved-capacity lane (`RecorderDownloadFeedback` implemented by `ActorRegistry::download_feedback`), separate from progress broadcasts and segment coordination acknowledgements. `ServiceContainer` wires it via `DownloadManager::set_recorder_feedback` during construction. Each admitted attempt reserves capacity for `AttemptStarted` and `DownloadEnded` before starting. Admission never waits for the actor to process its mailbox; terminal feedback is published strictly after the download slot is released. Actor generations and attempt IDs fence delayed messages.
 
-The lane retains at most 32 lifecycle envelopes per streamer. Its global budget is 1,024 backlog envelopes plus twice the highest configured total recording concurrency, including high-priority extra slots. Increases grow that budget; decreases preserve outstanding reservations. Full admission returns the retryable `SchedulerFeedbackBusy` error and retains a local recheck request without declaring the streamer offline or disabled. An owned recovery worker coalesces requests while waiting for both capacity pools, leaving lifecycle application free to release reservations; it retries only after capacity recovers. Actor retirement and shutdown cancel this wait. Shared payloads and reservation ownership remain attached while an old actor generation still holds an application message.
+The lane retains at most 32 lifecycle permits per streamer. Its global budget is 1,024 backlog permits plus twice the highest configured total recording concurrency, including high-priority extra slots. Increases grow that budget; decreases preserve outstanding reservations. Full admission returns the retryable `RecorderFeedbackBusy` error (HTTP error code `SCHEDULER_FEEDBACK_BUSY`) and notifies `ActorRegistry::request_retry_admission` without marking the streamer offline or disabled.
 
-Configuration resolution uses at most eight owned workers. Revisions and actor generations reject stale results; the latest desired configuration survives mailbox pressure, and lagged configuration broadcasts trigger reconciliation. Progress remains lossy and throttled. Shutdown stops monitoring before recording drains; remaining feedback receives an explicit stopped/retired/unavailable disposition, and the recording drain also joins the feedback owner.
+Configuration resolution allocates a monotonic revision before awaiting `ConfigService`, so slower lookups cannot overwrite newer updates, and lagged configuration broadcasts trigger full reconciliation. Progress remains lossy and throttled. Shutdown stops monitoring before draining recordings, and trailing closed segments still persist through `ActorRegistry`'s session-level fallback after an actor exits.
 
 ## Event-driven communication {#event-driven-communication}
 
-Most cross-service coordination happens via Tokio `broadcast` channels.
+Cross-service coordination uses explicit lanes matching delivery guarantees:
 
-| Stream | Publisher | Typical consumers | Notes |
+| Stream / lane | Publisher | Typical consumers | Notes |
 |---|---|---|---|
-| `ConfigUpdateEvent` | `ConfigService`, `StreamerManager` | `Scheduler`, `ServiceContainer` | Drives actor changes, runtime reconfiguration, and cleanup |
-| `MonitorEvent` | `StreamMonitor` | `ServiceContainer`, `NotificationService` | Emitted through the DB outbox (best-effort delivery under restarts) |
-| `DownloadManagerEvent` | `DownloadManager` | `Scheduler`, `NotificationService`, `ServiceContainer` handlers | Handlers feed segments to `PipelineManager` and terminal outcomes to `SessionLifecycle` |
-| `SessionTransition` | `SessionLifecycle` | `ServiceContainer` handlers, `NotificationService` | `Ended` drives cleanup and session pipelines; resumed `Started` restarts the same session |
-| `DanmuEvent` | `DanmuService` | `ServiceContainer` handlers | Handlers feed segment pairing to `PipelineManager` and terminal signals to download/session handling |
+| `ConfigUpdateEvent` | `ConfigService`, `StreamerManager` | `ActorRegistry`, `ServiceContainer` | Drives actor reconciliation, runtime reconfiguration, and cleanup |
+| `PostPublicationChangeSet` | `CommittedStreamerState`, `RecorderStore` | `ActorRegistry` | Fires strictly after `COMMIT` and lock release to reconcile actors |
+| `OutboxEvent` (SQLite outbox) | `RecorderStore` | `NotificationOutboxDrainer` → `NotificationService` | Persisted atomically with state/session commits; survives restarts |
+| `DownloadManagerEvent` | `DownloadManager` | `ActorRegistry` (reserved feedback + coordination + progress), `NotificationService` | Reserved permits for `Started`/terminal; acknowledged coordination for segments |
+| `DanmuEvent` | `DanmuService` | `ActorRegistry` (FIFO coordination) | Delivered in order to actors (with post-exit fallback) and forwarded to `PipelineManager` |
+| `PipelineNotification` | `StreamerActor` / `ActorRegistry` | `PipelineManager` (via `RecorderPipelinePort`) | Drives segment, paired-segment, and session-complete DAG triggers |
 | `PipelineEvent` | `PipelineManager` | `NotificationService` | Job lifecycle events for observability |
 
 ::: tip About throttling
@@ -459,7 +457,7 @@ Key properties:
 
 - **Lock-free fast path.** `check()` on a Healthy root is an atomic load plus a `DashMap::get`. No mutex on the hot path, no cost when there are no tracked failures.
 - **Single-flight cooldown via CAS.** When a root is `Degraded`, only one caller per cooldown window (30s default) is allowed through to attempt the real `create_dir_all`. Other concurrent callers fast-reject with the cached error. Mirrors the half-open pattern in `CircuitBreaker`.
-- **No background probe task.** The real `ensure_output_dir` call is the probe — the gate uses actual download attempts to test write access. A single one-shot probe runs at container startup to detect broken mounts before recording starts.
+- **No background probe task.** The real `ensure_output_dir` call is the probe — the gate uses actual download attempts to test write access. A single one-shot probe runs at container startup to detect broken mounts before recording starts. A streamer that a degraded root holds back runs the same temporary-file write test on that root before each retry checks the platform (`DownloadManager::probe_output_root`, within the cooldown slot), so no session opens and no online or offline alert goes out until the root can be written; a test that writes marks the root healthy.
 - **Recovery hook.** On `Degraded → Healthy` transition the gate clears `consecutive_error_count`, `disabled_until`, and `last_error` for every streamer whose backoff was caused by the gate (filtered by the `"output-root blocked:"` prefix). All affected streamers leave backoff during that transition.
 - **One notification per transition.** The `Healthy → Degraded` CAS is also what decides which caller emits the critical `output_path_inaccessible` notification, so users see exactly one alert per incident regardless of how many concurrent streamers are affected.
 - **`ENOSPC` is the only mid-stream entry point.** A writer that runs out of space reports the failure to the gate while the recording is still in flight, degrading the root so the next start is throttled. Other write failures — read-only filesystem, lost permissions, a path that disappeared — are classified as file-scoped and stay with the engine's `CircuitBreaker`; they reach the gate through the startup probe, or through the pre-start hook only when they also make its `create_dir_all` fail. An existing but unwritable directory returns `Ok` from `ensure_output_dir`, so the pre-start hook does not see it. The split exists because `OutputRootUnavailable` is exempt from the circuit breaker, so the gate is the only thing throttling a retry for that kind.
@@ -468,12 +466,7 @@ Exposed in `/api/health` as a single aggregated `output-root` component listing 
 
 ## Service Ownership {#service-ownership}
 
-Ended-session retention tasks are owned by the session lifecycle. Shutdown cancels
-and joins those tasks without waiting for the retention interval; cleanup never
-removes a newer session's current-session entry. API states share the container's
-repository wrappers and configuration import service. Import construction follows
-runtime coordinator construction, while log archive grants and archive capacity
-remain local to each API state.
+`StreamerFsm` keeps a bounded 60-second `RecentlyEnded` window in memory for re-attributing late timer ends; eviction is driven by the actor's normal deadline timer and dropped cleanly when the actor exits. `AppState` shares the container's repository wrappers, `ActorRegistry`, and `ConfigBackupPort` implementation, while log archive grants and archive capacity remain local to each API state.
 
 ## Observability, health, and shutdown {#observability-health-and-shutdown}
 
@@ -494,30 +487,50 @@ remain local to each API state.
 
 ## Backend Rust Interfaces {#backend-rust-interfaces}
 
-The canonical streamer state type is `rust_srec::domain::StreamerState`, including `ERROR` and `DISABLED`. Database model constructors and API transition checks use that type. `StreamerState::can_transition_to` remains the transition validator; recording state and error backoff are persisted by the runtime services, not by mutating the configuration-facing `domain::Streamer` entity.
+The canonical streamer state type is `srec_core::domain::StreamerState`, including `ERROR` and `DISABLED`. Database model constructors and API transition checks use that type. `StreamerState::can_transition_to` remains the transition validator; recording state and error backoff are persisted by the runtime services, not by mutating the configuration-facing `domain::Streamer` entity.
 
-Use the persisted session and media models under `database::models`, and use `HealthChecker::check_disk_space_with_thresholds` for disk classification. The streamer repository keeps both `list_streamers` (excludes rows marked for deletion) and `list_all_streamers` (includes them so startup can finish retirement).
+Use the persisted session and media models under `srec_sqlite::models`, and use `HealthChecker::check_disk_space_with_thresholds` for disk classification. The streamer repository keeps both `list_streamers` (excludes rows marked for deletion) and `list_all_streamers` (includes them so startup can finish retirement).
 
-Workflow transitions are decided in `pipeline::DagScheduler`: a worker reports a job outcome through `on_job_attempt_completed` or `on_job_attempt_failed`, which decide between retrying, failing and ignoring the attempt, and the manager retries a workflow through `retry_dag`, which validates, resets, restarts and replays under one entry point. `DagRepository` keeps the guarded transactions that make each transition durable and exposes `list_ready_steps` as the single readiness rule shared with the completion transaction.
+Workflow transitions are decided in `srec_pipeline::DagScheduler`: a worker reports a job outcome through `on_job_attempt_completed` or `on_job_attempt_failed`, which decide between retrying, failing and ignoring the attempt, and the manager retries a workflow through `retry_dag`, which validates, resets, restarts and replays under one entry point. `DagRepository` keeps the guarded transactions that make each transition durable and exposes `list_ready_steps` as the single readiness rule shared with the completion transaction.
 
 ### Actor terminal and wake policies {#actor-terminal-and-wake-policies}
 
-The actor keeps mailbox execution, individual checks, reliable feedback, terminal
-decisions and live wake decisions in separate modules. Only an explicit
-streamer-offline terminal policy submits Offline to the monitor. Clean completions
-and user/unknown stops resume verification; shutdown and disable park polling.
-Infrastructure blocks keep their persistence and retry policy, and
-feedback acknowledgement follows effect application.
+`StreamerFsm` splits probing, attempt handling, commit reconciliation, credential recovery,
+hysteresis, scheduling, segment tracking, and stop coordination into focused submodules under
+`srec-recorder/src/recorder/fsm/`. Only authoritative offline outcomes (`StreamerOffline` or
+HLS `#EXT-X-ENDLIST`) immediately end a session; clean disconnects and recoverable stops enter
+the quiet period to absorb reconnects, while shutdown and disable park polling (`Shutdown` keeps
+the DB session open for restart recovery, whereas `Disable` and `Retire` close it).
 
-Explicit check deadlines take precedence over the Live watchdog. For a parked Live
-actor, the earliest watchdog, stale-heartbeat or schedule-boundary wake is then
-bounded below by the failed-watchdog retry floor. Recurring polling retains its
-±10% jitter; smart-wake, admission and immediate deadlines keep their authority.
+Explicit check deadlines take precedence over the Live watchdog. For a live actor, the earliest
+watchdog, 5-minute stall window, or schedule-boundary wake is bounded below by the 60-second
+failed-watchdog retry floor. Recurring polling retains ±10% jitter; smart-wake, admission, and
+immediate deadlines keep their authority.
 
-A user stop is `DownloadEndPolicy::Stopped(DownloadStopCause::User)`, carrying the
-wire-level stop cause.
-`StreamerActor` and `Supervisor` metadata-store constructor parameters contain
-`Arc<StreamerMetadata>` values. Obtain the shared store from `StreamerManager`;
-actor checks clone an immutable Arc snapshot instead of configuration JSON.
-`StatusChecker`, which takes borrowed metadata inputs, is the scheduler's only
-status-check interface.
+`StreamerActor` and `ActorRegistry` read immutable `Arc<StreamerMetadata>` snapshots from
+`StreamerManager` and resolve merged settings via `ConfigService`, while `RecorderProber` handles
+deduplicated status and freshness probes.
+
+<div id="runtimecoordinator-recording-startup-and-cancellation" class="legacy-section">
+
+This section is now in [Recording startup and cancellation](#recording-startup-and-cancellation).
+
+</div>
+
+<div id="scheduler-actor-model-orchestration" class="legacy-section">
+
+This section is now in [ActorRegistry and StreamerActor](#recorder-control-plane).
+
+</div>
+
+<div id="streammonitor-detect-filter-outbox" class="legacy-section">
+
+This section is now in [RecorderProber and RecorderStore](#recorder-prober-and-store).
+
+</div>
+
+<div id="sessionlifecycle-single-owner-of-session-state" class="legacy-section">
+
+This section is now in [StreamerFsm](#streamerfsm-state-machine).
+
+</div>

@@ -24,7 +24,16 @@ async fn fixture() -> (
         .await
         .unwrap();
     crate::database::run_migrations(&pool).await.unwrap();
-    let container = Arc::new(ServiceContainer::new(pool.clone(), pool).await.unwrap());
+    let container = Arc::new(
+        ServiceContainer::with_config(
+            pool.clone(),
+            pool,
+            super::DEFAULT_CACHE_TTL,
+            super::DEFAULT_EVENT_CAPACITY,
+        )
+        .await
+        .unwrap(),
+    );
     let (logging, _layer) =
         crate::logging::LoggingConfig::for_route_tests(directory.path().to_owned());
     let state = AppState::new(ApiServices {
@@ -32,6 +41,7 @@ async fn fixture() -> (
         streamer_manager: container.streamer_manager.clone(),
         pipeline_manager: container.pipeline_manager.clone(),
         download_manager: container.download_manager.clone(),
+        queries: crate::api::queries::ApiQueries::new(container.pool.clone()),
         session_repository: container.session_repository.clone(),
         session_event_repository: container.session_event_repository.clone(),
         streamer_check_history_repository: container.streamer_check_history_repository.clone(),
@@ -52,14 +62,16 @@ async fn fixture() -> (
         credential_profiles: container.credential_profiles.clone(),
         credential_execution: container.credential_execution.clone(),
         proxies: container.proxies.clone(),
-        credential_blocks: container.stream_monitor.credential_blocks().clone(),
+        credential_blocks: container.credential_blocks().clone(),
         bigo_notifications: container.bigo_notifications.clone(),
-        playback_contexts: container.playback_contexts.clone(),
+        playback_contexts: Arc::new(
+            crate::api::playback_context::PlaybackContextService::default(),
+        ),
+        extractor_runner: container.extractor_runner.clone(),
         danmu_taps: container.danmu_service.taps(),
         credential_login_sessions: container.credential_login_sessions.clone(),
-        configuration_import_service: container.configuration_import_service.clone(),
-        configuration_export_service: container.configuration_export_service.clone(),
-        runtime_coordinator: container.runtime_coordinator.clone(),
+        config_backup: crate::backend::build_config_backup(&container),
+        actor_registry: container.actor_registry.clone(),
     });
     let mut row = StreamerDbModel::new(
         "Before shutdown",
@@ -178,13 +190,14 @@ async fn hard_cap_retains_manager_and_import_commit_publication() {
                                     streamer_specific_config: None,
                                 })
                                 .await
-                                .map(|_| ()),
+                                .map(|_| ())
+                                .map_err(crate::Error::from),
                             Mutation::Import => caller_state
-                                .configuration_import_service
-                                .import(config, ImportMode::Merge)
+                                .config_backup
+                                .import_config(config, ImportMode::Merge, None)
                                 .await
                                 .map(|_| ())
-                                .map_err(|error| crate::Error::Other(error.to_string())),
+                                .map_err(|error| crate::Error::other(error.to_string())),
                         };
                         let _ = reply.send(result);
                     })
@@ -406,6 +419,7 @@ async fn retained_drain_allows_only_its_own_nested_completion_after_a_hard_timeo
                                 |_| {},
                             )
                             .await
+                            .map_err(crate::Error::from)
                     })
                 },
             )
@@ -456,4 +470,110 @@ async fn retained_drain_allows_only_its_own_nested_completion_after_a_hard_timeo
         "nested commit"
     );
     close_fixture_after_hard_cap(&container).await;
+}
+
+#[tokio::test]
+async fn actor_runtime_hard_cap_retains_recorder_store_commit_across_force_shutdown() {
+    use crate::domain::StreamerState;
+    use crate::recorder::DbCommitOp;
+
+    for phase in [CommitPhase::BeforeCommit, CommitPhase::AfterCommit] {
+        let (_directory, container, state, row) = fixture().await;
+        let store = container.actor_registry.store().clone();
+        let owner = container.streamer_manager.committed_state().unwrap();
+        let gate = Arc::new(CommitTestGate::default());
+        owner.writer.set_commit_gate(phase, Some(gate.clone()));
+
+        let commit_store = store.clone();
+        let streamer_id = row.id.clone();
+        let streamer_name = row.name.clone();
+        let (reply, received) = oneshot::channel();
+        assert!(
+            container
+                .task_supervisor
+                .spawn("actor recorder store commit", async move {
+                    let result = commit_store
+                        .commit(DbCommitOp::StartOrResumeSession {
+                            streamer_id,
+                            streamer_name,
+                            title: "Hard-cap retained session".into(),
+                            category: None,
+                            current_avatar: None,
+                            new_avatar: None,
+                            credential_binding: None,
+                            now: jiff::Timestamp::now(),
+                        })
+                        .await;
+                    let _ = reply.send(result);
+                })
+        );
+
+        tokio::time::timeout(Duration::from_secs(2), gate.started.notified())
+            .await
+            .unwrap();
+
+        let hard_cap = Duration::from_millis(100);
+        let error = tokio::time::timeout(
+            hard_cap + Duration::from_secs(5),
+            container.shutdown_with_hard_cap(Duration::from_millis(10), hard_cap),
+        )
+        .await
+        .expect("hard cap must stop waiting for gated actor-mode commit")
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("unfinished committed writes remain supervised"),
+            "unexpected shutdown error: {error}"
+        );
+        assert!(
+            received.await.is_err(),
+            "the ordinary request owner must be aborted at the force deadline"
+        );
+        assert!(!container.pool.is_closed());
+        assert!(!container.write_pool.is_closed());
+
+        owner.writer.set_commit_gate(phase, None);
+        gate.release.notify_one();
+        assert!(
+            tokio::time::timeout(
+                Duration::from_secs(2),
+                container
+                    .committed_write_supervisor
+                    .drain_retained(Duration::from_secs(1)),
+            )
+            .await
+            .unwrap()
+        );
+
+        let open_sessions: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM live_sessions WHERE streamer_id = ? AND end_time IS NULL",
+        )
+        .bind(&row.id)
+        .fetch_one(&container.pool)
+        .await
+        .unwrap();
+        assert_eq!(open_sessions, 1, "sealed RecorderStore commit must finish");
+        assert_eq!(
+            state
+                .streamer_manager
+                .get_streamer_snapshot(&row.id)
+                .unwrap()
+                .state,
+            StreamerState::Live
+        );
+        let outbox_rows: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM monitor_event_outbox WHERE streamer_id = ? AND delivered_at IS NULL",
+        )
+        .bind(&row.id)
+        .fetch_one(&container.pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            outbox_rows, 1,
+            "StreamOnline outbox row must commit atomically with the session"
+        );
+
+        close_fixture_after_hard_cap(&container).await;
+    }
 }

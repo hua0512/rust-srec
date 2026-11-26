@@ -1,0 +1,46 @@
+[package]
+name = "srec-engines"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Download engine backends (FFmpeg, Streamlink, and Mesio) for rust-srec"
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+bytes = { workspace = true }
+flv = { path = "../../../crates/flv" }
+flv-fix = { path = "../../../crates/flv-fix", features = ["progress"] }
+futures = { workspace = true }
+hls = { path = "../../../crates/hls" }
+hls-fix = { path = "../../../crates/hls-fix", features = ["progress"] }
+jiff = { workspace = true }
+mesio = { path = "../../../crates/mesio", package = "mesio-engine" }
+parking_lot = { workspace = true }
+pipeline-common = { path = "../../../crates/pipeline-common" }
+process-utils = { path = "../../../crates/process-utils" }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+srec-core = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, optional = true }
+
+[dev-dependencies]
+m3u8-rs = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
+tracing-subscriber = { workspace = true }
+
+[features]
+default = []
+static-ssl = ["mesio/static-ssl"]
+tls-native-fallback = ["mesio/tls-native-fallback"]
+test-support = ["dep:tracing-subscriber"]

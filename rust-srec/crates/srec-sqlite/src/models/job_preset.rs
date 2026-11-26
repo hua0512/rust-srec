@@ -1,0 +1,232 @@
+//! Job Preset database models.
+
+use jiff::Timestamp;
+use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
+
+use srec_core::utils::json::{self, JsonContext};
+
+/// Valid processor types for presets.
+pub const VALID_PROCESSORS: &[&str] = &[
+    "remux",
+    "rclone",
+    "baidupcs",
+    "thumbnail",
+    "execute",
+    "audio_extract",
+    "compression",
+    "copy_move",
+    "delete",
+    "metadata",
+    "danmaku_factory",
+    "ass_burnin",
+];
+
+/// Valid preset categories.
+pub const VALID_CATEGORIES: &[&str] = &[
+    "remux",       // Container format conversion (no re-encoding)
+    "compression", // Re-encoding/transcoding
+    "thumbnail",   // Image/preview generation
+    "audio",       // Audio extraction
+    "archive",     // Archiving/compression
+    "upload",      // Cloud upload (rclone)
+    "cleanup",     // File deletion
+    "file_ops",    // Copy/move operations
+    "custom",      // Custom execute commands
+    "metadata",    // Metadata operations
+    "danmu",       // Danmu/danmaku processing
+    "subtitle",    // Subtitle conversion/rendering
+];
+
+/// Job Preset configuration.
+///
+/// Represents a reusable, named configuration for a specific processor.
+/// Used in pipeline definitions to simplify configuration and promote reuse.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct JobPreset {
+    /// Unique identifier (UUID).
+    pub id: String,
+    /// Unique name of the preset (e.g., "hq_remux", "fast_upload").
+    pub name: String,
+    /// Optional description of what this preset does.
+    #[sqlx(default)]
+    pub description: Option<String>,
+    /// Category for organizing presets (e.g., "remux", "compression", "thumbnail").
+    #[sqlx(default)]
+    pub category: Option<String>,
+    /// Processor type this preset applies to (e.g., "remux", "upload").
+    pub processor: String,
+    /// JSON blob for the processor configuration.
+    /// This corresponds to the `config` field in `ProcessorInput`.
+    pub config: String,
+    /// Creation timestamp.
+    #[sqlx(try_from = "crate::time::EpochMillis")]
+    pub created_at: Timestamp,
+    /// Last update timestamp.
+    #[sqlx(try_from = "crate::time::EpochMillis")]
+    pub updated_at: Timestamp,
+}
+
+impl JobPreset {
+    /// Create a new Job Preset.
+    pub fn new(
+        name: impl Into<String>,
+        processor: impl Into<String>,
+        config: serde_json::Value,
+    ) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: name.into(),
+            description: None,
+            category: None,
+            processor: processor.into(),
+            config: config.to_string(),
+            created_at: Timestamp::now(),
+            updated_at: Timestamp::now(),
+        }
+    }
+
+    /// Create a new Job Preset with description.
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// Create a new Job Preset with category.
+    pub fn with_category(mut self, category: impl Into<String>) -> Self {
+        self.category = Some(category.into());
+        self
+    }
+
+    /// Validate the preset configuration.
+    pub fn validate(&self) -> crate::DbResult<()> {
+        // Validate processor type
+        if !VALID_PROCESSORS.contains(&self.processor.as_str()) {
+            return Err(crate::DbError::validation(format!(
+                "Invalid processor type '{}'. Valid types: {}",
+                self.processor,
+                VALID_PROCESSORS.join(", ")
+            )));
+        }
+
+        // Validate category if provided
+        if let Some(ref cat) = self.category
+            && !VALID_CATEGORIES.contains(&cat.as_str())
+        {
+            return Err(crate::DbError::validation(format!(
+                "Invalid category '{}'. Valid categories: {}",
+                cat,
+                VALID_CATEGORIES.join(", ")
+            )));
+        }
+
+        // Validate config is valid JSON
+        if serde_json::from_str::<serde_json::Value>(&self.config).is_err() {
+            return Err(crate::DbError::validation("Config must be valid JSON"));
+        }
+
+        // Validate name is not empty
+        if self.name.trim().is_empty() {
+            return Err(crate::DbError::validation("Name cannot be empty"));
+        }
+
+        Ok(())
+    }
+}
+
+/// Pipeline Preset configuration.
+///
+/// Represents a reusable DAG pipeline configuration that supports
+/// fan-in, fan-out, and parallel execution.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct PipelinePreset {
+    /// Unique identifier (UUID).
+    pub id: String,
+    /// Unique name of the preset (e.g., "Standard", "Archive to Cloud").
+    pub name: String,
+    /// Optional description of what this pipeline does.
+    #[sqlx(default)]
+    pub description: Option<String>,
+    /// DAG pipeline definition (JSON-serialized DagPipelineDefinition).
+    /// This is the primary field for defining pipeline structure.
+    #[sqlx(default)]
+    pub dag_definition: Option<String>,
+    /// Pipeline type: 'dag' (default).
+    #[sqlx(default)]
+    #[serde(default)]
+    pub pipeline_type: Option<String>,
+    /// Creation timestamp.
+    #[sqlx(try_from = "crate::time::EpochMillis")]
+    pub created_at: Timestamp,
+    /// Last update timestamp.
+    #[sqlx(try_from = "crate::time::EpochMillis")]
+    pub updated_at: Timestamp,
+}
+
+use crate::models::job::DagPipelineDefinition;
+
+impl PipelinePreset {
+    /// Create a new DAG Pipeline Preset.
+    pub fn new(name: impl Into<String>, dag: DagPipelineDefinition) -> Self {
+        let id = uuid::Uuid::new_v4().to_string();
+        Self {
+            id: id.clone(),
+            name: name.into(),
+            description: None,
+            dag_definition: Some(json::to_string_or_fallback(
+                &dag,
+                "{}",
+                JsonContext::PipelinePresetField {
+                    pipeline_preset_id: &id,
+                    field: "dag_definition",
+                },
+                "Failed to serialize dag_definition; storing empty object",
+            )),
+            pipeline_type: Some("dag".to_string()),
+            created_at: Timestamp::now(),
+            updated_at: Timestamp::now(),
+        }
+    }
+
+    /// Create a new Pipeline Preset with description.
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// Get the DAG definition if this is a DAG pipeline.
+    pub fn get_dag_definition(&self) -> Option<DagPipelineDefinition> {
+        let raw = self.dag_definition.as_deref()?;
+        json::parse_optional(
+            Some(raw),
+            JsonContext::PipelinePresetField {
+                pipeline_preset_id: &self.id,
+                field: "dag_definition",
+            },
+            "Invalid dag_definition JSON; returning None",
+        )
+    }
+
+    /// Validate the preset configuration.
+    pub fn validate(&self) -> crate::DbResult<()> {
+        // Validate name is not empty
+        if self.name.trim().is_empty() {
+            return Err(crate::DbError::validation("Name cannot be empty"));
+        }
+
+        // Validate DAG definition
+        if let Some(ref dag_str) = self.dag_definition {
+            let dag: DagPipelineDefinition = serde_json::from_str(dag_str).map_err(|e| {
+                crate::DbError::validation(format!("Invalid DAG definition: {}", e))
+            })?;
+            // Validate the DAG structure
+            dag.validate()?;
+        } else {
+            return Err(crate::DbError::validation(
+                "Pipeline must have a dag_definition",
+            ));
+        }
+
+        Ok(())
+    }
+}

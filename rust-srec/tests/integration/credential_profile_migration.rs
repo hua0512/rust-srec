@@ -135,7 +135,7 @@ async fn upgrade_converts_configured_cookies_into_selected_platform_profiles() {
         exec(&pool, "INSERT INTO live_sessions(id, streamer_id, streamer_name, start_time, total_size_bytes) VALUES ('legacy-live', 's1', 'S1', 1234567890000, 1234)").await;
         let schema_before: Vec<(String, String, Option<String>)> = sqlx::query_as("SELECT type, name, sql FROM sqlite_schema WHERE type IN ('index', 'trigger') AND tbl_name IN ('platform_config','template_config','streamers','live_sessions') ORDER BY type, name").fetch_all(&pool).await.unwrap();
 
-        rust_srec::database::run_migrations(&pool).await.unwrap();
+        rust_srec::services::legacy_upgrade::run_migrations(&pool).await.unwrap();
 
         // Platform cookies, tokens and content settings.
         let platform = selection(&pool, platform_owner("platform-bilibili"), "platform-bilibili").await;
@@ -230,7 +230,7 @@ async fn upgrade_converts_configured_cookies_into_selected_platform_profiles() {
         assert_eq!(owners, 5);
 
         // The conversion runs once; replaying migrations changes nothing.
-        rust_srec::database::run_migrations(&pool).await.unwrap();
+        rust_srec::services::legacy_upgrade::run_migrations(&pool).await.unwrap();
         let replayed: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM credential_profiles").fetch_one(&pool).await.unwrap();
         assert_eq!(replayed, 10);
         let marker: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name = 'legacy_credential_upgrade_pending')").fetch_one(&pool).await.unwrap();
@@ -258,7 +258,9 @@ async fn a_fresh_database_finishes_the_upgrade_without_profiles() {
     let pool = rust_srec::database::init_pool_with_size("sqlite::memory:", 1)
         .await
         .unwrap();
-    rust_srec::database::run_migrations(&pool).await.unwrap();
+    rust_srec::services::legacy_upgrade::run_migrations(&pool)
+        .await
+        .unwrap();
     let profiles: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM credential_profiles")
         .fetch_one(&pool)
         .await
@@ -300,7 +302,9 @@ async fn later_migrations_keep_account_selections() {
     exec(&pool, "INSERT INTO credential_selections(id, platform_config_id, template_config_id, streamer_id, mode) VALUES (1, 'platform-bilibili', NULL, NULL, 'fixed'), (2, 'platform-bilibili', 'template', NULL, 'fixed'), (3, 'platform-bilibili', NULL, 'streamer', 'fixed')").await;
     exec(&pool, "INSERT INTO credential_selection_members(selection_id, platform_config_id, position, profile_id) VALUES (1, 'platform-bilibili', 0, 'account'), (2, 'platform-bilibili', 0, 'account'), (3, 'platform-bilibili', 0, 'account')").await;
 
-    rust_srec::database::run_migrations(&pool).await.unwrap();
+    rust_srec::services::legacy_upgrade::run_migrations(&pool)
+        .await
+        .unwrap();
 
     for owner in [
         platform_owner("platform-bilibili"),
@@ -327,7 +331,7 @@ async fn upgrade_keeps_templates_awaiting_deletion_pending() {
         let pool = database_through("20260926000000").await;
         exec(&pool, r#"INSERT INTO template_config(id, name, cookies, platform_overrides) VALUES ('retiring', 'Retiring', 'SESSDATA=old', '{"bilibili":{"refresh_token":"rt"}}'), ('live', 'Live', 'SESSDATA=live', NULL)"#).await;
         exec(&pool, "INSERT INTO retirement_config_deletions(kind, config_id) VALUES ('template', 'retiring')").await;
-        rust_srec::database::run_migrations(&pool).await.unwrap();
+        rust_srec::services::legacy_upgrade::run_migrations(&pool).await.unwrap();
         let pending: Vec<String> = sqlx::query_scalar(
             "SELECT config_id FROM retirement_config_deletions WHERE kind = 'template' ORDER BY config_id",
         )

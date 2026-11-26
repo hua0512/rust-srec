@@ -1,5 +1,6 @@
 mod credential_profiles;
 mod email_validation;
+mod import_projection;
 mod proxies;
 mod timezone_import;
 
@@ -10,12 +11,12 @@ use sqlx::SqlitePool;
 use super::snapshot::{ImportSnapshot, validate_import};
 use super::streamers::{clears_error_tracking, imported_state};
 use super::*;
-use crate::api::auth_service::MAX_USERNAME_LENGTH;
+use crate::api::auth_store::{UserDbModel, import_user as persist_user};
 use crate::config::ConfigService;
 use crate::config::backup::{ConfigExport, GlobalConfigExport, ImportMode, UserExport};
 use crate::database::models::{
     EngineConfigurationDbModel, GlobalConfigDbModel, JobPreset, PipelinePreset,
-    PlatformConfigDbModel, StreamerDbModel, TemplateConfigDbModel, UserDbModel,
+    PlatformConfigDbModel, StreamerDbModel, TemplateConfigDbModel,
 };
 use crate::database::repositories::config::{
     SqlxConfigRepository, import_template as persist_template,
@@ -27,9 +28,13 @@ use crate::database::repositories::preset::{
 use crate::database::repositories::streamer::{
     SqlxStreamerRepository, import_streamer_row as persist_streamer,
 };
-use crate::database::repositories::user::import_user as persist_user;
 use crate::database::{begin_immediate, init_pool_with_size, run_migrations};
+use crate::domain::MAX_USERNAME_LENGTH;
 use crate::domain::StreamerState;
+
+fn test_auth_import() -> Arc<dyn AuthImportTxPort> {
+    crate::backend::auth_import_tx_port()
+}
 
 #[tokio::test]
 async fn timestamp_import_persistence_and_snapshot_use_integer_milliseconds() {
@@ -242,7 +247,7 @@ fn validation_rejects_non_argon2id_password_hashes() {
     config.users.push(user);
 
     assert!(matches!(
-        validate_import(&config, ImportMode::Merge),
+        test_auth_import().validate_user_exports(&config.users),
         Err(ConfigurationImportError::Validation(message))
             if message.contains("Invalid password hash")
     ));
@@ -332,9 +337,24 @@ async fn replace_import_retains_configuration_until_its_streamer_is_reaped() {
     snapshot
         .validate_references(&config, ImportMode::Replace)
         .unwrap();
-    apply_import(&mut tx, &snapshot, &config, ImportMode::Replace)
-        .await
-        .unwrap();
+    let auth = test_auth_import();
+    auth.validate_users_tx(
+        &mut tx,
+        &config.users,
+        includes_imported_users(&config),
+        ImportMode::Replace,
+    )
+    .await
+    .unwrap();
+    apply_import(
+        &mut tx,
+        &snapshot,
+        &config,
+        ImportMode::Replace,
+        auth.as_ref(),
+    )
+    .await
+    .unwrap();
     tx.commit().await.unwrap();
     let marked: bool =
         sqlx::query_scalar("SELECT deleted_at IS NOT NULL FROM streamers WHERE id = 'retiring'")
@@ -413,10 +433,16 @@ async fn replace_import_updates_lowest_id_case_duplicate_and_marks_shadow_delete
     snapshot
         .validate_references(&config, ImportMode::Replace)
         .unwrap();
-    let AppliedImport { stats, .. } =
-        apply_import(&mut tx, &snapshot, &config, ImportMode::Replace)
-            .await
-            .unwrap();
+    let auth = test_auth_import();
+    let AppliedImport { stats, .. } = apply_import(
+        &mut tx,
+        &snapshot,
+        &config,
+        ImportMode::Replace,
+        auth.as_ref(),
+    )
+    .await
+    .unwrap();
     tx.commit().await.unwrap();
 
     let rows: Vec<StreamerDbModel> = sqlx::query_as("SELECT * FROM streamers ORDER BY id")
@@ -457,9 +483,16 @@ async fn merge_import_updates_one_case_duplicate_and_keeps_the_shadow() {
     snapshot
         .validate_references(&config, ImportMode::Merge)
         .unwrap();
-    let AppliedImport { stats, .. } = apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
-        .await
-        .unwrap();
+    let auth = test_auth_import();
+    let AppliedImport { stats, .. } = apply_import(
+        &mut tx,
+        &snapshot,
+        &config,
+        ImportMode::Merge,
+        auth.as_ref(),
+    )
+    .await
+    .unwrap();
     tx.commit().await.unwrap();
 
     let rows: Vec<StreamerDbModel> = sqlx::query_as("SELECT * FROM streamers ORDER BY id")

@@ -8,7 +8,7 @@ Use the map below to locate the task. Read supporting docs, examples, and skills
 
 | Area | Location / task-specific guidance |
 | --- | --- |
-| Backend: REST API, scheduler, pipeline, SQLite | `rust-srec/`, package `rust-srec`; [backend rules](rust-srec/AGENTS.md) |
+| Backend: REST API, recorder, pipeline, SQLite | `rust-srec/`: package `rust-srec` and the `srec-*` crates in `rust-srec/crates/`; [backend rules](rust-srec/AGENTS.md) |
 | CLIs | `strev-cli/` (package `strev`), `mesio-cli/` (package `mesio`) |
 | Protocols, containers, platform extractors, download engine | `crates/*`; [crate map and module guide](crates/AGENTS.md) |
 | Web UI and desktop frontend | `rust-srec/frontend/`; [frontend rules](rust-srec/frontend/AGENTS.md) |
@@ -21,7 +21,7 @@ Use the map below to locate the task. Read supporting docs, examples, and skills
 
 - Rust edition and minimum supported version: [Cargo.toml](Cargo.toml). Development toolchain and components: [rust-toolchain.toml](rust-toolchain.toml).
 - Node: [.nvmrc](.nvmrc). pnpm and scripts: [frontend package.json](rust-srec/frontend/package.json) and [docs package.json](rust-srec/docs/package.json). Install dependencies when needed with `pnpm install --frozen-lockfile` in the relevant directory.
-- Rust code generated from the `.proto` schemas in `rust-srec/proto/` and `crates/platforms/proto/` is committed, so builds need no `protoc`. After editing a schema, regenerate with `UPDATE_GENERATED_PROTOS=1 cargo nextest run --locked -p <package> --lib -E 'test(generated_protos)'` (`rust-srec` or `platforms-parser`); without the variable that test fails when the committed code is stale.
+- Rust code generated from the `.proto` schemas in `rust-srec/proto/` and `crates/platforms/proto/` is committed, so builds need no `protoc`. After editing a schema, regenerate with `UPDATE_GENERATED_PROTOS=1 cargo nextest run --locked -p <package> --lib -E 'test(generated_protos)'` (`srec-api` or `platforms-parser`); without the variable that test fails when the committed code is stale.
 - Held dependencies (nothing enforces these, so reject Dependabot bumps): `cc` stays at 1.8.0 in `Cargo.lock`, because 1.9.0 breaks MSVC builds under sccache. `parking_lot` stays on 0.12 while dependencies such as crossterm, moka, tao and tracing-subscriber use 0.12, because 0.13 would compile a second copy. `notify-rust` stays on 4.18 while the Tauri plugins use zbus 5, because 4.19 pulls zbus 6. `wry` stays at 0.57.1 until `tauri-utils` moves to dom_query 0.29, because 0.57.2 would compile a second HTML parser stack. Frontend version constraints are listed in the [frontend rules](rust-srec/frontend/AGENTS.md#pitfalls).
 - Exact CI targets, platform prerequisites, and feature combinations live in [.github/workflows/pr.yml](.github/workflows/pr.yml). Release build combinations live in the corresponding `.github/workflows/release-*.yml` files. Consult these when reproducing CI or changing build/release behavior.
 
@@ -82,7 +82,7 @@ After relevant checks pass, repeat or broaden them only for new changes, failure
 - Prefer explicit types over string-based APIs; validate strings at boundaries. Prefer `Arc<T>` for shared ownership and release locks before `.await` where possible; never hold a synchronous mutex guard across an await.
 - Do not introduce `unwrap()` / `expect()` in production paths. Propagate errors with context and use targeted `thiserror` variants before flattening errors to strings. `anyhow::Result<()>` is acceptable at binary entrypoints.
 - Do not silently discard an unhandled `Result`. Use `?` for propagation or an explicit recovery path with appropriate logging/metrics. `let _ = call()?;` propagates errors and discards the success value; use `call()?;` when no binding is needed. Propagation alone does not require a duplicate log.
-- Backend errors use `rust-srec/src/error.rs`; path-related IO should use `Error::io_path(op, path, source)`. Library errors belong to the library's own error type.
+- Backend errors use the error type of the crate that raises them, which wraps lower crates' errors instead of copying their variants (see the [backend rules](rust-srec/AGENTS.md#conventions)); path-related IO should use that type's `io_path(op, path, source)`. Library errors belong to the library's own error type.
 - Use structured `tracing` fields. Add `#[instrument]` where context is useful, with `skip(...)` for secrets or unsuitable fields. Log-and-continue only when proceeding is safe; redact tokens, cookies, stream keys, and private data.
 - Preserve runtime and architecture boundaries: backend orchestration in `rust-srec/src/main.rs`, services in `rust-srec/src/services/`, Tokio tasks, and the existing allocator setup. Avoid blocking async handlers and unnecessary allocations in hot paths; prefer borrowing or `Bytes` for byte-oriented data.
 

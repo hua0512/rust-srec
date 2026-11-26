@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Weak};
 
 use super::*;
 use crate::config::{ConfigEventBroadcaster, ConfigService};
@@ -11,12 +11,7 @@ use crate::downloader::output_root_gate::RootHealthState;
 use crate::streamer::{StreamerManager, StreamerMetadata};
 
 fn gate(roots: Vec<PathBuf>) -> Arc<OutputRootGate> {
-    OutputRootGate::new(
-        Weak::new(),
-        Arc::new(|_| {}),
-        roots,
-        Duration::from_secs(30),
-    )
+    OutputRootGate::new(None, Arc::new(|_| {}), roots, Duration::from_secs(30))
 }
 
 #[test]
@@ -277,7 +272,7 @@ async fn discovered_startup_failure_blocks_actual_runtime_key_and_heals_once() {
     let recoveries = Arc::new(AtomicUsize::new(0));
     let observed = recoveries.clone();
     let gate = OutputRootGate::new(
-        Weak::new(),
+        None,
         Arc::new(move |_| {
             observed.fetch_add(1, Ordering::SeqCst);
         }),
@@ -360,5 +355,29 @@ fn escaped_percent_metadata_keeps_probe_identity_without_expanding_real_time_tok
     assert_eq!(
         gate.probe_path_for_template("/rec/Alice%%Y/special/{title}"),
         Some(PathBuf::from("/rec/Alice%Y/special"))
+    );
+}
+
+#[tokio::test]
+async fn check_output_root_gate_reports_healthy_after_recovery() {
+    let gate = gate(vec![]);
+    let err = std::io::Error::new(std::io::ErrorKind::StorageFull, "full");
+    gate.record_failure(Path::new("/rec/X"), &err);
+    let degraded = check_output_root_gate(&gate);
+    assert_eq!(degraded.status, crate::metrics::HealthStatus::Degraded);
+    // The message names the failing root and the kind of failure.
+    let message = degraded
+        .message
+        .expect("a degraded component explains why")
+        .replace('\\', "/");
+    assert!(message.contains("storage_full"), "{message}");
+    assert!(message.contains("/rec"), "{message}");
+
+    gate.mark_healthy(Path::new("/rec/X"));
+    // mark_healthy spawns a tokio task for the recovery hook; the state
+    // flip itself is synchronous so the snapshot is already Healthy.
+    assert_eq!(
+        check_output_root_gate(&gate).status,
+        crate::metrics::HealthStatus::Healthy
     );
 }

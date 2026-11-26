@@ -10,7 +10,7 @@ use crate::config::backup::{
     MANAGED_CREDENTIAL_SCHEMA_VERSION,
 };
 use crate::credentials::{CredentialMaterial, CredentialProfile};
-use crate::database::repositories::credential_profiles;
+use crate::database::repositories::credential_profiles::{self, CredentialProfileRow};
 use crate::database::repositories::credential_selections::SELECTION_KEY;
 use crate::database::repositories::proxies::RouteOwner;
 
@@ -19,7 +19,7 @@ use super::{ConfigurationImportError, validate_unique, validation, validation_er
 #[derive(sqlx::FromRow)]
 struct ProfileExportRow {
     #[sqlx(flatten)]
-    profile: CredentialProfile,
+    profile: CredentialProfileRow,
     platform_name: String,
 }
 
@@ -29,22 +29,29 @@ pub(in crate::services) async fn export_profiles(
     pool: &SqlitePool,
     proxy_names: &HashMap<String, String>,
 ) -> crate::Result<Vec<CredentialProfileExport>> {
-    let profiles = sqlx::query_as::<_, ProfileExportRow>(
+    let profiles: Vec<(CredentialProfile, String)> = sqlx::query_as::<_, ProfileExportRow>(
         "SELECT p.*, c.platform_name FROM credential_profiles p JOIN platform_config c ON c.id = p.platform_config_id WHERE NOT EXISTS(SELECT 1 FROM retirement_credential_profiles r WHERE r.profile_id = p.id) ORDER BY p.id"
-    ).fetch_all(pool).await?;
-    let ids: Vec<String> = profiles.iter().map(|row| row.profile.id.clone()).collect();
+    )
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .map(|row| (row.profile.into(), row.platform_name))
+    .collect();
+    let ids: Vec<String> = profiles
+        .iter()
+        .map(|(profile, _)| profile.id.clone())
+        .collect();
     let mut sites = credential_profiles::sites_of(&mut *pool.acquire().await?, &ids).await?;
     let mut result = Vec::with_capacity(profiles.len());
-    for row in profiles {
-        let profile = row.profile;
+    for (profile, platform_name) in profiles {
         // Only Streamlink accounts name sites, so only they carry the list.
-        let sites = crate::domain::is_streamlink_platform(&row.platform_name)
+        let sites = crate::domain::is_streamlink_platform(&platform_name)
             .then(|| sites.remove(&profile.id).unwrap_or_default());
         let material = profile.material()?;
         let proxy_route = BackupRoute::from_route(&profile.route()?, proxy_names)?;
         result.push(CredentialProfileExport {
             id: profile.id,
-            platform: row.platform_name,
+            platform: platform_name,
             label: profile.label,
             enabled: profile.enabled,
             cookies: material.cookies,
@@ -143,11 +150,10 @@ pub(super) async fn upsert(
         let platform_id = platform_ids
             .get(&profile.platform)
             .ok_or_else(|| validation_error("Unknown credential profile platform"))?;
-        let current = sqlx::query_as::<_, CredentialProfile>(
-            "SELECT * FROM credential_profiles WHERE id = ?",
+        let current = crate::database::repositories::credential_profiles::load_optional(
+            &mut *tx,
+            &profile.id,
         )
-        .bind(&profile.id)
-        .fetch_optional(&mut *tx)
         .await?;
         if let Some(current) = &current
             && current.platform_config_id != *platform_id

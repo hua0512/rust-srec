@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use sqlx::SqlitePool;
+use srec_core::CoreError;
+use srec_sqlite::DbError;
 
 mod global_platforms;
 mod notifications_users;
@@ -14,23 +16,23 @@ mod streamers;
 mod tests;
 
 use self::global_platforms::{apply_engines, apply_platforms, global_model};
-use self::notifications_users::{apply_notification_channels, apply_users};
+use self::notifications_users::apply_notification_channels;
 use self::presets_templates::{
     apply_job_presets, apply_pipeline_presets, apply_templates, delete_omitted_presets,
     delete_unimported_templates,
 };
 pub(super) use self::profiles::export_profiles;
-use self::snapshot::{ImportSnapshot, validate_import, validate_unique};
+use self::snapshot::{ImportSnapshot, includes_imported_users, validate_import, validate_unique};
 use self::streamers::{ImportedScopes, StreamerImportDiff, apply_streamers};
 use crate::config::ConfigService;
-use crate::config::backup::{ConfigExport, ImportMode, ImportStats};
+use crate::config::backup::{ConfigExport, ImportMode, ImportStats, UserExport};
 use crate::database::repositories::config::{
     SqlxConfigRepository, import_global as persist_global,
 };
 use crate::database::repositories::proxies::RouteOwner;
 use crate::database::repositories::streamer::SqlxStreamerRepository;
 use crate::notification::NotificationService;
-use crate::services::runtime_coordinator::{OBSERVE_RETIREMENT, RuntimeCoordinator};
+use crate::recorder::{ActorRegistry, OBSERVE_RETIREMENT};
 use crate::streamer::StreamerManager;
 use crate::streamer::state_store::{StateChange, StatePublication};
 
@@ -57,9 +59,27 @@ pub(crate) struct ConfigurationImportOutcome {
 impl From<crate::Error> for ConfigurationImportError {
     fn from(error: crate::Error) -> Self {
         match error {
-            crate::Error::DatabaseSqlx(error) => Self::Database(error),
+            crate::Error::Db(DbError::DatabaseSqlx(error)) => Self::Database(error),
             error => Self::Database(sqlx::Error::Protocol(error.to_string())),
         }
+    }
+}
+
+impl From<srec_sqlite::DbError> for ConfigurationImportError {
+    fn from(error: srec_sqlite::DbError) -> Self {
+        Self::from(crate::Error::from(error))
+    }
+}
+
+impl From<srec_core::CoreError> for ConfigurationImportError {
+    fn from(error: srec_core::CoreError) -> Self {
+        Self::from(crate::Error::from(error))
+    }
+}
+
+impl From<srec_recorder::RecorderError> for ConfigurationImportError {
+    fn from(error: srec_recorder::RecorderError) -> Self {
+        Self::from(crate::Error::from(error))
     }
 }
 
@@ -72,6 +92,41 @@ struct CommittedImport {
     credential_retirement_streamers: Vec<String>,
 }
 
+/// Single-connection transactional hook for user import validation, user
+/// persistence, and auth session/refresh-token invalidation.
+///
+/// Injected from the top-level application composition layer so `services`
+/// keeps zero dependency on the API auth store while committing user changes
+/// and token invalidation in the same SQLite transaction as configuration
+/// writes.
+#[async_trait::async_trait]
+pub(crate) trait AuthImportTxPort: Send + Sync {
+    /// Validate imported user credentials (such as PHC password hash format)
+    /// prior to opening the import transaction.
+    fn validate_user_exports(&self, users: &[UserExport]) -> Result<(), ConfigurationImportError>;
+
+    /// Validate imported user IDs and emails against persisted `users` rows
+    /// inside `tx` before any configuration table is modified.
+    async fn validate_users_tx(
+        &self,
+        tx: &mut sqlx::SqliteConnection,
+        users: &[UserExport],
+        include_users: bool,
+        mode: ImportMode,
+    ) -> Result<(), ConfigurationImportError>;
+
+    /// Persist imported users (when `include_users` is true) and invalidate
+    /// all auth sessions and refresh tokens inside `tx`.
+    async fn apply_auth_import_tx(
+        &self,
+        tx: &mut sqlx::SqliteConnection,
+        users: &[UserExport],
+        include_users: bool,
+        mode: ImportMode,
+        stats: &mut ImportStats,
+    ) -> Result<(), ConfigurationImportError>;
+}
+
 #[derive(Clone)]
 pub(crate) struct ConfigurationImportService {
     write_pool: SqlitePool,
@@ -79,10 +134,11 @@ pub(crate) struct ConfigurationImportService {
     config_service: Arc<RuntimeConfigService>,
     streamer_manager: Arc<RuntimeStreamerManager>,
     notification_service: Arc<NotificationService>,
-    runtime_coordinator: Arc<RuntimeCoordinator>,
+    actor_registry: Arc<ActorRegistry>,
     /// Platform throttles, kept per route; an imported proxy that reaches
     /// another exit drops the old exit's.
     admission_backoff: Arc<crate::credentials::PlatformAdmission>,
+    auth_import: Arc<dyn AuthImportTxPort>,
 }
 
 impl ConfigurationImportService {
@@ -91,8 +147,9 @@ impl ConfigurationImportService {
         config_service: Arc<RuntimeConfigService>,
         streamer_manager: Arc<RuntimeStreamerManager>,
         notification_service: Arc<NotificationService>,
-        runtime_coordinator: Arc<RuntimeCoordinator>,
+        actor_registry: Arc<ActorRegistry>,
         admission_backoff: Arc<crate::credentials::PlatformAdmission>,
+        auth_import: Arc<dyn AuthImportTxPort>,
     ) -> Self {
         Self {
             write_pool,
@@ -100,31 +157,26 @@ impl ConfigurationImportService {
             config_service,
             streamer_manager,
             notification_service,
-            runtime_coordinator,
+            actor_registry,
             admission_backoff,
+            auth_import,
         }
     }
 
-    #[cfg(test)]
-    pub async fn import(
-        &self,
-        config: ConfigExport,
-        mode: ImportMode,
-    ) -> Result<ConfigurationImportOutcome, ConfigurationImportError> {
-        self.import_with_auth(config, mode, None).await
-    }
-
-    pub async fn import_with_auth(
+    pub async fn import_with_post_commit(
         &self,
         mut config: ConfigExport,
         mode: ImportMode,
-        auth_service: Option<Arc<crate::api::auth_service::AuthService>>,
+        on_users_committed: Option<Box<dyn FnOnce() + Send + 'static>>,
     ) -> Result<ConfigurationImportOutcome, ConfigurationImportError> {
         validate_import(&config, mode)?;
+        if includes_imported_users(&config) {
+            self.auth_import.validate_user_exports(&config.users)?;
+        }
 
         let state = self.streamer_manager.committed_state().ok_or_else(|| {
-            ConfigurationImportError::from(crate::Error::Configuration(
-                "Import requires the committed streamer state owner".to_owned(),
+            ConfigurationImportError::from(crate::Error::config(
+                "Import requires the committed streamer state owner",
             ))
         })?;
         state.writer.require_serialized()?;
@@ -135,10 +187,11 @@ impl ConfigurationImportService {
             .acquire_owned()
             .await
             .map_err(|error| {
-                ConfigurationImportError::from(crate::Error::Other(error.to_string()))
+                ConfigurationImportError::from(crate::Error::other(error.to_string()))
             })?;
         let cache = state.cache.clone();
         let config_service = self.config_service.clone();
+        let auth_import = self.auth_import.clone();
         let service = self.clone();
         state
             .writer
@@ -149,12 +202,21 @@ impl ConfigurationImportService {
                         let snapshot = ImportSnapshot::load(tx).await?;
                         snapshot.upgrade_bundle(&mut config, mode)?;
                         snapshot.validate_references(&config, mode)?;
+                        auth_import
+                            .validate_users_tx(
+                                tx,
+                                &config.users,
+                                includes_imported_users(&config),
+                                mode,
+                            )
+                            .await?;
                         let AppliedImport {
                             stats,
                             streamers,
                             moved_proxies,
                             kept_presets,
-                        } = apply_import(tx, &snapshot, &config, mode).await?;
+                        } = apply_import(tx, &snapshot, &config, mode, auth_import.as_ref())
+                            .await?;
                         let retained_definitions =
                             sqlx::query_scalar("SELECT COUNT(*) FROM retirement_config_deletions")
                                 .fetch_one(&mut *tx)
@@ -182,8 +244,8 @@ impl ConfigurationImportService {
                         StatePublication::Silent,
                     );
                     config_service.invalidate_import_caches();
-                    if let Some(auth_service) = auth_service {
-                        auth_service.invalidate_user_cache();
+                    if let Some(callback) = on_users_committed {
+                        callback();
                     }
                 },
                 move |committed| {
@@ -239,8 +301,23 @@ impl ConfigurationImportService {
 
         self.config_service.notify_import_committed();
 
+        if let Some(committed_state) = self.streamer_manager.committed_state() {
+            let mut updated_streamers =
+                Vec::with_capacity(streamers.marked_deleted.len() + streamers.upserted.len());
+            updated_streamers.extend(streamers.marked_deleted.iter().cloned());
+            updated_streamers.extend(streamers.upserted.iter().cloned());
+            committed_state
+                .notify_post_publication(crate::recorder::PostPublicationChangeSet {
+                    updated_streamers,
+                    removed_streamers: Vec::new(),
+                    reconfigured_streamers: streamers.upserted.clone(),
+                    outbox_enqueued: false,
+                })
+                .await;
+        }
+
         for streamer_id in credential_retirement_streamers {
-            self.runtime_coordinator
+            self.actor_registry
                 .settle_credential_retirement(&streamer_id)
                 .await;
         }
@@ -264,7 +341,7 @@ impl ConfigurationImportService {
                 .map(|metadata| metadata.name)
                 .unwrap_or_default();
             if let Err(error) = self
-                .runtime_coordinator
+                .actor_registry
                 .retire_and_reap(streamer_id, &name, OBSERVE_RETIREMENT)
                 .await
             {
@@ -284,10 +361,10 @@ fn validation_error(message: impl Into<String>) -> ConfigurationImportError {
 }
 
 /// Database failures stay database errors; anything else rejects the bundle.
-fn write_error(error: crate::Error) -> ConfigurationImportError {
-    match error {
-        crate::Error::DatabaseSqlx(error) => ConfigurationImportError::Database(error),
-        crate::Error::Proxy(error @ crate::proxies::ProxyError::Missing(_)) => {
+fn write_error(error: impl Into<crate::Error>) -> ConfigurationImportError {
+    match error.into() {
+        crate::Error::Db(DbError::DatabaseSqlx(error)) => ConfigurationImportError::Database(error),
+        crate::Error::Core(CoreError::Proxy(error @ crate::proxies::ProxyError::Missing(_))) => {
             ConfigurationImportError::MissingProxy(error)
         }
         error => validation_error(error.to_string()),
@@ -321,6 +398,7 @@ async fn apply_import(
     snapshot: &ImportSnapshot,
     config: &ConfigExport,
     mode: ImportMode,
+    auth_import: &dyn AuthImportTxPort,
 ) -> Result<AppliedImport, ConfigurationImportError> {
     let replace = mode == ImportMode::Replace;
     let mut changes = ImportChanges::default();
@@ -396,9 +474,15 @@ async fn apply_import(
         Vec::new()
     };
     proxies::delete_omitted(tx, config, mode).await?;
-    apply_users(tx, snapshot, config, replace, &mut changes.stats).await?;
-
-    crate::database::repositories::refresh_token::invalidate_all_for_import(tx).await?;
+    auth_import
+        .apply_auth_import_tx(
+            tx,
+            &config.users,
+            includes_imported_users(config),
+            mode,
+            &mut changes.stats,
+        )
+        .await?;
 
     Ok(AppliedImport {
         stats: changes.stats,

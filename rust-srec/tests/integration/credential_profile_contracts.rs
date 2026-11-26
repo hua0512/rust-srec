@@ -4,6 +4,7 @@ use rust_srec::credentials::{
 use rust_srec::database::repositories::{
     ConfigRepository, CredentialProfileRepository, SqlxConfigRepository,
 };
+use srec_core::CoreError;
 
 async fn fixture() -> (sqlx::SqlitePool, CredentialProfileRepository) {
     let pool = rust_srec::database::init_pool_with_size("sqlite::memory:", 1)
@@ -130,7 +131,7 @@ async fn explicit_policy_reference_blocks_profile_delete_and_owner_delete_remove
     assert!(
         matches!(
             &error,
-            rust_srec::Error::CredentialProfile(rust_srec::credentials::ProfileError::Referenced(references))
+            rust_srec::database::DbError::Core(CoreError::CredentialProfile(rust_srec::credentials::ProfileError::Referenced(references)))
                 if references.recordings.is_empty()
                     && references.selections.len() == 1
                     && references.selections[0].owner == owner

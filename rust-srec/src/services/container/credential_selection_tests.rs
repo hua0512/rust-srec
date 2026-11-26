@@ -36,6 +36,7 @@ async fn fixture() -> Fixture {
         streamer_manager: container.streamer_manager.clone(),
         pipeline_manager: container.pipeline_manager.clone(),
         download_manager: container.download_manager.clone(),
+        queries: crate::api::queries::ApiQueries::new(container.pool.clone()),
         session_repository: container.session_repository.clone(),
         session_event_repository: container.session_event_repository.clone(),
         streamer_check_history_repository: container.streamer_check_history_repository.clone(),
@@ -56,14 +57,16 @@ async fn fixture() -> Fixture {
         credential_profiles: container.credential_profiles.clone(),
         credential_execution: container.credential_execution.clone(),
         proxies: container.proxies.clone(),
-        credential_blocks: container.stream_monitor.credential_blocks().clone(),
+        credential_blocks: container.credential_blocks().clone(),
         bigo_notifications: container.bigo_notifications.clone(),
-        playback_contexts: container.playback_contexts.clone(),
+        playback_contexts: Arc::new(
+            crate::api::playback_context::PlaybackContextService::default(),
+        ),
+        extractor_runner: container.extractor_runner.clone(),
         danmu_taps: container.danmu_service.taps(),
         credential_login_sessions: container.credential_login_sessions.clone(),
-        configuration_import_service: container.configuration_import_service.clone(),
-        configuration_export_service: container.configuration_export_service.clone(),
-        runtime_coordinator: container.runtime_coordinator.clone(),
+        config_backup: crate::backend::build_config_backup(&container),
+        actor_registry: container.actor_registry.clone(),
     });
     Fixture {
         _directory: directory,
@@ -336,13 +339,16 @@ async fn backups_carry_selections_through_replace_and_merge_imports() {
         );
 
         // Replace restores exactly what the bundle holds.
-        let service = &f.state.configuration_import_service;
+        let service = &f.state.config_backup;
         f.update_streamer(&streamer.id, json!({"streamer_specific_config": {"credential_selection": {"mode": "inherit"}}}))
             .await;
         f.replace_platform("platform-huya", Some(json!({"mode": "inherit"})))
             .await;
         assert_eq!(f.selections().await, 1);
-        service.import(bundle.clone(), ImportMode::Replace).await.unwrap();
+        service
+            .import_config(bundle.clone(), ImportMode::Replace, None)
+            .await
+            .unwrap();
         assert_eq!(f.selections().await, 3);
         let restored = f.export().await;
         assert_eq!(
@@ -373,7 +379,10 @@ async fn backups_carry_selections_through_replace_and_merge_imports() {
         merge.templates[0].platform_overrides = Some(json!({"huya": {"quality": 2}}));
         merge.streamers[0].streamer_specific_config =
             Some(json!({"credential_selection": {"mode": "fixed", "credential_id": b}}));
-        service.import(merge, ImportMode::Merge).await.unwrap();
+        service
+            .import_config(merge, ImportMode::Merge, None)
+            .await
+            .unwrap();
         let merged = f.export().await;
         assert_eq!(
             serde_json::to_value(&merged.platforms).unwrap(),
@@ -397,7 +406,10 @@ async fn backups_carry_selections_through_replace_and_merge_imports() {
         }
         legacy.templates[0].platform_overrides = Some(json!({"huya": {"quality": 3}}));
         legacy.streamers[0].streamer_specific_config = None;
-        service.import(legacy, ImportMode::Replace).await.unwrap();
+        service
+            .import_config(legacy, ImportMode::Replace, None)
+            .await
+            .unwrap();
         assert_eq!(f.selections().await, 0);
         let streamer_id = f
             .container

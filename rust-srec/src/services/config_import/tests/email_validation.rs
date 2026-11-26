@@ -44,10 +44,18 @@ async fn checked_import(
     mode: ImportMode,
 ) -> Result<(), ConfigurationImportError> {
     validate_import(config, mode)?;
+    let auth = test_auth_import();
     let mut tx = begin_immediate(pool).await?;
     let snapshot = ImportSnapshot::load(&mut tx).await?;
     snapshot.validate_references(config, mode)?;
-    apply_import(&mut tx, &snapshot, config, mode).await?;
+    auth.validate_users_tx(
+        &mut tx,
+        &config.users,
+        includes_imported_users(config),
+        mode,
+    )
+    .await?;
+    apply_import(&mut tx, &snapshot, config, mode, auth.as_ref()).await?;
     tx.commit().await?;
     Ok(())
 }

@@ -63,7 +63,7 @@ flowchart LR
 
 <div id="runtimecoordinator-录制启动与取消" class="legacy-section">
 
-此节内容已移至[运行时架构](../development/architecture.md#runtimecoordinator-录制启动与取消).
+此节内容已移至[运行时架构](../development/architecture.md#录制启动与取消).
 
 </div>
 
@@ -81,19 +81,19 @@ flowchart LR
 
 <div id="scheduler-actor-模型编排-调度" class="legacy-section">
 
-此节内容已移至[运行时架构](../development/architecture.md#scheduler-actor-模型编排-调度).
+此节内容已移至[运行时架构](../development/architecture.md#录制控制面).
 
 </div>
 
 <div id="streammonitor-探测-过滤-outbox" class="legacy-section">
 
-此节内容已移至[运行时架构](../development/architecture.md#streammonitor-探测-过滤-outbox).
+此节内容已移至[运行时架构](../development/architecture.md#探测与持久化存储).
 
 </div>
 
 <div id="sessionlifecycle-会话状态的唯一所有者" class="legacy-section">
 
-此节内容已移至[运行时架构](../development/architecture.md#sessionlifecycle-会话状态的唯一所有者).
+此节内容已移至[运行时架构](../development/architecture.md#streamerfsm-状态机).
 
 </div>
 

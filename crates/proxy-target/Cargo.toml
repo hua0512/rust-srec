@@ -1,0 +1,22 @@
+[package]
+name = "proxy-target"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "How clients and helper processes reach an upstream server: directly, through the environment's proxy, or through an explicit proxy."
+
+[lints]
+workspace = true
+
+[dependencies]
+percent-encoding = { workspace = true }
+reqwest = { workspace = true, features = [
+    # `ProxyEndpoint` accepts `socks5` and `socks5h` proxies. Without this
+    # feature a client fails every request sent through one, which a build
+    # of `strev` alone would hit: no other crate it uses enables it.
+    "socks",
+] }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["process"] }
+url = { workspace = true }

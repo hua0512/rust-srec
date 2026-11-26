@@ -314,7 +314,7 @@ impl RuntimeLease {
         // all. Only the first is an operator's own doing, so they get distinct
         // messages instead of one generic lock failure.
         file.try_lock().map_err(|error| match error {
-            std::fs::TryLockError::WouldBlock => Error::Other(format!(
+            std::fs::TryLockError::WouldBlock => Error::other(format!(
                 "another rust-srec runtime already owns {}",
                 path.display()
             )),
@@ -445,12 +445,12 @@ impl DirtyGenerationMarker {
     ) -> Result<()> {
         let _update = MarkerUpdateLock::acquire(path)?;
         let Some(mut state) = Self::load(path)? else {
-            return Err(Error::Other(
-                "recovery acknowledgement has no active generation marker".to_string(),
+            return Err(Error::other(
+                "recovery acknowledgement has no active generation marker",
             ));
         };
         if state.active_generation != Some(generation) {
-            return Err(Error::Other(format!(
+            return Err(Error::other(format!(
                 "refusing recovery acknowledgement for stale generation {generation}"
             )));
         }
@@ -464,12 +464,11 @@ impl DirtyGenerationMarker {
     /// Read the ledger after the child settles; its worker may have acknowledged
     /// earlier debt since this ownership handle was first installed.
     pub(crate) fn current_unresolved_generations(&self) -> Result<DirtyGenerationCount> {
-        let state = Self::load(&self.path)?.ok_or_else(|| {
-            Error::Other("active runtime generation marker disappeared".to_string())
-        })?;
+        let state = Self::load(&self.path)?
+            .ok_or_else(|| Error::other("active runtime generation marker disappeared"))?;
         if state.active_generation != Some(self.generation) {
-            return Err(Error::Other(
-                "active runtime generation marker changed ownership".to_string(),
+            return Err(Error::other(
+                "active runtime generation marker changed ownership",
             ));
         }
         Ok(state.dirty_generation_count())
@@ -484,7 +483,7 @@ impl DirtyGenerationMarker {
         // Runtime ownership serializes begin/clear. This re-read additionally
         // prevents a retained stale handle from clearing a later generation.
         let Some(mut state) = Self::load(&self.path)? else {
-            return Err(Error::Other(format!(
+            return Err(Error::other(format!(
                 "dirty generation marker '{}' disappeared before generation {} was cleared",
                 self.path.display(),
                 self.generation
@@ -494,7 +493,7 @@ impl DirtyGenerationMarker {
             let current = state
                 .active_generation
                 .map_or_else(|| "none".to_string(), |generation| generation.to_string());
-            return Err(Error::Other(format!(
+            return Err(Error::other(format!(
                 "refusing to clear dirty generation marker '{}' for generation {}; current generation is {}",
                 self.path.display(),
                 self.generation,
@@ -514,7 +513,7 @@ impl DirtyGenerationMarker {
                 Ok(None)
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                Err(Error::Other(format!(
+                Err(Error::other(format!(
                     "dirty generation marker '{}' disappeared while generation {} was being cleared",
                     self.path.display(),
                     self.generation

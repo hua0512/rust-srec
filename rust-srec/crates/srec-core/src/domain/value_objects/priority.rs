@@ -1,0 +1,76 @@
+//! Priority value object.
+
+use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
+
+/// Priority level for resource allocation.
+///
+/// Higher priority streamers get preferential treatment for download slots
+/// and are the last to be paused during resource constraints.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Hash)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum Priority {
+    /// VIP streamers, never miss. First to get download slots, last to be paused.
+    High,
+    /// Standard streamers. Fair scheduling.
+    #[default]
+    Normal,
+    /// Background/archive streamers. Paused first during resource constraints.
+    Low,
+}
+
+impl Priority {
+    /// Convert to database string representation.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::High => "HIGH",
+            Self::Normal => "NORMAL",
+            Self::Low => "LOW",
+        }
+    }
+
+    /// Parse from database string representation.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_uppercase().as_str() {
+            "HIGH" => Some(Self::High),
+            "NORMAL" => Some(Self::Normal),
+            "LOW" => Some(Self::Low),
+            _ => None,
+        }
+    }
+
+    /// Get numeric value for sorting (higher = more important).
+    pub fn numeric_value(&self) -> i32 {
+        match self {
+            Self::High => 3,
+            Self::Normal => 2,
+            Self::Low => 1,
+        }
+    }
+}
+
+impl PartialOrd for Priority {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Priority {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.numeric_value().cmp(&other.numeric_value())
+    }
+}
+
+impl std::fmt::Display for Priority {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl std::str::FromStr for Priority {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s).ok_or_else(|| format!("Invalid priority: {}", s))
+    }
+}

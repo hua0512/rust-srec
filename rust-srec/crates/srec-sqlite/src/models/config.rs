@@ -1,0 +1,308 @@
+//! Configuration database models.
+
+use std::num::NonZeroU32;
+
+use jiff::Timestamp;
+use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
+
+const MILLIS_PER_DAY: i64 = 24 * 60 * 60 * 1000;
+
+/// Validated retention duration stored as a number of days.
+///
+/// Zero days means data is retained forever. Positive values produce a
+/// cutoff relative to the start time of a maintenance sweep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetentionDays {
+    /// Retain data indefinitely.
+    Forever,
+    /// Delete data older than this number of days.
+    Days(NonZeroU32),
+}
+
+impl RetentionDays {
+    /// Returns the persisted numeric representation, where zero means forever.
+    pub fn as_u32(self) -> u32 {
+        match self {
+            Self::Forever => 0,
+            Self::Days(days) => days.get(),
+        }
+    }
+
+    /// Returns the oldest retained timestamp relative to `now_ms`.
+    ///
+    /// [`None`] indicates that retention is disabled and data should be kept
+    /// indefinitely.
+    pub fn cutoff_ms(self, now_ms: i64) -> Option<i64> {
+        match self {
+            Self::Forever => None,
+            Self::Days(days) => {
+                Some(now_ms.saturating_sub(i64::from(days.get()).saturating_mul(MILLIS_PER_DAY)))
+            }
+        }
+    }
+}
+
+/// Error returned when a retention value cannot be represented by [`RetentionDays`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("retention days must be between 0 and 2147483647 (found {value})")]
+pub struct InvalidRetentionDays {
+    value: i64,
+}
+
+impl InvalidRetentionDays {
+    /// Returns the rejected numeric value.
+    pub fn value(self) -> i64 {
+        self.value
+    }
+}
+
+impl TryFrom<i64> for RetentionDays {
+    type Error = InvalidRetentionDays;
+
+    fn try_from(value: i64) -> std::result::Result<Self, Self::Error> {
+        if !(0..=i64::from(i32::MAX)).contains(&value) {
+            return Err(InvalidRetentionDays { value });
+        }
+
+        Ok(match NonZeroU32::new(value as u32) {
+            Some(days) => Self::Days(days),
+            None => Self::Forever,
+        })
+    }
+}
+
+impl TryFrom<i32> for RetentionDays {
+    type Error = InvalidRetentionDays;
+
+    fn try_from(value: i32) -> std::result::Result<Self, Self::Error> {
+        Self::try_from(i64::from(value))
+    }
+}
+
+/// Global configuration database model.
+/// A singleton table for application-wide default settings.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct GlobalConfigDbModel {
+    pub id: String,
+    pub output_folder: String,
+    pub output_filename_template: String,
+    pub output_file_format: String,
+    pub min_segment_size_bytes: i64,
+    pub max_download_duration_secs: i64,
+    pub max_part_size_bytes: i64,
+    pub record_danmu: bool,
+    /// JSON `DanmuStatisticsConfig`; NULL resolves to its defaults.
+    pub danmu_statistics: Option<String>,
+    pub max_concurrent_downloads: i32,
+    pub max_concurrent_uploads: i32,
+    pub streamer_check_delay_ms: i64,
+    pub offline_check_delay_ms: i64,
+    pub offline_check_count: i32,
+    /// Name of the default engine configuration
+    pub default_download_engine: String,
+    /// Default extractor selection ("auto" or "streamlink"); `None` resolves to auto.
+    pub default_extractor: Option<String>,
+    pub max_concurrent_cpu_jobs: i32,
+    pub max_concurrent_io_jobs: i32,
+    pub job_history_retention_days: i32,
+    pub notification_event_log_retention_days: i32,
+    pub output_retention_days: i32,
+    pub output_retention_delete_files: bool,
+    /// JSON serialized `Vec<PipelineStep>`
+    pub pipeline: Option<String>,
+    /// JSON serialized DagPipelineDefinition for session-complete triggering.
+    pub session_complete_pipeline: Option<String>,
+    /// JSON serialized DagPipelineDefinition for paired (video+danmu) segment triggering.
+    pub paired_segment_pipeline: Option<String>,
+    /// Log filter directive (e.g., "rust_srec=debug,sqlx=warn")
+    pub log_filter_directive: String,
+    /// Whether to automatically generate thumbnails for new sessions (default: true)
+    pub auto_thumbnail: bool,
+
+    // --- Pipeline runtime knobs (global) ---
+    /// Maximum execution time (seconds) for a single CPU-bound pipeline job.
+    /// When exceeded, the job's processor future is cancelled.
+    pub pipeline_cpu_job_timeout_secs: i64,
+    /// Maximum execution time (seconds) for a single IO-bound pipeline job.
+    /// When exceeded, the job's processor future is cancelled.
+    pub pipeline_io_job_timeout_secs: i64,
+    /// Maximum execution time (seconds) for the `execute` processor command.
+    /// This is enforced inside the processor in addition to the worker pool timeout.
+    pub pipeline_execute_timeout_secs: i64,
+    /// How long (in milliseconds) a download attempt may wait on the
+    /// concurrency queue before the pipeline re-checks the streamer
+    /// with the monitor service to refresh URLs/headers. Below this
+    /// threshold the cached URLs from the original live event are
+    /// reused. Runtime-mutable; updates apply on the next queued
+    /// download without a restart.
+    pub queue_freshness_threshold_ms: i64,
+
+    /// Seconds between probes by the GPU health monitor.
+    /// The monitor shells out to `nvidia-smi` on this cadence and emits
+    /// a single `GpuUnavailable` notification on Healthy → Unhealthy
+    /// transitions. Runtime-mutable; the monitor re-reads the value
+    /// before each tick, so changes apply within at most one previous
+    /// interval and never require a restart.
+    pub gpu_health_probe_interval_secs: i64,
+
+    /// Whether the stream proxy may fetch targets on private networks.
+    /// When false, `validate_target_url` in the stream-proxy route rejects
+    /// localhost, non-public IP literals, and hostnames resolving to any
+    /// non-public address. Runtime-mutable; `stream_proxy_get` reads it per
+    /// request, so no restart is required.
+    pub stream_proxy_allow_private_targets: bool,
+}
+
+impl Default for GlobalConfigDbModel {
+    fn default() -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            output_folder: "/app/output".to_string(),
+            output_filename_template: "{streamer}-%Y%m%d-%H%M%S-{title}".to_string(),
+            output_file_format: "flv".to_string(),
+            min_segment_size_bytes: 1048576, // 1MB
+            max_download_duration_secs: 0,   // No limit
+            max_part_size_bytes: 8589934592, // 8GB
+            record_danmu: false,
+            danmu_statistics: None,
+            max_concurrent_downloads: 6,
+            max_concurrent_uploads: 3,
+            streamer_check_delay_ms: 60000,
+            offline_check_delay_ms: srec_core::domain::streamer::DEFAULT_OFFLINE_CHECK_DELAY_MS
+                as i64,
+            offline_check_count: srec_core::domain::streamer::DEFAULT_OFFLINE_CHECK_COUNT as i32,
+            default_download_engine: "mesio".to_string(),
+            default_extractor: None,
+            max_concurrent_cpu_jobs: 0, // Auto
+            max_concurrent_io_jobs: 8,
+            job_history_retention_days: 30,
+            notification_event_log_retention_days: 30,
+            output_retention_days: 0,
+            output_retention_delete_files: false,
+            pipeline: None,
+            session_complete_pipeline: None,
+            paired_segment_pipeline: None,
+            log_filter_directive: "rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info"
+                .to_string(),
+            auto_thumbnail: true,
+
+            // Pipeline timeouts (match pipeline defaults)
+            pipeline_cpu_job_timeout_secs: 3600,
+            pipeline_io_job_timeout_secs: 3600,
+            pipeline_execute_timeout_secs: 3600,
+            queue_freshness_threshold_ms: 60_000, // 1 minute
+            gpu_health_probe_interval_secs: 30,   // matches DEFAULT_GATE_COOLDOWN_SECS
+            stream_proxy_allow_private_targets: false,
+        }
+    }
+}
+
+/// Platform configuration database model.
+/// Stores settings specific to each supported streaming platform.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct PlatformConfigDbModel {
+    pub id: String,
+    pub platform_name: String,
+    pub fetch_delay_ms: Option<i64>,
+    pub download_delay_ms: Option<i64>,
+    /// JSON blob for platform-specific settings
+    pub platform_specific_config: Option<String>,
+    pub record_danmu: Option<bool>,
+    /// JSON `DanmuStatisticsConfig`; NULL inherits the global layer.
+    pub danmu_statistics: Option<String>,
+
+    // Explicit overrides
+    pub output_folder: Option<String>,
+    pub output_filename_template: Option<String>,
+    pub download_engine: Option<String>,
+    /// Extractor selection ("auto" or "streamlink"); `None` inherits the global default.
+    pub extractor: Option<String>,
+    /// JSON serialized StreamSelectionConfig
+    pub stream_selection_config: Option<String>,
+    pub output_file_format: Option<String>,
+    pub min_segment_size_bytes: Option<i64>,
+    pub max_download_duration_secs: Option<i64>,
+    pub max_part_size_bytes: Option<i64>,
+    /// JSON serialized RetryPolicy
+    pub download_retry_policy: Option<String>,
+    /// JSON serialized `Vec<PipelineStep>`
+    pub pipeline: Option<String>,
+    /// JSON serialized DagPipelineDefinition for session-complete triggering.
+    pub session_complete_pipeline: Option<String>,
+    /// JSON serialized DagPipelineDefinition for paired (video+danmu) segment triggering.
+    pub paired_segment_pipeline: Option<String>,
+    pub offline_check_count: Option<i32>,
+    pub offline_check_delay_ms: Option<i64>,
+}
+
+/// Template configuration database model.
+/// Reusable configuration templates for streamers.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct TemplateConfigDbModel {
+    pub id: String,
+    pub name: String,
+    pub output_folder: Option<String>,
+    pub output_filename_template: Option<String>,
+    pub output_file_format: Option<String>,
+    pub min_segment_size_bytes: Option<i64>,
+    pub max_download_duration_secs: Option<i64>,
+    pub max_part_size_bytes: Option<i64>,
+    pub record_danmu: Option<bool>,
+    /// JSON `DanmuStatisticsConfig`; NULL inherits the platform layer.
+    pub danmu_statistics: Option<String>,
+    /// JSON map of platform names to their specific configuration overrides
+    pub platform_overrides: Option<String>,
+    /// JSON serialized RetryPolicy
+    pub download_retry_policy: Option<String>,
+    /// Name of the engine configuration to use
+    pub download_engine: Option<String>,
+    /// Extractor selection ("auto" or "streamlink"); `None` inherits the platform/global value.
+    pub extractor: Option<String>,
+    /// JSON map for template-specific engine configurations
+    pub engines_override: Option<String>,
+    /// JSON serialized StreamSelectionConfig
+    pub stream_selection_config: Option<String>,
+    /// JSON serialized `Vec<PipelineStep>`
+    pub pipeline: Option<String>,
+    /// JSON serialized DagPipelineDefinition for session-complete triggering.
+    pub session_complete_pipeline: Option<String>,
+    /// JSON serialized DagPipelineDefinition for paired (video+danmu) segment triggering.
+    pub paired_segment_pipeline: Option<String>,
+    pub offline_check_count: Option<i32>,
+    pub offline_check_delay_ms: Option<i64>,
+    #[sqlx(try_from = "crate::time::EpochMillis")]
+    pub created_at: Timestamp,
+    #[sqlx(try_from = "crate::time::EpochMillis")]
+    pub updated_at: Timestamp,
+}
+
+impl TemplateConfigDbModel {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: name.into(),
+            output_folder: None,
+            output_filename_template: None,
+            output_file_format: None,
+            min_segment_size_bytes: None,
+            max_download_duration_secs: None,
+            max_part_size_bytes: None,
+            record_danmu: None,
+            danmu_statistics: None,
+            platform_overrides: None,
+            download_retry_policy: None,
+            download_engine: None,
+            extractor: None,
+            engines_override: None,
+            stream_selection_config: None,
+            pipeline: None,
+            session_complete_pipeline: None,
+            paired_segment_pipeline: None,
+            offline_check_count: None,
+            offline_check_delay_ms: None,
+            created_at: Timestamp::now(),
+            updated_at: Timestamp::now(),
+        }
+    }
+}

@@ -783,8 +783,8 @@ mod session_repository_tests {
     /// dashboard.
     #[tokio::test]
     async fn test_list_sessions_filtered_excludes_empty_by_default() {
-        use rust_srec::database::models::{Pagination, SessionFilters};
-        use rust_srec::database::repositories::{SessionRepository, SqlxSessionRepository};
+        use rust_srec::api::queries::{ApiQueries, SessionFilters};
+        use rust_srec::database::models::Pagination;
 
         let pool = setup_test_db().await;
         let streamer_id = setup_streamer(&pool).await;
@@ -794,8 +794,8 @@ mod session_repository_tests {
         let real_id =
             insert_session_with_size(&pool, &streamer_id, 1_500_000_000, Some(now_ms)).await;
 
-        let repo = SqlxSessionRepository::new(pool.clone(), pool);
-        let (sessions, total) = repo
+        let queries = ApiQueries::new(pool);
+        let (sessions, total) = queries
             .list_sessions_filtered(
                 &SessionFilters {
                     streamer_id: Some(streamer_id.clone()),
@@ -815,8 +815,8 @@ mod session_repository_tests {
     /// useful for diagnostics ("why did this brief blip happen?").
     #[tokio::test]
     async fn test_list_sessions_filtered_includes_empty_when_opted_in() {
-        use rust_srec::database::models::{Pagination, SessionFilters};
-        use rust_srec::database::repositories::{SessionRepository, SqlxSessionRepository};
+        use rust_srec::api::queries::{ApiQueries, SessionFilters};
+        use rust_srec::database::models::Pagination;
 
         let pool = setup_test_db().await;
         let streamer_id = setup_streamer(&pool).await;
@@ -825,8 +825,8 @@ mod session_repository_tests {
         insert_session_with_size(&pool, &streamer_id, 0, Some(now_ms)).await;
         insert_session_with_size(&pool, &streamer_id, 1_500_000_000, Some(now_ms)).await;
 
-        let repo = SqlxSessionRepository::new(pool.clone(), pool);
-        let (_sessions, total) = repo
+        let queries = ApiQueries::new(pool);
+        let (_sessions, total) = queries
             .list_sessions_filtered(
                 &SessionFilters {
                     streamer_id: Some(streamer_id.clone()),
@@ -846,16 +846,16 @@ mod session_repository_tests {
     /// detection and the first retained segment; we must NOT hide them.
     #[tokio::test]
     async fn test_list_sessions_filtered_keeps_active_empty_sessions() {
-        use rust_srec::database::models::{Pagination, SessionFilters};
-        use rust_srec::database::repositories::{SessionRepository, SqlxSessionRepository};
+        use rust_srec::api::queries::{ApiQueries, SessionFilters};
+        use rust_srec::database::models::Pagination;
 
         let pool = setup_test_db().await;
         let streamer_id = setup_streamer(&pool).await;
 
         let active_id = insert_session_with_size(&pool, &streamer_id, 0, None).await;
 
-        let repo = SqlxSessionRepository::new(pool.clone(), pool);
-        let (sessions, total) = repo
+        let queries = ApiQueries::new(pool);
+        let (sessions, total) = queries
             .list_sessions_filtered(
                 &SessionFilters {
                     streamer_id: Some(streamer_id.clone()),
@@ -906,15 +906,16 @@ mod job_repository_tests {
         assert_eq!(result.2, "PENDING");
     }
 
-    /// `PipelineManager::drain_for_session` counts a session's unfinished jobs
-    /// with one query, which means `JobFilters::statuses` has to render an
-    /// `IN` list whose binds line up with the `session_id` bind that follows it.
+    /// `JobFilters::statuses` renders an `IN` list whose binds must line up
+    /// with the `session_id` bind that follows it, and `JobRepository` offers
+    /// a dedicated unfinished-job count for `PipelineManager::drain_for_session`.
     #[tokio::test]
     async fn test_count_jobs_by_session_and_statuses() {
-        use rust_srec::database::models::JobFilters;
+        use rust_srec::api::queries::{ApiQueries, JobFilters};
 
         let pool = setup_test_db().await;
         let repo = SqlxJobRepository::new(pool.clone(), pool.clone());
+        let queries = ApiQueries::new(pool);
 
         for (status, session_id) in [
             (JobStatus::Pending, "session-a"),
@@ -936,20 +937,49 @@ mod job_repository_tests {
                 .with_statuses([JobStatus::Pending, JobStatus::Processing])
         };
 
-        assert_eq!(repo.count_jobs(&unfinished("session-a")).await.unwrap(), 2);
-        assert_eq!(repo.count_jobs(&unfinished("session-b")).await.unwrap(), 1);
-        assert_eq!(repo.count_jobs(&unfinished("session-c")).await.unwrap(), 0);
-
-        // The single-value `status` filter still works, and combines with
-        // `statuses` by intersection.
         assert_eq!(
-            repo.count_jobs(&unfinished("session-a").with_status(JobStatus::Pending))
+            queries.count_jobs(&unfinished("session-a")).await.unwrap(),
+            2
+        );
+        assert_eq!(
+            queries.count_jobs(&unfinished("session-b")).await.unwrap(),
+            1
+        );
+        assert_eq!(
+            queries.count_jobs(&unfinished("session-c")).await.unwrap(),
+            0
+        );
+        assert_eq!(
+            repo.count_unfinished_jobs_for_session("session-a")
+                .await
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            repo.count_unfinished_jobs_for_session("session-b")
                 .await
                 .unwrap(),
             1
         );
         assert_eq!(
-            repo.count_jobs(&JobFilters::new().with_session_id("session-a"))
+            repo.count_unfinished_jobs_for_session("session-c")
+                .await
+                .unwrap(),
+            0
+        );
+
+        // The single-value `status` filter still works, and combines with
+        // `statuses` by intersection.
+        assert_eq!(
+            queries
+                .count_jobs(&unfinished("session-a").with_status(JobStatus::Pending))
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            queries
+                .count_jobs(&JobFilters::new().with_session_id("session-a"))
                 .await
                 .unwrap(),
             5
@@ -1266,461 +1296,5 @@ mod streamer_manager_tests {
             .await
             .expect("Failed to query");
         assert_eq!(result.0, "LIVE");
-    }
-
-    #[tokio::test]
-    async fn test_streamer_manager_record_success() {
-        let pool = setup_test_db().await;
-        let platform_id = setup_platform(&pool).await;
-        let streamer_id =
-            insert_streamer(&pool, &platform_id, "TestStreamer", "NOT_LIVE", "NORMAL").await;
-
-        sqlx::query("UPDATE streamers SET state = 'TEMPORAL_DISABLED', consecutive_error_count = 2, last_error = 'fixture error', disabled_until = ? WHERE id = ?")
-            .bind((jiff::Timestamp::now() + jiff::SignedDuration::from_mins(30)).as_millisecond())
-            .bind(&streamer_id)
-            .execute(&pool)
-            .await
-            .unwrap();
-        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(repo, broadcaster);
-        manager.hydrate().await.expect("Failed to hydrate");
-        assert!(manager.is_disabled(&streamer_id));
-
-        // Record success
-        manager
-            .record_success(&streamer_id, true)
-            .await
-            .expect("Failed to record success");
-        assert!(!manager.is_disabled(&streamer_id));
-
-        // Verify last_live_time is set
-        let metadata = manager
-            .get_streamer(&streamer_id)
-            .expect("Streamer not found");
-        assert!(metadata.last_live_time.is_some());
-        let persisted: (String, i32, Option<i64>, Option<String>) = sqlx::query_as(
-            "SELECT state, consecutive_error_count, disabled_until, last_error FROM streamers WHERE id = ?",
-        )
-        .bind(&streamer_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(persisted, ("LIVE".to_string(), 0, None, None));
-    }
-}
-
-/// End-to-end status processing tests.
-mod end_to_end_tests {
-    use super::*;
-    use rust_srec::config::{ConfigCache, ConfigEventBroadcaster, ConfigService};
-    use rust_srec::database::repositories::SessionLifecycleRepository;
-    use rust_srec::database::repositories::config::SqlxConfigRepository;
-    use rust_srec::database::repositories::filter::SqlxFilterRepository;
-    use rust_srec::database::repositories::session::SqlxSessionRepository;
-    use rust_srec::database::repositories::streamer::SqlxStreamerRepository;
-    use rust_srec::domain::StreamerState;
-    use rust_srec::monitor::{LiveStatus, MonitorEvent, StreamMonitor};
-    use rust_srec::session::{OfflineClassifier, SessionLifecycle};
-    use rust_srec::streamer::{StreamerManager, StreamerMetadata};
-    use std::sync::Arc;
-
-    fn make_session_lifecycle(pool: &DbPool) -> Arc<SessionLifecycle> {
-        Arc::new(SessionLifecycle::with_default_capacity(
-            Arc::new(SessionLifecycleRepository::new(pool.clone())),
-            Arc::new(OfflineClassifier::new()),
-        ))
-    }
-
-    async fn setup_platform(pool: &DbPool) -> String {
-        create_test_platform(pool, "test_e2e_platform").await
-    }
-
-    async fn setup_streamer(pool: &DbPool, platform_id: &str, name: &str, url: &str) -> String {
-        create_test_streamer(pool, platform_id, name, url, "NOT_LIVE", "NORMAL").await
-    }
-
-    fn create_test_metadata(
-        id: &str,
-        name: &str,
-        url: &str,
-        platform_id: &str,
-        state: StreamerState,
-    ) -> StreamerMetadata {
-        StreamerMetadata {
-            id: id.to_string(),
-            name: name.to_string(),
-            url: url.to_string(),
-            platform_config_id: platform_id.to_string(),
-            template_config_id: None,
-            state,
-            priority: rust_srec::domain::Priority::Normal,
-            consecutive_error_count: 0,
-            disabled_until: None,
-            last_live_time: None,
-            avatar_url: None,
-            streamer_specific_config: None,
-            platform_metadata: None,
-            last_error: None,
-            offline_check_count: 3,
-            offline_check_delay_ms: 20_000,
-            created_at: jiff::Timestamp::now(),
-            deleted_at: None,
-            updated_at: jiff::Timestamp::now(),
-        }
-    }
-
-    type TestStreamerManager = StreamerManager<SqlxStreamerRepository>;
-    type TestStreamMonitor =
-        StreamMonitor<SqlxStreamerRepository, SqlxSessionRepository, SqlxConfigRepository>;
-
-    async fn setup_monitor(pool: &DbPool) -> (Arc<TestStreamerManager>, TestStreamMonitor) {
-        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
-        let streamer_manager = Arc::new(StreamerManager::new(
-            streamer_repo.clone(),
-            ConfigEventBroadcaster::new(),
-        ));
-        streamer_manager.hydrate().await.expect("Failed to hydrate");
-
-        let config_service = Arc::new(ConfigService::with_cache(
-            Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone())),
-            streamer_repo,
-            ConfigCache::new(),
-        ));
-        let monitor = StreamMonitor::new(
-            streamer_manager.clone(),
-            Arc::new(SqlxFilterRepository::new(pool.clone(), pool.clone())),
-            Arc::new(SqlxSessionRepository::new(pool.clone(), pool.clone())),
-            config_service,
-            pool.clone(),
-            make_session_lifecycle(pool),
-        )
-        .unwrap();
-
-        (streamer_manager, monitor)
-    }
-
-    #[tokio::test]
-    async fn test_e2e_live_status_processing() {
-        // Setup database
-        let pool = setup_test_db().await;
-        let platform_id = setup_platform(&pool).await;
-
-        let streamer_id = setup_streamer(
-            &pool,
-            &platform_id,
-            "TestStreamer",
-            "https://twitch.tv/teststreamer",
-        )
-        .await;
-
-        let (streamer_manager, monitor) = setup_monitor(&pool).await;
-
-        // Subscribe to events
-        let mut event_rx = monitor.subscribe_events();
-
-        // Create test metadata
-        let metadata = create_test_metadata(
-            &streamer_id,
-            "TestStreamer",
-            "https://twitch.tv/teststreamer",
-            &platform_id,
-            StreamerState::NotLive,
-        );
-
-        // Simulate live status detection
-        let live_status = LiveStatus::Live {
-            credential_binding: None,
-            credential_snapshot: None,
-            title: "Playing Rust!".to_string(),
-            category: Some("Gaming".to_string()),
-            avatar: None,
-            started_at: Some(jiff::Timestamp::now()),
-            viewer_count: Some(1000),
-            streams: vec![],
-            media_headers: None,
-            media_extras: None,
-            next_check_hint: None,
-            candidates: vec![],
-        };
-
-        // Process the status
-        monitor
-            .process_status(&metadata, live_status)
-            .await
-            .expect("Failed to process status");
-
-        // Verify state was updated
-        let updated = streamer_manager
-            .get_streamer(&streamer_id)
-            .expect("Streamer not found");
-        assert_eq!(updated.state, StreamerState::Live);
-
-        // Verify event was emitted
-        let event = tokio::time::timeout(std::time::Duration::from_secs(2), event_rx.recv())
-            .await
-            .expect("Timed out waiting for event")
-            .expect("No event received");
-        match event {
-            MonitorEvent::StreamerLive {
-                streamer_name,
-                title,
-                ..
-            } => {
-                assert_eq!(streamer_name, "TestStreamer");
-                assert_eq!(title, "Playing Rust!");
-            }
-            _ => panic!("Expected StreamerLive event"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_e2e_fatal_error_processing() {
-        // Setup database
-        let pool = setup_test_db().await;
-        let platform_id = setup_platform(&pool).await;
-
-        let streamer_id = setup_streamer(
-            &pool,
-            &platform_id,
-            "MissingStreamer",
-            "https://twitch.tv/missingstreamer",
-        )
-        .await;
-
-        let (streamer_manager, monitor) = setup_monitor(&pool).await;
-
-        // Subscribe to events
-        let mut event_rx = monitor.subscribe_events();
-
-        // Create test metadata
-        let metadata = create_test_metadata(
-            &streamer_id,
-            "MissingStreamer",
-            "https://twitch.tv/missingstreamer",
-            &platform_id,
-            StreamerState::NotLive,
-        );
-
-        // Process NotFound status (fatal error)
-        monitor
-            .process_status(&metadata, LiveStatus::NotFound)
-            .await
-            .expect("Failed to process status");
-
-        // Verify state was updated to NotFound
-        let updated = streamer_manager
-            .get_streamer(&streamer_id)
-            .expect("Streamer not found");
-        assert_eq!(updated.state, StreamerState::NotFound);
-
-        // Verify fatal error event was emitted
-        let event = tokio::time::timeout(std::time::Duration::from_secs(2), event_rx.recv())
-            .await
-            .expect("Timed out waiting for event")
-            .expect("No event received");
-        match event {
-            MonitorEvent::FatalError {
-                streamer_name,
-                error_type,
-                new_state,
-                ..
-            } => {
-                assert_eq!(streamer_name, "MissingStreamer");
-                assert_eq!(error_type, rust_srec::monitor::FatalErrorType::NotFound);
-                assert_eq!(new_state, StreamerState::NotFound);
-            }
-            _ => panic!("Expected FatalError event"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_e2e_transient_error_handling() {
-        // Setup database
-        let pool = setup_test_db().await;
-        let platform_id = setup_platform(&pool).await;
-
-        let streamer_id = setup_streamer(
-            &pool,
-            &platform_id,
-            "ErrorStreamer",
-            "https://twitch.tv/errorstreamer",
-        )
-        .await;
-
-        let (streamer_manager, monitor) = setup_monitor(&pool).await;
-
-        // Subscribe to events
-        let mut event_rx = monitor.subscribe_events();
-
-        // Create test metadata
-        let metadata = create_test_metadata(
-            &streamer_id,
-            "ErrorStreamer",
-            "https://twitch.tv/errorstreamer",
-            &platform_id,
-            StreamerState::NotLive,
-        );
-
-        // Handle transient error
-        monitor
-            .handle_error(&metadata, "Network timeout")
-            .await
-            .expect("Failed to handle error");
-
-        // Verify error count was incremented
-        let updated = streamer_manager
-            .get_streamer(&streamer_id)
-            .expect("Streamer not found");
-        assert_eq!(updated.consecutive_error_count, 1);
-
-        // Verify transient error event was emitted
-        let event = tokio::time::timeout(std::time::Duration::from_secs(2), event_rx.recv())
-            .await
-            .expect("Timed out waiting for event")
-            .expect("No event received");
-        match event {
-            MonitorEvent::TransientError {
-                streamer_name,
-                error_message,
-                consecutive_errors,
-                ..
-            } => {
-                assert_eq!(streamer_name, "ErrorStreamer");
-                assert_eq!(error_message, "Network timeout");
-                assert_eq!(consecutive_errors, 1);
-            }
-            _ => panic!("Expected TransientError event"),
-        }
-    }
-
-    /// Disabling ends the session in memory and in the database. Re-enabling
-    /// must create a fresh session instead of resuming the ended session.
-    #[tokio::test]
-    async fn test_disable_then_reenable_creates_fresh_session() {
-        use rust_srec::database::repositories::StartSessionOutcome;
-        use rust_srec::session::LiveDetectedArgs;
-
-        let pool = setup_test_db().await;
-        let platform_id = setup_platform(&pool).await;
-
-        let streamer_id = setup_streamer(
-            &pool,
-            &platform_id,
-            "TestStreamer",
-            "https://twitch.tv/teststreamer",
-        )
-        .await;
-
-        let lifecycle = make_session_lifecycle(&pool);
-
-        let now = jiff::Timestamp::now();
-        let streams = Vec::new();
-        let live_args = LiveDetectedArgs {
-            credential_binding: None,
-            streamer_id: &streamer_id,
-            streamer_name: "TestStreamer",
-            streamer_url: "https://twitch.tv/teststreamer",
-            current_avatar: None,
-            new_avatar: None,
-            title: "first session",
-            category: None,
-            streams: &streams,
-            media_headers: None,
-            media_extras: None,
-            now,
-        };
-
-        // Step 1: streamer goes live → fresh session.
-        let first = lifecycle
-            .on_live_detected(live_args)
-            .await
-            .expect("first live");
-        let first_id = first.session_id().to_string();
-        assert!(matches!(first, StartSessionOutcome::Created { .. }));
-
-        // Step 2: user disables — lifecycle tears down. (In production the
-        // download's CleanDisconnect would have parked the session in
-        // Hysteresis first; we test the simpler path here. The hysteresis
-        // path is covered by lifecycle unit tests for user-disabled teardown.)
-        let resolved = lifecycle
-            .end_for_disable(&streamer_id, "TestStreamer")
-            .await
-            .expect("end_for_disable");
-        assert_eq!(resolved.as_deref(), Some(first_id.as_str()));
-
-        // DB end_time set on the first session.
-        let end_time: Option<i64> =
-            sqlx::query_scalar("SELECT end_time FROM live_sessions WHERE id = ?")
-                .bind(&first_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        assert!(end_time.is_some(), "first session must be ended in DB");
-
-        // `end_for_disable` must also leave the in-memory session `Ended`.
-        let snap = lifecycle
-            .session_snapshot(&first_id)
-            .expect("session in memory after disable");
-        assert!(
-            snap.is_ended(),
-            "in-memory state must be Ended after disable"
-        );
-
-        // Step 3: re-enable triggers fresh LiveDetected. Because the
-        // in-memory state is Ended (not Hysteresis), the lifecycle's
-        // `on_live_detected` falls through to `start_or_resume` which
-        // creates a fresh session_id.
-        let later = now + jiff::SignedDuration::from_secs(5);
-        let streams2 = Vec::new();
-        let relive_args = LiveDetectedArgs {
-            credential_binding: None,
-            streamer_id: &streamer_id,
-            streamer_name: "TestStreamer",
-            streamer_url: "https://twitch.tv/teststreamer",
-            current_avatar: None,
-            new_avatar: None,
-            title: "second session",
-            category: None,
-            streams: &streams2,
-            media_headers: None,
-            media_extras: None,
-            now: later,
-        };
-        let second = lifecycle
-            .on_live_detected(relive_args)
-            .await
-            .expect("re-live");
-        let second_id = second.session_id().to_string();
-
-        assert!(
-            matches!(second, StartSessionOutcome::Created { .. }),
-            "re-enable must create a fresh session, got {second:?}"
-        );
-        assert_ne!(
-            first_id, second_id,
-            "fresh session must have a different id than the disabled one"
-        );
-
-        // Two rows in live_sessions: the first ended, the second active.
-        let count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM live_sessions WHERE streamer_id = ?")
-                .bind(&streamer_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        assert_eq!(count, 2);
-
-        let active_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM live_sessions WHERE streamer_id = ? AND end_time IS NULL",
-        )
-        .bind(&streamer_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(
-            active_count, 1,
-            "exactly one active session after re-enable"
-        );
     }
 }

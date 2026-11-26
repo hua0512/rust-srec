@@ -1,0 +1,789 @@
+//! Configuration service implementation.
+//!
+//! The ConfigService provides centralized access to all configuration data
+//! with in-memory caching and event broadcasting for updates.
+//!
+//! Architecture:
+//! - MergedConfigBuilder: Handles the merging logic for 4-layer config hierarchy
+//! - ConfigResolver: Uses builder to resolve config, fetches from repositories
+//! - ConfigService: Uses resolver + adds caching and event broadcasting
+
+use std::sync::{Arc, OnceLock};
+use std::time::Duration;
+use tokio::sync::broadcast;
+use tracing::trace;
+
+use crate::Result;
+use srec_core::domain::streamer::Streamer;
+use srec_core::utils::json::{self, JsonContext};
+use srec_sqlite::models::{
+    EngineConfigurationDbModel, GlobalConfigDbModel, PlatformConfigDbModel, TemplateConfigDbModel,
+};
+use srec_sqlite::repositories::{config::ConfigRepository, streamer::StreamerRepository};
+
+use super::cache::{ConfigCache, InFlightRequest};
+use super::events::{ConfigEventBroadcaster, ConfigUpdateEvent};
+use super::{ConfigResolver, MergedConfig};
+
+mod global_cache;
+use global_cache::GlobalConfigCache;
+
+/// Hard upper bound for a single streamer config resolution. This prevents `in_flight` entries
+/// from getting stuck forever if an upstream call hangs.
+const CONFIG_RESOLVE_HARD_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Fails the in-flight `ConfigCache` entry for `streamer_id` on drop unless it was disarmed.
+///
+/// The owner that created a new in-flight entry via `ConfigCache::get_or_create_in_flight` must
+/// eventually call `complete_in_flight` or `fail_in_flight`. If its task is cancelled mid-resolve
+/// (e.g. an axum client disconnect during `resolve_config_for_streamer`), this guard's drop runs
+/// `fail_in_flight` so the entry is removed and waiters wake; otherwise every later
+/// `get_config_for_streamer` for that streamer would block on a request that never completes.
+struct InFlightGuard<'a> {
+    cache: &'a ConfigCache,
+    streamer_id: &'a str,
+    cell: InFlightRequest,
+    armed: bool,
+}
+
+impl InFlightGuard<'_> {
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for InFlightGuard<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            self.cache.fail_in_flight(
+                self.streamer_id,
+                &self.cell,
+                format!(
+                    "Config resolution for streamer {} was cancelled",
+                    self.streamer_id
+                ),
+            );
+        }
+    }
+}
+
+/// Configuration service providing cached access to all configuration data.
+///
+/// The service maintains an in-memory cache of merged configurations and
+/// broadcasts events when configurations change.
+pub struct ConfigService<C, S>
+where
+    C: ConfigRepository + Send + Sync,
+    S: StreamerRepository + Send + Sync,
+{
+    config_repo: Arc<C>,
+    streamer_repo: Arc<S>,
+    cache: ConfigCache,
+    broadcaster: ConfigEventBroadcaster,
+    global_cache: GlobalConfigCache,
+    filter_store: OnceLock<Arc<srec_sqlite::filter_store::FilterStore>>,
+}
+
+impl<C, S> ConfigService<C, S>
+where
+    C: ConfigRepository + Send + Sync,
+    S: StreamerRepository + Send + Sync,
+{
+    /// Create a new ConfigService.
+    pub fn new(config_repo: Arc<C>, streamer_repo: Arc<S>) -> Self {
+        Self::with_cache_and_broadcaster(
+            config_repo,
+            streamer_repo,
+            ConfigCache::new(),
+            ConfigEventBroadcaster::new(),
+        )
+    }
+
+    /// Create a new ConfigService with custom cache settings.
+    pub fn with_cache(config_repo: Arc<C>, streamer_repo: Arc<S>, cache: ConfigCache) -> Self {
+        Self::with_cache_and_broadcaster(
+            config_repo,
+            streamer_repo,
+            cache,
+            ConfigEventBroadcaster::new(),
+        )
+    }
+
+    /// Create a new ConfigService with custom cache settings and a shared broadcaster.
+    ///
+    /// This should be used by the runtime `ServiceContainer` so `ActorRegistry` and other
+    /// services see config update events from the API (global/platform/template/engine).
+    pub fn with_cache_and_broadcaster(
+        config_repo: Arc<C>,
+        streamer_repo: Arc<S>,
+        cache: ConfigCache,
+        broadcaster: ConfigEventBroadcaster,
+    ) -> Self {
+        Self {
+            config_repo,
+            streamer_repo,
+            cache,
+            broadcaster,
+            global_cache: GlobalConfigCache::default(),
+            filter_store: OnceLock::new(),
+        }
+    }
+
+    pub fn with_filter_store(self, store: Arc<srec_sqlite::filter_store::FilterStore>) -> Self {
+        self.filter_store.get_or_init(|| store);
+        self
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn filter_store_for(
+        &self,
+        repository: Arc<dyn srec_sqlite::repositories::FilterRepository>,
+    ) -> Arc<srec_sqlite::filter_store::FilterStore> {
+        self.filter_store
+            .get_or_init(|| Arc::new(srec_sqlite::filter_store::FilterStore::new(repository)))
+            .clone()
+    }
+
+    pub fn invalidate_filter_snapshots(&self, streamer_id: &str) {
+        if let Some(store) = self.filter_store.get() {
+            store.invalidate(streamer_id);
+        }
+    }
+
+    pub fn invalidate_all_filter_snapshots(&self) {
+        if let Some(store) = self.filter_store.get() {
+            store.invalidate_all();
+        }
+    }
+
+    // ========== Event Broadcasting ==========
+
+    /// Synchronous publication runs while the committed writer still owns the
+    /// lease, so a canceled API request cannot leave cached policies behind.
+    pub fn publish_credential_owner(&self, owner: crate::credentials::CredentialOwner) {
+        self.cache.invalidate_all();
+        let event = match owner {
+            crate::credentials::CredentialOwner::Platform { platform_id } => {
+                ConfigUpdateEvent::PlatformUpdated { platform_id }
+            }
+            crate::credentials::CredentialOwner::Template { template_id } => {
+                ConfigUpdateEvent::TemplateUpdated { template_id }
+            }
+            crate::credentials::CredentialOwner::Streamer { streamer_id } => {
+                ConfigUpdateEvent::StreamerMetadataUpdated { streamer_id }
+            }
+        };
+        self.broadcaster.publish(event);
+    }
+
+    pub fn publish_config_write(
+        &self,
+        write: srec_sqlite::repositories::config::ConfigWritePublication,
+    ) {
+        use srec_sqlite::repositories::config::ConfigWritePublication;
+        match write {
+            ConfigWritePublication::Owner(owner) => self.publish_credential_owner(owner),
+            ConfigWritePublication::Global => {
+                self.global_cache.invalidate();
+                self.invalidate_all_filter_snapshots();
+                self.cache.invalidate_all();
+                self.broadcaster.publish(ConfigUpdateEvent::GlobalUpdated);
+            }
+            ConfigWritePublication::Engine { engine_id } => {
+                self.cache.invalidate_all();
+                self.broadcaster
+                    .publish(ConfigUpdateEvent::EngineUpdated { engine_id });
+            }
+        }
+    }
+
+    pub fn publish_credential_material(&self, owner: crate::credentials::CredentialOwner) {
+        self.broadcaster
+            .publish(ConfigUpdateEvent::CredentialMaterialChanged { owner });
+    }
+
+    /// Subscribe to configuration update events.
+    pub fn subscribe(&self) -> broadcast::Receiver<ConfigUpdateEvent> {
+        self.broadcaster.subscribe()
+    }
+
+    // ========== Global Config ==========
+
+    /// Get the global configuration.
+    pub async fn get_global_config(&self) -> Result<GlobalConfigDbModel> {
+        Ok(self.config_repo.get_global_config().await?)
+    }
+
+    /// Short-lived snapshot for high-frequency readers. Administrative read-modify-write
+    /// callers keep using get_global_config, which always reads the authoritative row.
+    pub async fn get_cached_global_config(&self) -> Result<Arc<GlobalConfigDbModel>> {
+        self.global_cache
+            .get_or_load(|| async { Ok(self.config_repo.get_global_config().await?) })
+            .await
+    }
+
+    /// Update the global configuration.
+    pub async fn update_global_config(&self, config: &GlobalConfigDbModel) -> Result<()> {
+        self.update_global_config_with_route(config, None).await
+    }
+
+    /// Update the global configuration and, when given, the global proxy
+    /// route.
+    pub async fn update_global_config_with_route(
+        &self,
+        config: &GlobalConfigDbModel,
+        route: Option<&crate::proxies::ProxyRoute>,
+    ) -> Result<()> {
+        self.config_repo
+            .update_global_config_with_route(config, route)
+            .await?;
+        if !self.config_repo.has_bound_publication() {
+            self.global_cache.invalidate();
+            self.invalidate_all_filter_snapshots();
+            self.cache.invalidate_all();
+            self.broadcaster.publish(ConfigUpdateEvent::GlobalUpdated);
+        }
+
+        tracing::info!("Global config updated, cache invalidated");
+        Ok(())
+    }
+
+    /// Update only `global_config.log_filter_directive` without racing edits
+    /// to other global configuration fields.
+    pub async fn update_log_filter_directive(&self, directive: &str) -> Result<()> {
+        self.config_repo
+            .update_log_filter_directive(directive)
+            .await?;
+        if !self.config_repo.has_bound_publication() {
+            self.global_cache.invalidate();
+            self.invalidate_all_filter_snapshots();
+            self.cache.invalidate_all();
+            self.broadcaster.publish(ConfigUpdateEvent::GlobalUpdated);
+        }
+        Ok(())
+    }
+
+    // ========== Platform Config ==========
+
+    /// Get a platform configuration by ID.
+    pub async fn get_platform_config(&self, id: &str) -> Result<PlatformConfigDbModel> {
+        Ok(self.config_repo.get_platform_config(id).await?)
+    }
+
+    /// Get a platform configuration by name.
+    pub async fn get_platform_config_by_name(&self, name: &str) -> Result<PlatformConfigDbModel> {
+        Ok(self.config_repo.get_platform_config_by_name(name).await?)
+    }
+
+    /// List all platform configurations.
+    pub async fn list_platform_configs(&self) -> Result<Vec<PlatformConfigDbModel>> {
+        Ok(self.config_repo.list_platform_configs().await?)
+    }
+
+    /// Create a new platform configuration.
+    pub async fn create_platform_config(&self, config: &PlatformConfigDbModel) -> Result<()> {
+        self.config_repo.create_platform_config(config).await?;
+
+        if !self.config_repo.has_bound_publication() {
+            self.cache.invalidate_all();
+            self.broadcaster
+                .publish(ConfigUpdateEvent::PlatformUpdated {
+                    platform_id: config.id.clone(),
+                });
+        }
+
+        Ok(())
+    }
+
+    /// Update a platform configuration, keeping its account selection.
+    pub async fn update_platform_config(&self, config: &PlatformConfigDbModel) -> Result<()> {
+        self.update_platform_config_with_selection(config, None)
+            .await
+    }
+
+    /// Update a platform configuration and, when given, its own account
+    /// selection; `inherit` removes the selection.
+    pub async fn update_platform_config_with_selection(
+        &self,
+        config: &PlatformConfigDbModel,
+        selection: Option<&crate::credentials::CredentialSelection>,
+    ) -> Result<()> {
+        self.update_platform_config_scoped(config, selection, None)
+            .await
+    }
+
+    /// Update a platform configuration and, when given, its own account
+    /// selection and proxy route.
+    pub async fn update_platform_config_scoped(
+        &self,
+        config: &PlatformConfigDbModel,
+        selection: Option<&crate::credentials::CredentialSelection>,
+        route: Option<&crate::proxies::ProxyRoute>,
+    ) -> Result<()> {
+        self.config_repo
+            .update_platform_config_scoped(config, selection, route)
+            .await?;
+
+        if !self.config_repo.has_bound_publication() {
+            // Invalidate configs for streamers on this platform
+            self.invalidate_streamers_by_platform(&config.id).await?;
+
+            self.broadcaster
+                .publish(ConfigUpdateEvent::PlatformUpdated {
+                    platform_id: config.id.clone(),
+                });
+        }
+
+        tracing::info!("Platform config {} updated", config.id);
+        Ok(())
+    }
+
+    // ========== Proxy Routes ==========
+
+    /// The route of requests made for a platform, or for no platform.
+    pub async fn resolve_scope_route(
+        &self,
+        platform_id: Option<&str>,
+    ) -> Result<crate::proxies::ResolvedRoute> {
+        Ok(self.config_repo.resolve_scope_route(platform_id).await?)
+    }
+
+    /// The route one scope stores.
+    pub async fn proxy_route_of(
+        &self,
+        owner: &srec_sqlite::repositories::proxies::RouteOwner,
+    ) -> Result<crate::proxies::ProxyRoute> {
+        Ok(self.config_repo.proxy_route_of(owner).await?)
+    }
+
+    /// The routes every scope of `kind`'s kind stores, by scope ID; absent
+    /// scopes inherit.
+    pub async fn proxy_routes_of_kind(
+        &self,
+        kind: &srec_sqlite::repositories::proxies::RouteOwner,
+    ) -> Result<std::collections::HashMap<String, crate::proxies::ProxyRoute>> {
+        Ok(self.config_repo.proxy_routes_of_kind(kind).await?)
+    }
+
+    /// The routes the given scopes of `kind`'s kind store, by scope ID;
+    /// absent scopes inherit.
+    pub async fn proxy_routes_of(
+        &self,
+        kind: &srec_sqlite::repositories::proxies::RouteOwner,
+        ids: &[&str],
+    ) -> Result<std::collections::HashMap<String, crate::proxies::ProxyRoute>> {
+        Ok(self.config_repo.proxy_routes_of(kind, ids).await?)
+    }
+
+    /// A saved proxy changed: every resolved route may have.
+    pub(crate) fn notify_proxies_changed(&self) {
+        self.cache.invalidate_all();
+        self.broadcaster.publish(ConfigUpdateEvent::GlobalUpdated);
+    }
+
+    // ========== Account Selections ==========
+
+    /// Every stored account selection.
+    pub async fn list_credential_selections(
+        &self,
+    ) -> Result<Vec<srec_sqlite::repositories::StoredSelection>> {
+        Ok(self.config_repo.list_credential_selections().await?)
+    }
+
+    /// The account selections the given streamers store.
+    pub async fn selections_of_streamers(
+        &self,
+        streamer_ids: &[&str],
+    ) -> Result<Vec<srec_sqlite::repositories::StoredSelection>> {
+        Ok(self
+            .config_repo
+            .selections_of_streamers(streamer_ids)
+            .await?)
+    }
+
+    /// The account selections one platform, template or streamer stores.
+    pub async fn credential_selections_for(
+        &self,
+        owner: &crate::credentials::CredentialOwner,
+    ) -> Result<Vec<srec_sqlite::repositories::StoredSelection>> {
+        Ok(self.config_repo.credential_selections_for(owner).await?)
+    }
+
+    // ========== Template Config ==========
+
+    /// Get a template configuration by ID.
+    pub async fn get_template_config(&self, id: &str) -> Result<TemplateConfigDbModel> {
+        Ok(self.config_repo.get_template_config(id).await?)
+    }
+
+    /// Get a template configuration by name.
+    pub async fn get_template_config_by_name(&self, name: &str) -> Result<TemplateConfigDbModel> {
+        Ok(self.config_repo.get_template_config_by_name(name).await?)
+    }
+
+    /// List all template configurations.
+    pub async fn list_template_configs(&self) -> Result<Vec<TemplateConfigDbModel>> {
+        Ok(self.config_repo.list_template_configs().await?)
+    }
+
+    /// Clone a template and its local accounts in one committed operation.
+    pub async fn clone_template_config(
+        &self,
+        source_id: &str,
+        new_name: &str,
+    ) -> Result<TemplateConfigDbModel> {
+        let cloned = self
+            .config_repo
+            .clone_template_config(source_id, new_name)
+            .await?;
+        if !self.config_repo.has_bound_publication() {
+            self.cache.invalidate_all();
+            self.broadcaster
+                .publish(ConfigUpdateEvent::TemplateUpdated {
+                    template_id: cloned.id.clone(),
+                });
+        }
+        Ok(cloned)
+    }
+
+    /// Create a new template configuration.
+    pub async fn create_template_config(&self, config: &TemplateConfigDbModel) -> Result<()> {
+        self.create_template_config_with_route(config, None).await
+    }
+
+    /// Create a template configuration with, when given, its proxy route.
+    pub async fn create_template_config_with_route(
+        &self,
+        config: &TemplateConfigDbModel,
+        route: Option<&crate::proxies::ProxyRoute>,
+    ) -> Result<()> {
+        self.config_repo
+            .write_template_config(config, true, route)
+            .await?;
+
+        if !self.config_repo.has_bound_publication() {
+            self.cache.invalidate_all();
+            self.broadcaster
+                .publish(ConfigUpdateEvent::TemplateUpdated {
+                    template_id: config.id.clone(),
+                });
+        }
+
+        Ok(())
+    }
+
+    /// Update a template configuration.
+    pub async fn update_template_config(&self, config: &TemplateConfigDbModel) -> Result<()> {
+        self.update_template_config_with_route(config, None).await
+    }
+
+    /// Update a template configuration and, when given, its proxy route.
+    pub async fn update_template_config_with_route(
+        &self,
+        config: &TemplateConfigDbModel,
+        route: Option<&crate::proxies::ProxyRoute>,
+    ) -> Result<()> {
+        self.config_repo
+            .write_template_config(config, false, route)
+            .await?;
+
+        if !self.config_repo.has_bound_publication() {
+            // Invalidate configs for streamers using this template
+            self.invalidate_streamers_by_template(&config.id).await?;
+
+            self.broadcaster
+                .publish(ConfigUpdateEvent::TemplateUpdated {
+                    template_id: config.id.clone(),
+                });
+        }
+
+        tracing::info!("Template config {} updated", config.id);
+        Ok(())
+    }
+
+    /// Delete a template configuration.
+    pub async fn delete_template_config(&self, id: &str) -> Result<()> {
+        if !self.config_repo.has_bound_publication() {
+            // Invalidate before delete
+            self.invalidate_streamers_by_template(id).await?;
+        }
+
+        self.config_repo.delete_template_config(id).await?;
+
+        if !self.config_repo.has_bound_publication() {
+            self.broadcaster
+                .publish(ConfigUpdateEvent::TemplateUpdated {
+                    template_id: id.to_string(),
+                });
+        }
+
+        Ok(())
+    }
+
+    // ========== Engine Config ==========
+
+    /// Get an engine configuration by ID.
+    pub async fn get_engine_config(&self, id: &str) -> Result<EngineConfigurationDbModel> {
+        Ok(self.config_repo.get_engine_config(id).await?)
+    }
+
+    /// List all engine configurations.
+    pub async fn list_engine_configs(&self) -> Result<Vec<EngineConfigurationDbModel>> {
+        Ok(self.config_repo.list_engine_configs().await?)
+    }
+
+    /// Create a new engine configuration.
+    pub async fn create_engine_config(&self, config: &EngineConfigurationDbModel) -> Result<()> {
+        self.config_repo.create_engine_config(config).await?;
+
+        if !self.config_repo.has_bound_publication() {
+            // We don't track which streamers use which engine configs; invalidate all for correctness.
+            self.cache.invalidate_all();
+
+            self.broadcaster.publish(ConfigUpdateEvent::EngineUpdated {
+                engine_id: config.id.clone(),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Update an engine configuration.
+    pub async fn update_engine_config(&self, config: &EngineConfigurationDbModel) -> Result<()> {
+        self.config_repo.update_engine_config(config).await?;
+
+        if !self.config_repo.has_bound_publication() {
+            // Engine updates may affect any streamer using this engine; since we don't track
+            // usage, invalidate all cached merged configs for correctness.
+            self.cache.invalidate_all();
+
+            self.broadcaster.publish(ConfigUpdateEvent::EngineUpdated {
+                engine_id: config.id.clone(),
+            });
+        }
+
+        tracing::info!("Engine config {} updated", config.id);
+        Ok(())
+    }
+
+    /// Delete an engine configuration.
+    pub async fn delete_engine_config(&self, id: &str) -> Result<()> {
+        self.config_repo.delete_engine_config(id).await?;
+
+        if !self.config_repo.has_bound_publication() {
+            // Deleting an engine can affect any streamer that referenced it; invalidate all.
+            self.cache.invalidate_all();
+
+            self.broadcaster.publish(ConfigUpdateEvent::EngineUpdated {
+                engine_id: id.to_string(),
+            });
+        }
+
+        tracing::info!("Engine config {} deleted", id);
+        Ok(())
+    }
+
+    // ========== Merged Config (Cached) ==========
+
+    /// Get the merged configuration for a streamer.
+    ///
+    /// This method uses lazy loading with request deduplication:
+    /// - Returns cached config if available
+    /// - Deduplicates concurrent requests for the same streamer
+    /// - Only one request will resolve the config while others wait
+    pub async fn get_config_for_streamer(&self, streamer_id: &str) -> Result<Arc<MergedConfig>> {
+        // One retry is enough to handle "cache invalidated" races and a
+        // cancelled owner (InFlightGuard's drop runs fail_in_flight) without
+        // creating unbounded loops if the config is being updated repeatedly.
+        for attempt in 0..2 {
+            // Check cache first
+            if let Some(config) = self.cache.get(streamer_id) {
+                trace!("Cache hit for streamer {}", streamer_id);
+                return Ok(config);
+            }
+
+            // Check for in-flight request (deduplication)
+            let (cell, is_new) = self.cache.get_or_create_in_flight(streamer_id);
+
+            if !is_new {
+                // Another request is already resolving this config, wait for it
+                trace!("Waiting for in-flight request for streamer {}", streamer_id);
+                match self.cache.wait_for_in_flight(&cell).await {
+                    Ok(config) => return Ok(config),
+                    Err(message)
+                        if attempt == 0
+                            && (message.contains("Configuration invalidated")
+                                || message.contains("Configuration cache invalidated")
+                                || message.contains("was cancelled")) =>
+                    {
+                        trace!(
+                            "In-flight config was invalidated or its owner was cancelled \
+                             for streamer {}, retrying",
+                            streamer_id
+                        );
+                        continue;
+                    }
+                    Err(message) => return Err(crate::Error::config(message)),
+                }
+            }
+
+            trace!("Cache miss for streamer {}, resolving config", streamer_id);
+
+            // If this task is cancelled during resolution, the guard's drop runs
+            // `fail_in_flight` so `cell` is not left in `ConfigCache::in_flight` forever.
+            let mut guard = InFlightGuard {
+                cache: &self.cache,
+                streamer_id,
+                cell: cell.clone(),
+                armed: true,
+            };
+
+            // Resolve the config
+            let resolve = tokio::time::timeout(
+                CONFIG_RESOLVE_HARD_TIMEOUT,
+                self.resolve_config_for_streamer(streamer_id),
+            )
+            .await;
+
+            // Resolution completed without cancellation; the match arms below own the
+            // complete/fail transition, so the guard's drop-time fallback is not needed.
+            guard.disarm();
+
+            return match resolve {
+                Ok(Ok(config)) => {
+                    // Complete the in-flight request (caches and notifies waiters)
+                    let config = Arc::new(config);
+                    self.cache
+                        .complete_in_flight(streamer_id, &cell, config.clone());
+                    Ok(config)
+                }
+                Ok(Err(e)) => {
+                    self.cache.fail_in_flight(
+                        streamer_id,
+                        &cell,
+                        format!("Failed to resolve config for streamer {streamer_id}: {e}"),
+                    );
+                    Err(e)
+                }
+                Err(_) => {
+                    let message = format!(
+                        "Timed out resolving config for streamer {streamer_id} after {:?}",
+                        CONFIG_RESOLVE_HARD_TIMEOUT
+                    );
+                    self.cache
+                        .fail_in_flight(streamer_id, &cell, message.clone());
+                    Err(crate::Error::config(message))
+                }
+            };
+        }
+
+        Err(crate::Error::config(format!(
+            "Failed to resolve config for streamer {streamer_id} after retry"
+        )))
+    }
+
+    /// Resolve the merged configuration for a streamer without caching.
+    ///
+    /// Delegates to ConfigResolver which handles the 4-layer merging logic.
+    async fn resolve_config_for_streamer(&self, streamer_id: &str) -> Result<MergedConfig> {
+        // Get the streamer and convert to domain entity
+        let streamer_db = self.streamer_repo.get_streamer(streamer_id).await?;
+        let streamer = self.convert_to_domain_streamer(&streamer_db)?;
+
+        // Use ConfigResolver to handle the merging logic
+        let resolver = ConfigResolver::new(Arc::clone(&self.config_repo));
+        resolver.resolve_config_for_streamer(&streamer).await
+    }
+
+    /// Convert database streamer model to domain entity.
+    fn convert_to_domain_streamer(
+        &self,
+        db_model: &srec_sqlite::models::StreamerDbModel,
+    ) -> Result<Streamer> {
+        use srec_core::domain::StreamerUrl;
+
+        let url = StreamerUrl::new(&db_model.url)?;
+
+        let mut streamer = Streamer::new(&db_model.name, url, &db_model.platform_config_id);
+        streamer.id = db_model.id.clone();
+        streamer.template_config_id = db_model.template_config_id.clone();
+
+        streamer.streamer_specific_config = json::parse_optional(
+            db_model.streamer_specific_config.as_deref(),
+            JsonContext::StreamerField {
+                streamer_id: &db_model.id,
+                field: "streamer_specific_config",
+            },
+            "Invalid streamer_specific_config JSON; ignoring",
+        );
+
+        Ok(streamer)
+    }
+
+    /// Invalidate the cached config for a specific streamer.
+    pub fn invalidate_streamer(&self, streamer_id: &str) {
+        self.cache.invalidate(streamer_id);
+    }
+
+    pub fn notify_streamer_filters_updated(&self, streamer_id: &str) {
+        // Filters are stored separately from merged config, but changes should still invalidate
+        // streamer config and trigger a scheduler re-check (OutOfSchedule smart-wake).
+        self.invalidate_streamer(streamer_id);
+        self.invalidate_filter_snapshots(streamer_id);
+        self.broadcaster
+            .publish(ConfigUpdateEvent::StreamerFiltersUpdated {
+                streamer_id: streamer_id.to_string(),
+            });
+    }
+
+    pub fn invalidate_import_caches(&self) {
+        self.global_cache.invalidate();
+        self.cache.invalidate_all();
+        self.invalidate_all_filter_snapshots();
+    }
+
+    pub fn notify_import_committed(&self) {
+        self.invalidate_import_caches();
+        self.broadcaster.publish(ConfigUpdateEvent::GlobalUpdated);
+    }
+
+    // ========== Private Helpers ==========
+
+    /// Invalidate cached configs for all streamers on a platform.
+    async fn invalidate_streamers_by_platform(&self, platform_id: &str) -> Result<()> {
+        let streamers = self
+            .streamer_repo
+            .list_streamers_by_platform(platform_id)
+            .await?;
+
+        for streamer in streamers {
+            self.cache.invalidate(&streamer.id);
+        }
+
+        tracing::debug!(
+            "Invalidated cache for streamers on platform {}",
+            platform_id
+        );
+
+        Ok(())
+    }
+
+    /// Invalidate cached configs for all streamers using a template.
+    async fn invalidate_streamers_by_template(&self, template_id: &str) -> Result<()> {
+        let streamers = self
+            .streamer_repo
+            .list_streamers_by_template(template_id)
+            .await?;
+
+        for streamer in streamers {
+            self.cache.invalidate(&streamer.id);
+        }
+
+        tracing::debug!(
+            "Invalidated cache for streamers using template {}",
+            template_id
+        );
+
+        Ok(())
+    }
+}

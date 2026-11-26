@@ -1,0 +1,411 @@
+//! Session and media output database models.
+
+use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
+
+/// Live session database model.
+/// Represents a single, continuous live stream event.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct LiveSessionDbModel {
+    pub id: String,
+    /// `None` once the `streamers` row this session belonged to is deleted:
+    /// the foreign key is `ON DELETE SET NULL`, so the recording history and
+    /// its `media_outputs` / `session_segments` / `danmu_statistics` children
+    /// outlive the streamer. Use [`Self::streamer_name`] for the label.
+    pub streamer_id: Option<String>,
+    /// Name the streamer had when the session started, snapshotted by
+    /// [`crate::repositories::SessionTxOps::create_session`]. Only
+    /// source of a display name once `streamer_id` is `None`; `None` for rows
+    /// whose streamer was already unresolvable when the column was backfilled.
+    pub streamer_name: Option<String>,
+    /// Unix epoch milliseconds (UTC) when the session began.
+    pub start_time: i64,
+    /// Unix epoch milliseconds (UTC) when the session ended (null if ongoing).
+    pub end_time: Option<i64>,
+    /// JSON array of timestamped stream titles
+    pub titles: Option<String>,
+    #[serde(default)]
+    pub total_size_bytes: i64,
+}
+
+impl LiveSessionDbModel {
+    pub fn new(streamer_id: impl Into<String>) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            streamer_id: Some(streamer_id.into()),
+            streamer_name: None,
+            start_time: crate::time::now_ms(),
+            end_time: None,
+            titles: Some("[]".to_string()),
+            total_size_bytes: 0,
+        }
+    }
+
+    /// Set the denormalized display name written alongside `streamer_id`.
+    pub fn with_streamer_name(mut self, streamer_name: impl Into<String>) -> Self {
+        self.streamer_name = Some(streamer_name.into());
+        self
+    }
+}
+
+/// Title entry for session titles JSON array.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TitleEntry {
+    /// Unix epoch milliseconds (UTC).
+    pub ts: i64,
+    pub title: String,
+}
+
+/// One row from the `session_events` table.
+///
+/// Append-only audit log of session lifecycle transitions. The `kind` column
+/// is the discriminator string (`session_started` / `hysteresis_entered` /
+/// `session_resumed` / `session_ended`); `payload` is JSON-encoded
+/// [`srec_core::domain::session::SessionEventPayload`]. See the migration for
+/// column semantics.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct SessionEventDbModel {
+    /// Surrogate key (auto-increment). Stable for a given DB; not stable
+    /// across exports/imports.
+    pub id: i64,
+    pub session_id: String,
+    pub streamer_id: String,
+    /// One of the four kind discriminators; the `CHECK` constraint on the
+    /// table enforces this at insert time.
+    pub kind: String,
+    /// Milliseconds since Unix epoch (UTC).
+    pub occurred_at: i64,
+    /// JSON-encoded `SessionEventPayload`. Legacy or externally repaired rows
+    /// may have no payload even for a known kind.
+    pub payload: Option<String>,
+}
+
+impl From<SessionEventDbModel> for srec_core::domain::session::SessionEvent {
+    fn from(row: SessionEventDbModel) -> Self {
+        let payload = row.payload.as_deref().and_then(|raw| {
+            match serde_json::from_str::<srec_core::domain::session::SessionEventPayload>(raw) {
+                Ok(payload) if payload.kind().as_str() == row.kind => Some(payload),
+                Ok(payload) => {
+                    tracing::warn!(
+                        event_id = row.id,
+                        session_id = %row.session_id,
+                        stored_kind = %row.kind,
+                        payload_kind = payload.kind().as_str(),
+                        "Session event payload discriminator does not match its row kind"
+                    );
+                    None
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        event_id = row.id,
+                        session_id = %row.session_id,
+                        kind = %row.kind,
+                        %error,
+                        "Session event payload could not be parsed; returning kind-only history"
+                    );
+                    None
+                }
+            }
+        });
+        Self {
+            id: row.id,
+            session_id: row.session_id,
+            streamer_id: row.streamer_id,
+            kind: row.kind,
+            occurred_at: crate::time::ms_to_datetime(row.occurred_at),
+            payload,
+        }
+    }
+}
+
+/// Media output database model.
+/// Represents a single file generated during a live session.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct MediaOutputDbModel {
+    pub id: String,
+    pub session_id: String,
+    /// Self-referencing key for derived artifacts (e.g., thumbnail from video)
+    pub parent_media_output_id: Option<String>,
+    pub file_path: String,
+    /// File type: VIDEO, AUDIO, THUMBNAIL, DANMU_XML
+    pub file_type: String,
+    pub size_bytes: i64,
+    /// Unix epoch milliseconds (UTC) of file creation.
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct SessionSegmentDbModel {
+    pub id: String,
+    pub session_id: String,
+    pub segment_index: i64,
+    pub file_path: String,
+    pub duration_secs: f64,
+    pub size_bytes: i64,
+    pub split_reason_code: Option<String>,
+    pub split_reason_details_json: Option<String>,
+    pub created_at: Option<i64>,
+    pub completed_at: Option<i64>,
+    pub persisted_at: i64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SessionSegmentLifecycle {
+    pub created_at: Option<i64>,
+    pub completed_at: Option<i64>,
+}
+
+impl SessionSegmentLifecycle {
+    pub fn new(created_at: Option<i64>, completed_at: Option<i64>) -> Self {
+        Self {
+            created_at,
+            completed_at,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SessionSegmentSplitReason {
+    pub code: Option<String>,
+    pub details_json: Option<String>,
+}
+
+impl SessionSegmentSplitReason {
+    pub fn new(code: Option<String>, details_json: Option<String>) -> Self {
+        Self { code, details_json }
+    }
+}
+
+impl SessionSegmentDbModel {
+    pub fn new(
+        session_id: impl Into<String>,
+        segment_index: u32,
+        file_path: impl Into<String>,
+        duration_secs: f64,
+        size_bytes: u64,
+        lifecycle: SessionSegmentLifecycle,
+        split_reason: SessionSegmentSplitReason,
+    ) -> Self {
+        let size_bytes = i64::try_from(size_bytes).unwrap_or(i64::MAX);
+        let persisted_at = crate::time::now_ms();
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            session_id: session_id.into(),
+            segment_index: i64::from(segment_index),
+            file_path: file_path.into(),
+            duration_secs,
+            size_bytes,
+            split_reason_code: split_reason.code,
+            split_reason_details_json: split_reason.details_json,
+            created_at: lifecycle.created_at,
+            completed_at: lifecycle.completed_at,
+            persisted_at,
+        }
+    }
+}
+
+impl MediaOutputDbModel {
+    pub fn new(
+        session_id: impl Into<String>,
+        file_path: impl Into<String>,
+        file_type: MediaFileType,
+        size_bytes: i64,
+    ) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            session_id: session_id.into(),
+            parent_media_output_id: None,
+            file_path: file_path.into(),
+            file_type: file_type.as_str().to_string(),
+            size_bytes,
+            created_at: crate::time::now_ms(),
+        }
+    }
+}
+
+/// Media file types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum MediaFileType {
+    Video,
+    Audio,
+    Thumbnail,
+    DanmuXml,
+}
+
+impl MediaFileType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Video => "VIDEO",
+            Self::Audio => "AUDIO",
+            Self::Thumbnail => "THUMBNAIL",
+            Self::DanmuXml => "DANMU_XML",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "VIDEO" => Some(Self::Video),
+            "AUDIO" => Some(Self::Audio),
+            "THUMBNAIL" => Some(Self::Thumbnail),
+            "DANMU_XML" => Some(Self::DanmuXml),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for MediaFileType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Danmu statistics database model.
+/// Aggregated statistics for danmu messages collected during a live session.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct DanmuStatisticsDbModel {
+    pub id: String,
+    pub session_id: String,
+    pub total_danmus: i64,
+    /// Approximate distinct senders (NULL on rows written before the column existed)
+    pub unique_talkers: Option<i64>,
+    /// Messages that were not gifts or super chats
+    pub chat_count: Option<i64>,
+    /// Gift and super-chat messages
+    pub gift_count: Option<i64>,
+    /// Seconds between the first message and the end of collection
+    pub duration_secs: Option<i64>,
+    /// First message time, Unix epoch milliseconds
+    pub start_time: Option<i64>,
+    /// Collection end time, Unix epoch milliseconds; NULL while in progress
+    pub end_time: Option<i64>,
+    /// Width of one `danmu_rate_timeseries` bucket. Varies within a session as
+    /// the aggregator coarsens long timelines, so consumers must read it rather
+    /// than assume the configured value.
+    pub rate_bucket_secs: Option<i64>,
+    /// JSON array of timestamp-and-count pairs
+    pub danmu_rate_timeseries: Option<String>,
+    /// JSON array of top 10 most active users
+    pub top_talkers: Option<String>,
+    /// JSON array of top gift senders (weighted by gift items)
+    pub top_gifters: Option<String>,
+    /// JSON array of gift-name tallies
+    pub top_gifts: Option<String>,
+    /// JSON array of word-frequency entries
+    pub word_frequency: Option<String>,
+}
+
+impl DanmuStatisticsDbModel {
+    pub fn new(session_id: impl Into<String>) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            session_id: session_id.into(),
+            total_danmus: 0,
+            unique_talkers: None,
+            chat_count: None,
+            gift_count: None,
+            duration_secs: None,
+            start_time: None,
+            end_time: None,
+            rate_bucket_secs: None,
+            danmu_rate_timeseries: Some("[]".to_string()),
+            top_talkers: Some("[]".to_string()),
+            top_gifters: Some("[]".to_string()),
+            top_gifts: Some("[]".to_string()),
+            word_frequency: Some("[]".to_string()),
+        }
+    }
+}
+
+fn is_zero_i64(value: &i64) -> bool {
+    *value == 0
+}
+
+/// Top talker entry for danmu statistics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TopTalkerEntry {
+    pub user_id: String,
+    pub username: String,
+    pub message_count: i64,
+    /// Overestimate bound; the true count is at least `message_count - error`.
+    /// Omitted when exact (`0`) and absent on rows written before the field existed.
+    #[serde(default, skip_serializing_if = "is_zero_i64")]
+    pub error: i64,
+}
+
+/// Gift tally entry for danmu statistics (gift name -> total items).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GiftTallyEntry {
+    pub name: String,
+    pub count: i64,
+}
+
+/// Word frequency entry for danmu statistics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WordFrequencyEntry {
+    pub word: String,
+    pub count: i64,
+    /// Overestimate bound; the true count is at least `count - error`.
+    /// Omitted when exact (`0`) and absent on rows written before the field existed.
+    #[serde(default, skip_serializing_if = "is_zero_i64")]
+    pub error: i64,
+}
+
+/// Danmu rate entry for timeseries.
+///
+/// Serializes as a compact `[ts, count]` pair to reduce storage in
+/// `danmu_statistics.danmu_rate_timeseries`, while [`Deserialize`] accepts
+/// both `[ts, count]` arrays and `{"ts": ..., "count": ...}` objects.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct DanmuRateEntry {
+    /// Unix epoch milliseconds (UTC).
+    pub ts: i64,
+    pub count: i64,
+}
+
+impl Serialize for DanmuRateEntry {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        (&self.ts, &self.count).serialize(serializer)
+    }
+}
+
+/// Output metadata needed to render one session without loading its output rows.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct SessionOutputSummary {
+    pub session_id: String,
+    pub output_count: i64,
+    pub thumbnail_id: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn danmu_rate_entry_uses_compact_tuple_json_and_reads_legacy_objects() {
+        let rate = vec![
+            DanmuRateEntry {
+                ts: 1_700_000_000_000,
+                count: 12,
+            },
+            DanmuRateEntry {
+                ts: 1_700_000_010_000,
+                count: 7,
+            },
+        ];
+        let compact_rate = serde_json::to_string(&rate).unwrap();
+        assert_eq!(compact_rate, "[[1700000000000,12],[1700000010000,7]]");
+        assert_eq!(
+            serde_json::from_str::<Vec<DanmuRateEntry>>(&compact_rate).unwrap(),
+            rate
+        );
+        let legacy_rate = r#"[{"ts":1700000000000,"count":12},{"ts":1700000010000,"count":7}]"#;
+        assert_eq!(
+            serde_json::from_str::<Vec<DanmuRateEntry>>(legacy_rate).unwrap(),
+            rate
+        );
+    }
+}

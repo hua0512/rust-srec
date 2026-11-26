@@ -9,6 +9,7 @@
 - **Notification proxies:** Webhook, Telegram, Gotify and Discord notifications, as well as browser push, now use the app's **Default proxy** instead of the server's proxy environment variables. Unless your **Default proxy** is set to **System proxy**, this changes how they connect after updating. If you relied on `HTTP_PROXY` or `HTTPS_PROXY` to send notifications, set those channels to **System proxy** after updating (browser push always follows **Default proxy**, and email notifications still connect directly). See [Notification proxy](https://docs.srec.rs/en/concepts/notifications#proxy).
 - **Upload proxies:** rclone and Baidu Netdisk upload steps now use the app's **Default proxy** instead of the server's proxy environment variables. If you relied on `HTTP_PROXY`, `HTTPS_PROXY`, `RCLONE_HTTP_PROXY`, rclone's `--http-proxy` flag or BaiduPCS-Go's own proxy setting, set those upload steps to **System proxy** after updating. With any other proxy setting, rclone ignores the environment variables, and steps that still configure `--http-proxy` or BaiduPCS-Go's proxy setting will fail until those old settings are removed. See [Upload proxy](https://docs.srec.rs/en/reference/processors#upload-proxy).
 - **Desktop sign-in:** After updating, the desktop app opens without asking for a password. If other people use this computer, turn on **Require password sign-in** under **Desktop → Backend & Security**. See [New features](#new-features).
+- **Log module names:** Log lines now show rust-srec's own modules under new names, such as `srec_recorder::…` or `srec_api::…`, instead of `rust_srec::…`. Log filters that use `rust_srec` or the previous module names keep working, but searches in **Real-Time Logs**, log alerts and other log tools that look for `rust_srec::` need updating.
 
 ## New features
 
@@ -44,6 +45,7 @@
 - Setting **Frequent words to keep** under **Danmu Statistics** to `0` now disables word frequency counting and CJK word segmentation while keeping the rest of the session's chat summary (totals, activity timeline, top chatters and gifts).
 - Fixed Huya **Record Danmu** failing to capture live chat, including on rooms with custom URLs or links with query parameters, and stopped sending your Twitch login token to video servers.
 - Fixed negative bitrate values on some Douyin streams breaking bitrate filters, and fixed password-protected Twitcasting links entered without `https://` losing their password.
+- If monitoring a streamer keeps failing because of an internal error, **System Health** now lists the streamer instead of only noting it in the server log. rust-srec now stops restarting its monitoring after five failures in a row instead of ten; saving the streamer or restarting rust-srec resumes it.
 
 ## Workflows and file processing
 
@@ -67,6 +69,7 @@
 ## Notifications
 
 - Fixed **Web Push** under **Browser Notifications** failing to subscribe, update priority or unsubscribe when `AUTH_DISABLED=true`.
+- Fixed streamer notifications (**Stream online**, **Stream offline**, **Fatal error**, **Streamer checks failing** and **Streamer checks restored**) being lost when rust-srec stopped or restarted before they were delivered. They are now sent once it starts again, so a channel may occasionally receive the same notification twice.
 
 ## Authentication and API
 

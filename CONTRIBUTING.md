@@ -63,7 +63,7 @@ The backend's end-to-end suite starts the real server in-process and drives it o
 
 Nextest does not run doctests. When examples or the APIs they exercise change, run `cargo test --locked -p <package> --doc`. Exact CI features and platform prerequisites are maintained in [.github/workflows/pr.yml](.github/workflows/pr.yml); Linux CI enables selected TLS fallback features. Follow the Windows feature restriction in [AGENTS.md](AGENTS.md#toolchain-and-command-reference).
 
-Rust code generated from the `.proto` schemas is committed, so builds need no `protoc`. After editing a schema under `rust-srec/proto/` or `crates/platforms/proto/`, regenerate its code with `UPDATE_GENERATED_PROTOS=1 cargo nextest run --locked -p <package> --lib -E 'test(generated_protos)'` (`rust-srec` or `platforms-parser`). Without the variable, the same test fails when the committed code is stale.
+Rust code generated from the `.proto` schemas is committed, so builds need no `protoc`. After editing a schema under `rust-srec/proto/` or `crates/platforms/proto/`, regenerate its code with `UPDATE_GENERATED_PROTOS=1 cargo nextest run --locked -p <package> --lib -E 'test(generated_protos)'` (`srec-api` or `platforms-parser`). Without the variable, the same test fails when the committed code is stale.
 
 ## Frontend (optional)
 

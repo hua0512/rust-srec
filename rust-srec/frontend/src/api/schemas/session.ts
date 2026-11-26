@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-// --- Lifecycle event types (mirrors `rust-srec/src/session/events.rs`) ---
+// --- Lifecycle event types (mirrors `rust-srec/crates/srec-recorder/src/session/events.rs`) ---
 
 // `OfflineSignal` uses adjacent tagging. `ConsecutiveFailures(u32)` carries
 // its value as `count`; the timeline currently needs only the discriminator.

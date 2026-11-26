@@ -118,9 +118,7 @@ async fn run_worker() -> anyhow::Result<()> {
 
     info!("Initializing services...");
     let container = Arc::new(ServiceContainer::new(pool, write_pool).await?);
-    logging_config
-        .apply_persisted_filter(container.config_service())
-        .await;
+    container.apply_persisted_log_filter(&logging_config).await;
     container.set_logging_config(logging_config.clone());
     container.initialize().await?;
     match worker_control

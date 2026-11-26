@@ -1,0 +1,14 @@
+//! Streamer management module.
+//!
+//! This module provides the StreamerManager which maintains in-memory
+//! streamer metadata with write-through persistence to the database.
+
+pub mod manager;
+pub mod metadata;
+pub mod platform_metadata;
+pub mod state_store;
+pub use state_store::CommittedStreamerState;
+
+pub use manager::StreamerManager;
+pub(crate) use metadata::download_failure_threshold;
+pub use metadata::{StreamerMetadata, detect_platform_name};

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use super::super::*;
 
 use crate::database::filter_store::FilterStore;
@@ -58,7 +60,6 @@ async fn raw_change(container: &ServiceContainer, filter: &FilterDbModel) {
 }
 
 async fn stop_constructor_tasks(container: ServiceContainer) {
-    container.stream_monitor.stop();
     container.notification_service.stop().await;
     container.cancellation_token.cancel();
     container
@@ -105,9 +106,9 @@ async fn lagged_config_receiver_reconciles_snapshots_without_the_lost_filter_eve
             config_service: container.config_service.clone(),
             download_manager: container.download_manager.clone(),
             pipeline_manager: container.pipeline_manager.clone(),
-            runtime_coordinator: container.runtime_coordinator.clone(),
+            actor_registry: container.actor_registry.clone(),
             gpu_health_monitor: None,
-            credential_blocks: container.stream_monitor.credential_blocks().clone(),
+            credential_blocks: container.credential_blocks().clone(),
             logging_config: Arc::new(std::sync::OnceLock::new()),
         };
         let (events, receiver) = broadcast::channel(1);

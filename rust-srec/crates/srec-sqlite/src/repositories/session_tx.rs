@@ -1,0 +1,257 @@
+//! Transactional operations for live sessions.
+//!
+//! This module provides transaction-aware operations for session management.
+//! Use these when you need to manage sessions as part of a larger transaction
+//! (e.g., combined with streamer state updates and outbox events).
+
+use jiff::Timestamp;
+use sqlx::{Row, SqliteConnection};
+use tracing::warn;
+
+use crate::DbResult as Result;
+use crate::models::{LiveSessionDbModel, MediaOutputDbModel, SessionSegmentDbModel, TitleEntry};
+
+pub(super) mod writes;
+
+/// Transactional operations for live sessions.
+///
+/// These methods operate within an existing transaction and do NOT commit.
+/// The caller is responsible for committing or rolling back the transaction.
+pub struct SessionTxOps;
+
+impl SessionTxOps {
+    /// Insert a media output row and add its byte size to `live_sessions.total_size_bytes`.
+    pub async fn insert_media_output(
+        tx: &mut SqliteConnection,
+        output: &MediaOutputDbModel,
+    ) -> Result<()> {
+        writes::insert_media_output(tx, output).await
+    }
+
+    /// Insert a finalized video segment row into `session_segments`.
+    pub async fn insert_segment(
+        tx: &mut SqliteConnection,
+        segment: &SessionSegmentDbModel,
+    ) -> Result<()> {
+        writes::insert_segment(tx, segment).await
+    }
+
+    /// Remove an output and adjust its session size in the caller's transaction.
+    /// Shared by manual deletion and automatic retention; only the transaction
+    /// that removed the row owns its size adjustment.
+    pub async fn delete_media_output(tx: &mut SqliteConnection, id: &str) -> Result<()> {
+        let (session_id, size_bytes): (String, i64) = sqlx::query_as(
+            "DELETE FROM media_outputs WHERE id = ? RETURNING session_id, size_bytes",
+        )
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| crate::DbError::not_found("MediaOutput", id))?;
+
+        sqlx::query(
+            "UPDATE live_sessions SET total_size_bytes = total_size_bytes - ? WHERE id = ?",
+        )
+        .bind(size_bytes)
+        .bind(&session_id)
+        .execute(&mut *tx)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Get the most recent session for a streamer.
+    pub async fn get_last_session(
+        tx: &mut SqliteConnection,
+        streamer_id: &str,
+    ) -> Result<Option<LiveSessionDbModel>> {
+        let session = sqlx::query_as::<_, LiveSessionDbModel>(
+            "SELECT * FROM live_sessions WHERE streamer_id = ? ORDER BY start_time DESC LIMIT 1",
+        )
+        .bind(streamer_id)
+        .fetch_optional(tx)
+        .await?;
+
+        Ok(session)
+    }
+
+    /// Get the active (no end_time) session ID for a streamer.
+    pub async fn get_active_session_id(
+        tx: &mut SqliteConnection,
+        streamer_id: &str,
+    ) -> Result<Option<String>> {
+        let session_id: Option<String> = sqlx::query(
+            "SELECT id FROM live_sessions WHERE streamer_id = ? AND end_time IS NULL ORDER BY start_time DESC LIMIT 1",
+        )
+        .bind(streamer_id)
+        .fetch_optional(tx)
+        .await?
+        .map(|row| row.get::<String, _>("id"));
+
+        Ok(session_id)
+    }
+
+    /// Create a new session.
+    ///
+    /// `streamer_name` is denormalized into `live_sessions.streamer_name` so
+    /// the row still carries a label after its `streamers` row is deleted and
+    /// the `ON DELETE SET NULL` foreign key clears `streamer_id`.
+    pub async fn create_session(
+        tx: &mut SqliteConnection,
+        session_id: &str,
+        streamer_id: &str,
+        streamer_name: &str,
+        start_time: Timestamp,
+        initial_title: &str,
+    ) -> Result<()> {
+        let initial_titles = vec![TitleEntry {
+            ts: start_time.as_millisecond(),
+            title: initial_title.to_string(),
+        }];
+        let titles_json = serde_json::to_string(&initial_titles)?;
+
+        let session = LiveSessionDbModel {
+            id: session_id.to_owned(),
+            streamer_id: Some(streamer_id.to_owned()),
+            streamer_name: Some(streamer_name.to_owned()),
+            start_time: start_time.as_millisecond(),
+            end_time: None,
+            titles: Some(titles_json),
+            total_size_bytes: 0,
+        };
+        writes::insert_session(tx, &session).await?;
+
+        Ok(())
+    }
+
+    /// End a session by setting end_time and calculating total_size_bytes.
+    pub async fn end_session(
+        tx: &mut SqliteConnection,
+        session_id: &str,
+        end_time: Timestamp,
+    ) -> Result<u64> {
+        writes::end_session(
+            tx,
+            session_id,
+            end_time.as_millisecond(),
+            writes::EndCondition::ActiveOnly,
+        )
+        .await
+    }
+
+    /// End the active session for a streamer (if any).
+    ///
+    /// Returns the session ID if one was ended.
+    pub async fn end_active_session(
+        tx: &mut SqliteConnection,
+        streamer_id: &str,
+        end_time: Timestamp,
+    ) -> Result<Option<String>> {
+        let session_id = Self::get_active_session_id(tx, streamer_id).await?;
+
+        if let Some(ref id) = session_id {
+            Self::end_session(tx, id, end_time).await?;
+        }
+
+        Ok(session_id)
+    }
+
+    /// End every `live_sessions` row for `streamer_id` whose `end_time IS NULL`,
+    /// optionally skipping one id (the "keep" row). Returns the session_ids
+    /// of rows that were ended, in `start_time ASC` order. Tx-scoped — the
+    /// caller owns commit.
+    ///
+    /// In normal operation the partial unique index
+    /// `live_sessions_one_active_per_streamer` caps the candidate set at 0 or
+    /// 1 row for a non-NULL `streamer_id`. The helper exists for the
+    /// self-heal path when starting or resuming a session: if a
+    /// database without that index contains multiple active rows, the
+    /// lifecycle calls this with `keep = Some(most_recent_id)` to retain
+    /// the row about to be reused, ending the others — or `keep = None` to clear
+    /// the slot entirely before an `INSERT`.
+    ///
+    /// Returns the cleaned IDs (oldest first) so the caller can fan out
+    /// audit-log rows without re-querying.
+    pub async fn end_all_active_for_streamer(
+        tx: &mut SqliteConnection,
+        streamer_id: &str,
+        keep: Option<&str>,
+        end_time: Timestamp,
+    ) -> Result<Vec<String>> {
+        // Two query shapes — keeping them separate is easier to read than
+        // splicing a placeholder for the optional `keep` clause.
+        let ids: Vec<String> = match keep {
+            Some(keep_id) => {
+                sqlx::query_scalar(
+                    "SELECT id FROM live_sessions
+                     WHERE streamer_id = ? AND end_time IS NULL AND id != ?
+                     ORDER BY start_time ASC",
+                )
+                .bind(streamer_id)
+                .bind(keep_id)
+                .fetch_all(&mut *tx)
+                .await?
+            }
+            None => {
+                sqlx::query_scalar(
+                    "SELECT id FROM live_sessions
+                     WHERE streamer_id = ? AND end_time IS NULL
+                     ORDER BY start_time ASC",
+                )
+                .bind(streamer_id)
+                .fetch_all(&mut *tx)
+                .await?
+            }
+        };
+
+        for id in &ids {
+            Self::end_session(tx, id, end_time).await?;
+        }
+
+        Ok(ids)
+    }
+
+    /// Update session titles by adding a new title entry.
+    ///
+    /// Only adds if the new title differs from the last one.
+    pub async fn update_titles(
+        tx: &mut SqliteConnection,
+        session_id: &str,
+        current_titles_json: Option<&str>,
+        new_title: &str,
+        timestamp: Timestamp,
+    ) -> Result<bool> {
+        let mut titles: Vec<TitleEntry> = match current_titles_json {
+            Some(json) => match serde_json::from_str(json) {
+                Ok(parsed) => parsed,
+                Err(error) => {
+                    warn!(
+                        session_id = %session_id,
+                        raw_len = json.len(),
+                        error = %error,
+                        "Invalid session titles JSON; resetting to empty list"
+                    );
+                    Vec::new()
+                }
+            },
+            None => Vec::new(),
+        };
+
+        let needs_update = titles.last().map(|t| t.title != new_title).unwrap_or(true);
+
+        if needs_update {
+            titles.push(TitleEntry {
+                ts: timestamp.as_millisecond(),
+                title: new_title.to_string(),
+            });
+            let titles_json = serde_json::to_string(&titles)?;
+
+            sqlx::query("UPDATE live_sessions SET titles = ? WHERE id = ?")
+                .bind(titles_json)
+                .bind(session_id)
+                .execute(tx)
+                .await?;
+        }
+
+        Ok(needs_update)
+    }
+}

@@ -18,11 +18,19 @@ async fn import(
     mode: ImportMode,
 ) -> Result<(), ConfigurationImportError> {
     validate_import(&config, mode)?;
+    let auth = test_auth_import();
     let mut tx = begin_immediate(pool).await.unwrap();
     let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
     snapshot.upgrade_bundle(&mut config, mode)?;
     snapshot.validate_references(&config, mode)?;
-    apply_import(&mut tx, &snapshot, &config, mode).await?;
+    auth.validate_users_tx(
+        &mut tx,
+        &config.users,
+        includes_imported_users(&config),
+        mode,
+    )
+    .await?;
+    apply_import(&mut tx, &snapshot, &config, mode, auth.as_ref()).await?;
     tx.commit().await.unwrap();
     Ok(())
 }
@@ -310,7 +318,7 @@ fn bundles_without_saved_proxies_keep_the_shape_older_releases_read() {
 
     // Reading it back restores the same routes.
     let mut restored: ConfigExport = serde_json::from_value(value).unwrap();
-    crate::database::legacy_proxy_upgrade::upgrade_bundle(&mut restored, &[], true).unwrap();
+    crate::services::legacy_upgrade::proxies::upgrade_bundle(&mut restored, &[], true).unwrap();
     assert_eq!(
         restored.global_config.proxy_route,
         Some(BackupRoute::System)

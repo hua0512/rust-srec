@@ -1,0 +1,745 @@
+use super::*;
+use std::collections::{BTreeMap, HashMap};
+
+use crate::JobFailureOutcome;
+use srec_sqlite::models::DagExecutionDbModel;
+
+pub(super) const COORDINATOR_RECOVERY_PAGE_LIMIT: u32 = 500;
+
+pub struct RecoveryReport {
+    pub recovered_jobs: usize,
+    pub complete: bool,
+}
+
+struct RecoveredCoordinatorSession {
+    session: PipelineSessionSummary,
+    has_in_flight_coordination_dag: bool,
+    needs_session_complete_recovery: bool,
+}
+
+impl PipelineManager {
+    /// Recover jobs from database on startup.
+    /// Re-drives persisted DAG completions before resetting interrupted jobs for re-execution.
+    /// For sequential pipelines, no special handling is needed since only one job
+    /// per pipeline exists at a time.
+    pub async fn recover_jobs(&self) -> Result<usize> {
+        self.recover_jobs_with_status()
+            .await
+            .map(|report| report.recovered_jobs)
+    }
+
+    pub async fn recover_jobs_with_status(&self) -> Result<RecoveryReport> {
+        let mut complete = true;
+        info!("Recovering jobs from database...");
+        // Reconciliation runs before `JobQueue::recover_jobs` so materialized jobs are already
+        // PENDING when the queue loads them, but it must not gate that reset: a failure here
+        // would otherwise leave every interrupted job stuck in PROCESSING.
+        if let Some(scheduler) = &self.dag_scheduler {
+            match scheduler.recover_dag_jobs_with_status().await {
+                Ok((materialized, reconciled)) => {
+                    complete &= reconciled;
+                    if materialized > 0 {
+                        info!(
+                            jobs = %materialized,
+                            "Materialized DAG jobs during startup reconciliation"
+                        );
+                    }
+                }
+                Err(e) => {
+                    complete = false;
+                    warn!(
+                        error = %e,
+                        "Failed to reconcile DAG jobs; continuing with job recovery"
+                    );
+                }
+            }
+        }
+        let recovered = self.job_queue.recover_jobs().await?;
+        // Runs before `recover_pipeline_coordination` so a DAG failed here is already terminal
+        // when the coordinator replays it, rather than being replayed as still in flight.
+        match self.fail_unclaimable_jobs_with_status(&mut complete).await {
+            Ok(failed) if failed > 0 => info!(
+                jobs = %failed,
+                "Failed pending jobs whose processor is not registered"
+            ),
+            Ok(_) => {}
+            Err(e) => {
+                complete = false;
+                warn!(
+                    error = %e,
+                    "Failed to sweep pending jobs with unregistered processors"
+                );
+            }
+        }
+        if let Err(e) = self
+            .recover_pipeline_coordination_with_status(&mut complete)
+            .await
+        {
+            complete = false;
+            warn!(
+                error = %e,
+                "Failed to recover pipeline coordination state; continuing with empty coordinator"
+            );
+        }
+        if recovered > 0 {
+            info!("Recovered {} jobs from database", recovered);
+        } else {
+            debug!("No jobs to recover from database");
+        }
+        Ok(RecoveryReport {
+            recovered_jobs: recovered,
+            complete,
+        })
+    }
+
+    /// Fail pending jobs whose `job_type` no registered processor accepts.
+    ///
+    /// No pool claims such a job (see `supported_job_types`), so it would sit PENDING across
+    /// every restart while holding its DAG out of a terminal state and counting towards
+    /// `JobQueue::depth`, which drives the queue-depth warnings and download throttling.
+    /// `validate_step_processors` rejects new definitions that would produce one; this clears
+    /// jobs already persisted, whose step's DAG is failed through `DagScheduler::on_job_failed`
+    /// so its dependents are cancelled instead of waiting.
+    ///
+    /// Returns the number of jobs failed. `complete` is cleared if a job or its workflow
+    /// could not be failed.
+    async fn fail_unclaimable_jobs_with_status(&self, complete: &mut bool) -> Result<usize> {
+        let supported: Vec<_> = self.supported_job_types().into_iter().collect();
+        let mut after_id = None;
+        let mut failed = 0usize;
+        loop {
+            let jobs = self
+                .job_repository
+                .list_unclaimable_pending_jobs(
+                    &supported,
+                    after_id.as_deref(),
+                    COORDINATOR_RECOVERY_PAGE_LIMIT,
+                )
+                .await?;
+            let full_page = jobs.len() == COORDINATOR_RECOVERY_PAGE_LIMIT as usize;
+            after_id = jobs.last().map(|job| job.id.clone());
+
+            for job in jobs {
+                let reason = format!("No processor is registered for job type '{}'", job.job_type);
+                warn!(
+                    job_id = %job.id,
+                    job_type = %job.job_type,
+                    "Failing pending job that no worker pool can claim"
+                );
+
+                match self.job_queue.fail(&job.id, &reason).await {
+                    Ok(JobFailureOutcome::Transitioned) => {}
+                    Ok(JobFailureOutcome::Unchanged) => continue,
+                    Err(e) => {
+                        *complete = false;
+                        warn!(job_id = %job.id, error = %e, "Failed to mark unclaimable job as failed");
+                        continue;
+                    }
+                }
+                failed += 1;
+
+                if let Some(step_id) = job.dag_step_execution_id.as_deref()
+                    && let Some(scheduler) = &self.dag_scheduler
+                    && let Err(e) = scheduler.on_job_failed(step_id, &reason).await
+                {
+                    *complete = false;
+                    warn!(
+                        job_id = %job.id,
+                        dag_step_execution_id = %step_id,
+                        error = %e,
+                        "Failed to fail the DAG of an unclaimable job"
+                    );
+                }
+            }
+
+            if !full_page {
+                break;
+            }
+        }
+
+        Ok(failed)
+    }
+
+    #[cfg(test)]
+    pub(super) async fn recover_pipeline_coordination(&self) -> Result<()> {
+        self.recover_pipeline_coordination_with_status(&mut true)
+            .await
+    }
+
+    async fn recover_pipeline_coordination_with_status(&self, complete: &mut bool) -> Result<()> {
+        let Some(session_port) = &self.session_port else {
+            return Ok(());
+        };
+
+        let sessions = self
+            .collect_recovery_sessions(session_port, complete)
+            .await?;
+
+        let mut recovered = 0usize;
+        for recovered_session in sessions.into_values() {
+            if self
+                .recover_session(session_port, recovered_session, complete)
+                .await
+            {
+                recovered += 1;
+            }
+        }
+
+        if recovered > 0 {
+            info!(
+                sessions = %recovered,
+                "Recovered pipeline coordination state"
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Gather every session the coordinator must rebuild: active sessions, ended
+    /// sessions still owed a session-complete dispatch, and sessions with an
+    /// in-flight coordination DAG.
+    async fn collect_recovery_sessions(
+        &self,
+        session_port: &Arc<dyn PipelineSessionPort>,
+        complete: &mut bool,
+    ) -> Result<BTreeMap<String, RecoveredCoordinatorSession>> {
+        let mut sessions = BTreeMap::<String, RecoveredCoordinatorSession>::new();
+        let mut offset = 0;
+        loop {
+            let page = session_port
+                .list_active_sessions(COORDINATOR_RECOVERY_PAGE_LIMIT, offset)
+                .await?;
+            let page_len = page.len();
+            for session in page {
+                sessions.insert(
+                    session.id.clone(),
+                    RecoveredCoordinatorSession {
+                        session,
+                        has_in_flight_coordination_dag: false,
+                        needs_session_complete_recovery: false,
+                    },
+                );
+            }
+
+            if page_len < COORDINATOR_RECOVERY_PAGE_LIMIT as usize {
+                break;
+            }
+            offset = offset.saturating_add(COORDINATOR_RECOVERY_PAGE_LIMIT);
+        }
+
+        if self.config_port.is_some() {
+            let mut offset = 0;
+            loop {
+                let page = session_port
+                    .list_ended_sessions_pending_pipeline_recovery(
+                        COORDINATOR_RECOVERY_PAGE_LIMIT,
+                        offset,
+                    )
+                    .await?;
+                let page_len = page.len();
+                for session in page {
+                    sessions
+                        .entry(session.id.clone())
+                        .and_modify(|recovered| recovered.needs_session_complete_recovery = true)
+                        .or_insert(RecoveredCoordinatorSession {
+                            session,
+                            has_in_flight_coordination_dag: false,
+                            needs_session_complete_recovery: true,
+                        });
+                }
+
+                if page_len < COORDINATOR_RECOVERY_PAGE_LIMIT as usize {
+                    break;
+                }
+                offset = offset.saturating_add(COORDINATOR_RECOVERY_PAGE_LIMIT);
+            }
+        }
+
+        if let Some(dag_repo) = &self.dag_repository {
+            for status in [DagExecutionStatus::Pending, DagExecutionStatus::Processing] {
+                for dag in self
+                    .list_recoverable_coordination_dags(dag_repo, Some(status), None, complete)
+                    .await
+                {
+                    let Some(session_id) = dag.session_id.as_deref() else {
+                        *complete = false;
+                        continue;
+                    };
+
+                    if !sessions.contains_key(session_id) {
+                        match session_port.get_session_summary(session_id).await {
+                            Ok(Some(session)) => {
+                                sessions.insert(
+                                    session_id.to_string(),
+                                    RecoveredCoordinatorSession {
+                                        session,
+                                        has_in_flight_coordination_dag: true,
+                                        needs_session_complete_recovery: false,
+                                    },
+                                );
+                            }
+                            Ok(None) => {
+                                *complete = false;
+                                warn!(
+                                    session_id = %session_id,
+                                    dag_id = %dag.id,
+                                    ?status,
+                                    "Skipping pipeline coordinator recovery for DAG with missing session"
+                                );
+                            }
+                            Err(e) => {
+                                *complete = false;
+                                warn!(
+                                    session_id = %session_id,
+                                    dag_id = %dag.id,
+                                    ?status,
+                                    error = %e,
+                                    "Skipping pipeline coordinator recovery for DAG with missing session"
+                                );
+                            }
+                        }
+                    } else if let Some(recovered) = sessions.get_mut(session_id) {
+                        recovered.has_in_flight_coordination_dag = true;
+                    }
+                }
+            }
+        }
+
+        Ok(sessions)
+    }
+
+    /// Replay one session's persisted DAGs, segments and danmu outputs into the
+    /// coordinator. Returns false when the session is skipped.
+    async fn recover_session(
+        &self,
+        session_port: &Arc<dyn PipelineSessionPort>,
+        recovered_session: RecoveredCoordinatorSession,
+        complete: &mut bool,
+    ) -> bool {
+        let session = recovered_session.session;
+        let recover_ended_session = session.ended
+            && (recovered_session.has_in_flight_coordination_dag
+                || recovered_session.needs_session_complete_recovery);
+        // A session whose streamer was deleted has no config to resolve, so it
+        // is not a recovery candidate: every `PipelineCoordinationEvent` below
+        // is keyed by streamer id. `list_ended_sessions_pending_pipeline_recovery`
+        // already filters these out, so reaching here means the session was
+        // pulled in by an in-flight coordination DAG — worth a line, same as
+        // the DAG-with-missing-session case above.
+        let Some(streamer_id) = session.streamer_id.clone() else {
+            *complete = false;
+            warn!(
+                session_id = %session.id,
+                "Skipping pipeline coordinator recovery for session whose streamer was deleted"
+            );
+            return false;
+        };
+        let session_id = session.id.clone();
+        let config = match &self.config_port {
+            Some(port) => match port.get_session_pipeline_config(&streamer_id).await {
+                Ok(config) => Some(config),
+                Err(error) => {
+                    *complete = false;
+                    warn!(%session_id, %streamer_id, %error, "Pipeline recovery waits for session configuration");
+                    return false;
+                }
+            },
+            None => None,
+        };
+
+        let danmu_enabled = config
+            .as_ref()
+            .map(|config| config.record_danmu)
+            .unwrap_or(false);
+        let mut commands =
+            self.pipeline_coordinator
+                .apply_event(PipelineCoordinationEvent::ConfigureSession {
+                    session_id: session_id.clone(),
+                    streamer_id: streamer_id.clone(),
+                    danmu_enabled,
+                    segment_pipeline: config
+                        .as_ref()
+                        .and_then(|config| config.segment_pipeline.clone()),
+                    paired_segment_pipeline: config
+                        .as_ref()
+                        .and_then(|config| config.paired_segment_pipeline.clone())
+                        .filter(|_| danmu_enabled),
+                    session_complete_pipeline: config
+                        .as_ref()
+                        .and_then(|config| config.session_complete_pipeline.clone()),
+                });
+
+        let coordination_dags = if let Some(dag_repo) = &self.dag_repository {
+            self.list_recoverable_coordination_dags(dag_repo, None, Some(&session_id), complete)
+                .await
+        } else {
+            Vec::new()
+        };
+        let mut recovered_danmu_activity = coordination_dags
+            .iter()
+            .any(|dag| dag.get_segment_source() == Some(DagSegmentSource::Danmu));
+        if coordination_dags
+            .iter()
+            .any(|dag| dag.get_status().is_none() || dag.get_dag_definition().is_none())
+        {
+            *complete = false;
+        }
+
+        if coordination_dags
+            .iter()
+            .any(|dag| dag.get_segment_source() == Some(DagSegmentSource::SessionComplete))
+        {
+            commands.extend(self.pipeline_coordinator.apply_event(
+                PipelineCoordinationEvent::SessionCompleteDagStarted {
+                    session_id: session_id.clone(),
+                    streamer_id: streamer_id.clone(),
+                },
+            ));
+        }
+
+        for dag in &coordination_dags {
+            if dag.get_segment_source() != Some(DagSegmentSource::Paired) {
+                continue;
+            }
+            let Some(segment_index) = dag_segment_index(dag) else {
+                *complete = false;
+                continue;
+            };
+            match dag.get_status() {
+                Some(DagExecutionStatus::Pending | DagExecutionStatus::Processing) => {
+                    commands.extend(self.pipeline_coordinator.apply_event(
+                        PipelineCoordinationEvent::PairedDagStarted {
+                            session_id: session_id.clone(),
+                            streamer_id: streamer_id.clone(),
+                            segment_index,
+                        },
+                    ));
+                }
+                Some(
+                    DagExecutionStatus::Completed
+                    | DagExecutionStatus::Failed
+                    | DagExecutionStatus::Cancelled,
+                ) => {
+                    commands.extend(self.pipeline_coordinator.apply_event(
+                        PipelineCoordinationEvent::RecoverPairedDagTriggered {
+                            session_id: session_id.clone(),
+                            streamer_id: streamer_id.clone(),
+                            segment_index,
+                        },
+                    ));
+                }
+                None => {}
+            }
+        }
+
+        for dag in &coordination_dags {
+            let Some(source) = dag
+                .get_segment_source()
+                .and_then(SourceType::from_segment_source)
+            else {
+                continue;
+            };
+            if !matches!(
+                dag.get_status(),
+                Some(DagExecutionStatus::Pending | DagExecutionStatus::Processing)
+            ) {
+                continue;
+            }
+            let Some(segment_index) = dag_segment_index(dag) else {
+                *complete = false;
+                continue;
+            };
+            commands.extend(self.pipeline_coordinator.apply_event(
+                PipelineCoordinationEvent::SegmentDagStarted {
+                    session_id: session_id.clone(),
+                    streamer_id: streamer_id.clone(),
+                    segment_index,
+                    source,
+                },
+            ));
+        }
+
+        // Every segment DAG state is applied before source artifacts so
+        // `recover_source_artifact` can distinguish a missing DAG from one
+        // that already completed, failed, or remains in flight.
+        for dag in &coordination_dags {
+            let Some(source) = dag
+                .get_segment_source()
+                .and_then(SourceType::from_segment_source)
+            else {
+                continue;
+            };
+            let Some(segment_index) = dag_segment_index(dag) else {
+                *complete = false;
+                continue;
+            };
+
+            match dag.get_status() {
+                Some(DagExecutionStatus::Completed) => {
+                    let outputs = self.recover_leaf_outputs(dag, complete).await;
+                    commands.extend(self.pipeline_coordinator.apply_event(
+                        PipelineCoordinationEvent::RecoverSegmentDagCompleted {
+                            session_id: session_id.clone(),
+                            streamer_id: streamer_id.clone(),
+                            segment_index,
+                            source,
+                            outputs,
+                        },
+                    ));
+                }
+                Some(DagExecutionStatus::Failed | DagExecutionStatus::Cancelled) => {
+                    commands.extend(self.pipeline_coordinator.apply_event(
+                        PipelineCoordinationEvent::RecoverSegmentDagFailed {
+                            session_id: session_id.clone(),
+                            segment_index,
+                            source,
+                        },
+                    ));
+                }
+                Some(DagExecutionStatus::Pending | DagExecutionStatus::Processing) | None => {}
+            }
+        }
+
+        // Collection derives the XML path from the original video path by replacing
+        // its extension. Only a unique persisted segment association is authoritative;
+        // titles and media-output UUIDs do not encode a segment index.
+        let mut danmu_segment_indices: HashMap<PathBuf, Option<u32>> = HashMap::new();
+        let mut segment_offset = 0u32;
+        loop {
+            let segments = match session_port
+                .list_session_segments(&session_id, COORDINATOR_RECOVERY_PAGE_LIMIT, segment_offset)
+                .await
+            {
+                Ok(segments) => segments,
+                Err(error) => {
+                    *complete = false;
+                    warn!(%session_id, %error, "Failed to recover session segments for pipeline coordinator");
+                    break;
+                }
+            };
+            let page_len = segments.len();
+            for segment in segments {
+                let Ok(segment_index) = u32::try_from(segment.segment_index) else {
+                    *complete = false;
+                    warn!(%session_id, segment_index = %segment.segment_index, "Skipping recovered segment with invalid index");
+                    continue;
+                };
+                let path = PathBuf::from(segment.file_path);
+                danmu_segment_indices
+                    .entry(path.with_extension("xml"))
+                    .and_modify(|existing| {
+                        if *existing != Some(segment_index) {
+                            *existing = None;
+                        }
+                    })
+                    .or_insert(Some(segment_index));
+                commands.extend(self.pipeline_coordinator.apply_event(
+                    PipelineCoordinationEvent::RecoverSourceArtifact {
+                        session_id: session_id.clone(),
+                        streamer_id: streamer_id.clone(),
+                        segment_index,
+                        source: SourceType::Video,
+                        path,
+                    },
+                ));
+            }
+            if page_len < COORDINATOR_RECOVERY_PAGE_LIMIT as usize {
+                break;
+            }
+            let Some(next_offset) = segment_offset.checked_add(COORDINATOR_RECOVERY_PAGE_LIMIT)
+            else {
+                *complete = false;
+                warn!(%session_id, "Session segment recovery exceeded pagination range");
+                break;
+            };
+            segment_offset = next_offset;
+        }
+        match session_port.list_session_danmu_outputs(&session_id).await {
+            Ok(outputs) => {
+                for file_path in outputs {
+                    recovered_danmu_activity = true;
+                    let path = PathBuf::from(file_path);
+                    let segment_index = match danmu_segment_indices.get(&path) {
+                        Some(Some(index)) => *index,
+                        association => {
+                            *complete = false;
+                            warn!(
+                                session_id = %session_id,
+                                path = %path.display(),
+                                reason = if association.is_some() { "ambiguous" } else { "unmatched" },
+                                "Skipping recovered danmu output without a unique stored video segment"
+                            );
+                            continue;
+                        }
+                    };
+                    commands.extend(self.pipeline_coordinator.apply_event(
+                        PipelineCoordinationEvent::RecoverSourceArtifact {
+                            session_id: session_id.clone(),
+                            streamer_id: streamer_id.clone(),
+                            segment_index,
+                            source: SourceType::Danmu,
+                            path,
+                        },
+                    ));
+                }
+            }
+            Err(e) => {
+                *complete = false;
+                warn!(
+                    session_id = %session_id,
+                    error = %e,
+                    "Failed to recover media outputs for pipeline coordinator"
+                );
+            }
+        }
+
+        if recover_ended_session {
+            commands.extend(self.pipeline_coordinator.apply_event(
+                PipelineCoordinationEvent::SessionEnded {
+                    session_id: session_id.clone(),
+                    streamer_id: streamer_id.clone(),
+                    should_run_session_complete: true,
+                },
+            ));
+            if recovered_danmu_activity {
+                commands.extend(self.pipeline_coordinator.apply_event(
+                    PipelineCoordinationEvent::DanmuCollectionStopped {
+                        session_id: session_id.clone(),
+                    },
+                ));
+            }
+            commands.extend(self.pipeline_coordinator.apply_event(
+                PipelineCoordinationEvent::SessionEndPersisted {
+                    session_id: session_id.clone(),
+                },
+            ));
+        }
+
+        *complete &= self.execute_pipeline_commands_with_status(commands).await;
+        if recover_ended_session {
+            *complete &= self.record_session_pipeline_settlement(&session_id).await;
+        }
+        true
+    }
+
+    async fn list_recoverable_coordination_dags(
+        &self,
+        dag_repo: &Arc<dyn DagRepository>,
+        status: Option<DagExecutionStatus>,
+        session_id: Option<&str>,
+        complete: &mut bool,
+    ) -> Vec<DagExecutionDbModel> {
+        let mut dags = Vec::new();
+        let mut offset = 0;
+
+        loop {
+            match dag_repo
+                .list_dags(status, session_id, COORDINATOR_RECOVERY_PAGE_LIMIT, offset)
+                .await
+            {
+                Ok(page) => {
+                    let page_len = page.len();
+                    dags.extend(
+                        page.into_iter()
+                            .filter(|dag| dag.get_segment_source().is_some()),
+                    );
+
+                    if page_len < COORDINATOR_RECOVERY_PAGE_LIMIT as usize {
+                        break;
+                    }
+                    offset = offset.saturating_add(COORDINATOR_RECOVERY_PAGE_LIMIT);
+                }
+                Err(e) => {
+                    *complete = false;
+                    warn!(
+                        session_id = ?session_id,
+                        ?status,
+                        error = %e,
+                        "Failed to list DAGs for pipeline coordinator recovery"
+                    );
+                    break;
+                }
+            }
+        }
+
+        if status.is_none() {
+            // Apply active states before terminal history, keeping the repository's
+            // newest-first order within each status for repeated segment attempts.
+            dags.sort_by_key(|dag| match dag.get_status() {
+                Some(DagExecutionStatus::Pending) => 0,
+                Some(DagExecutionStatus::Processing) => 1,
+                Some(DagExecutionStatus::Completed) => 2,
+                Some(DagExecutionStatus::Failed) => 3,
+                Some(DagExecutionStatus::Cancelled) => 4,
+                None => 5,
+            });
+        }
+        dags
+    }
+
+    async fn recover_leaf_outputs(
+        &self,
+        dag: &DagExecutionDbModel,
+        complete: &mut bool,
+    ) -> Vec<PathBuf> {
+        let Some(dag_repo) = &self.dag_repository else {
+            *complete = false;
+            return Vec::new();
+        };
+
+        let Some(definition) = dag.get_dag_definition() else {
+            *complete = false;
+            warn!(
+                dag_id = %dag.id,
+                session_id = ?dag.session_id,
+                "Failed to parse DAG definition during pipeline coordinator recovery"
+            );
+            return Vec::new();
+        };
+
+        let steps = match dag_repo.get_steps_by_dag(&dag.id).await {
+            Ok(steps) => steps,
+            Err(e) => {
+                *complete = false;
+                warn!(
+                    dag_id = %dag.id,
+                    session_id = ?dag.session_id,
+                    error = %e,
+                    "Failed to recover DAG leaf outputs for pipeline coordinator"
+                );
+                return Vec::new();
+            }
+        };
+
+        let collected =
+            DagScheduler::collect_leaf_outputs_from_step_executions(&definition, &steps);
+        *complete &= collected.complete;
+        collected.paths.into_iter().map(PathBuf::from).collect()
+    }
+}
+
+pub(super) fn dag_segment_index(dag: &DagExecutionDbModel) -> Option<u32> {
+    let Some(raw_index) = dag.segment_index else {
+        warn!(
+            dag_id = %dag.id,
+            session_id = ?dag.session_id,
+            segment_source = ?dag.segment_source,
+            "DAG without segment_index"
+        );
+        return None;
+    };
+
+    match u32::try_from(raw_index) {
+        Ok(segment_index) => Some(segment_index),
+        Err(_) => {
+            warn!(
+                dag_id = %dag.id,
+                session_id = ?dag.session_id,
+                segment_source = ?dag.segment_source,
+                segment_index = %raw_index,
+                "DAG with invalid segment_index"
+            );
+            None
+        }
+    }
+}

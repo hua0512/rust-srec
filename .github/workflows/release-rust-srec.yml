@@ -71,7 +71,8 @@ jobs:
           # `git diff --quiet` exits 1 when the paths changed, above 1 on error.
           status=0
           git diff --quiet "$BASE_TAG...HEAD" -- \
-            rust-srec/src-tauri rust-srec/frontend rust-srec/src crates \
+            rust-srec/src-tauri rust-srec/frontend rust-srec/src rust-srec/crates crates \
+            rust-srec/migrations rust-srec/proto rust-srec/Cargo.toml \
             Cargo.toml Cargo.lock || status=$?
           case "$status" in
             0) echo "desktop_changed=false" >> "$GITHUB_OUTPUT" ;;
@@ -120,12 +121,20 @@ jobs:
           # Main saves this cache from the Linux Test Suite job in pr.yml.
           shared-key: pr-test
           save-if: false
+      # The backend and every srec-* crate, so a new crate needs no edit here.
+      - name: List backend packages
+        id: packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=$(cargo metadata --no-deps --format-version 1 | jq -r '[.packages[].name | select(. == "rust-srec" or startswith("srec-")) | "-p " + .] | join(" ")')
+          echo "args=$args" >> "$GITHUB_OUTPUT"
       - name: Clippy
-        run: cargo clippy -p rust-srec --locked --features tls-native-fallback -- -D warnings
+        run: cargo clippy ${{ steps.packages.outputs.args }} --locked --features rust-srec/tls-native-fallback -- -D warnings
       - name: Test
-        run: cargo nextest run -p rust-srec --locked --features tls-native-fallback
+        run: cargo nextest run ${{ steps.packages.outputs.args }} --locked --features rust-srec/tls-native-fallback
       - name: Doctests
-        run: cargo test -p rust-srec --locked --doc --features tls-native-fallback
+        run: cargo test ${{ steps.packages.outputs.args }} --locked --doc --features rust-srec/tls-native-fallback
 
   build:
     needs: check-and-test

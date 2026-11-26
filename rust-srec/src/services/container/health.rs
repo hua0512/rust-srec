@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use dashmap::DashMap;
@@ -11,9 +11,9 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::config::ConfigService;
-use crate::danmu::DanmuService;
 use crate::database::repositories::{SqlxConfigRepository, SqlxStreamerRepository};
-use crate::downloader::{DownloadManager, OutputRootGate};
+use crate::downloader::output_root_gate::probe_root_writable;
+use crate::downloader::{DownloadManager, IoErrorKindSer, OutputRootGate, RootHealthState};
 use crate::metrics::{
     ComponentHealth, DiskUsage, HealthChecker, HealthProbe, SystemMetricsSnapshot,
 };
@@ -174,6 +174,49 @@ impl HealthProbe for DiskSpaceProbe {
     }
 }
 
+/// Build a single aggregated [`ComponentHealth`] entry for the output-root
+/// write gate, exposed under `"output-root"` in [`crate::metrics::SystemHealth::components`].
+pub(super) fn check_output_root_gate(gate: &OutputRootGate) -> ComponentHealth {
+    let snapshot = gate.snapshot();
+    let degraded: Vec<_> = snapshot
+        .iter()
+        .filter(|r| r.state == RootHealthState::Degraded)
+        .collect();
+
+    if degraded.is_empty() {
+        return ComponentHealth::healthy("output-root");
+    }
+
+    let mut lines: Vec<String> = Vec::with_capacity(degraded.len());
+    for r in &degraded {
+        let (kind, _msg) = r
+            .last_error
+            .as_ref()
+            .map_or((IoErrorKindSer::Other, String::new()), |(k, m)| {
+                (*k, m.clone())
+            });
+        let age = r
+            .seconds_since_last_attempt
+            .map(|s| format!("{}s ago", s))
+            .unwrap_or_else(|| "unknown".to_string());
+        lines.push(format!(
+            "{} (kind={}, rejected={}, last_attempt={})",
+            r.root.display(),
+            kind.as_str(),
+            r.rejected_count,
+            age
+        ));
+    }
+    ComponentHealth::degraded(
+        "output-root",
+        format!(
+            "{} output root(s) unwritable: {}",
+            degraded.len(),
+            lines.join("; ")
+        ),
+    )
+}
+
 struct OutputRootProbe {
     gate: Arc<OutputRootGate>,
 }
@@ -189,7 +232,7 @@ impl HealthProbe for OutputRootProbe {
     }
 
     async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
-        HealthChecker::check_output_root_gate(&self.gate)
+        check_output_root_gate(&self.gate)
     }
 }
 
@@ -313,6 +356,7 @@ impl HealthProbe for PipelineManagerProbe {
 
 struct SchedulerProbe {
     cancellation_token: CancellationToken,
+    actor_registry: Arc<crate::recorder::ActorRegistry>,
 }
 
 #[async_trait]
@@ -327,33 +371,33 @@ impl HealthProbe for SchedulerProbe {
 
     async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
         if self.cancellation_token.is_cancelled() {
-            ComponentHealth::unhealthy("scheduler", "Scheduler has been cancelled")
-        } else {
+            return ComponentHealth::unhealthy("scheduler", "Scheduler has been cancelled");
+        }
+        let stopped = self.actor_registry.crash_stopped_streamers();
+        if stopped.is_empty() {
             ComponentHealth::healthy("scheduler")
+        } else {
+            ComponentHealth::degraded(
+                "scheduler",
+                format!(
+                    "Monitoring stopped after repeated crashes: {}",
+                    stopped.join(", ")
+                ),
+            )
         }
     }
 }
 
 /// Reports sessions that are still recording while their danmu collector is
-/// gone.
-///
-/// `DanmuService` removes a session's entry as soon as its runner exits, for any
-/// reason including an unrecoverable transport failure. A live download whose
-/// resolved config has `record_danmu` set but which has no collector therefore
-/// means chat capture ended early and the rest of the recording will have none —
-/// a condition that is otherwise only visible as a single `warn!` at the moment
-/// it happens.
+/// gone or whose chat link has been down past [`Self::OUTAGE_GRACE`], reading
+/// exclusively from the unidirectional read-only
+/// [`crate::recorder::StreamerRuntimeView`] map.
 struct DanmuServiceProbe {
-    danmu_service: Arc<DanmuService>,
-    download_manager: Arc<DownloadManager>,
-    config_service: Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
-    danmu_link_down: Arc<DashMap<String, Instant>>,
+    runtime_views: Arc<DashMap<String, crate::recorder::StreamerRuntimeView>>,
 }
 
 impl DanmuServiceProbe {
-    /// Downloads younger than this are ignored: `run_live_download_pipeline`
-    /// starts the engine before `DanmuService::start_collection`, so a brand-new
-    /// session legitimately has a download and no collector for a moment.
+    /// Downloads younger than this are ignored while danmu startup completes.
     const STARTUP_GRACE: jiff::SignedDuration = jiff::SignedDuration::from_secs(60);
 
     /// A link must stay down this long before it is reported, so an ordinary
@@ -374,36 +418,33 @@ impl HealthProbe for DanmuServiceProbe {
     async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
         let now = jiff::Timestamp::now();
         let mut stopped_early = Vec::new();
+        let mut link_down = Vec::new();
 
-        for download in self.download_manager.get_active_downloads() {
-            if download.session_id.is_empty()
-                || now.duration_since(download.started_at) < Self::STARTUP_GRACE
-                || self.danmu_service.is_collecting(&download.session_id)
-            {
+        for entry in self.runtime_views.iter() {
+            let view = entry.value();
+            let Some(session_id) = view.active_session_id.as_ref() else {
                 continue;
+            };
+            if view.attempt_active
+                && view.expects_danmu
+                && !view.danmu_collecting
+                && view
+                    .recording_started_at
+                    .is_some_and(|started| now.duration_since(started) >= Self::STARTUP_GRACE)
+            {
+                stopped_early.push(session_id.clone());
             }
-
-            // Reads through `ConfigCache`, so this stays cheap at probe cadence.
-            let expects_danmu = self
-                .config_service
-                .get_config_for_streamer(&download.streamer_id)
-                .await
-                .is_ok_and(|config| config.record_danmu);
-
-            if expects_danmu {
-                stopped_early.push(download.session_id);
+            if let Some(down_since) = view.danmu_link_down_since
+                && down_since.elapsed() >= Self::OUTAGE_GRACE
+            {
+                link_down.push(format!(
+                    "{} ({}s)",
+                    session_id,
+                    down_since.elapsed().as_secs()
+                ));
             }
         }
-
-        // A collector that is present but not receiving is invisible to
-        // `is_collecting`, since the runner reconnects for the life of the session
-        // rather than exiting.
-        let mut link_down: Vec<String> = self
-            .danmu_link_down
-            .iter()
-            .filter(|entry| entry.value().elapsed() >= Self::OUTAGE_GRACE)
-            .map(|entry| format!("{} ({}s)", entry.key(), entry.value().elapsed().as_secs()))
-            .collect();
+        stopped_early.sort();
         link_down.sort();
 
         if stopped_early.is_empty() && link_down.is_empty() {
@@ -448,63 +489,6 @@ impl HealthProbe for StaticHealthyProbe {
     async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
         ComponentHealth::healthy(self.name)
     }
-}
-
-/// Synchronous writability probe used by `run_output_root_startup_probe`.
-///
-/// Probes the destination if it exists, otherwise its nearest existing ancestor
-/// within the same gate root. Recording startup creates missing subdirectories;
-/// an offline streamer's absent directory does not make its storage unwritable.
-/// Missing gate roots and dangling symlinks still fail instead of falling back
-/// to a different root. No recording directories are created by this probe.
-///
-/// Creates a temporary file with restrictive permissions and removes it on drop.
-/// Returns the underlying `io::Error` so the gate can classify the failure.
-///
-/// Kept separate from `OutputRootGate::record_failure` so the gate itself
-/// stays ignorant of how failures are discovered — it just accepts an
-/// `io::Error` from any caller.
-fn probe_root_writable(output_dir: &std::path::Path, gate: &OutputRootGate) -> std::io::Result<()> {
-    let gate_root = gate.resolve_path(output_dir);
-    let mut probe_dir = output_dir;
-    let meta = loop {
-        match std::fs::metadata(probe_dir) {
-            Ok(meta) => break meta,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                // A dangling symlink also returns NotFound from metadata, but is
-                // a broken destination, not a directory recording startup can create.
-                match std::fs::symlink_metadata(probe_dir) {
-                    Err(missing) if missing.kind() == std::io::ErrorKind::NotFound => {}
-                    Ok(_) => return Err(error),
-                    Err(error) => return Err(error),
-                }
-                let Some(parent) = probe_dir
-                    .parent()
-                    .filter(|parent| gate.resolve_path(parent) == gate_root)
-                else {
-                    return Err(error);
-                };
-                probe_dir = parent;
-            }
-            Err(error) => return Err(error),
-        }
-    };
-    if !meta.is_dir() {
-        return Err(std::io::Error::other(format!(
-            "output path {} is not a directory",
-            probe_dir.display()
-        )));
-    }
-
-    // tempfile::Builder::tempfile_in uses O_EXCL + restrictive mode by
-    // default on Unix, which is what we want: no symlink/TOCTOU window
-    // and no leftover probe file even if the process is killed.
-    let mut file = tempfile::Builder::new()
-        .prefix(".rust-srec-probe-")
-        .tempfile_in(probe_dir)?;
-    std::io::Write::write_all(&mut file, b"")?;
-    // `file` drops here and the tempfile crate unlinks it.
-    Ok(())
 }
 
 /// Discover concrete probe paths from current configuration. Failed reads only skip their
@@ -850,8 +834,7 @@ impl ServiceContainer {
         // Output-root write gate health check. Aggregated: one
         // "output-root" component whose status reflects the worst state
         // across all tracked roots, with a detailed message listing each
-        // Degraded root by kind and age. See
-        // `HealthChecker::check_output_root_gate` for the shape.
+        // Degraded root by kind and age. See `check_output_root_gate` for the shape.
         self.health_checker
             .register_probe(Arc::new(OutputRootProbe {
                 gate: self.output_root_gate.clone(),
@@ -879,14 +862,12 @@ impl ServiceContainer {
 
         self.health_checker
             .register_probe(Arc::new(DanmuServiceProbe {
-                danmu_service: self.danmu_service.clone(),
-                download_manager: self.download_manager.clone(),
-                config_service: self.config_service.clone(),
-                danmu_link_down: self.danmu_link_down.clone(),
+                runtime_views: self.actor_registry.runtime_views().clone(),
             }));
 
         self.health_checker.register_probe(Arc::new(SchedulerProbe {
             cancellation_token: self.cancellation_token.clone(),
+            actor_registry: self.actor_registry.clone(),
         }));
 
         self.health_checker

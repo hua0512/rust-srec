@@ -64,7 +64,7 @@ pub(super) async fn serve(
         .expect("point recordings at the test output directory");
 
     let logging = logging();
-    logging.apply_persisted_filter(config).await;
+    container.apply_persisted_log_filter(&logging).await;
     container.set_logging_config(logging);
     container.initialize().await.expect("initialize services");
     let address = container
@@ -109,9 +109,12 @@ impl TestApp {
         let migration_pool = backend::init_migration_pool(&database_url)
             .await
             .expect("open the migration pool");
-        rust_srec::database::run_migrations_with_environment_proxy(&migration_pool, false)
-            .await
-            .expect("run migrations");
+        rust_srec::services::legacy_upgrade::run_migrations_with_environment_proxy(
+            &migration_pool,
+            false,
+        )
+        .await
+        .expect("run migrations");
         migration_pool.close().await;
         let (container, address) =
             serve(&database_url, &output_dir, DownloadManagerConfig::default()).await;

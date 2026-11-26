@@ -118,7 +118,7 @@ async fn upgrade_turns_proxy_settings_into_named_proxies_and_routes() {
     tokio::time::timeout(Duration::from_secs(30), async {
         let pool = database_through(LAST_RELEASED).await;
         seed(&pool).await;
-        rust_srec::database::run_migrations_with_environment_proxy(&pool, false)
+        rust_srec::services::legacy_upgrade::run_migrations_with_environment_proxy(&pool, false)
             .await
             .unwrap();
         assert_consistent(&pool).await;
@@ -188,7 +188,7 @@ async fn upgrade_turns_proxy_settings_into_named_proxies_and_routes() {
         assert_eq!(overrides, r#"{"bilibili":{"quality":"origin"}}"#);
 
         // Starting again finds nothing left to convert.
-        rust_srec::database::run_migrations_with_environment_proxy(&pool, true)
+        rust_srec::services::legacy_upgrade::run_migrations_with_environment_proxy(&pool, true)
             .await
             .unwrap();
         assert_eq!(global_route(&pool).await, "direct");
@@ -232,9 +232,12 @@ async fn a_global_setting_without_a_proxy_keeps_the_environment_proxy() {
                 .execute(&pool)
                 .await
                 .unwrap();
-            rust_srec::database::run_migrations_with_environment_proxy(&pool, environment)
-                .await
-                .unwrap();
+            rust_srec::services::legacy_upgrade::run_migrations_with_environment_proxy(
+                &pool,
+                environment,
+            )
+            .await
+            .unwrap();
             assert_eq!(
                 global_route(&pool).await,
                 expected,
@@ -256,7 +259,7 @@ async fn dropping_the_old_columns_after_the_conversions_leaves_no_held_values() 
         exec(&pool, "UPDATE global_config SET proxy_config = ''").await;
         exec(&pool, "DROP TABLE legacy_credential_upgrade_pending").await;
         exec(&pool, "DROP TABLE legacy_proxy_upgrade_pending").await;
-        rust_srec::database::run_migrations(&pool).await.unwrap();
+        rust_srec::services::legacy_upgrade::run_migrations(&pool).await.unwrap();
         let held: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM sqlite_schema WHERE name IN ('legacy_cookies', 'legacy_proxy_settings')",
         )

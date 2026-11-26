@@ -1,0 +1,1377 @@
+//! Notification service implementation.
+//!
+//! The NotificationService is responsible for:
+//! - Listening to system events (Monitor, Download, Pipeline)
+//! - Dispatching notifications to configured channels
+//! - Managing retry logic with exponential backoff
+//! - Implementing circuit breaker pattern for failing channels
+//! - Maintaining a dead letter queue for failed notifications
+
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::Duration;
+
+use dashmap::DashMap;
+use jiff::Timestamp;
+use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
+use tokio::sync::{Semaphore, SemaphorePermit, broadcast, mpsc, oneshot};
+use tokio_util::sync::CancellationToken;
+use tracing::{info, warn};
+use uuid::Uuid;
+
+use srec_core::domain::notification::{RuntimeAlert, RuntimeAlertSink};
+use srec_core::domain::proxy::ProxyRouteResolver;
+use srec_core::utils::task_supervisor::TaskSupervisor;
+#[cfg(test)]
+use srec_sqlite::models::NotificationChannelDbModel;
+use srec_sqlite::models::NotificationEventLogDbModel;
+use srec_sqlite::repositories::NotificationRepository;
+
+use super::channels::ChannelConfig;
+#[cfg(test)]
+use super::channels::NotificationChannel;
+use super::events::NotificationEvent;
+use super::web_push::WebPushService;
+use crate::NotifyResult as Result;
+
+mod dead_letter;
+mod delivery;
+mod ingress;
+mod listeners;
+mod registry;
+
+use registry::{ChannelRegistry, RuntimeChannel};
+mod web_push_queue;
+
+/// Best-effort interval for in-memory dead-letter cleanup.
+///
+/// Dead letters are also persisted to the database; this is purely to prevent unbounded growth
+/// of the in-memory `dead_letters` map in long-running processes.
+const DEAD_LETTER_CLEANUP_INTERVAL_SECS: u64 = 60 * 60;
+const WEB_PUSH_QUEUE_CAPACITY: usize = 2048;
+const WEB_PUSH_BATCH_SIZE: usize = 64;
+const WEB_PUSH_FLUSH_INTERVAL_MS: u64 = 250;
+const MAX_NOTIFICATION_PASSES: usize = 16;
+/// Outbox rows in their first delivery pass at the same time. These passes do
+/// not count against `MAX_NOTIFICATION_PASSES`, and there are fewer of them
+/// than `MAX_CHANNEL_SENDS`, so first passes stuck on one slow channel leave
+/// passes and sends for other notifications.
+const MAX_DURABLE_PASSES: usize = 8;
+const DISPATCH_QUEUE_CAPACITY: usize = 1024;
+const MAX_CHANNEL_SENDS: usize = 16;
+
+/// Configuration for the notification service.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationServiceConfig {
+    /// Whether the notification service is enabled.
+    pub enabled: bool,
+    /// Maximum pending notifications; zero disables ordinary channel admission.
+    pub max_queue_size: usize,
+    /// Maximum retry attempts per notification.
+    pub max_retries: u32,
+    /// Initial retry delay in milliseconds.
+    pub initial_retry_delay_ms: u64,
+    /// Maximum retry delay in milliseconds.
+    pub max_retry_delay_ms: u64,
+    /// Circuit breaker failure threshold.
+    pub circuit_breaker_threshold: u32,
+    /// Circuit breaker cooldown in seconds.
+    pub circuit_breaker_cooldown_secs: u64,
+    /// Dead letter retention in days.
+    pub dead_letter_retention_days: u32,
+    /// Channel configurations.
+    pub channels: Vec<ChannelConfig>,
+}
+
+impl Default for NotificationServiceConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_queue_size: 1000,
+            max_retries: 3,
+            initial_retry_delay_ms: 5000,
+            max_retry_delay_ms: 60000,
+            circuit_breaker_threshold: 10,
+            circuit_breaker_cooldown_secs: 300,
+            dead_letter_retention_days: 7,
+            channels: Vec::new(),
+        }
+    }
+}
+
+/// Circuit breaker state for a channel.
+#[derive(Debug, Clone)]
+struct CircuitBreakerState {
+    /// Number of consecutive failures.
+    failures: u32,
+    /// Whether the circuit is open (disabled).
+    is_open: bool,
+    /// When the circuit was opened.
+    opened_at: Option<Timestamp>,
+    /// Cooldown duration.
+    cooldown: Duration,
+}
+
+impl CircuitBreakerState {
+    fn new(cooldown_secs: u64) -> Self {
+        Self {
+            failures: 0,
+            is_open: false,
+            opened_at: None,
+            cooldown: Duration::from_secs(cooldown_secs),
+        }
+    }
+
+    fn record_failure(&mut self, threshold: u32) {
+        self.failures += 1;
+
+        // If already open (or in the "cooldown passed but not yet recovered" state),
+        // restart the cooldown on any failure so we don't allow unlimited attempts.
+        if self.is_open {
+            self.opened_at = Some(Timestamp::now());
+            return;
+        }
+
+        if self.failures >= threshold && !self.is_open {
+            self.is_open = true;
+            self.opened_at = Some(Timestamp::now());
+            warn!("Circuit breaker opened after {} failures", self.failures);
+        }
+    }
+
+    fn record_success(&mut self) {
+        self.failures = 0;
+        self.is_open = false;
+        self.opened_at = None;
+    }
+
+    fn is_allowed(&self) -> bool {
+        if !self.is_open {
+            return true;
+        }
+
+        // Check if cooldown has passed (half-open state)
+        if let Some(opened_at) = self.opened_at {
+            let elapsed = Timestamp::now().duration_since(opened_at);
+            if elapsed.as_secs().max(0) as u64 >= self.cooldown.as_secs() {
+                return true; // Allow one request to test recovery
+            }
+        }
+
+        false
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeliveryStatus {
+    Pending,
+    Delivered,
+    DeadLettered,
+}
+
+#[derive(Debug, Clone)]
+struct ChannelDeliveryState {
+    status: DeliveryStatus,
+    attempts: u32,
+    last_attempt: Option<Timestamp>,
+    last_error: Option<String>,
+}
+
+/// Error returned by [`NotificationService::deliver_durable_for_outbox`].
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub(crate) enum DurableDeliveryError {
+    /// The notification service is shutting down or was cancelled before all
+    /// subscribed channels settled. The caller must keep the outbox row
+    /// undelivered for replay on the next startup.
+    #[error("notification service is shutting down")]
+    TransientShuttingDown,
+    /// The notification could not be admitted for delivery yet: channels have
+    /// not loaded from the database, or the event log, the only record of an
+    /// alert that no channel receives, could not be written.
+    #[error("durable notification settlement failed: {0}")]
+    Transient(String),
+}
+
+type DurableOutcome = std::result::Result<(), DurableDeliveryError>;
+
+#[derive(Clone)]
+struct DurableSettlement {
+    sender: Arc<parking_lot::Mutex<Option<oneshot::Sender<DurableOutcome>>>>,
+}
+
+impl DurableSettlement {
+    fn new(sender: oneshot::Sender<DurableOutcome>) -> Self {
+        Self {
+            sender: Arc::new(parking_lot::Mutex::new(Some(sender))),
+        }
+    }
+
+    fn settle_completed(&self) {
+        self.settle(Ok(()));
+    }
+
+    fn settle_err(&self, err: DurableDeliveryError) {
+        self.settle(Err(err));
+    }
+
+    fn settle(&self, outcome: DurableOutcome) {
+        if let Some(tx) = self.sender.lock().take() {
+            // A closed receiver means the caller stopped waiting; nothing else
+            // consumes the outcome.
+            let _ = tx.send(outcome);
+        }
+    }
+}
+
+/// A notification pending delivery.
+#[derive(Clone)]
+struct PendingNotification {
+    _id: u64,
+    event: NotificationEvent,
+    created_at: Timestamp,
+    channel_state: HashMap<String, ChannelDeliveryState>,
+    /// Delivery and retries keep the instance selected at admission, across reloads.
+    targets: Vec<Arc<RuntimeChannel>>,
+    /// Serialize initial, manual-drain, and retry passes for this notification.
+    delivery_lock: Arc<tokio::sync::Mutex<()>>,
+    retry_generation: u64,
+    retry_cancel: CancellationToken,
+    next_retry_at: Option<Timestamp>,
+    /// Present for durable deliveries that must never be evicted under queue
+    /// pressure and must acknowledge only after every target delivers or
+    /// persists to the dead-letter store.
+    durable_settled: Option<DurableSettlement>,
+}
+
+impl PendingNotification {
+    fn new(id: u64, event: NotificationEvent, targets: Vec<Arc<RuntimeChannel>>) -> Self {
+        Self::with_durable(id, event, targets, None)
+    }
+
+    fn new_durable(
+        id: u64,
+        event: NotificationEvent,
+        targets: Vec<Arc<RuntimeChannel>>,
+        settlement: DurableSettlement,
+    ) -> Self {
+        Self::with_durable(id, event, targets, Some(settlement))
+    }
+
+    fn with_durable(
+        id: u64,
+        event: NotificationEvent,
+        targets: Vec<Arc<RuntimeChannel>>,
+        durable_settled: Option<DurableSettlement>,
+    ) -> Self {
+        let mut channel_state = HashMap::new();
+        for channel in &targets {
+            channel_state
+                .entry(channel.key.clone())
+                .or_insert(ChannelDeliveryState {
+                    status: DeliveryStatus::Pending,
+                    attempts: 0,
+                    last_attempt: None,
+                    last_error: None,
+                });
+        }
+
+        Self {
+            _id: id,
+            event,
+            created_at: Timestamp::now(),
+            channel_state,
+            targets,
+            delivery_lock: Default::default(),
+            retry_generation: 0,
+            retry_cancel: CancellationToken::new(),
+            next_retry_at: None,
+            durable_settled,
+        }
+    }
+}
+
+/// Dead letter entry for failed notifications.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeadLetterEntry {
+    /// Dead letter entry ID.
+    pub id: u64,
+    /// Notification ID.
+    pub notification_id: u64,
+    /// The event that failed.
+    pub event: NotificationEvent,
+    /// Channel instance key (config/dynamic/db).
+    ///
+    /// This is the first-class identifier used internally for delivery tracking, retries,
+    /// and circuit breakers.
+    pub channel_key: Option<String>,
+    /// Channel ID (DB-backed channels only).
+    pub channel_id: Option<String>,
+    /// Channel that failed.
+    pub channel_type: String,
+    /// Number of attempts made.
+    pub attempts: u32,
+    /// Last error message.
+    pub error: String,
+    /// When the notification was created.
+    pub created_at: Timestamp,
+    /// When it was moved to dead letter.
+    pub dead_lettered_at: Timestamp,
+}
+
+/// The notification service.
+pub struct NotificationService {
+    /// Shared with every detached delivery/retry task via
+    /// `delivery::DeliveryContext`; `Arc` so those clones don't deep-copy
+    /// `NotificationServiceConfig::channels` per attempt.
+    config: Arc<NotificationServiceConfig>,
+    notification_repo: Option<Arc<dyn NotificationRepository>>,
+    web_push_service: Option<Arc<WebPushService>>,
+    /// Resolves stored channels' routes; without it they use the
+    /// environment's proxy.
+    routes: Option<Arc<dyn ProxyRouteResolver>>,
+    web_push_tx: parking_lot::RwLock<Option<mpsc::Sender<WebPushQueuedEvent>>>,
+    web_push_worker_started: AtomicBool,
+    web_push_dropped: AtomicU64,
+    registry: RwLock<ChannelRegistry>,
+    /// Tracks whether DB-backed channels & subscriptions have loaded at least once.
+    /// Services without a DB repository start `true`; DB-backed services start
+    /// `false` so durable outbox draining never discards rows against an unloaded registry.
+    db_loaded: AtomicBool,
+    reload_gate: tokio::sync::Mutex<()>,
+    pending_queue: Arc<DashMap<u64, PendingNotification>>,
+    queue_admission: parking_lot::Mutex<()>,
+    dispatch_permits: Semaphore,
+    durable_pass_permits: Semaphore,
+    dispatch_tx: mpsc::Sender<NotificationEvent>,
+    dispatch_rx: parking_lot::Mutex<Option<mpsc::Receiver<NotificationEvent>>>,
+    dispatch_dropped: AtomicU64,
+    delivery_permits: Arc<Semaphore>,
+    dead_letters: Arc<DashMap<u64, DeadLetterEntry>>,
+    /// Last time we performed in-memory dead-letter retention cleanup (unix epoch seconds).
+    dead_letter_cleanup_ts: Arc<AtomicU64>,
+    next_id: AtomicU64,
+    next_dead_letter_id: Arc<AtomicU64>,
+    event_tx: broadcast::Sender<NotificationEvent>,
+    cancellation_token: CancellationToken,
+    task_supervisor: Arc<TaskSupervisor>,
+    owns_task_supervisor: bool,
+}
+
+#[derive(Debug, Clone)]
+struct WebPushQueuedEvent {
+    event: NotificationEvent,
+    event_log_id: Option<String>,
+}
+
+/// Public view of a configured notification channel instance.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationChannelInstance {
+    /// Unique channel instance key.
+    pub key: String,
+    /// DB channel id, when backed by `notification_channel`.
+    pub channel_id: Option<String>,
+    /// Human-friendly display name.
+    pub display_name: String,
+    /// Channel type (Discord/Email/Webhook).
+    pub channel_type: String,
+    /// Channel configuration source.
+    pub source: NotificationChannelSource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationChannelSource {
+    Config,
+    Dynamic,
+    Database,
+}
+
+impl NotificationService {
+    /// Create a new notification service.
+    pub fn new() -> Self {
+        Self::with_config(NotificationServiceConfig::default())
+    }
+
+    pub fn with_repository(
+        config: NotificationServiceConfig,
+        notification_repo: Arc<dyn NotificationRepository>,
+    ) -> Self {
+        let mut service = Self::with_config(config);
+        service.notification_repo = Some(notification_repo);
+        service.db_loaded.store(false, Ordering::Release);
+        service
+    }
+
+    pub fn with_web_push_service(mut self, service: Arc<WebPushService>) -> Self {
+        self.web_push_service = Some(service);
+        self
+    }
+
+    /// Stored channels resolve their proxy route through `routes` before
+    /// each delivery.
+    pub fn with_routes(mut self, routes: Arc<dyn ProxyRouteResolver>) -> Self {
+        self.routes = Some(routes);
+        self
+    }
+
+    /// Attach an external [`TaskSupervisor`] so background dispatch, listener,
+    /// retry, and Web Push tasks participate in the caller's shutdown lifecycle.
+    pub fn with_task_supervisor(mut self, task_supervisor: Arc<TaskSupervisor>) -> Self {
+        self.task_supervisor = task_supervisor;
+        self.owns_task_supervisor = false;
+        self
+    }
+
+    /// Create a new notification service with custom configuration.
+    pub fn with_config(config: NotificationServiceConfig) -> Self {
+        let (event_tx, _) = broadcast::channel(256);
+        let (dispatch_tx, dispatch_rx) = mpsc::channel(DISPATCH_QUEUE_CAPACITY);
+
+        let service = Self {
+            notification_repo: None,
+            web_push_service: None,
+            routes: None,
+            web_push_tx: parking_lot::RwLock::new(None),
+            web_push_worker_started: AtomicBool::new(false),
+            web_push_dropped: AtomicU64::new(0),
+            registry: RwLock::new(ChannelRegistry::default()),
+            db_loaded: AtomicBool::new(true),
+            reload_gate: tokio::sync::Mutex::new(()),
+            pending_queue: Arc::new(DashMap::new()),
+            queue_admission: parking_lot::Mutex::new(()),
+            dispatch_permits: Semaphore::new(MAX_NOTIFICATION_PASSES),
+            durable_pass_permits: Semaphore::new(MAX_DURABLE_PASSES),
+            dispatch_tx,
+            dispatch_rx: parking_lot::Mutex::new(Some(dispatch_rx)),
+            dispatch_dropped: AtomicU64::new(0),
+            delivery_permits: Arc::new(Semaphore::new(MAX_CHANNEL_SENDS)),
+            dead_letters: Arc::new(DashMap::new()),
+            dead_letter_cleanup_ts: Arc::new(AtomicU64::new(0)),
+            next_id: AtomicU64::new(1),
+            next_dead_letter_id: Arc::new(AtomicU64::new(1)),
+            event_tx,
+            cancellation_token: CancellationToken::new(),
+            task_supervisor: Arc::new(TaskSupervisor::new()),
+            owns_task_supervisor: true,
+            config: Arc::new(config),
+        };
+
+        // Initialize channels from config
+        service.init_channels();
+
+        service
+    }
+    /// Subscribe to notification events.
+    pub fn subscribe(&self) -> broadcast::Receiver<NotificationEvent> {
+        self.event_tx.subscribe()
+    }
+
+    /// Send a notification to a specific channel instance (bypasses DB subscriptions).
+    pub async fn notify_channel_instance(&self, key: &str, event: NotificationEvent) -> Result<()> {
+        self.notify_channel_instances(std::iter::once(key.to_string()).collect(), event)
+            .await
+    }
+
+    async fn notify_channel_instances(
+        &self,
+        keys: HashSet<String>,
+        event: NotificationEvent,
+    ) -> Result<()> {
+        if !self.config.enabled {
+            return Ok(());
+        }
+
+        let _ = self.event_tx.send(event.clone());
+
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let target_channels = {
+            let registry = self.registry.read();
+            keys.iter()
+                .map(|key| {
+                    registry.by_key.get(key).cloned().ok_or_else(|| {
+                        crate::NotifyError::not_found("NotificationChannelInstance", key.clone())
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?
+        };
+
+        if target_channels.is_empty() {
+            return Ok(());
+        }
+
+        let Some(_permit) = self.admit_pass(event.event_type()).await else {
+            return Ok(());
+        };
+        let pending = PendingNotification::new(id, event, target_channels);
+
+        if self.enqueue_pending(id, pending) {
+            self.process_notification(id).await;
+        }
+        Ok(())
+    }
+
+    /// Queue `pending` for delivery; `false` means an ordinary entry was refused.
+    /// Durable entries are always queued.
+    fn enqueue_pending(&self, id: u64, pending: PendingNotification) -> bool {
+        // Capacity inspection, oldest selection and insertion form one admission.
+        // Delivery may remove entries concurrently, but cannot add capacity.
+        let _admission = self.queue_admission.lock();
+        let is_durable = pending.durable_settled.is_some();
+        if !is_durable && self.config.max_queue_size == 0 {
+            return false;
+        }
+        if self.config.max_queue_size > 0 && self.pending_queue.len() >= self.config.max_queue_size
+        {
+            // Durable entries carrying a settlement receipt are never evicted
+            // when the queue reaches capacity.
+            let oldest_evictable_id = self
+                .pending_queue
+                .iter()
+                .filter(|entry| entry.durable_settled.is_none())
+                .min_by_key(|entry| (entry.created_at, *entry.key()))
+                .map(|entry| *entry.key());
+            if let Some(oldest_id) = oldest_evictable_id
+                && let Some((_, evicted)) = self.pending_queue.remove(&oldest_id)
+            {
+                evicted.retry_cancel.cancel();
+                warn!(
+                    notification_id = oldest_id,
+                    "Notification queue full, dropping oldest notification"
+                );
+            } else if !is_durable {
+                warn!(
+                    notification_id = id,
+                    "Notification queue full of durable entries, dropping non-durable notification"
+                );
+                return false;
+            }
+        }
+        self.pending_queue.insert(id, pending);
+        true
+    }
+
+    /// Send a notification to all enabled channels.
+    pub async fn notify(&self, event: NotificationEvent) -> Result<()> {
+        let Some(_permit) = self.admit_pass(event.event_type()).await else {
+            return Ok(());
+        };
+        self.notify_admitted(event).await
+    }
+
+    /// Deliver the notification of one `monitor_event_outbox` row with
+    /// at-least-once settlement semantics.
+    ///
+    /// Returns `Ok(())` only when notifications are disabled, no subscribed
+    /// channels match the event, or every subscribed channel has either
+    /// succeeded or been dead-lettered. Recording the dead letter in
+    /// `notification_dead_letter` is best-effort: failing the settlement over
+    /// it would make the outbox resend the alert to every channel that already
+    /// received it. Returns [`DurableDeliveryError::TransientShuttingDown`] if
+    /// the service is shutting down or cancelled before settlement completes,
+    /// so the caller keeps the outbox row undelivered for replay.
+    ///
+    /// A row is delivered again when an earlier attempt did not settle, so
+    /// channels may receive it more than once. `event_log_id` must be the same
+    /// on every attempt: the `notification_event_log` entry is written once,
+    /// and the internal broadcast (which drives desktop notifications) and
+    /// Web Push go out only with the attempt that wrote it.
+    ///
+    /// The row's `streamer_id` column is cleared to `NULL` once the streamer
+    /// row is deleted. When `outbox_streamer_id` is `None`, the
+    /// `notification_event_log` foreign-key column is written as `NULL` while
+    /// the JSON `payload` keeps the original `streamer_id` and `streamer_name`
+    /// embedded in `event`.
+    pub(crate) async fn deliver_durable_for_outbox(
+        &self,
+        event: NotificationEvent,
+        outbox_streamer_id: Option<&str>,
+        event_log_id: String,
+    ) -> std::result::Result<(), DurableDeliveryError> {
+        let streamer_id_fk = outbox_streamer_id
+            .filter(|id| !id.is_empty())
+            .and_then(|id| event.streamer_id().map(|_| id.to_owned()));
+        if self.cancellation_token.is_cancelled() {
+            return Err(DurableDeliveryError::TransientShuttingDown);
+        }
+
+        // The outbox drainer settles many rows at once. Their first passes have
+        // a limit of their own, so rows stuck on a slow channel cannot take the
+        // passes that other notifications need.
+        let permit = tokio::select! {
+            biased;
+            _ = self.cancellation_token.cancelled() => {
+                return Err(DurableDeliveryError::TransientShuttingDown);
+            }
+            permit = self.durable_pass_permits.acquire() => {
+                permit.map_err(|_| DurableDeliveryError::TransientShuttingDown)?
+            }
+        };
+
+        if self.cancellation_token.is_cancelled() {
+            return Err(DurableDeliveryError::TransientShuttingDown);
+        }
+
+        if !self.config.enabled {
+            return Ok(());
+        }
+
+        // Ensure DB channels/subscriptions have loaded at least once before
+        // deciding target channels; otherwise a transient startup DB failure
+        // would leave the registry empty and silently discard queued alerts.
+        if !self.db_loaded.load(Ordering::Acquire) {
+            if let Err(error) = self.reload_from_db().await {
+                return Err(DurableDeliveryError::Transient(format!(
+                    "notification channels not yet loaded from database: {error}"
+                )));
+            }
+            if self.cancellation_token.is_cancelled() {
+                return Err(DurableDeliveryError::TransientShuttingDown);
+            }
+        }
+
+        let target_channels = self.subscribed_targets_for(&event);
+
+        let first_attempt = match self.notification_repo.as_ref() {
+            None => true,
+            Some(repo) => {
+                let entry = NotificationEventLogDbModel {
+                    id: event_log_id.clone(),
+                    event_type: event.event_type().to_string(),
+                    priority: event.priority().as_int() as i32,
+                    payload: serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string()),
+                    streamer_id: streamer_id_fk,
+                    created_at: event.timestamp().as_millisecond(),
+                };
+                match repo.add_event_log(&entry).await {
+                    Ok(inserted) => inserted,
+                    // With no channel subscribed, the entry is the alert's only
+                    // record: keep the outbox row for another attempt.
+                    Err(e) if target_channels.is_empty() => {
+                        return Err(DurableDeliveryError::Transient(format!(
+                            "failed to persist notification event log: {e}"
+                        )));
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "Failed to persist notification event log (non-fatal)");
+                        true
+                    }
+                }
+            }
+        };
+
+        // The broadcast and the Web Push enqueue follow the write that logs the
+        // row with no await in between, so an entry that is already logged had
+        // both issued by the attempt that wrote it, unless that attempt was
+        // dropped during the write. A failed write cannot tell, so it issues
+        // them rather than risk losing them. A replay never issues them again,
+        // so a push that the queue drops (when full, or at shutdown) is lost.
+        if first_attempt {
+            let _ = self.event_tx.send(event.clone());
+            if self.web_push_service.is_some() {
+                let queued = WebPushQueuedEvent {
+                    event: event.clone(),
+                    event_log_id: Some(event_log_id),
+                };
+                self.enqueue_web_push(queued);
+            }
+        }
+
+        if self.cancellation_token.is_cancelled() {
+            return Err(DurableDeliveryError::TransientShuttingDown);
+        }
+
+        if target_channels.is_empty() {
+            if self.cancellation_token.is_cancelled() {
+                return Err(DurableDeliveryError::TransientShuttingDown);
+            }
+            return Ok(());
+        }
+
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let (settled_tx, mut settled_rx) = oneshot::channel();
+        let settlement = DurableSettlement::new(settled_tx);
+        let pending = PendingNotification::new_durable(id, event, target_channels, settlement);
+        // Durable entries are always admitted: a full queue evicts an
+        // ordinary entry or grows past capacity, but never refuses them.
+        self.enqueue_pending(id, pending);
+
+        struct DurableQueueGuard<'a> {
+            id: u64,
+            pending_queue: &'a DashMap<u64, PendingNotification>,
+            armed: bool,
+        }
+
+        impl Drop for DurableQueueGuard<'_> {
+            fn drop(&mut self) {
+                if self.armed
+                    && let Some((_, removed)) = self.pending_queue.remove(&self.id)
+                {
+                    removed.retry_cancel.cancel();
+                }
+            }
+        }
+
+        let mut guard = DurableQueueGuard {
+            id,
+            pending_queue: &self.pending_queue,
+            armed: true,
+        };
+
+        self.process_notification(id).await;
+        // Release the pass permit before waiting across retry backoffs.
+        drop(permit);
+
+        let outcome = tokio::select! {
+            biased;
+            res = &mut settled_rx => match res {
+                Ok(outcome) => outcome,
+                Err(_) => Err(DurableDeliveryError::TransientShuttingDown),
+            },
+            _ = self.cancellation_token.cancelled() => {
+                if let Some((_, removed)) = self.pending_queue.remove(&id) {
+                    removed.retry_cancel.cancel();
+                    if let Some(s) = removed.durable_settled {
+                        s.settle_err(DurableDeliveryError::TransientShuttingDown);
+                    }
+                }
+                match settled_rx.try_recv() {
+                    Ok(outcome) => outcome,
+                    Err(_) => Err(DurableDeliveryError::TransientShuttingDown),
+                }
+            }
+        };
+
+        guard.armed = false;
+        outcome
+    }
+
+    fn subscribed_targets_for(&self, event: &NotificationEvent) -> Vec<Arc<RuntimeChannel>> {
+        let registry = self.registry.read();
+        let subscribed = registry.subscriptions_by_event.get(event.event_type());
+        registry
+            .channels
+            .iter()
+            .filter(|channel| match &channel.db_channel_id {
+                None => true,
+                Some(id) => subscribed.is_some_and(|ids| ids.contains(id)),
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// Direct callers share the dispatch worker's pass limit. Once the service
+    /// stops, their events are counted as dropped instead of delivered.
+    async fn admit_pass(&self, event_type: &'static str) -> Option<SemaphorePermit<'_>> {
+        tokio::select! {
+            biased;
+            _ = self.cancellation_token.cancelled() => {
+                self.reject_dispatch(event_type, "shutdown");
+                None
+            }
+            permit = self.dispatch_permits.acquire() => permit.ok(),
+        }
+    }
+
+    async fn notify_admitted(&self, event: NotificationEvent) -> Result<()> {
+        if !self.config.enabled {
+            return Ok(());
+        }
+
+        // Broadcast the event internally
+        let _ = self.event_tx.send(event.clone());
+
+        // Best-effort: persist event log for UI/debugging/audit.
+        let event_log_id = Uuid::new_v4().to_string();
+        if let Some(repo) = self.notification_repo.as_ref().cloned() {
+            let entry = NotificationEventLogDbModel {
+                id: event_log_id.clone(),
+                event_type: event.event_type().to_string(),
+                priority: event.priority().as_int() as i32,
+                payload: serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string()),
+                streamer_id: event.streamer_id().map(|s| s.to_string()),
+                created_at: event.timestamp().as_millisecond(),
+            };
+            if let Err(e) = repo.add_event_log(&entry).await {
+                warn!(error = %e, "Failed to persist notification event log (non-fatal)");
+            }
+        }
+
+        // Best-effort: send web push notifications (independent of channel delivery).
+        if self.web_push_service.is_some() {
+            let queued = WebPushQueuedEvent {
+                event: event.clone(),
+                event_log_id: Some(event_log_id.clone()),
+            };
+
+            self.enqueue_web_push(queued);
+        }
+
+        // Queue the notification
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let target_channels = self.subscribed_targets_for(&event);
+
+        if target_channels.is_empty() {
+            return Ok(());
+        }
+
+        let pending = PendingNotification::new(id, event, target_channels);
+
+        if self.enqueue_pending(id, pending) {
+            self.process_notification(id).await;
+        }
+        Ok(())
+    }
+
+    /// Get queue statistics.
+    pub fn stats(&self) -> NotificationStats {
+        let registry = self.registry.read();
+        NotificationStats {
+            pending_count: self.pending_queue.len(),
+            dead_letter_count: self.dead_letters.len(),
+            channel_count: registry.channels.len(),
+            web_push_dropped: self.web_push_dropped.load(Ordering::Relaxed),
+            dispatch_dropped: self.dispatch_dropped.load(Ordering::Relaxed),
+            circuit_breakers: registry
+                .channels
+                .iter()
+                .map(|channel| (channel.key.clone(), channel.breaker.lock().is_open))
+                .collect(),
+        }
+    }
+
+    /// Stop the notification service.
+    pub async fn stop(&self) {
+        info!("Stopping notification service");
+        // Fence admission before waking the worker to drain. A sender that already
+        // holds the read lock must publish before cancellation becomes visible.
+        {
+            let _dispatch = self.dispatch_rx.lock();
+            let mut sender = self.web_push_tx.write();
+            self.cancellation_token.cancel();
+            sender.take();
+        }
+        if self.owns_task_supervisor
+            && !self.task_supervisor.shutdown(Duration::from_secs(10)).await
+        {
+            warn!("Notification background task shutdown required forced cancellation");
+        }
+
+        // Process any remaining notifications
+        let pending_ids: Vec<u64> = self.pending_queue.iter().map(|e| *e.key()).collect();
+        for id in pending_ids {
+            self.process_notification(id).await;
+        }
+
+        info!("Notification service stopped");
+    }
+}
+
+impl Default for NotificationService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Statistics about the notification service.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationStats {
+    /// Events rejected before event-log persistence: the newest event when a
+    /// synchronous reporter finds the queue full, and events refused during shutdown.
+    #[serde(default)]
+    pub dispatch_dropped: u64,
+    /// Web-push events rejected by queue admission (all priorities). No automatic replay.
+    #[serde(default)]
+    pub web_push_dropped: u64,
+    /// Number of pending notifications.
+    pub pending_count: usize,
+    /// Number of dead letter entries.
+    pub dead_letter_count: usize,
+    /// Number of configured channels.
+    pub channel_count: usize,
+    /// Circuit breaker states (channel_key -> is_open).
+    pub circuit_breakers: HashMap<String, bool>,
+}
+
+impl RuntimeAlertSink for NotificationService {
+    fn emit(self: Arc<Self>, alert: RuntimeAlert) {
+        let event = match alert {
+            RuntimeAlert::Credential(event) => NotificationEvent::Credential { event },
+            RuntimeAlert::PlatformThrottled {
+                platform,
+                route,
+                proxy_name,
+                retry_at,
+                timestamp,
+            } => NotificationEvent::PlatformThrottled {
+                platform,
+                route,
+                proxy_name,
+                retry_at,
+                timestamp,
+            },
+            RuntimeAlert::OutputPathInaccessible {
+                path,
+                error_kind,
+                timestamp,
+            } => NotificationEvent::OutputPathInaccessible {
+                path,
+                error_kind,
+                timestamp,
+            },
+            RuntimeAlert::BigoNotificationsFailing {
+                problem,
+                message,
+                timestamp,
+            } => NotificationEvent::BigoNotificationsFailing {
+                problem,
+                message,
+                timestamp,
+            },
+            RuntimeAlert::BigoNotificationsRestored { problem, timestamp } => {
+                NotificationEvent::BigoNotificationsRestored { problem, timestamp }
+            }
+        };
+        self.dispatch_notification(event);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::channels::DiscordConfig;
+    use srec_sqlite::models::NotificationDeadLetterDbModel;
+
+    mod delivery_contracts;
+    mod listeners;
+    mod reload;
+    mod rendering;
+
+    struct TestChannel {
+        channel_type: &'static str,
+        fail_for_attempts: u32,
+        attempts: Arc<std::sync::atomic::AtomicU32>,
+    }
+
+    #[async_trait::async_trait]
+    impl NotificationChannel for TestChannel {
+        fn channel_type(&self) -> &'static str {
+            self.channel_type
+        }
+
+        fn is_enabled(&self) -> bool {
+            true
+        }
+
+        async fn send(&self, _event: &NotificationEvent) -> Result<()> {
+            let attempt = self.attempts.fetch_add(1, Ordering::SeqCst) + 1;
+            if attempt <= self.fail_for_attempts {
+                Err(crate::NotifyError::other(format!(
+                    "forced failure {}",
+                    attempt
+                )))
+            } else {
+                Ok(())
+            }
+        }
+
+        async fn test(&self) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn retries_do_not_duplicate_successful_channels() {
+        let config = NotificationServiceConfig {
+            enabled: true,
+            max_retries: 3,
+            initial_retry_delay_ms: 5,
+            max_retry_delay_ms: 20,
+            circuit_breaker_threshold: 100,
+            circuit_breaker_cooldown_secs: 1,
+            ..Default::default()
+        };
+        let service = NotificationService::with_config(config);
+
+        let ok_attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let flaky_attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        for (key, attempts, fail_for_attempts) in [
+            ("ok", ok_attempts.clone(), 0),
+            ("flaky", flaky_attempts.clone(), 1),
+        ] {
+            service.registry.write().insert(Arc::new(RuntimeChannel {
+                breaker: service.new_breaker(),
+                key: key.into(),
+                db_channel_id: None,
+                display_name: key.into(),
+                channel_type: "test".into(),
+                channel: Arc::new(TestChannel {
+                    channel_type: "test",
+                    fail_for_attempts,
+                    attempts,
+                }),
+            }));
+        }
+
+        service
+            .notify(NotificationEvent::SystemStartup {
+                version: "test".to_string(),
+                timestamp: Timestamp::now(),
+            })
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while service.stats().pending_count != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the retried channel should recover");
+
+        assert_eq!(ok_attempts.load(Ordering::SeqCst), 1);
+        assert_eq!(flaky_attempts.load(Ordering::SeqCst), 2);
+        assert_eq!(service.stats().dead_letter_count, 0);
+    }
+
+    struct MockNotificationRepo {
+        channels: tokio::sync::Mutex<Vec<NotificationChannelDbModel>>,
+        subscriptions: tokio::sync::Mutex<HashMap<String, Vec<String>>>,
+        subscribe_calls: tokio::sync::Mutex<Vec<(String, String)>>,
+        unsubscribe_calls: tokio::sync::Mutex<Vec<(String, String)>>,
+        dead_letters: tokio::sync::Mutex<Vec<NotificationDeadLetterDbModel>>,
+        event_logs: tokio::sync::Mutex<Vec<NotificationEventLogDbModel>>,
+        event_log_gate: Option<Semaphore>,
+        dead_letter_gate: Option<Semaphore>,
+        panic_next_event_log: AtomicBool,
+        fail_dead_letter_insert: bool,
+        pause_next_list: AtomicBool,
+        list_entered: tokio::sync::Notify,
+        list_release: tokio::sync::Notify,
+        list_calls: std::sync::atomic::AtomicUsize,
+        fail_subscriptions_for: parking_lot::Mutex<Option<String>>,
+        fail_subscribe: AtomicBool,
+    }
+
+    impl MockNotificationRepo {
+        fn new() -> Self {
+            Self {
+                channels: tokio::sync::Mutex::new(Vec::new()),
+                subscriptions: tokio::sync::Mutex::new(HashMap::new()),
+                subscribe_calls: tokio::sync::Mutex::new(Vec::new()),
+                unsubscribe_calls: tokio::sync::Mutex::new(Vec::new()),
+                dead_letters: tokio::sync::Mutex::new(Vec::new()),
+                event_logs: tokio::sync::Mutex::new(Vec::new()),
+                event_log_gate: None,
+                dead_letter_gate: None,
+                panic_next_event_log: AtomicBool::new(false),
+                fail_dead_letter_insert: false,
+                pause_next_list: AtomicBool::new(false),
+                list_entered: tokio::sync::Notify::new(),
+                list_release: tokio::sync::Notify::new(),
+                list_calls: std::sync::atomic::AtomicUsize::new(0),
+                fail_subscriptions_for: parking_lot::Mutex::new(None),
+                fail_subscribe: AtomicBool::new(false),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl NotificationRepository for MockNotificationRepo {
+        async fn get_channel(
+            &self,
+            _id: &str,
+        ) -> srec_sqlite::DbResult<NotificationChannelDbModel> {
+            unimplemented!()
+        }
+
+        async fn list_channels(&self) -> srec_sqlite::DbResult<Vec<NotificationChannelDbModel>> {
+            self.list_calls.fetch_add(1, Ordering::SeqCst);
+            let channels = self.channels.lock().await.clone();
+            if self.pause_next_list.swap(false, Ordering::SeqCst) {
+                self.list_entered.notify_one();
+                self.list_release.notified().await;
+            }
+            Ok(channels)
+        }
+
+        async fn create_channel(
+            &self,
+            _channel: &NotificationChannelDbModel,
+        ) -> srec_sqlite::DbResult<()> {
+            unimplemented!()
+        }
+
+        async fn update_channel(
+            &self,
+            _channel: &NotificationChannelDbModel,
+        ) -> srec_sqlite::DbResult<()> {
+            unimplemented!()
+        }
+
+        async fn patch_channel(
+            &self,
+            _id: &str,
+            _patch: srec_sqlite::repositories::notification::ChannelPatch,
+        ) -> srec_sqlite::DbResult<NotificationChannelDbModel> {
+            unimplemented!()
+        }
+
+        async fn delete_channel(&self, _id: &str) -> srec_sqlite::DbResult<()> {
+            unimplemented!()
+        }
+
+        async fn get_subscriptions_for_channel(
+            &self,
+            _channel_id: &str,
+        ) -> srec_sqlite::DbResult<Vec<String>> {
+            if self.fail_subscriptions_for.lock().as_deref() == Some(_channel_id) {
+                return Err(srec_sqlite::DbError::other(
+                    "injected subscription read failure",
+                ));
+            }
+            Ok(self
+                .subscriptions
+                .lock()
+                .await
+                .get(_channel_id)
+                .cloned()
+                .unwrap_or_default())
+        }
+
+        async fn subscribe(
+            &self,
+            _channel_id: &str,
+            _event_name: &str,
+        ) -> srec_sqlite::DbResult<()> {
+            if self.fail_subscribe.load(Ordering::SeqCst) {
+                return Err(srec_sqlite::DbError::other(
+                    "injected subscription write failure",
+                ));
+            }
+            self.subscribe_calls
+                .lock()
+                .await
+                .push((_channel_id.to_string(), _event_name.to_string()));
+
+            let mut subs = self.subscriptions.lock().await;
+            let entry = subs.entry(_channel_id.to_string()).or_default();
+            if !entry.iter().any(|e| e == _event_name) {
+                entry.push(_event_name.to_string());
+            }
+            Ok(())
+        }
+
+        async fn unsubscribe(
+            &self,
+            _channel_id: &str,
+            _event_name: &str,
+        ) -> srec_sqlite::DbResult<()> {
+            self.unsubscribe_calls
+                .lock()
+                .await
+                .push((_channel_id.to_string(), _event_name.to_string()));
+
+            let mut subs = self.subscriptions.lock().await;
+            if let Some(list) = subs.get_mut(_channel_id) {
+                list.retain(|e| e != _event_name);
+            }
+            Ok(())
+        }
+
+        async fn add_to_dead_letter(
+            &self,
+            entry: &NotificationDeadLetterDbModel,
+        ) -> srec_sqlite::DbResult<()> {
+            if self.fail_dead_letter_insert {
+                return Err(srec_sqlite::DbError::other(
+                    "forced dead letter insert failure",
+                ));
+            }
+            if let Some(gate) = &self.dead_letter_gate {
+                gate.acquire().await.unwrap().forget();
+            }
+            self.dead_letters.lock().await.push(entry.clone());
+            Ok(())
+        }
+
+        async fn list_dead_letters(
+            &self,
+            _channel_id: Option<&str>,
+            _limit: i32,
+        ) -> srec_sqlite::DbResult<Vec<NotificationDeadLetterDbModel>> {
+            unimplemented!()
+        }
+
+        async fn add_event_log(
+            &self,
+            entry: &NotificationEventLogDbModel,
+        ) -> srec_sqlite::DbResult<bool> {
+            assert!(
+                !self.panic_next_event_log.swap(false, Ordering::SeqCst),
+                "injected event-log panic"
+            );
+            if let Some(gate) = &self.event_log_gate {
+                gate.acquire().await.unwrap().forget();
+            }
+            let mut logs = self.event_logs.lock().await;
+            if logs.iter().any(|logged| logged.id == entry.id) {
+                return Ok(false);
+            }
+            logs.push(entry.clone());
+            Ok(true)
+        }
+    }
+
+    #[tokio::test]
+    async fn dead_letters_persisted_to_repository() {
+        let repo = Arc::new(MockNotificationRepo::new());
+        let config = NotificationServiceConfig {
+            max_retries: 1,
+            initial_retry_delay_ms: 1,
+            max_retry_delay_ms: 5,
+            ..Default::default()
+        };
+        let service = NotificationService::with_repository(config, repo.clone());
+
+        let attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let fail_channel = Arc::new(RuntimeChannel {
+            breaker: service.new_breaker(),
+            key: "channel-1".to_string(),
+            db_channel_id: Some("channel-1".to_string()),
+            display_name: "Channel 1".to_string(),
+            channel_type: "WEBHOOK".to_string(),
+            channel: Arc::new(TestChannel {
+                channel_type: "fail",
+                fail_for_attempts: 1,
+                attempts: attempts.clone(),
+            }),
+        });
+        service.registry.write().insert(fail_channel);
+
+        service
+            .registry
+            .write()
+            .subscriptions_by_event
+            .insert("system_startup".to_string(), vec!["channel-1".to_string()]);
+
+        service
+            .notify(NotificationEvent::SystemStartup {
+                version: "test".to_string(),
+                timestamp: Timestamp::now(),
+            })
+            .await
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let persisted = repo.dead_letters.lock().await;
+        assert_eq!(persisted.len(), 1);
+        assert_eq!(persisted[0].channel_id, "channel-1");
+        assert_eq!(persisted[0].event_name, "system_startup");
+        assert_eq!(persisted[0].retry_count, 1);
+        assert_eq!(service.stats().dead_letter_count, 1);
+        assert_eq!(service.stats().pending_count, 0);
+    }
+
+    async fn assert_exhausted_channel_retained(with_repo: bool, with_id: bool, fail_insert: bool) {
+        let repo = Arc::new(MockNotificationRepo {
+            fail_dead_letter_insert: fail_insert,
+            ..MockNotificationRepo::new()
+        });
+        let config = NotificationServiceConfig {
+            max_retries: 2,
+            initial_retry_delay_ms: 1,
+            max_retry_delay_ms: 1,
+            circuit_breaker_threshold: 100,
+            ..Default::default()
+        };
+        let service = if with_repo {
+            NotificationService::with_repository(config, repo.clone())
+        } else {
+            NotificationService::with_config(config)
+        };
+        let failed_attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let successful_attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        for (key, attempts, fail_for_attempts) in [
+            ("failed", failed_attempts.clone(), u32::MAX),
+            ("successful", successful_attempts.clone(), 0),
+        ] {
+            let channel = Arc::new(RuntimeChannel {
+                breaker: service.new_breaker(),
+                key: key.into(),
+                db_channel_id: with_id.then(|| key.to_string()),
+                display_name: key.into(),
+                channel_type: "test".into(),
+                channel: Arc::new(TestChannel {
+                    channel_type: "test",
+                    fail_for_attempts,
+                    attempts,
+                }),
+            });
+            service.registry.write().insert(channel);
+        }
+        let event = NotificationEvent::SystemStartup {
+            version: "test".into(),
+            timestamp: Timestamp::now(),
+        };
+        service.dead_letters.insert(
+            0,
+            DeadLetterEntry {
+                id: 0,
+                notification_id: 0,
+                event: event.clone(),
+                channel_key: Some("old".into()),
+                channel_id: None,
+                channel_type: "test".into(),
+                attempts: 2,
+                error: "old failure".into(),
+                created_at: Timestamp::now() - jiff::SignedDuration::from_hours(24 * 9),
+                dead_lettered_at: Timestamp::now() - jiff::SignedDuration::from_hours(24 * 8),
+            },
+        );
+        service
+            .notify_channel_instances(
+                ["failed".to_string(), "successful".to_string()]
+                    .into_iter()
+                    .collect(),
+                event,
+            )
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while service.stats().pending_count != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("retry delivery should settle");
+
+        assert_eq!(failed_attempts.load(Ordering::SeqCst), 2);
+        assert_eq!(successful_attempts.load(Ordering::SeqCst), 1);
+        assert_eq!(service.stats().dead_letter_count, 1);
+        assert!(
+            !service.dead_letters.contains_key(&0),
+            "retention removes old entries"
+        );
+        let entry = service.dead_letters.iter().next().unwrap();
+        assert_eq!(entry.channel_key.as_deref(), Some("failed"));
+        assert_eq!(entry.channel_id.as_deref(), with_id.then_some("failed"));
+        assert_eq!(entry.attempts, 2);
+        assert_eq!(entry.error, "forced failure 2");
+        assert_eq!(
+            repo.dead_letters.lock().await.len(),
+            usize::from(with_repo && with_id && !fail_insert)
+        );
+    }
+
+    #[tokio::test]
+    async fn exhausted_config_channel_retained_with_repository() {
+        assert_exhausted_channel_retained(true, false, false).await;
+    }
+
+    #[tokio::test]
+    async fn exhausted_channel_retained_when_persistence_fails() {
+        assert_exhausted_channel_retained(true, true, true).await;
+    }
+}

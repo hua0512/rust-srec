@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 
 /**
- * How to present one `HealthStatus` value from `rust-srec/src/metrics/health.rs`.
+ * How to present one `HealthStatus` value from `rust-srec/crates/srec-api/src/metrics/health.rs`.
  * `badge` styles an outline badge; `dot` fills a status dot or a progress bar.
  */
 interface HealthStatusMeta {

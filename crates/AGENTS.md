@@ -8,7 +8,7 @@ Lower layers never depend on higher ones. Changing a lower crate affects every c
 
 | Layer | Crates | Purpose |
 | --- | --- | --- |
-| Primitives | `bytes-util`, `expgolomb`, `media-types`, `amf0`, `tars-codec`, `process-utils` | Bit/byte readers, Exp-Golomb, shared `Resolution`/`SplitReason`/codec info, AMF0, Tencent TARS codec (Huya), child-process helpers |
+| Primitives | `bytes-util`, `expgolomb`, `media-types`, `amf0`, `tars-codec`, `process-utils`, `proxy-target` | Bit/byte readers, Exp-Golomb, shared `Resolution`/`SplitReason`/codec info, AMF0, Tencent TARS codec (Huya), child-process helpers, the proxy endpoint and target types shared by `platforms-parser` and the backend (`srec-core` re-exports them) |
 | Codecs | `aac`, `h264`, `h265`, `av1` | Bitstream headers and parameter sets |
 | Containers | `flv`, `ts`, `mp4`, `hls` | FLV tag/header parsing and writing (incl. Enhanced RTMP, see `flv/enhanced-rtmp-v2.md`), MPEG-TS packets/PSI/PES/SCTE-35, ISOBMFF/fMP4 boxes and track merging, HLS segment data (`HlsData`, TS/fMP4 segments, stream profiles) |
 | Processing | `pipeline-common`, `flv-fix`, `hls-fix` | Generic processor pipeline and writer task; FLV and HLS repair/split operators |
@@ -48,7 +48,7 @@ Design decisions (ask before reversing):
   - TikTok's `cmaf` stream is a live DASH MPD and is opt-in (`format_opt_in`); FLV stays the default.
   - Douyu: the App endpoint gets origin quality only with the `token` built from the account's `acf_*` cookies (`app_token()` in `douyu/app.rs`). Signed-in Web needs the session cookies on `getEncryption` too, or signing returns 403. Signed-out Web URLs carry a signed `expire=300`, so don't rewrite URL parameters. `live_signed_in_playback` (ignored; set `DOUYU_COOKIES` and `DOUYU_LIVE_URL`) checks both paths against a real account.
 
-Adding a platform touches, besides its directory: `extractor/platforms.rs`, the registry in `extractor/factory.rs` (a batch status probe, if any, attaches to the platform's entry with `; batch: PROBE`), `extractor/platform_configs.rs` if it has settings, `danmaku/registry.rs` if it has chat, `crates/platforms/README.md`, `strev-cli/src/commands.rs` (`list_platforms`), a backend migration seeding its `platform_config` row (e.g. `rust-srec/migrations/20260715000000_add_soop_platform.sql`) and `rust-srec/src/proxies/probe.rs`, frontend `src/lib/utils.ts`, `src/components/pipeline/constants.tsx` and `src/api/schemas/platform-configs.ts`, the docs pages under `rust-srec/docs/{en,zh}/platforms/`, and the platform lists in the root `README.md`/`README.zh-CN.md`.
+Adding a platform touches, besides its directory: `extractor/platforms.rs`, the registry in `extractor/factory.rs` (a batch status probe, if any, attaches to the platform's entry with `; batch: PROBE`), `extractor/platform_configs.rs` if it has settings, `danmaku/registry.rs` if it has chat, `crates/platforms/README.md`, `strev-cli/src/commands.rs` (`list_platforms`), a backend migration seeding its `platform_config` row (e.g. `rust-srec/migrations/20260715000000_add_soop_platform.sql`) and `rust-srec/crates/srec-recorder/src/proxies/probe.rs`, frontend `src/lib/utils.ts`, `src/components/pipeline/constants.tsx` and `src/api/schemas/platform-configs.ts`, the docs pages under `rust-srec/docs/{en,zh}/platforms/`, and the platform lists in the root `README.md`/`README.zh-CN.md`.
 
 ## Processing crates
 
@@ -58,7 +58,7 @@ Adding a platform touches, besides its directory: `extractor/platforms.rs`, the 
 
 ## Backend touchpoints
 
-Backend consumers live in `rust-srec/src/downloader/engine/` (per-engine adapters, `mesio/` for this engine), `rust-srec/src/danmu/` (danmaku service), `rust-srec/src/credentials/platforms/` (platform login/cookie refresh), `rust-srec/src/monitor/` (live checks via extractors) and `rust-srec/src/proxies/`.
+Backend consumers live in `rust-srec/crates/srec-engines/src/` (per-engine adapters, `mesio/` for this engine) and, in `rust-srec/crates/srec-recorder/src/`, `danmu/` (danmaku service), `credentials/platforms/` (platform login/cookie refresh), `monitor/` (live checks via extractors) and `proxies/`.
 
 ## Testing
 

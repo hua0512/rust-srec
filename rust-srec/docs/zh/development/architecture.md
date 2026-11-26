@@ -35,54 +35,57 @@ flowchart LR
   OPS --> FS
 ```
 
-运行时内部，各服务沿以下路径传递事件：
+后端代码按单向依赖 DAG 拆分为内部 workspace crate，由精简的 `rust-srec` 根包组装：
+
+- **Layer 0（`srec-core`、`srec-sqlite`）**：无存储依赖的领域模型、端口契约与工具；SQLite 连接池、`CommittedWriter`、基础模型/仓储与迁移执行器。
+- **Layer 1（`srec-engines`、`srec-processors`、`srec-notify`）**：下载引擎（`ffmpeg`、`streamlink`、`mesio`）；后处理算子与 BaiduPCS-Go；通知通道、Web Push、后端多语言与 `NotificationOutboxDrainer`。
+- **Layer 2（`srec-pipeline`、`srec-recorder`）**：后处理 `PipelineManager` / `DagScheduler` / WorkerPool；录制控制面（`ActorRegistry`、`StreamerActor`、`StreamerFsm`、`RecorderProber`、`RecorderStore`）、`DownloadManager`、`DanmuService` 及其弹幕采集器、`ConfigService`、`StreamerManager`、凭据与代理服务。
+- **Layer 3（`srec-api`）**：Axum REST/WebSocket 路由、Protobuf、OpenAPI、MCP 服务、认证存储、CQRS 查询、动态日志与健康指标。
+- **Layer 4（`rust-srec`）**：`ServiceContainer` 组装、`ConfigBackupPort` 导出/导入、`MaintenanceScheduler`、启动迁移、进程监督，以及面向独立二进制与 `src-tauri` 的 `backend` 门面。
+
+除 `srec-sqlite` 依赖同层的 `srec-core` 外，每个 crate 只依赖更低层的 crate。
+
+运行时内部，各服务沿以下路径传递控制指令与事件：
 
 ```mermaid
 flowchart TB
   CFG["ConfigService<br/>StreamerManager"]
-  SCH["Scheduler Actor"]
-  MON["StreamMonitor<br/>过滤 / Outbox"]
-  SESS["SessionLifecycle"]
+  REG["ActorRegistry<br/>StreamerActor + StreamerFsm"]
+  PRB["RecorderProber<br/>PlatformExtractorRunner"]
+  STO["RecorderStore<br/>CommittedWriter + Outbox"]
   DL["DownloadManager<br/>队列 / 引擎"]
   DM["DanmuService"]
   PL["PipelineManager<br/>DAG / Worker"]
-  NOTI["NotificationService"]
+  NOTI["NotificationService<br/>NotificationOutboxDrainer"]
 
-  CFG -->|"配置事件"| SCH
-  SCH -->|"定时探测"| MON
-  MON -->|"会话命令"| SESS
-  MON -->|"已提交的直播事件"| DL
+  CFG -->|"配置事件与提交后通知"| REG
+  REG -->|"状态与时效探测"| PRB
+  REG -->|"串行化 DB 提交"| STO
+  STO -.->|"OutboxEvent 记录"| NOTI
+  REG -->|"startup_task / start_with_slot"| DL
   DL -->|"成功启动后开启"| DM
-  DL -->|"视频分段事件"| PL
-  DM -->|"弹幕分段事件"| PL
-  SESS -->|"会话转换事件"| PL
-  SESS -.->|"滞后恢复"| DL
-  DL -.->|"下载终止结果"| SESS
-  DL -.->|"下载反馈"| SCH
+  DL -->|"预留反馈与分段确认"| REG
+  DM -->|"FIFO 弹幕协调"| REG
+  REG -->|"PipelineNotification"| PL
 
-  MON -.->|"监控事件"| NOTI
   DL -.->|"下载事件"| NOTI
-  SESS -.->|"会话事件"| NOTI
   PL -.->|"作业事件"| NOTI
 ```
 
-运行时服务之间的箭头表示逻辑事件路径。`ServiceContainer` 通过广播订阅、有界队列和处理
-任务完成这些接线，而不是让服务彼此直接耦合。
+运行时服务之间的箭头表示逻辑控制与事件路径。`ServiceContainer` 通过广播订阅、预留反馈许可、确认式协调通道和提交后监听器完成接线，而不是让服务彼此循环耦合。
 
 该拓扑中有三个重要的职责边界：
 
 - `ServiceContainer` 是组合根与事件接线层，并不持有领域状态的所有权。
-- `StreamMonitor` 负责探测与过滤平台状态；`SessionLifecycle` 独占内存中的会话状态机以及
-  持久化启动/结束决策。
-- 直播事件会先进入下载启动流程；只有下载管理器的 `start_with_slot` 返回真实下载 ID 后，
-  才会开始弹幕采集。
+- `StreamerFsm` 是纯同步状态机，由 `ActorRegistry` 管理的每主播单 `StreamerActor` 驱动；`RecorderProber` 负责状态/时效探测，`RecorderStore` 串行化持久化 SQLite 提交与 `OutboxEvent` 写入。
+- 直播提交后会先经由 `startup_task` 与 `StartupLeaseRegistry` 进入下载启动流程；只有 `DownloadManager::start_with_slot` 返回真实下载 ID 后，才会开始弹幕采集。
 
 ## 运行时根：`ServiceContainer` {#运行时根-servicecontainer}
 
 `ServiceContainer`（位于 `rust-srec/src/services/container.rs`）负责把所有组件串起来：
 
 - 初始化仓储与服务（数据库、配置缓存、各类 manager/service）
-- 启动后台任务（scheduler actors、pipeline workers、outbox flushers）
+- 启动后台任务（`ActorRegistry`、`NotificationOutboxDrainer`、pipeline workers、维护调度器与 Bigo 开播通知）
 - 订阅事件流，并在服务之间转发/协调事件
 - 持有用于优雅退出的 `CancellationToken`
 
@@ -96,18 +99,16 @@ flowchart TB
 
 ## 核心组件（按实际实现） {#核心组件-按实际实现}
 
-### `RuntimeCoordinator`（录制启动与取消） {#runtimecoordinator-录制启动与取消}
+### 录制启动与取消（`startup_task` / `StartupLeaseRegistry`） {#录制启动与取消}
 
-协调器将下载启动和弹幕采集绑定到触发它们的会话。指定旧会话的 Offline 事件只停止该
-会话的工作，不会按主播 ID 误选后续会话。禁用和离开录制时间窗口的事件，也会取消已
-注册会话取消令牌、但尚未进入下载队列的启动任务。
+下载启动与弹幕初始化通过 `StartupLeaseRegistry`（位于 `srec-recorder/src/recorder/actor/startup_task.rs`）
+绑定到触发它们的会话与下载尝试。针对旧会话的下播决策只停止该次尝试，不会按主播 ID 误选后续会话。
+禁用、离开时间窗口、凭据退役和删除停止也会取消已登记、但尚未进入下载队列的启动租约。
 
-启动流程在配置、预检、排队、时效检查和最终接纳期间响应取消。取消后释放预留资源，
-并且不启动弹幕采集。弹幕初始化和前序采集任务交接也响应会话取消；采集任务注册后，
-取消会等待其受管理的清理完成，不会丢弃就绪等待并遗留任务。
-从滞后窗口恢复的 Started 转换必须同时携带下载参数且会话仍活跃。
-只有排队等待时间严格超过时效阈值时，才一起刷新 URL、请求头和附加信息。等于阈值时
-保留缓存媒体并执行短等待状态校验；主播缺失或已离线时出队，检查器错误则回退到缓存媒体。
+启动流程在配置读取、预检、排队、时效复查、凭据绑定校验和最终接纳期间响应取消。取消后会释放租约，
+且不启动弹幕采集。弹幕采集任务启动后，关闭与退役流程会等待其确认停止，而不是丢弃清理过程。
+排队等待时间严格超过时效阈值时，会重新探测 URL、请求头与附加信息；主播缺失或已离线时出队，
+临时探测错误则回退到缓存媒体载荷。
 
 ### `ConfigService`（配置合并 + 热更新） {#configservice-配置合并-热更新}
 
@@ -148,67 +149,41 @@ SQLite 行是权威数据。`StreamerManager` 为 actor 检查提供不可变的
 会话并发布最终完成事件。处理失败或被抑制时会等待后续检查重试。开播结果会复用未完成
 会话，保留重启前后的录制连续性。
 
-### `Scheduler`（Actor 模型编排/调度） {#scheduler-actor-模型编排-调度}
+### `ActorRegistry` 与 `StreamerActor`（控制面编排） {#录制控制面}
 
-Scheduler 采用 supervisor + actor 的结构：
+`ActorRegistry`（位于 `srec-recorder/src/recorder/registry.rs`）负责监督常驻的每主播 Actor：
 
-- `StreamerActor`：单个主播的自调度状态循环（自己管理定时）
-- `Supervisor`：负责 actor 生命周期、崩溃恢复、退出汇总
+- `StreamerActor`：每个活跃主播拥有一个非阻塞的 `tokio::select!` 事件循环，驱动 `StreamerFsm`，并发轮询邮箱、最多一个在途 `CommitDb` Future、最多一个在途 `Probe` Future、可选的批量预检开播提示、最早的 FSM 定时期限以及副作用任务。
+- `ActorRegistry`：响应 `PostPublicationListener` 批次与 `ConfigUpdateEvent` 对齐活跃主播、维护 Actor 世代号与单调配置修订号、桥接下载与弹幕确认式协调通道、执行 4-owner 物理退役校验（`retire_streamer` / `retire_and_reap`），并监督异常退出的 Actor。
 
-每个 actor 通过 `StreamMonitor` 单独探测自己负责的主播；Scheduler 同时订阅配置事件，
-动态创建/移除 actor。
+在创建 Actor 或推送更新配置前，`ActorRegistry` 会通过 `ConfigService` 解析全局 → 平台 → 模板 → 主播四层配置，
+并在等待异步解析前预先分配单调递增的配置修订号，避免较慢的查询覆盖较新的更新。
+解析失败时，运行中的 Actor 保留上一次成功解析的配置，也不会创建新 Actor，并按指数退避（基础 5 秒、上限 5 分钟）重试。
+配置更新本身不会触发立即检查，只有凭据、过滤器和清除错误事件才会请求检查。周期检查在配置间隔的 ±10% 范围内随机分散；
+有效间隔未变时保留原定检查时间，变化时可提前检查但不推迟已安排的期限。智能唤醒、准入/冷却期限、显式立即检查与在线 watchdog 保留各自时序约束。
 
-调度器在创建 actor 或发送时序更新前，通过共享配置服务解析全局 → 平台 → 模板 →
-主播四层配置。它直接读取当前配置层，不依赖容器另一个订阅者刷新元数据的先后顺序，
-因此离线确认次数和延迟不会因事件竞争停留在默认值。发送给 actor 与用于重启恢复的
-配置来自同一次解析。解析失败时，现有 actor 保留上一次有效时序；新 actor 不会使用
-未解析的默认值启动。更新解析最多并发八个查询，并响应关闭取消信号。
-排队等待的崩溃重启在到期时重新解析配置，包括退避期间发生的变更。查询失败时
-会将该次重启延后五秒，而不会使用此前保存的旧配置启动。
+预期内的终止退出（`Disabled`、`FatalError`、`Retired`、`Shutdown`）会清理凭据阻断记录并正常退出，不会自动重启。
+当 Actor 任务 panic 时，`ActorRegistry` 会先停止它遗留的启动任务、下载与弹幕采集，再按指数退避（基础 2 秒、上限 60 秒）重启它。
+每个主播最多自动重启 `MAX_CRASH_RESTARTS`（5）次；正常退出，或运行至少 10 分钟后才崩溃，都会重新计数。重启次数用尽后，该主播不再被监控，健康检查会将其报告为降级。
 
-周期检查在配置间隔的 ±10% 范围内随机分散。有效间隔未变时保留原定检查时间；
-实际间隔变化可以提前检查，但不会推迟已经安排的检查。智能唤醒、准入/冷却期限、
-明确的立即检查以及暂停/直播状态保留各自的时序约束。
+### `RecorderProber` 与 `RecorderStore`（探测、持久化与 Outbox） {#探测与持久化存储}
 
-不可恢复的 actor 错误表示终止决定，例如主播已被移除。定时器与消息路径都会
-正常停止，并执行已配置的状态持久化；supervisor 不会为它们安排重启。可恢复的
-任务失败与 panic 仍可重启。连续十次崩溃后停止自动重启，即使较早的崩溃已离开
-六十秒退避窗口。该窗口仍决定重启延迟；移除 actor 会重置崩溃额度。
+- **`RecorderProber`**（位于 `srec-recorder/src/recorder/prober.rs`）封装共享的 `PlatformExtractorRunner`（复用的 HTTP 连接池与代理/隧道 `ExtractorFactory`），按 `CredentialCheckKey` 对在途探测去重，执行批量预检与 Bigo 开播通知门控，跟踪凭据阻断状态，通过 CAS 持久化平台元数据，并异步记录检查历史。
+- **`RecorderStore`**（位于 `srec-recorder/src/recorder/store.rs`）在每主播串行化租约与 `CommittedWriter`（`committed_write_supervisor`）保护下执行所有 `DbCommitOp`（`StartOrResumeSession`、`ResumeHysteresis`、`EndSession`、`RecordFatalError`、`RecordTransientError`、`SetInfraBlocked` 等）。已封存的提交即使在 Actor 停止或被丢弃后仍会完成，并同步发布到 `StreamerCache`、释放 SQLite 写连接与主播租约，随后再唤醒 `NotificationOutboxDrainer` 并通知 `PostPublicationListener`。
 
-下载终止反馈保留会话生命周期的权责边界。应用关闭和主播禁用导致的停止，只会
-暂停 actor 本地轮询，不会上报下播：关闭时保留会话供恢复，禁用清理流程负责
-关闭相应会话。未知的内部停止原因会恢复状态检查，以验证平台实际状态。
-权威的主播下播反馈仍会通过 monitor 上报 Offline。
+**Outbox 模式**：面向用户的通知记录（`srec-core` 中的 `OutboxEvent`）与状态/会话更新在同一 SQLite 事务中写入 `monitor_event_outbox`。
+`NotificationOutboxDrainer`（位于 `srec-notify`）按 `id` 升序扫描未投递行，同时兼容解析当前 `OutboxEvent` 与升级遗留的 `LegacyOutboxEvent`，仅在 `NotificationService::deliver_durable_for_outbox` 完成投递后才标记 `delivered_at`。
+最多 32 行同时投递，因此等待缓慢或故障通道的通知不会拖住其他主播的通知；同一主播的行仍按 `id` 顺序逐条完成。
 
-### `StreamMonitor`（探测 + 过滤 + Outbox） {#streammonitor-探测-过滤-outbox}
+### `StreamerFsm`（会话与监控状态的唯一所有者） {#streamerfsm-状态机}
 
-`StreamMonitor` 是数据面的探测器，负责：
+`StreamerFsm`（位于 `srec-recorder/src/recorder/fsm.rs`）是纯同步状态机，独占单个主播的轮询调度、离线确认、静默期滞后（quiet-period hysteresis）、终止原因分类、凭据诊断恢复与停止协调逻辑。
 
-- 根据 URL/平台解析直播状态（含过滤：时间/关键词/分类等）
-- 将会话变更委托给 `SessionLifecycle`
-- 通过 **DB-backed Outbox** 机制发出 `MonitorEvent`
+新建会话（`CommittingStart`）和持久化结束都会先通过 `RecorderStore` 提交 SQLite 变更，再启动下载或发出 `PipelineNotification::SessionEnded`。
+进入静默期时保留 SQLite 会话开启（`end_time IS NULL`）并 best-effort 写入滞后审计记录；窗口内再次探测到开播会提交 `ResumeHysteresis` 并复用同一会话重启录制，窗口到期或确认下播则提交 `EndSession`。
+若静默期到期提交遇到临时 SQLite 错误，FSM 会保留打开的会话并在 1 秒后重试。优雅关闭会排空在途提交与 Actor；强制关闭遵守硬期限，同时不中止已封存的 `COMMIT`。
 
-**Outbox 模式**：将“状态/会话变更”与“事件写入 outbox”放在同一 DB 事务里，然后由后台
-任务定期/通知触发，把 outbox flush 到 Tokio `broadcast` 事件流，从而降低
-“状态已变更但事件丢失”的风险。
-
-### `SessionLifecycle`（会话状态的唯一所有者） {#sessionlifecycle-会话状态的唯一所有者}
-
-`SessionLifecycle` 负责录制状态机，包括滞后窗口（hysteresis）和终止原因分类。新的会话
-启动和持久化结束会先提交各自所需的数据库变更，再广播 `Started` 或 `Ended`。滞后阶段的
-`Ending` 与 `Resumed` 属于内存状态转换，其审计写入是 best-effort；在生命周期真正进入
-`Ended` 前，session 的 `end_time` 保持为空。下载终止事件会回流至此服务。`Ended` 会驱动
-会话完成管道、弹幕清理与下载状态清理；恢复后的 `Started` 会重启同一会话。
-同一主播的操作通过异步锁串行执行数据库提交、内存更新和事件发布；定时器到期遵循相同
-顺序，并在取得句柄前重新检查取消状态。数据库结束操作只更新活跃行，因此延迟事件不会
-改写结束时间或重复发布完成事件。明确指向旧会话的下播信号不会改变较新活跃会话的状态。
-
-已获准的操作持有准入许可与主播锁直到完成。在 COMMIT 或首个不可逆的内存转换之前，
-调用方取消可以回滚操作。一旦跨过该边界，即使调用方消失，受监督的操作也会完成缓存发布、
-会话映射、best-effort 审计写入，以及必达与观察者事件发布。结束操作遇到 SQL 错误时保留
-原有滞后句柄；主播锁使恢复或定时器等待该次结束尝试完成。定时器结束失败时，由同一个
-定时器任务重试，每次尝试之间释放准入许可与主播锁。正常关闭会等待这些操作完成。
-强制关闭遵守硬截止时间，同时不终止正在进行的 COMMIT；未完成操作继续受监督，数据库连接池保持打开。
+由于 `step` 是纯函数，只要拿到引发问题的输入，就能在单元测试中重放现场。因此每个 Actor 都保留一份输入轨迹（`srec-recorder/src/recorder/trace.rs`）：状态机启动时的快照，以及最近 64 条输入及其单调时钟偏移、墙上时间和抖动系数。输入以 `Debug` 文本保存，不含签名流地址、请求头和凭据内容；连续的下载心跳会合并为一条。每一步之后，Actor 都会检查：定时器步骤之后没有已到期的截止时间，一分钟内启动的探测不超过 20 次，排队等待的数据库写入不超过 8 个。每项检查首次失败时以及 Actor panic 时，都会以 `warn` 级别记录这份轨迹；Actor 运行期间也可通过 `GET /api/streamers/{id}/trace` 读取。
 
 ### `DownloadManager`（下载调度 + 引擎抽象） {#downloadmanager-下载调度-引擎抽象}
 
@@ -216,8 +191,7 @@ DownloadManager 负责：
 
 - 并发控制（含高优先级额外并发槽位）
 - 失败分类与熔断器（按引擎类型、配置以及可选的主播范围隔离）
-- 失败/拒绝事件与 retry-after 提示；由 Scheduler Actor 决定何时重新探测并再次进入下载
-  启动流程
+- 失败/拒绝事件与 retry-after 提示；由 `StreamerFsm` 决定何时重新探测并再次进入下载启动流程
 - 引擎抽象：
   - 外部进程：`ffmpeg`、`streamlink`
   - 内置 Rust 引擎：`mesio`
@@ -302,51 +276,53 @@ Streamlink 的生产者、管道和受控子进程关闭策略仍分别保留。
 ```mermaid
 sequenceDiagram
   autonumber
-  participant SCH as Scheduler actors
-  participant MON as StreamMonitor
-  participant SESS as SessionLifecycle
+  participant ACT as StreamerActor / StreamerFsm
+  participant PRB as RecorderProber
+  participant STO as RecorderStore
   participant DB as SQLite
-  participant SC as ServiceContainer handlers
   participant DL as DownloadManager
   participant ENG as Selected download engine
   participant DM as DanmuService
   participant PL as PipelineManager
-  participant NOTI as NotificationService
+  participant NOTI as NotificationService / OutboxDrainer
 
-  SCH->>MON: 探测平台状态并应用过滤器
-  MON->>SESS: 应用探测到的会话状态
-  SESS->>DB: 事务写入会话、主播状态、审计与 Outbox
-  DB-->>SESS: 提交
-  SESS-->>SC: SessionTransition::Started
-  MON-->>SC: 通过 Outbox 刷新的已提交 MonitorEvent
+  ACT->>PRB: 探测平台状态并应用过滤器
+  PRB-->>ACT: ProbeStatus::Live
+  ACT->>STO: CommitDb(StartOrResumeSession)
+  STO->>DB: 事务写入会话、主播状态、审计与 OutboxEvent
+  DB-->>STO: 提交
+  STO-->>ACT: DbCommitOutcome::SessionStarted
+  DB-->>NOTI: NotificationOutboxDrainer 投递 OutboxEvent
 
-  SC->>DL: 预检、排队并调用 start_with_slot
+  ACT->>DL: startup_task 预检、排队并调用 start_with_slot
   DL->>ENG: 生成选定引擎任务
-  DL-->>SC: 返回已注册的下载 ID
-  SC->>DM: start_with_slot 成功后开始采集
+  DL-->>ACT: 预留反馈 AttemptStarted
+  ACT->>DM: start_with_slot 成功后开始采集
   ENG-->>DL: 分段开始或完成
-  DL-->>SC: DownloadManagerEvent
-  DM-->>SC: DanmuEvent
-  SC->>PL: 处理分段事件并将 DAG 任务入队
+  DL-->>ACT: 确认式 SegmentStarted / SegmentCompleted
+  DM-->>ACT: FIFO DanmuEvent
+  ACT->>PL: PipelineNotification（分段与弹幕）
 
-  SC->>SESS: 应用下载终止结果
+  DL-->>ACT: 预留反馈 DownloadEnded
   alt 权威结束信号
-    SESS->>DB: 提交持久化会话结束
-    SESS-->>SC: SessionTransition::Ended
-    SC->>PL: 处理 Ended 转换
+    ACT->>STO: CommitDb(EndSession)
+    STO->>DB: 提交持久化会话结束与 OutboxEvent
+    STO-->>ACT: DbCommitOutcome::SessionEnded
+    ACT->>PL: PipelineNotification::SessionEnded
   else 模糊或可恢复结果
-    SESS-->>SC: SessionTransition::Ending
-    Note over SESS: 滞后审计写入是 best-effort
+    Note over ACT: 进入 QuietPeriod（滞后审计写入为 best-effort）
     alt 窗口内再次探测到直播
-      SESS-->>SC: Resumed 与 Started
-      SC->>DL: 为同一会话重启下载
+      ACT->>STO: CommitDb(ResumeHysteresis)
+      STO-->>ACT: DbCommitOutcome::HysteresisResumed
+      ACT->>DL: 为同一会话重启下载
     else 窗口到期或确认下播
-      SESS->>DB: 提交持久化会话结束
-      SESS-->>SC: SessionTransition::Ended
-      SC->>PL: 处理 Ended 转换
+      ACT->>STO: CommitDb(EndSession)
+      STO->>DB: 提交持久化会话结束与 OutboxEvent
+      STO-->>ACT: DbCommitOutcome::SessionEnded
+      ACT->>PL: PipelineNotification::SessionEnded
     end
   end
-  SC-->>NOTI: 监控、下载与会话事件
+  DL-->>NOTI: 下载事件
   PL-->>NOTI: PipelineEvent
 ```
 
@@ -377,31 +353,32 @@ sequenceDiagram
 就绪检查会在处理器内部校验 bearer token；liveness 与 idle 检查保持公开。WebSocket、
 媒体与流代理路由使用各自文档中说明的查询参数鉴权路径。
 
-## 调度器状态与退避 {#调度器状态与退避}
+## 录制器状态与退避 {#调度器状态与退避}
 
-主播 Actor 使用内存中的调度状态以及基于数据库的元数据缓存。运行时恢复使用数据库与会话生命周期，无需 Actor 状态文件。
+主播 Actor 将调度状态保存在 `StreamerFsm` 中，并从 `StreamerManager` 的数据库元数据缓存读取不可变快照。运行时恢复依赖 SQLite 中的会话与主播状态，无需 Actor 状态文件。
 
-监控使用事务式错误写入与 `disabled_until_for_error_count` 计算。退避保留配置的阈值，从 60 秒开始翻倍，最多一小时；即使存储的错误计数很大，也会安全达到上限，不会溢出。数据库与缓存发布共享上述已提交写入边界。
+监控通过 `RecorderStore` 的事务式错误写入与 `disabled_until_for_error_count` 计算退避。退避保留配置的阈值，从 60 秒开始翻倍，最多一小时；即使存储的错误计数很大，也会安全达到上限，不会溢出。数据库与缓存发布共享上述 `CommittedWriter` 边界。
 
 ### 可靠的生命周期反馈 {#可靠的生命周期反馈}
 
-录制启动与结束后的调度反馈使用独立且受管理的通道，与进度广播及持久化确认分离。容器在构造时接入该通道；Rust 嵌入方应在启动服务前调用 `Scheduler::connect_download_manager`。每个被接纳的录制任务在启动前为 Started 和 Terminal 预留容量；接纳不会等待 Actor 应用消息，结束反馈在录制槽位释放后发布。Actor 世代与录制标识隔离延迟消息，新建的替代 Actor 会从录制所有者获取当前标识。
+录制启动与终止反馈使用预留容量通道（`ActorRegistry::download_feedback` 实现的 `RecorderDownloadFeedback`），与进度广播及分段确认通道分离。`ServiceContainer` 在构造阶段通过 `DownloadManager::set_recorder_feedback` 接入该通道。每次被接纳的尝试在启动前预先保留 `AttemptStarted` 与 `DownloadEnded` 容量；接纳不会等待 Actor 消费邮箱，终止反馈严格在下载槽位释放后发布。Actor 世代号与尝试 ID 用于隔离延迟消息。
 
-每个主播最多保留 32 个生命周期消息。全局预算为 1,024 个积压消息，加上运行期间最高录制总并发数的两倍（包括高优先级额外槽位）。提高并发时扩容，降低时保留已持有的预留容量。容量不足会返回可重试的 `SchedulerFeedbackBusy` 错误，并保留本地重新检查请求，不会将主播标记为离线或禁用。受管理的恢复任务在等待两个容量池时合并请求，不阻塞生命周期应用及预留容量释放；只有容量恢复后才重试。Actor 退出和关闭流程会取消此等待。旧 Actor 世代仍持有应用消息时，共享消息内容和预留容量继续保留。
+每个主播最多保留 32 个生命周期许可。全局预算为 1,024 个积压许可，加上运行期间最高录制总并发数的两倍（含高优先级额外槽位）。提高并发时扩容，降低时保留已持有的预留容量。容量不足会返回可重试的 `RecorderFeedbackBusy` 错误（HTTP 错误码 `SCHEDULER_FEEDBACK_BUSY`），并通知 `ActorRegistry::request_retry_admission`，不会将主播标记为离线或禁用。
 
-配置解析最多使用八个受管理的工作任务。配置修订号和 Actor 世代会拒绝过期结果；邮箱压力下仍保留最新的目标配置，配置广播发生丢失时会重新对齐当前状态。进度仍为节流且允许丢失的广播。关闭流程先停止监控，再排空录制；剩余反馈明确归类为已停止、已退出或不可用，录制排空流程也会等待反馈任务结束。
+配置解析在等待 `ConfigService` 之前先分配单调递增的修订号，避免较慢查询覆盖较新配置，且配置广播丢失时会触发全量重对齐。进度广播保持节流且允许丢失。关闭流程先停止监控，再排空录制；即使 Actor 已经退出，尾随关闭的分段仍会经由 `ActorRegistry` 的会话级回退路径完成持久化。
 
 ## 事件驱动通信 {#事件驱动通信}
 
-跨服务协调主要依赖 Tokio `broadcast`：
+跨服务协调按投递语义使用不同通道：
 
-| 事件流 | 发布者 | 典型消费者 | 备注 |
+| 事件流 / 通道 | 发布者 | 典型消费者 | 备注 |
 |---|---|---|---|
-| `ConfigUpdateEvent` | `ConfigService`、`StreamerManager` | `Scheduler`、`ServiceContainer` | 驱动 Actor 变更、运行时重配置与资源清理 |
-| `MonitorEvent` | `StreamMonitor` | `ServiceContainer`、`NotificationService` | 通过 DB outbox 发出，提高一致性 |
-| `DownloadManagerEvent` | `DownloadManager` | `Scheduler`、`NotificationService`、`ServiceContainer` 处理器 | 处理器将分段交给 `PipelineManager`，将终止结果交给 `SessionLifecycle` |
-| `SessionTransition` | `SessionLifecycle` | `ServiceContainer` 处理器、`NotificationService` | `Ended` 驱动清理与会话管道；恢复后的 `Started` 重启同一会话 |
-| `DanmuEvent` | `DanmuService` | `ServiceContainer` 处理器 | 处理器将分段配对交给 `PipelineManager`，将终止信号交给下载/会话处理 |
+| `ConfigUpdateEvent` | `ConfigService`、`StreamerManager` | `ActorRegistry`、`ServiceContainer` | 驱动 Actor 重对齐、运行时重配置与资源清理 |
+| `PostPublicationChangeSet` | `CommittedStreamerState`、`RecorderStore` | `ActorRegistry` | 严格在 `COMMIT` 与锁释放后触发 Actor 重对齐 |
+| `OutboxEvent`（SQLite Outbox） | `RecorderStore` | `NotificationOutboxDrainer` → `NotificationService` | 与状态/会话提交同事务落库，跨重启可靠投递 |
+| `DownloadManagerEvent` | `DownloadManager` | `ActorRegistry`（预留反馈 + 分段确认 + 进度）、`NotificationService` | `Started`/终止走预留许可，分段走确认式协调通道 |
+| `DanmuEvent` | `DanmuService` | `ActorRegistry`（FIFO 协调） | 按序投递给 Actor（含退出后回退）并转发至 `PipelineManager` |
+| `PipelineNotification` | `StreamerActor` / `ActorRegistry` | `PipelineManager`（经 `RecorderPipelinePort`） | 驱动分段、配对分段与会话完成 DAG |
 | `PipelineEvent` | `PipelineManager` | `NotificationService` | 作业生命周期与可观测性 |
 
 ::: tip 关于限流/节流
@@ -424,7 +401,7 @@ Healthy ◄───────────────────────
 
 - **无锁热路径**。在 Healthy 状态下，`check()` 只做一次原子加载加一次 `DashMap::get`，没有互斥锁，也没有空跑成本。
 - **基于 CAS 的单飞冷却**。当根处于 `Degraded` 时，每个冷却窗口（默认 30 秒）只允许一个调用方通过，去尝试真实的 `create_dir_all`；其他并发调用方以缓存的错误快速拒绝。这借鉴了 `CircuitBreaker` 的 half-open 模式。
-- **没有后台探测任务**。真实的 `ensure_output_dir` 调用本身就是探测——写入门复用实际的下载尝试作为探测信号。容器启动时会运行一次有界的一次性探测，以便在录制开始前发现失效的挂载点。
+- **没有后台探测任务**。真实的 `ensure_output_dir` 调用本身就是探测——写入门复用实际的下载尝试作为探测信号。容器启动时会运行一次有界的一次性探测，以便在录制开始前发现失效的挂载点。被降级根阻挡的主播在每次重试检查平台之前，都会先在该根上运行同样的临时文件写入测试（`DownloadManager::probe_output_root`，同样受冷却窗口限制），因此在根恢复可写之前不会打开会话，也不会发出开播或下播通知；写入测试成功时会把该根标记为健康。
 - **恢复钩子**。在 `Degraded → Healthy` 的切换时，写入门会清除所有因它而退避的主播的 `consecutive_error_count`、`disabled_until` 和 `last_error`（通过 `"output-root blocked:"` 前缀过滤）。所有受影响的主播会在这次状态切换时解除退避。
 - **每次状态切换只发出一条通知**。`Healthy → Degraded` 的 CAS 同时也是决定"哪个调用方负责发出 critical 级 `output_path_inaccessible` 通知"的位置——无论有多少并发主播受影响，用户只会看到一条告警。
 - **只有 `ENOSPC` 会在录制途中进入写入门**。写入器写满磁盘时，会在录制仍在进行的过程中把故障上报给写入门，使该根降级，从而对下一次启动进行限流。其他写入失败——文件系统只读、权限丢失、路径消失——会被归类为文件级故障，仍由引擎的 `CircuitBreaker` 处理；它们通过启动探测抵达写入门，只有在同时导致启动前钩子的 `create_dir_all` 失败时才会经由该钩子抵达。目录已存在但不可写时 `ensure_output_dir` 返回 `Ok`，因此启动前钩子发现不了这种情况。之所以这样划分，是因为 `OutputRootUnavailable` 不计入熔断器，对这一类故障来说写入门是唯一的限流手段。
@@ -433,10 +410,7 @@ Healthy ◄───────────────────────
 
 ## 服务所有权 {#服务所有权}
 
-已结束会话的延迟清理由会话生命周期服务持有。关闭时会取消并等待这些任务结束，
-不必等待保留时间到期；清理不会移除后续新会话的当前会话索引。API 状态复用容器中的
-仓库实例与配置导入服务。导入服务在运行时协调器创建后构造，而日志归档授权及归档
-容量控制仍属于各自的 API 状态。
+`StreamerFsm` 在内存中保留有界的 60 秒 `RecentlyEnded` 窗口用于重新归因延迟的定时结束；该窗口由 Actor 的常规期限定时器清理，并在 Actor 退出时直接释放。`AppState` 复用容器中的仓库实例、`ActorRegistry` 与 `ConfigBackupPort` 实现，而日志归档授权及归档容量控制仍属于各自的 API 状态。
 
 ## 可观测性、健康检查与优雅退出 {#可观测性、健康检查与优雅退出}
 
@@ -455,25 +429,45 @@ Healthy ◄───────────────────────
 
 ## 后端 Rust 接口 {#后端-rust-接口}
 
-主播状态的统一类型为 `rust_srec::domain::StreamerState`，包含 `ERROR` 和 `DISABLED`。数据库模型构造函数与 API 状态转换检查均使用此类型。`StreamerState::can_transition_to` 保留为状态转换校验入口；录制状态和错误退避由运行时服务持久化，不通过修改配置层的 `domain::Streamer` 实体来驱动。
+主播状态的统一类型为 `srec_core::domain::StreamerState`，包含 `ERROR` 和 `DISABLED`。数据库模型构造函数与 API 状态转换检查均使用此类型。`StreamerState::can_transition_to` 保留为状态转换校验入口；录制状态和错误退避由运行时服务持久化，不通过修改配置层的 `domain::Streamer` 实体来驱动。
 
-会话和媒体数据使用 `database::models` 中的持久化模型；磁盘状态分类使用 `HealthChecker::check_disk_space_with_thresholds`。主播仓库保留 `list_streamers`（排除已标记删除的记录）和 `list_all_streamers`（包含这些记录，以便启动时完成退出与清理）。
+会话和媒体数据使用 `srec_sqlite::models` 中的持久化模型；磁盘状态分类使用 `HealthChecker::check_disk_space_with_thresholds`。主播仓库保留 `list_streamers`（排除已标记删除的记录）和 `list_all_streamers`（包含这些记录，以便启动时完成退出与清理）。
 
-工作流状态转换统一由 `pipeline::DagScheduler` 决定：Worker 通过 `on_job_attempt_completed` 或 `on_job_attempt_failed` 上报任务结果，由调度器决定该次尝试是重试、失败还是忽略；管理器通过 `retry_dag` 重试工作流，校验、重置、重启和回放都在这一个入口内完成。`DagRepository` 继续持有让每次转换持久化的受保护的事务，并提供 `list_ready_steps` 作为与完成事务共用的唯一就绪规则。
+工作流状态转换统一由 `srec_pipeline::DagScheduler` 决定：Worker 通过 `on_job_attempt_completed` 或 `on_job_attempt_failed` 上报任务结果，由调度器决定该次尝试是重试、失败还是忽略；管理器通过 `retry_dag` 重试工作流，校验、重置、重启和回放都在这一个入口内完成。`DagRepository` 继续持有让每次转换持久化的受保护的事务，并提供 `list_ready_steps` 作为与完成事务共用的唯一就绪规则。
 
 ### Actor 终止与唤醒策略 {#actor-终止与唤醒策略}
 
-Actor 的邮箱执行、单次检查、可靠反馈、终止决定及在线唤醒决定分别位于独立模块。
-只有明确的主播下播终止策略才向 monitor 提交 Offline。正常完成、用户停止和未知停止
-原因恢复状态核验；应用关闭和禁用则暂停轮询。基础设施阻断保留其持久化及重试规则，
-反馈确认在副作用应用完成后发送。
+`StreamerFsm` 将探测处理、下载尝试、提交对账、凭据恢复、滞后窗口、调度计算、分段跟踪与停止协调拆分到
+`srec-recorder/src/recorder/fsm/` 下的独立子模块。只有权威的下播信号（`StreamerOffline` 或 HLS `#EXT-X-ENDLIST`）
+会立即结束会话；干净断连和可恢复停止会进入静默期以吸收重连，应用关闭和禁用则暂停轮询（`Shutdown` 保留数据库会话供重启恢复，
+`Disable` 与 `Retire` 则关闭会话）。
 
-显式检查期限优先于在线 watchdog。在线且未安排检查的 actor，先选择 watchdog、
-心跳停滞及时间窗口边界中的最早唤醒时间，再应用失败 watchdog 的最小重试间隔。
-周期轮询保留 ±10% 抖动；智能唤醒、准入与立即检查期限继续保有各自约束。
+显式检查期限优先于在线 watchdog。在线 Actor 的 watchdog、5 分钟停滞窗口或时间窗口边界唤醒中最早的一个，
+会受 60 秒失败 watchdog 最小重试间隔下界约束。周期轮询保留 ±10% 抖动；智能唤醒、准入与立即检查期限继续保有各自约束。
 
-用户停止表示为 `DownloadEndPolicy::Stopped(DownloadStopCause::User)`，携带线上的停止原因。
-`StreamerActor` 和 `Supervisor` 的元数据存储
-构造参数使用 `Arc<StreamerMetadata>` 值。应通过 `StreamerManager` 获取共享
-存储；actor 检查克隆不可变的 Arc 快照，而不是复制配置 JSON。`StatusChecker` 接收借用的
-元数据输入，是调度器唯一的状态检查接口。
+`StreamerActor` 与 `ActorRegistry` 从 `StreamerManager` 读取不可变的 `Arc<StreamerMetadata>` 快照并通过 `ConfigService` 解析合并配置，
+`RecorderProber` 统一负责去重后的状态与时效探测。
+
+<div id="runtimecoordinator-录制启动与取消" class="legacy-section">
+
+此节内容已移至[录制启动与取消](#录制启动与取消)。
+
+</div>
+
+<div id="scheduler-actor-模型编排-调度" class="legacy-section">
+
+此节内容已移至[ActorRegistry 与 StreamerActor](#录制控制面)。
+
+</div>
+
+<div id="streammonitor-探测-过滤-outbox" class="legacy-section">
+
+此节内容已移至[RecorderProber 与 RecorderStore](#探测与持久化存储)。
+
+</div>
+
+<div id="sessionlifecycle-会话状态的唯一所有者" class="legacy-section">
+
+此节内容已移至[StreamerFsm](#streamerfsm-状态机)。
+
+</div>
