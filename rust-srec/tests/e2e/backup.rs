@@ -1215,6 +1215,32 @@ async fn backups_carry_account_selections_through_replace_and_merge_imports() {
     app.shutdown().await;
 }
 
+/// A bundle may carry a streamer's settings as a JSON string, which
+/// validation accepts. The import must keep those settings.
+#[tokio::test]
+#[ignore = "bug: the credential bundle upgrade reads a string-encoded streamer_specific_config as empty, dropping its settings and any account selection in it"]
+async fn known_bug_an_import_keeps_streamer_settings_written_as_a_json_string() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    app.disabled_streamer(&token, "Encoded", "https://www.huya.com/440088")
+        .await;
+    let mut bundle = export(&app, &token).await;
+    streamer_named(&mut bundle, "Encoded")["streamer_specific_config"] =
+        json!(json!({ "record_danmu": false }).to_string());
+    import(&app, &token, &bundle, "merge")
+        .await
+        .expect_status(StatusCode::OK);
+    let token = sign_in_again(&app, ADMIN_PASSWORD).await;
+
+    let mut exported = export(&app, &token).await;
+    assert_eq!(
+        streamer_named(&mut exported, "Encoded")["streamer_specific_config"],
+        json!({ "record_danmu": false })
+    );
+
+    app.shutdown().await;
+}
+
 /// A rejected import changes nothing and ends no session; a successful one
 /// then ends every session.
 #[tokio::test]
