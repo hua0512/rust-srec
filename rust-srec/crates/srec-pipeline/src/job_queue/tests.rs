@@ -140,10 +140,9 @@ async fn terminal_cursor_cleanup_does_not_split_log_write_lock() {
 /// row still existing.
 #[tokio::test]
 async fn test_resolve_job_metadata_persists_backfilled_state() {
-    let dir = tempfile::TempDir::new().unwrap();
-    let db_path = dir.path().join("job_queue_test.db");
-    let db_url = format!("sqlite:{}?mode=rwc", db_path.to_string_lossy());
-    let pool = srec_sqlite::init_pool(&db_url).await.unwrap();
+    let pool = srec_sqlite::init_pool_with_size("sqlite::memory:", 1)
+        .await
+        .unwrap();
     srec_sqlite::run_migrations(&pool).await.unwrap();
 
     // Satisfy the live_sessions -> streamers -> platform_config FK chain.
