@@ -177,6 +177,12 @@ async fn a_drm_protected_broadcast_is_not_retried_and_the_next_one_records() {
     .await;
     assert_eq!(cdn.requests_to(&protected).len(), 1);
     assert_eq!(app.sessions(&token, &id).await.len(), 1);
+    let still_refused = app.streamer(&token, &id).await;
+    assert_eq!(
+        still_refused["consecutive_error_count"], 1,
+        "{still_refused}"
+    );
+    assert_eq!(still_refused["state"], "NOT_LIVE", "{still_refused}");
 
     // The check that finds the broadcast over clears the error.
     room.set_offline();

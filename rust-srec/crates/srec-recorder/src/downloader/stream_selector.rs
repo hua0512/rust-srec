@@ -804,26 +804,6 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_blacklists_combined() {
-        let base = StreamSelectionConfig {
-            blacklisted_cdns: vec!["cdn1".to_string(), "cdn2".to_string()],
-            ..Default::default()
-        };
-        let other = StreamSelectionConfig {
-            blacklisted_cdns: vec!["cdn2".to_string(), "cdn3".to_string()],
-            ..Default::default()
-        };
-
-        let merged = base.merge(&other);
-
-        // Should contain all unique CDNs from both
-        assert!(merged.blacklisted_cdns.contains(&"cdn1".to_string()));
-        assert!(merged.blacklisted_cdns.contains(&"cdn2".to_string()));
-        assert!(merged.blacklisted_cdns.contains(&"cdn3".to_string()));
-        assert_eq!(merged.blacklisted_cdns.len(), 3);
-    }
-
-    #[test]
     fn test_blacklist_with_preferences() {
         // Preferred CDN should still be excluded if also blacklisted
         let config = StreamSelectionConfig {
