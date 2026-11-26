@@ -410,7 +410,7 @@ async fn new_session(app: &TestApp, token: &str, streamer_id: &str, count: usize
 /// a second session, only the second ends as a user stop.
 ///
 /// The offline check comes well inside the quiet period after the body
-/// ends (4 s against 8 s); a quiet period that ran out first would end the
+/// ends (2 s against 4 s); a quiet period that ran out first would end the
 /// session as `completed`, a cause a disable soon after may take over.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn disabling_ends_only_the_current_session_as_a_user_stop() {
@@ -419,7 +419,7 @@ async fn disabling_ends_only_the_current_session_as_a_user_stop() {
     over.set_live(over.live("Only broadcast"));
     let again = fake.room("again");
     again.set_live(again.live("First broadcast"));
-    let app = TestApp::start_with(Seed::live().global("offline_check_delay_ms", 4_000)).await;
+    let app = TestApp::start_with(Seed::live().global("offline_check_delay_ms", 2_000)).await;
     let token = app.admin_token().await;
     let over_id = app.watch(&token, "Over", &over, Value::Null).await;
     let again_id = app.watch(&token, "Again", &again, Value::Null).await;
