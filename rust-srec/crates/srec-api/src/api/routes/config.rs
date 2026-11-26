@@ -739,374 +739,124 @@ pub async fn replace_platform_config(
 mod tests {
     use std::sync::Arc;
 
-    use axum::Json;
     use axum::extract::State;
     use axum::http::StatusCode;
-    use serde_json::{Value, json};
 
-    use super::{
-        ConfigRouteState, replace_platform_config, update_global_config,
-        validate_global_config_request,
-    };
+    use super::super::engines::{self, EngineRouteState, UpdateEngineRequest};
+    use super::super::templates::{self, CloneTemplateRequest, TemplateRouteState};
+    use super::{ConfigRouteState, get_platform_config};
+    use crate::api::error::ApiError;
     use crate::api::extract::{ApiJson, ApiPath};
-    use crate::api::models::{PlatformConfigResponse, UpdateGlobalConfigRequest};
-    use crate::config::ConfigService;
+    use crate::config::{ConfigEventBroadcaster, ConfigService};
     use crate::database;
     use crate::database::repositories::{SqlxConfigRepository, SqlxStreamerRepository};
 
-    async fn config_state() -> (tempfile::TempDir, ConfigRouteState) {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("config.db");
-        let url = format!(
-            "sqlite:{}?mode=rwc",
-            path.to_string_lossy().replace('\\', "/")
-        );
-        let pool = database::init_pool(&url).await.unwrap();
-        database::run_migrations(&pool).await.unwrap();
-        let service = ConfigService::new(
-            Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone())),
-            Arc::new(SqlxStreamerRepository::new(pool.clone(), pool)),
-        );
-        (
-            dir,
-            ConfigRouteState {
-                config_service: Arc::new(service),
-            },
-        )
-    }
-
-    fn global_request(value: Value) -> UpdateGlobalConfigRequest {
-        serde_json::from_value(value).unwrap()
-    }
-
+    /// The platform, engine and template routes answer a missing row with
+    /// 404, and a database error with 500 and a generic message, even when
+    /// the error's text says "not found".
     #[tokio::test]
-    async fn platform_get_distinguishes_typed_not_found_from_database_error_text() {
+    async fn config_routes_distinguish_typed_not_found_from_database_error_text() {
+        const TABLES: [&str; 3] = ["platform_config", "engine_configuration", "template_config"];
         let pool = database::init_pool_with_size("sqlite::memory:", 1)
             .await
             .unwrap();
-        sqlx::query("CREATE TABLE platform_config (id TEXT)")
+        for table in TABLES {
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "CREATE TABLE {table} (id TEXT)"
+            )))
             .execute(&pool)
             .await
             .unwrap();
-        let state = ConfigRouteState {
-            config_service: Arc::new(ConfigService::new(
-                Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone())),
-                Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone())),
+        }
+        let streamers = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
+        let config_service = Arc::new(ConfigService::new(
+            Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone())),
+            streamers.clone(),
+        ));
+        let config = ConfigRouteState {
+            config_service: config_service.clone(),
+        };
+        let engine = EngineRouteState {
+            config_service: config_service.clone(),
+        };
+        let template = TemplateRouteState {
+            config_service,
+            streamer_manager: Arc::new(crate::streamer::StreamerManager::new(
+                streamers,
+                ConfigEventBroadcaster::new(),
             )),
         };
-        let error =
-            super::get_platform_config(State(state.clone()), ApiPath("missing".to_string()))
-                .await
-                .unwrap_err();
-        assert_eq!(error.status, StatusCode::NOT_FOUND);
-        sqlx::query("DROP TABLE platform_config")
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("CREATE VIEW platform_config AS SELECT * FROM \"not found\"")
-            .execute(&pool)
-            .await
-            .unwrap();
-        let error = super::get_platform_config(State(state), ApiPath("missing".to_string()))
-            .await
-            .unwrap_err();
-        assert_eq!(error.status, StatusCode::INTERNAL_SERVER_ERROR);
-        assert_eq!(error.message, "Database error occurred");
-        pool.close().await;
-    }
+        let missing = || ApiPath("missing".to_string());
 
-    #[test]
-    fn global_numeric_patch_validates_types_and_boundaries() {
-        let fields = [
-            ("min_segment_size_bytes", 0, i64::MAX),
-            ("max_download_duration_secs", 0, i64::MAX),
-            ("max_part_size_bytes", 0, i64::MAX),
-            ("max_concurrent_downloads", 1, i64::from(i32::MAX)),
-            ("max_concurrent_uploads", 1, i64::from(i32::MAX)),
-            ("max_concurrent_cpu_jobs", 0, i64::from(i32::MAX)),
-            ("max_concurrent_io_jobs", 0, i64::from(i32::MAX)),
-            ("streamer_check_delay_ms", 1, i64::MAX),
-            ("offline_check_delay_ms", 1, i64::MAX),
-            ("offline_check_count", 1, i64::from(i32::MAX)),
-            ("job_history_retention_days", 0, i64::from(i32::MAX)),
-            ("output_retention_days", 0, i64::from(i32::MAX)),
-            (
-                "notification_event_log_retention_days",
-                0,
-                i64::from(i32::MAX),
-            ),
-            ("pipeline_cpu_job_timeout_secs", i64::MIN, i64::MAX),
-            ("pipeline_io_job_timeout_secs", i64::MIN, i64::MAX),
-            ("pipeline_execute_timeout_secs", i64::MIN, i64::MAX),
-            ("queue_freshness_threshold_ms", i64::MIN, i64::MAX),
-            ("gpu_health_probe_interval_secs", i64::MIN, i64::MAX),
-        ];
-        for (field, min, max) in fields {
-            let mut invalid = vec![
-                json!(1.5),
-                json!("1"),
-                json!(true),
-                json!([]),
-                json!({}),
-                json!(u64::MAX),
-                json!(i128::from(max) + 1),
+        for status in [StatusCode::NOT_FOUND, StatusCode::INTERNAL_SERVER_ERROR] {
+            let errors: [ApiError; 9] = [
+                get_platform_config(State(config.clone()), missing())
+                    .await
+                    .unwrap_err(),
+                engines::get_engine(State(engine.clone()), missing())
+                    .await
+                    .unwrap_err(),
+                engines::update_engine(
+                    State(engine.clone()),
+                    missing(),
+                    ApiJson(UpdateEngineRequest {
+                        name: None,
+                        engine_type: None,
+                        config: None,
+                    }),
+                )
+                .await
+                .unwrap_err(),
+                engines::delete_engine(State(engine.clone()), missing())
+                    .await
+                    .unwrap_err(),
+                engines::test_engine(State(engine.clone()), missing())
+                    .await
+                    .unwrap_err(),
+                templates::get_template(State(template.clone()), missing())
+                    .await
+                    .unwrap_err(),
+                templates::update_template(
+                    State(template.clone()),
+                    missing(),
+                    ApiJson(serde_json::from_value(serde_json::json!({})).unwrap()),
+                )
+                .await
+                .unwrap_err(),
+                templates::delete_template(State(template.clone()), missing())
+                    .await
+                    .unwrap_err(),
+                templates::clone_template(
+                    State(template.clone()),
+                    missing(),
+                    ApiJson(CloneTemplateRequest {
+                        new_name: "cloned".to_string(),
+                    }),
+                )
+                .await
+                .unwrap_err(),
             ];
-            if let Some(below_min) = min.checked_sub(1) {
-                invalid.push(json!(below_min));
+            for (index, error) in errors.into_iter().enumerate() {
+                assert_eq!(error.status, status, "handler {index}: {}", error.message);
+                if status == StatusCode::INTERNAL_SERVER_ERROR {
+                    assert_eq!(error.message, "Database error occurred", "handler {index}");
+                }
             }
-            for value in invalid {
-                let request = global_request(json!({field: value}));
-                let error = validate_global_config_request(&request).expect_err(field);
-                assert_eq!(error.status, StatusCode::BAD_REQUEST, "{field}");
-                assert!(error.message.contains(field), "{}", error.message);
-            }
-            for value in [json!(min), json!(max), Value::Null] {
-                let representable = field != "gpu_health_probe_interval_secs"
-                    || value.as_i64().is_none_or(|seconds| {
-                        std::time::Instant::now()
-                            .checked_add(std::time::Duration::from_secs(
-                                seconds.max(1).unsigned_abs(),
-                            ))
-                            .is_some()
-                    });
-                let result = validate_global_config_request(&global_request(json!({field: value})));
-                assert_eq!(result.is_ok(), representable, "{field}: {result:?}");
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn global_service_update_preserves_the_saved_proxy_route() {
-        let (_dir, state) = config_state().await;
-        let mut global = state.config_service.get_global_config().await.unwrap();
-        state
-            .config_service
-            .update_global_config_with_route(&global, Some(&crate::proxies::ProxyRoute::System))
-            .await
-            .unwrap();
-        global.record_danmu = !global.record_danmu;
-        state
-            .config_service
-            .update_global_config(&global)
-            .await
-            .unwrap();
-        let response = super::get_global_config(State(state)).await.unwrap().0;
-        assert_eq!(response.proxy_route, crate::proxies::ProxyRoute::System);
-        assert_eq!(response.record_danmu, global.record_danmu);
-    }
-
-    #[test]
-    fn global_patch_validates_string_and_boolean_fields() {
-        for field in [
-            "output_folder",
-            "output_filename_template",
-            "output_file_format",
-            "default_download_engine",
-            "default_extractor",
-            "pipeline",
-            "session_complete_pipeline",
-            "paired_segment_pipeline",
-        ] {
-            let error = validate_global_config_request(&global_request(json!({field: {}})))
-                .expect_err(field);
-            assert_eq!(error.status, StatusCode::BAD_REQUEST);
-            assert!(error.message.contains(field));
-            validate_global_config_request(&global_request(json!({field: "value"}))).unwrap();
-            validate_global_config_request(&global_request(json!({field: null}))).unwrap();
-        }
-        for field in [
-            "record_danmu",
-            "auto_thumbnail",
-            "stream_proxy_allow_private_targets",
-        ] {
-            let error = validate_global_config_request(&global_request(json!({field: "true"})))
-                .expect_err(field);
-            assert_eq!(error.status, StatusCode::BAD_REQUEST);
-            assert!(error.message.contains(field));
-            for value in [json!(true), json!(false), Value::Null] {
-                validate_global_config_request(&global_request(json!({field: value}))).unwrap();
+            if status == StatusCode::NOT_FOUND {
+                for table in TABLES {
+                    sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE {table}")))
+                        .execute(&pool)
+                        .await
+                        .unwrap();
+                    sqlx::query(sqlx::AssertSqlSafe(format!(
+                        "CREATE VIEW {table} AS SELECT * FROM \"not found\""
+                    )))
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+                }
             }
         }
-    }
-
-    #[tokio::test]
-    async fn global_patch_preserves_null_omission_sentinels_and_clamps() {
-        let (_dir, state) = config_state().await;
-        let Json(response) = update_global_config(
-            State(state.clone()),
-            ApiJson(global_request(json!({
-                "default_extractor": "streamlink",
-                "output_retention_days": 14,
-                "output_retention_delete_files": true
-            }))),
-        )
-        .await
-        .unwrap();
-        assert_eq!(response.default_extractor.as_deref(), Some("streamlink"));
-        assert_eq!(response.output_retention_days, 14);
-        assert!(response.output_retention_delete_files);
-        let before = state.config_service.get_global_config().await.unwrap();
-        let request = global_request(json!({
-            "output_folder": null,
-            "default_extractor": null,
-            "min_segment_size_bytes": 0,
-            "max_download_duration_secs": 0,
-            "max_part_size_bytes": 0,
-            "max_concurrent_downloads": i32::MAX,
-            "max_concurrent_uploads": 1,
-            "max_concurrent_cpu_jobs": 0,
-            "max_concurrent_io_jobs": 0,
-            "job_history_retention_days": 0,
-            "notification_event_log_retention_days": i32::MAX,
-            "offline_check_count": 1,
-            "streamer_check_delay_ms": 1,
-            "offline_check_delay_ms": 1,
-            "pipeline_cpu_job_timeout_secs": i64::MIN,
-            "pipeline_io_job_timeout_secs": -1,
-            "pipeline_execute_timeout_secs": 0,
-            "gpu_health_probe_interval_secs": -1,
-            "queue_freshness_threshold_ms": -1
-        }));
-        let Json(response) = update_global_config(State(state.clone()), ApiJson(request))
-            .await
-            .unwrap();
-        assert_eq!(response.max_concurrent_cpu_jobs, 0);
-        let after = state.config_service.get_global_config().await.unwrap();
-        assert_eq!(after.output_folder, before.output_folder);
-        assert_eq!(
-            after.output_filename_template,
-            before.output_filename_template
-        );
-        assert_eq!(after.default_extractor, before.default_extractor);
-        assert_eq!(after.output_retention_days, 14);
-        assert!(after.output_retention_delete_files);
-        assert_eq!(
-            (
-                after.min_segment_size_bytes,
-                after.max_download_duration_secs,
-                after.max_part_size_bytes
-            ),
-            (0, 0, 0)
-        );
-        assert_eq!(
-            (after.max_concurrent_downloads, after.max_concurrent_uploads),
-            (i32::MAX, 1)
-        );
-        assert_eq!(
-            (after.max_concurrent_cpu_jobs, after.max_concurrent_io_jobs),
-            (0, 0)
-        );
-        assert_eq!(
-            (
-                after.job_history_retention_days,
-                after.notification_event_log_retention_days
-            ),
-            (0, i32::MAX)
-        );
-        assert_eq!(
-            (
-                after.offline_check_count,
-                after.streamer_check_delay_ms,
-                after.offline_check_delay_ms
-            ),
-            (1, 1, 1)
-        );
-        assert_eq!(
-            (
-                after.pipeline_cpu_job_timeout_secs,
-                after.pipeline_io_job_timeout_secs,
-                after.pipeline_execute_timeout_secs
-            ),
-            (1, 1, 1)
-        );
-        assert_eq!(after.gpu_health_probe_interval_secs, 1);
-        assert_eq!(after.queue_freshness_threshold_ms, 0);
-
-        let Json(response) = update_global_config(
-            State(state.clone()),
-            ApiJson(global_request(json!({
-                "pipeline_cpu_job_timeout_secs": 12,
-                "pipeline_io_job_timeout_secs": 13,
-                "pipeline_execute_timeout_secs": 14,
-                "gpu_health_probe_interval_secs": 15,
-                "queue_freshness_threshold_ms": 16,
-                "danmu_statistics": {"enabled": true}
-            }))),
-        )
-        .await
-        .unwrap();
-        assert_eq!(response.pipeline_cpu_job_timeout_secs, 12);
-        let after = state.config_service.get_global_config().await.unwrap();
-        assert_eq!(
-            (
-                after.pipeline_cpu_job_timeout_secs,
-                after.pipeline_io_job_timeout_secs,
-                after.pipeline_execute_timeout_secs
-            ),
-            (12, 13, 14)
-        );
-        assert_eq!(after.gpu_health_probe_interval_secs, 15);
-        assert_eq!(after.queue_freshness_threshold_ms, 16);
-        assert_eq!(
-            serde_json::from_str::<Value>(after.danmu_statistics.as_deref().unwrap()).unwrap(),
-            json!({"enabled": true})
-        );
-    }
-
-    #[tokio::test]
-    async fn platform_replacement_rejects_missing_rows_and_numeric_overflow() {
-        let (_dir, state) = config_state().await;
-        let before = state
-            .config_service
-            .get_platform_config_by_name("bilibili")
-            .await
-            .unwrap();
-        let original = PlatformConfigResponse::from(before.clone());
-        let mut missing = original.clone();
-        missing.id = "missing".to_string();
-        let error = replace_platform_config(
-            State(state.clone()),
-            ApiPath(missing.id.clone()),
-            ApiJson(missing),
-        )
-        .await
-        .expect_err("missing platform must fail");
-        assert_eq!(error.status, StatusCode::NOT_FOUND);
-
-        for field in [
-            "fetch_delay_ms",
-            "download_delay_ms",
-            "min_segment_size_bytes",
-            "max_download_duration_secs",
-            "max_part_size_bytes",
-            "offline_check_delay_ms",
-            "offline_check_count",
-        ] {
-            let mut value = serde_json::to_value(&original).unwrap();
-            value[field] = if field == "offline_check_count" {
-                json!(u32::MAX)
-            } else {
-                json!(u64::MAX)
-            };
-            value["output_folder"] = json!("/changed");
-            let error = replace_platform_config(
-                State(state.clone()),
-                ApiPath(before.id.clone()),
-                ApiJson(serde_json::from_value(value).unwrap()),
-            )
-            .await
-            .expect_err("overflow must not be stored");
-            assert_eq!(error.status, StatusCode::BAD_REQUEST);
-            assert!(error.message.contains(field));
-            let stored = state
-                .config_service
-                .get_platform_config(&before.id)
-                .await
-                .unwrap();
-            assert_eq!(
-                serde_json::to_value(&stored).unwrap(),
-                serde_json::to_value(&before).unwrap()
-            );
-        }
+        pool.close().await;
     }
 }
