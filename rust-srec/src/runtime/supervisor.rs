@@ -999,7 +999,13 @@ mod tests {
 
         let directory = tempfile::tempdir().expect("runtime state directory");
         let marker_path = directory.path().join("runtime.dirty");
-        let policy = ShutdownPolicy::new(Duration::from_secs(4), Duration::from_secs(2))
+        // The signal arrives before the worker process has started, so the
+        // graceful window also covers launching the test binary, which a
+        // stalled CI runner can stretch past several seconds. The supervisor
+        // returns as soon as the worker exits, so the 28 s window costs nothing
+        // when the worker answers, and a worker that ignores SHUTDOWN is still
+        // force-contained.
+        let policy = ShutdownPolicy::new(Duration::from_secs(30), Duration::from_secs(2))
             .expect("valid shutdown policy");
         let command = test_worker_command(
             "runtime::supervisor::tests::clean_contained_worker_clears_its_dirty_marker",
