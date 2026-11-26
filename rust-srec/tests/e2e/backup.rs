@@ -931,17 +931,22 @@ async fn merge_keeps_and_replace_removes_omitted_streamers_and_a_case_only_url_u
     expected.sort_unstable_by(|a, b| a.0.cmp(&b.0));
     assert_eq!(urls, expected);
 
-    let mut no_admin = bundle.clone();
-    for user in no_admin["users"].as_array_mut().expect("users") {
-        user["is_active"] = json!(false);
+    // A replace must keep an active admin: an inactive admin and an active
+    // user without the role both fail.
+    for (is_active, role) in [(false, "admin"), (true, "user")] {
+        let mut no_admin = bundle.clone();
+        for user in no_admin["users"].as_array_mut().expect("users") {
+            user["is_active"] = json!(is_active);
+            user["roles"] = json!([role]);
+        }
+        let rejected = import(&app, &token, &no_admin, "replace")
+            .await
+            .expect_status(StatusCode::BAD_REQUEST);
+        assert_eq!(rejected.error_code(), Some("BAD_REQUEST"));
+        let message = rejected.body["message"].as_str().expect("message");
+        assert!(message.contains("'admin' role"), "{role}: {message}");
+        assert_eq!(listed_streamers(&app, &token).await.len(), 2);
     }
-    let rejected = import(&app, &token, &no_admin, "replace")
-        .await
-        .expect_status(StatusCode::BAD_REQUEST);
-    assert_eq!(rejected.error_code(), Some("BAD_REQUEST"));
-    let message = rejected.body["message"].as_str().expect("message");
-    assert!(message.contains("'admin' role"), "{message}");
-    assert_eq!(listed_streamers(&app, &token).await.len(), 2);
 
     let replaced = import(&app, &token, &bundle, "replace")
         .await
@@ -996,7 +1001,7 @@ async fn a_rejected_import_changes_nothing_and_a_successful_one_ends_every_sessi
         })
     };
     type Corrupt = Box<dyn Fn(&mut Value)>;
-    let cases: [(&str, Corrupt, &str); 10] = [
+    let cases: [(&str, Corrupt, &str); 16] = [
         (
             "invalid log filter directive",
             Box::new(|bundle| {
@@ -1074,6 +1079,54 @@ async fn a_rejected_import_changes_nothing_and_a_successful_one_ends_every_sessi
             "Mars/Olympus_Mons",
         ),
         (
+            "invalid cron timezone",
+            Box::new(|bundle| {
+                streamer_named(bundle, "Stable")["filters"] = json!([{
+                    "filter_type": "CRON",
+                    "config": { "expression": "0 * * * * *", "timezone": "invalid/zone" },
+                }])
+            }),
+            "Invalid timezone",
+        ),
+        (
+            "plaintext password hash",
+            Box::new(|bundle| bundle["users"][0]["password_hash"] = json!("plaintext-password")),
+            "Invalid password hash",
+        ),
+        (
+            "scrypt password hash",
+            Box::new(|bundle| {
+                bundle["users"][0]["password_hash"] = json!(concat!(
+                    "$scrypt$ln=17,r=8,p=1$c2FsdHNhbHRzYWx0c2FsdA$",
+                    "TiYF50X49Bmdr2XJZ6yBn4ozsFFV8gGZJIXZ3Jg9pWg"
+                ))
+            }),
+            "must use Argon2id",
+        ),
+        (
+            "username longer than sign-in accepts",
+            Box::new(|bundle| bundle["users"][0]["username"] = json!("a".repeat(129))),
+            "exceeds 128 characters",
+        ),
+        (
+            "account selection hidden in a string before schema 1.0.0",
+            Box::new(|bundle| {
+                bundle["version"] = json!("0.1.7");
+                streamer_named(bundle, "Stable")["streamer_specific_config"] =
+                    json!(r#"{"credential_selection":{"mode":"inherit"}}"#);
+            }),
+            "Managed credentials require backup schema 1.0.0",
+        ),
+        (
+            "null account selection",
+            Box::new(|bundle| {
+                bundle["version"] = json!("1.0.0");
+                streamer_named(bundle, "Stable")["streamer_specific_config"] =
+                    json!({ "credential_selection": null });
+            }),
+            "invalid credential selection",
+        ),
+        (
             "retiring URL",
             Box::new(move |bundle| {
                 bundle["streamers"]
@@ -1085,8 +1138,8 @@ async fn a_rejected_import_changes_nothing_and_a_successful_one_ends_every_sessi
         ),
         (
             "unsupported version",
-            Box::new(|bundle| bundle["version"] = json!("2.0.0")),
-            "2.0.0",
+            Box::new(|bundle| bundle["version"] = json!("1.1.0")),
+            "1.1.0",
         ),
     ];
     for (case, corrupt, message) in cases {
@@ -1153,6 +1206,13 @@ async fn a_rejected_import_changes_nothing_and_a_successful_one_ends_every_sessi
     );
     let mut bundle = baseline;
     bundle["users"][0]["must_change_password"] = json!(true);
+    // The username limit counts characters: 128 of these take 384 bytes.
+    let mut wide = bundle["users"][0].clone();
+    wide["id"] = json!("wide-user");
+    wide["username"] = json!("用".repeat(128));
+    wide["email"] = Value::Null;
+    wide["roles"] = json!(["user"]);
+    bundle["users"].as_array_mut().expect("users").push(wide);
     import(&app, &fresh_access, &bundle, "merge")
         .await
         .expect_status(StatusCode::OK);
