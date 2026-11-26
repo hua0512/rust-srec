@@ -236,15 +236,13 @@ const JSON_STATS_ARGS: [&str; 8] = [
     "--stats-one-line",
 ];
 
-/// Bounds rclone's internal retries per transfer process. `--retries 1` limits
-/// each process to a single pass so either the workflow step's retry policy or
-/// the processor's own `max_retries` loop owns transfer-level retries and every
-/// pass appears in job progress. `--low-level-retries 3` keeps enough
-/// request-level retries to absorb brief network or chunk hiccups without
-/// letting sustained rate limits stall an upload worker for an hour
-/// re-uploading data. Placed before `extra_args` so a preset can still
-/// override either flag.
-const TRANSFER_RETRY_ARGS: [&str; 4] = ["--retries", "1", "--low-level-retries", "3"];
+/// Limits each transfer process to one pass so either the workflow step's
+/// retry policy or the processor's own `max_retries` loop owns transfer-level
+/// retries and every pass appears in job progress. Request-level retries
+/// (`--low-level-retries`) stay at rclone's default (10) so brief network or
+/// chunk hiccups do not abort a large upload. Placed before `extra_args` so a
+/// preset can still override `--retries`.
+const SINGLE_PASS_ARGS: [&str; 2] = ["--retries", "1"];
 
 /// Retryability classification for a failed rclone invocation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -992,7 +990,6 @@ impl RcloneProcessor {
             (class, error)
         })?;
         cmd.args(["--use-json-log", "--log-level", "NOTICE"]);
-        cmd.args(TRANSFER_RETRY_ARGS);
         cmd.args(["mkdir", target]);
         // Extra args can carry backend flags (e.g. a root folder ID) that
         // change which directory the path names, so they apply here too.
@@ -1142,7 +1139,7 @@ impl RcloneProcessor {
 
             let mut cmd = self.command(execution)?;
             cmd.args(JSON_STATS_ARGS);
-            cmd.args(TRANSFER_RETRY_ARGS);
+            cmd.args(SINGLE_PASS_ARGS);
             cmd.args([cmd_op, input_path, remote_destination]);
 
             // Throughput flags first, so any duplicates in `extra_args` win.
@@ -1371,7 +1368,7 @@ impl RcloneProcessor {
             let files_from_path_str = files_from_path.to_string_lossy().to_string();
             let mut cmd = self.command(execution)?;
             cmd.args(JSON_STATS_ARGS);
-            cmd.args(TRANSFER_RETRY_ARGS);
+            cmd.args(SINGLE_PASS_ARGS);
             cmd.args([
                 "--files-from",
                 &files_from_path_str,

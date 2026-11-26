@@ -1016,10 +1016,6 @@ async fn mkdir_uses_transfer_flags_and_covers_nested_batch_directories() {
             "--use-json-log",
             "--log-level",
             "NOTICE",
-            "--retries",
-            "1",
-            "--low-level-retries",
-            "3",
             "mkdir",
             "remote:records/day",
             "--transfers",
@@ -1165,10 +1161,7 @@ async fn single_copy_passes_json_stats_flags() {
     assert!(!args.iter().any(|arg| arg == "--stats-one-line-date"));
     assert!(args.iter().any(|arg| arg == "copyto"));
     assert!(args.windows(2).any(|pair| pair == ["--retries", "1"]));
-    assert!(
-        args.windows(2)
-            .any(|pair| pair == ["--low-level-retries", "3"])
-    );
+    assert!(!args.iter().any(|arg| arg == "--low-level-retries"));
 }
 
 #[tokio::test]
@@ -1206,10 +1199,7 @@ async fn batch_copy_passes_json_stats_flags() {
     assert!(!args.iter().any(|arg| arg == "--stats-one-line-date"));
     assert!(args.iter().any(|arg| arg == "--files-from"));
     assert!(args.windows(2).any(|pair| pair == ["--retries", "1"]));
-    assert!(
-        args.windows(2)
-            .any(|pair| pair == ["--low-level-retries", "3"])
-    );
+    assert!(!args.iter().any(|arg| arg == "--low-level-retries"));
 }
 
 #[tokio::test]
