@@ -2433,8 +2433,38 @@ impl ActorRegistry {
         actor: StreamerActor,
         handle: ActorHandle,
     ) {
-        let (exit_tx, exit_rx) = watch::channel(false);
         let trace = actor.trace();
+        self.supervise_run_for_test(streamer_id, generation, handle, trace, actor.run());
+    }
+
+    /// Install a resident actor for `streamer_id` that panics as soon as it
+    /// runs, under the same supervision as `spawn_actor`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn supervise_panicking_actor_for_test(
+        self: &Arc<Self>,
+        streamer_id: &str,
+        generation: u64,
+    ) {
+        async fn panic_on_start() -> ActorStopReason {
+            panic!("injected actor panic")
+        }
+        let (handle, _inbox) = ActorHandle::detached_for_test();
+        let trace = Arc::new(Mutex::new(InputTrace::empty(generation)));
+        self.supervise_run_for_test(streamer_id, generation, handle, trace, panic_on_start());
+    }
+
+    /// Install `handle` as `streamer_id`'s resident actor while `run` stands
+    /// in for its loop, with `spawn_actor`'s exit handling.
+    #[cfg(any(test, feature = "test-support"))]
+    fn supervise_run_for_test(
+        self: &Arc<Self>,
+        streamer_id: &str,
+        generation: u64,
+        handle: ActorHandle,
+        trace: Arc<Mutex<InputTrace>>,
+        run: impl std::future::Future<Output = ActorStopReason> + Send + 'static,
+    ) {
+        let (exit_tx, exit_rx) = watch::channel(false);
         self.actors.insert(
             streamer_id.to_owned(),
             ActorEntry {
@@ -2451,7 +2481,7 @@ impl ActorRegistry {
             .actor_tasks
             .spawn("recorder test streamer actor", async move {
                 let started = Instant::now();
-                let outcome = AssertUnwindSafe(actor.run()).catch_unwind().await;
+                let outcome = AssertUnwindSafe(run).catch_unwind().await;
                 registry.on_actor_exit(
                     &task_streamer_id,
                     generation,

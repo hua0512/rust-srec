@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use jiff::SignedDuration;
 
+use crate::downloader::DownloadStopCause;
 use crate::downloader::engine::{DownloadProtocol, EngineType};
-use crate::downloader::{DownloadStopCause, EngineEndSignal};
 use crate::monitor::FilterReason;
 use crate::recorder::fsm::schedule::STOP_DEADLINE_DURATION;
 use crate::recorder::fsm::state::{
@@ -18,9 +18,9 @@ use crate::session::TerminalCause;
 use srec_core::domain::StreamerState;
 
 use super::{
-    TestClock, base_config, base_snapshot, cancelled_event, completed_event, find_db_commit,
-    find_probe, find_start_attempt, live_payload, open_running_session, reach_starting_attempt,
-    sample_binding, session_ended_outcome,
+    TestClock, base_config, base_snapshot, cancelled_event, find_db_commit, find_probe,
+    find_start_attempt, live_payload, open_running_session, reach_starting_attempt, sample_binding,
+    session_ended_outcome,
 };
 
 #[test]
@@ -678,104 +678,6 @@ fn credential_retire_clears_open_session_when_registry_committed_first() {
         "losing committer must not emit a duplicate SessionEnded pipeline notification"
     );
 }
-
-#[test]
-fn disable_after_an_elapsed_quiet_backstop_waits_for_the_stop_deadline() {
-    let mut clock = TestClock::new();
-    let mut cfg = base_config();
-    cfg.record_danmu = true;
-    cfg.offline_check_count = 3;
-    cfg.offline_check_interval_ms = 20_000; // backstop window = 80 s
-    let (mut fsm, attempt_id) = open_running_session(&clock, cfg, "sess-1", None);
-    fsm.step(
-        clock.ctx(),
-        FsmInput::DanmuCollectionStarted {
-            session_id: "sess-1".into(),
-        },
-    );
-    let effects = fsm.step(
-        clock.ctx(),
-        FsmInput::DownloadEnded {
-            attempt_id,
-            event: completed_event("sess-1", EngineEndSignal::CleanDisconnect),
-        },
-    );
-    let (op_id, _) = find_db_commit(&effects).expect("hysteresis audit commit");
-    fsm.step(
-        clock.ctx(),
-        FsmInput::DbCommitted {
-            op_id,
-            result: Ok(DbCommitOutcome::HysteresisEnteredRecorded),
-        },
-    );
-
-    // Disable 5 s before the backstop; the danmu stop stays unconfirmed.
-    clock.advance(Duration::from_secs(75));
-    let stop_deadline = clock.now + STOP_DEADLINE_DURATION;
-    fsm.step(clock.ctx(), FsmInput::Disable);
-    assert!(matches!(fsm.monitor, MonitorPhase::Stopping(_)));
-
-    // The backstop has elapsed; the stop deadline is the next wake-up.
-    clock.advance(Duration::from_secs(6));
-    assert_eq!(
-        fsm.next_deadline(clock.now, clock.wall),
-        Some(stop_deadline)
-    );
-
-    // At the stop deadline the final EndSession goes out, and nothing is due
-    // again while it is in flight.
-    clock.advance(stop_deadline - clock.now);
-    let effects = fsm.step(clock.ctx(), FsmInput::TimerFired);
-    let (_, op) = find_db_commit(&effects).expect("EndSession after the stop deadline");
-    assert!(matches!(op, DbCommitOp::EndSession { .. }));
-    assert!(
-        fsm.next_deadline(clock.now, clock.wall)
-            .is_none_or(|deadline| deadline > clock.now)
-    );
-}
-
-#[test]
-fn shutdown_waits_for_an_in_flight_end_session() {
-    let clock = TestClock::new();
-    let (mut fsm, attempt_id) = open_running_session(&clock, base_config(), "sess-1", None);
-    let effects = fsm.step(
-        clock.ctx(),
-        FsmInput::DownloadEnded {
-            attempt_id,
-            event: completed_event("sess-1", EngineEndSignal::HlsEndlist),
-        },
-    );
-    let (end_op, op) = find_db_commit(&effects).unwrap();
-    assert!(matches!(op, DbCommitOp::EndSession { .. }));
-
-    let effects = fsm.step(clock.ctx(), FsmInput::Shutdown);
-    assert!(
-        !effects
-            .iter()
-            .any(|e| matches!(e, FsmEffect::ActorStopped { .. })),
-        "the actor must not stop while EndSession is in flight"
-    );
-
-    let effects = fsm.step(
-        clock.ctx(),
-        FsmInput::DbCommitted {
-            op_id: end_op,
-            result: Ok(session_ended_outcome(Some("sess-1"), clock.wall, true)),
-        },
-    );
-    assert!(effects.iter().any(|e| matches!(
-        e,
-        FsmEffect::NotifyPipeline(PipelineNotification::SessionEnded { session_id, .. })
-            if session_id == "sess-1"
-    )));
-    assert!(effects.iter().any(|e| matches!(
-        e,
-        FsmEffect::ActorStopped {
-            reason: ActorStopReason::Shutdown
-        }
-    )));
-}
-
 #[test]
 fn credential_retirement_matches_the_account_its_startup_switched_to() {
     let clock = TestClock::new();

@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use jiff::Timestamp;
 use rust_srec::config::ConfigEventBroadcaster;
 use rust_srec::credentials::{
-    CredentialBinding, CredentialIdentity, CredentialMaterial, CredentialOwner,
+    CredentialBinding, CredentialIdentity, CredentialMaterial, CredentialOwner, CredentialProfile,
     CredentialSelection, PoolStrategy, ResolvedCredentialPolicy,
 };
 use rust_srec::database::models::{StreamerDbModel, TitleEntry};
@@ -118,29 +118,50 @@ fn infra_block_op(streamer_id: &str, reason: InfraBlockReason, now: Timestamp) -
     }
 }
 
+/// Alice goes live titled "Initial Title" in Gaming with a new avatar: the
+/// start that opens the session the lifecycle tests reuse, resume and end.
+fn alice_goes_live(now: Timestamp) -> DbCommitOp {
+    DbCommitOp::StartOrResumeSession {
+        streamer_id: "s1".into(),
+        streamer_name: "Alice".into(),
+        title: "Initial Title".into(),
+        category: Some("Gaming".into()),
+        current_avatar: None,
+        new_avatar: Some("https://cdn.example/avatar.png".into()),
+        credential_binding: None,
+        now,
+    }
+}
+
+/// The monitor's offline end of Alice's `session_id`, which also sets her
+/// `NotLive`.
+fn alice_goes_offline(session_id: &str, now: Timestamp) -> DbCommitOp {
+    DbCommitOp::EndSession {
+        streamer_id: "s1".into(),
+        streamer_name: "Alice".into(),
+        session_id: Some(session_id.into()),
+        cause: TerminalCause::StreamerOffline,
+        via_hysteresis: false,
+        update_streamer_state: Some(StreamerState::NotLive),
+        clear_errors: false,
+        checks_restored_threshold: None,
+        infra_block: None,
+        suppress_offline_notification: false,
+        now,
+    }
+}
+
+/// The commit's millisecond is the start in `live_sessions`, the
+/// `session_started` event, the outbox row and its StreamOnline payload, and
+/// the cache shows the streamer live with its new avatar.
 #[tokio::test]
-async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
+async fn created_session_shares_its_start_millisecond_across_rows_outbox_and_cache() {
     tokio::time::timeout(Duration::from_secs(20), async {
         let (pool, store, committed_state, _notify) = setup_store().await;
         insert_streamer(&pool, "s1", "Alice", StreamerState::NotLive).await;
 
-        // 1. Created session: exact millisecond alignment across live_sessions,
-        //    session_events, monitor_event_outbox.created_at, OutboxEvent::StreamOnline,
-        //    and StreamerCache.
         let t_start = Timestamp::from_millisecond(1_735_000_123_456).unwrap();
-        let outcome = store
-            .commit(DbCommitOp::StartOrResumeSession {
-                streamer_id: "s1".into(),
-                streamer_name: "Alice".into(),
-                title: "Initial Title".into(),
-                category: Some("Gaming".into()),
-                current_avatar: None,
-                new_avatar: Some("https://cdn.example/avatar.png".into()),
-                credential_binding: None,
-                now: t_start,
-            })
-            .await
-            .unwrap();
+        let outcome = store.commit(alice_goes_live(t_start)).await.unwrap();
         let (session_id, started_at) = match outcome {
             DbCommitOutcome::SessionStarted {
                 session_id,
@@ -195,9 +216,24 @@ async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
                 started_at_ms: t_start.as_millisecond(),
             }
         );
+    })
+    .await
+    .expect("created session test must finish");
+}
 
-        // 2. ReusedActive on an already-open row reuses the session_id, appends title,
-        //    and emits StreamOnline(ReusedActive) with exact created_at.
+/// The reused session keeps its id and original start time.
+#[tokio::test]
+async fn start_on_an_open_session_reuses_it_and_enqueues_stream_online_at_the_reuse_time() {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let (pool, store, _committed_state, _notify) = setup_store().await;
+        insert_streamer(&pool, "s1", "Alice", StreamerState::NotLive).await;
+        let t_start = Timestamp::from_millisecond(1_735_000_123_456).unwrap();
+        let DbCommitOutcome::SessionStarted { session_id, .. } =
+            store.commit(alice_goes_live(t_start)).await.unwrap()
+        else {
+            panic!("expected SessionStarted");
+        };
+
         let t_reuse = Timestamp::from_millisecond(1_735_000_200_000).unwrap();
         let reused = store
             .commit(DbCommitOp::StartOrResumeSession {
@@ -222,8 +258,50 @@ async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
             }
         );
 
-        // 3. Hysteresis entry + ResumeHysteresis + AddSessionTitle deduplication,
-        //    asserting actual persisted session_events and live_sessions.titles.
+        // Row 0 is the go-live's StreamOnline.
+        let outbox = fetch_outbox_events(&pool).await;
+        assert_eq!(outbox[1].created_at, t_reuse.as_millisecond());
+        assert!(matches!(
+            &outbox[1].event,
+            OutboxEvent::StreamOnline {
+                started_at_ms,
+                ..
+            } if *started_at_ms == t_reuse.as_millisecond()
+        ));
+    })
+    .await
+    .expect("reused session test must finish");
+}
+
+/// Entering and resuming hysteresis record `hysteresis_entered`,
+/// `session_resumed` and `session_started` events at their commit times, the
+/// resume enqueues a StreamOnline, and the session's titles keep each title
+/// once, in the order first seen.
+#[tokio::test]
+async fn hysteresis_resume_records_its_events_and_titles_are_kept_once_in_order() {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let (pool, store, _committed_state, _notify) = setup_store().await;
+        insert_streamer(&pool, "s1", "Alice", StreamerState::NotLive).await;
+        let t_start = Timestamp::from_millisecond(1_735_000_123_456).unwrap();
+        let DbCommitOutcome::SessionStarted { session_id, .. } =
+            store.commit(alice_goes_live(t_start)).await.unwrap()
+        else {
+            panic!("expected SessionStarted");
+        };
+        store
+            .commit(DbCommitOp::StartOrResumeSession {
+                streamer_id: "s1".into(),
+                streamer_name: "Alice".into(),
+                title: "Updated Title".into(),
+                category: None,
+                current_avatar: Some("https://cdn.example/avatar.png".into()),
+                new_avatar: Some("https://cdn.example/avatar.png".into()),
+                credential_binding: None,
+                now: Timestamp::from_millisecond(1_735_000_200_000).unwrap(),
+            })
+            .await
+            .unwrap();
+
         let t_hyst = Timestamp::from_millisecond(1_735_000_250_000).unwrap();
         let t_deadline = Timestamp::from_millisecond(1_735_000_310_000).unwrap();
         assert_eq!(
@@ -333,14 +411,6 @@ async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
 
         let outbox = fetch_outbox_events(&pool).await;
         assert_eq!(outbox.len(), 3);
-        assert_eq!(outbox[1].created_at, t_reuse.as_millisecond());
-        assert!(matches!(
-            &outbox[1].event,
-            OutboxEvent::StreamOnline {
-                started_at_ms,
-                ..
-            } if *started_at_ms == t_reuse.as_millisecond()
-        ));
         assert_eq!(outbox[2].created_at, t_resume.as_millisecond());
         assert!(matches!(
             &outbox[2].event,
@@ -349,11 +419,28 @@ async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
                 ..
             } if *started_at_ms == t_resume.as_millisecond()
         ));
+    })
+    .await
+    .expect("hysteresis resume test must finish");
+}
 
-        // 4. end_session_only (update_streamer_state: None) emits StreamOffline ONCE
-        //    with exact duration_secs & ended_at_ms; subsequent monitor offline updates
-        //    streamer state to NOT_LIVE, clears errors, emits ChecksRestored, and applies
-        //    infra_block without double-emitting StreamOffline.
+/// Ending the session without a state change enqueues one StreamOffline with
+/// its exact duration and end time and keeps the streamer live. The monitor's
+/// offline commit that follows finds the session closed, so it clears the
+/// errors, enqueues ChecksRestored and applies the circuit-breaker block
+/// without a second StreamOffline.
+#[tokio::test]
+async fn ending_a_session_enqueues_stream_offline_once_and_the_offline_check_restores_checks() {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let (pool, store, committed_state, _notify) = setup_store().await;
+        insert_streamer(&pool, "s1", "Alice", StreamerState::NotLive).await;
+        let t_start = Timestamp::from_millisecond(1_735_000_123_456).unwrap();
+        let DbCommitOutcome::SessionStarted { session_id, .. } =
+            store.commit(alice_goes_live(t_start)).await.unwrap()
+        else {
+            panic!("expected SessionStarted");
+        };
+
         sqlx::query("UPDATE streamers SET consecutive_error_count = 3 WHERE id = 's1'")
             .execute(&pool)
             .await
@@ -421,16 +508,55 @@ async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
         assert_eq!(cached_after_second.consecutive_error_count, 0);
         assert!(cached_after_second.disabled_until.is_some());
 
-        // Reset backoff so subsequent session-start subtests run cleanly.
-        sqlx::query(
-            "UPDATE streamers SET state = 'NOT_LIVE', disabled_until = NULL WHERE id = 's1'",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
+        // Row 0 is the go-live's StreamOnline.
+        let outbox = fetch_outbox_events(&pool).await;
+        assert_eq!(outbox.len(), 3);
+        assert_eq!(outbox[1].created_at, t_end.as_millisecond());
+        assert_eq!(
+            outbox[1].event,
+            OutboxEvent::StreamOffline {
+                streamer_id: "s1".into(),
+                streamer_name: "Alice".into(),
+                session_id: session_id.clone(),
+                duration_secs: Some(300.0),
+                ended_at_ms: t_end.as_millisecond(),
+            }
+        );
+        assert_eq!(outbox[2].created_at, t_second_end.as_millisecond());
+        assert_eq!(
+            outbox[2].event,
+            OutboxEvent::ChecksRestored {
+                streamer_id: "s1".into(),
+                streamer_name: "Alice".into(),
+                occurred_at_ms: t_second_end.as_millisecond(),
+            }
+        );
+    })
+    .await
+    .expect("session end test must finish");
+}
 
-        // ResumeHysteresis on an already-ended session fails transiently (Conflict),
-        // and AddSessionTitle on an ended session is a no-op.
+/// Resuming hysteresis on an ended session fails as a transient conflict, and
+/// adding a title to it changes nothing.
+#[tokio::test]
+async fn an_ended_session_cannot_resume_hysteresis_or_gain_a_title() {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let (pool, store, _committed_state, _notify) = setup_store().await;
+        insert_streamer(&pool, "s1", "Alice", StreamerState::NotLive).await;
+        let t_start = Timestamp::from_millisecond(1_735_000_123_456).unwrap();
+        let DbCommitOutcome::SessionStarted { session_id, .. } =
+            store.commit(alice_goes_live(t_start)).await.unwrap()
+        else {
+            panic!("expected SessionStarted");
+        };
+        let t_end = Timestamp::from_millisecond(1_735_000_423_456).unwrap();
+        store
+            .commit(alice_goes_offline(&session_id, t_end))
+            .await
+            .unwrap();
+        let outbox_before = fetch_outbox_events(&pool).await.len();
+
+        let t_resume = Timestamp::from_millisecond(1_735_000_430_000).unwrap();
         assert!(matches!(
             store
                 .commit(DbCommitOp::ResumeHysteresis {
@@ -440,7 +566,7 @@ async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
                     title: "Too Late".into(),
                     category: None,
                     hysteresis_duration_secs: 10,
-                    now: t_second_end,
+                    now: t_resume,
                 })
                 .await,
             Err(DbCommitFailure::Transient { .. })
@@ -456,32 +582,33 @@ async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
                 .unwrap(),
             DbCommitOutcome::SessionTitleAdded { changed: false }
         );
+        assert_eq!(fetch_outbox_events(&pool).await.len(), outbox_before);
+    })
+    .await
+    .expect("ended session test must finish");
+}
 
-        let outbox = fetch_outbox_events(&pool).await;
-        assert_eq!(outbox.len(), 5);
-        assert_eq!(outbox[3].created_at, t_end.as_millisecond());
-        assert_eq!(
-            outbox[3].event,
-            OutboxEvent::StreamOffline {
-                streamer_id: "s1".into(),
-                streamer_name: "Alice".into(),
-                session_id: session_id.clone(),
-                duration_secs: Some(300.0),
-                ended_at_ms: t_end.as_millisecond(),
-            }
-        );
-        assert_eq!(outbox[4].created_at, t_second_end.as_millisecond());
-        assert_eq!(
-            outbox[4].event,
-            OutboxEvent::ChecksRestored {
-                streamer_id: "s1".into(),
-                streamer_name: "Alice".into(),
-                occurred_at_ms: t_second_end.as_millisecond(),
-            }
-        );
+/// An end that names the previous session leaves its successor open and live.
+/// Ends for a user disable, the schedule or a stale-row replacement, and ends
+/// that set `suppress_offline_notification`, enqueue no StreamOffline.
+#[tokio::test]
+async fn stale_session_ids_cannot_end_a_successor_and_suppressed_ends_skip_stream_offline() {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let (pool, store, committed_state, _notify) = setup_store().await;
+        insert_streamer(&pool, "s1", "Alice", StreamerState::NotLive).await;
+        let t_start = Timestamp::from_millisecond(1_735_000_123_456).unwrap();
+        let DbCommitOutcome::SessionStarted { session_id, .. } =
+            store.commit(alice_goes_live(t_start)).await.unwrap()
+        else {
+            panic!("expected SessionStarted");
+        };
+        // This end enqueues the only StreamOffline the outbox should hold.
+        let t_end = Timestamp::from_millisecond(1_735_000_423_456).unwrap();
+        store
+            .commit(alice_goes_offline(&session_id, t_end))
+            .await
+            .unwrap();
 
-        // 5. Stale session_id cannot close a successor session, and suppressed causes
-        //    plus explicit `suppress_offline_notification: true` never enqueue StreamOffline.
         for (suppressed_cause, explicit_suppress) in [
             (TerminalCause::UserDisabled, false),
             (TerminalCause::OutOfSchedule, false),
@@ -515,19 +642,7 @@ async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
 
             // Stale previous session_id must NOT touch the new active session.
             let stale_res = store
-                .commit(DbCommitOp::EndSession {
-                    streamer_id: "s1".into(),
-                    streamer_name: "Alice".into(),
-                    session_id: Some(session_id.clone()),
-                    cause: TerminalCause::StreamerOffline,
-                    via_hysteresis: false,
-                    update_streamer_state: Some(StreamerState::NotLive),
-                    clear_errors: false,
-                    checks_restored_threshold: None,
-                    infra_block: None,
-                    suppress_offline_notification: false,
-                    now: t_s,
-                })
+                .commit(alice_goes_offline(&session_id, t_s))
                 .await
                 .unwrap();
             assert!(matches!(
@@ -575,9 +690,18 @@ async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
             offline_count, 1,
             "suppressed causes must not emit StreamOffline"
         );
+    })
+    .await
+    .expect("stale end and suppression test must finish");
+}
 
-        // 6. Start & ResumeHysteresis suppression guards: Disabled, soft-deleted,
-        //    OutOfSpace, and active TemporalDisabled backoff.
+/// Disabled and soft-deleted streamers report Disabled with no retry time;
+/// OutOfSpace and an unexpired backoff report the time left until
+/// `disabled_until`.
+#[tokio::test]
+async fn start_and_resume_are_suppressed_while_disabled_deleted_out_of_space_or_backed_off() {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let (pool, store, _committed_state, _notify) = setup_store().await;
         insert_streamer(&pool, "s-disabled", "Disabled", StreamerState::Disabled).await;
         insert_streamer(&pool, "s-deleted", "Deleted", StreamerState::NotLive).await;
         sqlx::query("UPDATE streamers SET deleted_at = 1 WHERE id = 's-deleted'")
@@ -585,7 +709,13 @@ async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
             .await
             .unwrap();
         insert_streamer(&pool, "s-oos", "OOS", StreamerState::OutOfSpace).await;
-        insert_streamer(&pool, "s-backoff", "Backoff", StreamerState::TemporalDisabled).await;
+        insert_streamer(
+            &pool,
+            "s-backoff",
+            "Backoff",
+            StreamerState::TemporalDisabled,
+        )
+        .await;
         let t_now = Timestamp::from_millisecond(1_735_002_000_000).unwrap();
         sqlx::query("UPDATE streamers SET disabled_until = ? WHERE id IN ('s-oos', 's-backoff')")
             .bind(t_now.as_millisecond() + 45_000)
@@ -642,13 +772,20 @@ async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
                 retry_after: None,
             }
         );
+    })
+    .await
+    .expect("start suppression test must finish");
+}
 
-        // 7. Self-healing multiple stale open live_sessions rows keeps the most recent
-        //    and closes older rows with `stale_active_replaced` audit without StreamOffline.
-        let (heal_pool, heal_store, _, _) = setup_store().await;
-        insert_streamer(&heal_pool, "s-heal", "Healed", StreamerState::NotLive).await;
+/// A start that finds several open rows for the streamer reuses the newest and
+/// closes the older ones at the commit time.
+#[tokio::test]
+async fn start_reuses_the_newest_open_session_and_closes_older_ones_without_stream_offline() {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let (pool, store, _committed_state, _notify) = setup_store().await;
+        insert_streamer(&pool, "s-heal", "Healed", StreamerState::NotLive).await;
         sqlx::query("DROP INDEX live_sessions_one_active_per_streamer")
-            .execute(&heal_pool)
+            .execute(&pool)
             .await
             .unwrap();
         for (id, start_ms) in [("stale-old", 1_735_003_000_000i64), ("stale-new", 1_735_003_010_000)]
@@ -659,12 +796,12 @@ async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
             )
             .bind(id)
             .bind(start_ms)
-            .execute(&heal_pool)
+            .execute(&pool)
             .await
             .unwrap();
         }
         let t_heal = Timestamp::from_millisecond(1_735_003_020_000).unwrap();
-        let heal_outcome = heal_store
+        let heal_outcome = store
             .commit(DbCommitOp::StartOrResumeSession {
                 streamer_id: "s-heal".into(),
                 streamer_name: "Healed".into(),
@@ -687,22 +824,35 @@ async fn session_lifecycle_outbox_timestamps_and_suppression_contracts() {
         ));
         let healed_end: Option<i64> =
             sqlx::query_scalar("SELECT end_time FROM live_sessions WHERE id = 'stale-old'")
-                .fetch_one(&heal_pool)
+                .fetch_one(&pool)
                 .await
                 .unwrap();
         assert_eq!(healed_end, Some(t_heal.as_millisecond()));
-        let heal_outbox = fetch_outbox_events(&heal_pool).await;
+        let heal_outbox = fetch_outbox_events(&pool).await;
         assert_eq!(heal_outbox.len(), 1);
         assert_eq!(heal_outbox[0].event_type, "StreamOnline");
     })
     .await
-    .expect("session lifecycle integration test must finish");
+    .expect("open session self-heal test must finish");
 }
 
+trait RewriteCheckExt {
+    fn is_updated_rewrite(&self) -> bool;
+}
+
+impl RewriteCheckExt for DbCommitOutcome {
+    fn is_updated_rewrite(&self) -> bool {
+        matches!(self, Self::EndedCauseRewritten { updated: true, .. })
+    }
+}
+
+/// RewriteEndedCause turns a hysteresis end recorded as Completed into
+/// UserDisabled without moving the end time or enqueueing alerts, and a second
+/// rewrite of the now authoritative cause changes nothing.
 #[tokio::test]
-async fn rewrite_ended_cause_and_error_infra_fatal_transitions() {
+async fn rewriting_a_hysteresis_completed_end_changes_only_its_cause_and_only_once() {
     tokio::time::timeout(Duration::from_secs(20), async {
-        let (pool, store, committed_state, _notify) = setup_store().await;
+        let (pool, store, _committed_state, _notify) = setup_store().await;
         insert_streamer(&pool, "s1", "Bob", StreamerState::NotLive).await;
 
         let t0 = Timestamp::from_millisecond(1_735_010_000_000).unwrap();
@@ -745,8 +895,6 @@ async fn rewrite_ended_cause_and_error_infra_fatal_transitions() {
             .unwrap();
         let outbox_before = fetch_outbox_events(&pool).await.len();
 
-        // 1. RewriteEndedCause updates via_hysteresis Completed -> UserDisabled
-        //    without altering live_sessions.end_time or emitting outbox rows.
         assert_eq!(
             store
                 .commit(DbCommitOp::RewriteEndedCause {
@@ -795,9 +943,20 @@ async fn rewrite_ended_cause_and_error_infra_fatal_transitions() {
                 .unwrap()
                 .is_updated_rewrite()
         );
+    })
+    .await
+    .expect("ended cause rewrite test must finish");
+}
 
-        // 2. Transient errors: ChecksFailing emitted ONLY on exact threshold (3),
-        //    ClearLastError keeps error count, ClearErrors emits ChecksRestored once.
+/// ChecksFailing is enqueued only when the error count reaches the offline
+/// check count, where backoff also starts. ClearLastError keeps the count, and
+/// only the first of two ClearErrors enqueues ChecksRestored.
+#[tokio::test]
+async fn transient_errors_alert_only_at_the_threshold_and_clearing_them_restores_once() {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let (pool, store, committed_state, _notify) = setup_store().await;
+        insert_streamer(&pool, "s1", "Bob", StreamerState::NotLive).await;
+
         for step in 1..=4 {
             let t = Timestamp::from_millisecond(1_735_010_100_000 + step * 1_000).unwrap();
             let outcome = store
@@ -894,8 +1053,19 @@ async fn rewrite_ended_cause_and_error_infra_fatal_transitions() {
                 occurred_at_ms: t_restored.as_millisecond(),
             }
         );
+    })
+    .await
+    .expect("transient error test must finish");
+}
 
-        // 3. InfraBlockReason persists OutOfSpace without touching error count.
+/// An unavailable output root blocks the streamer as OutOfSpace with the path
+/// in its last error.
+#[tokio::test]
+async fn output_root_block_sets_out_of_space_without_counting_an_error() {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let (pool, store, committed_state, _notify) = setup_store().await;
+        insert_streamer(&pool, "s1", "Bob", StreamerState::NotLive).await;
+
         let t_infra = Timestamp::from_millisecond(1_735_010_300_000).unwrap();
         store
             .commit(infra_block_op(
@@ -918,8 +1088,30 @@ async fn rewrite_ended_cause_and_error_infra_fatal_transitions() {
                 .as_deref()
                 .is_some_and(|e| e.contains("/mnt/missing"))
         );
+    })
+    .await
+    .expect("infra block test must finish");
+}
 
-        // 4. RecordFilteredState updates state without enqueueing outbox events.
+#[tokio::test]
+async fn filtered_state_changes_the_state_without_enqueueing_alerts() {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let (pool, store, committed_state, _notify) = setup_store().await;
+        insert_streamer(&pool, "s1", "Bob", StreamerState::NotLive).await;
+        let t_infra = Timestamp::from_millisecond(1_735_010_300_000).unwrap();
+        store
+            .commit(infra_block_op(
+                "s1",
+                InfraBlockReason::OutputRootUnavailable {
+                    path: "/mnt/missing".into(),
+                    io_kind: IoErrorKindSer::NotFound,
+                    retry_after_secs: 120,
+                },
+                t_infra,
+            ))
+            .await
+            .unwrap();
+
         let outbox_count_before_filter = fetch_outbox_events(&pool).await.len();
         store
             .commit(DbCommitOp::RecordFilteredState {
@@ -940,16 +1132,19 @@ async fn rewrite_ended_cause_and_error_infra_fatal_transitions() {
             fetch_outbox_events(&pool).await.len(),
             outbox_count_before_filter
         );
+    })
+    .await
+    .expect("filtered state test must finish");
+}
 
-        // 5. RecordFatalError closes active session, writes FatalError matching
-        //    the monitor_event_outbox wire contract with exact timestamp, and emits
-        //    no spurious StreamOffline.
-        sqlx::query(
-            "UPDATE streamers SET state = 'NOT_LIVE', disabled_until = NULL WHERE id = 's1'",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
+/// RecordFatalError ends the open session at the commit time and enqueues a
+/// FatalError whose row and payload carry that time, but no StreamOffline.
+#[tokio::test]
+async fn fatal_error_ends_the_open_session_and_enqueues_fatal_error_without_stream_offline() {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let (pool, store, committed_state, _notify) = setup_store().await;
+        insert_streamer(&pool, "s1", "Bob", StreamerState::NotLive).await;
+
         let DbCommitOutcome::SessionStarted {
             session_id: fatal_sid,
             ..
@@ -1035,9 +1230,18 @@ async fn rewrite_ended_cause_and_error_infra_fatal_transitions() {
                 .as_millisecond(),
             t_fatal.as_millisecond()
         );
+    })
+    .await
+    .expect("fatal error test must finish");
+}
 
-        // 6. monitor_may_write guard: Disabled streamers ignore monitor error/infra/filter/fatal writes.
+#[tokio::test]
+async fn disabled_streamers_ignore_monitor_error_block_filter_and_fatal_writes() {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let (pool, store, _committed_state, _notify) = setup_store().await;
         insert_streamer(&pool, "s-dis", "Disabled", StreamerState::Disabled).await;
+        let now = Timestamp::from_millisecond(1_735_010_500_000).unwrap();
+
         let outbox_before_dis = fetch_outbox_events(&pool).await.len();
         store
             .commit(DbCommitOp::RecordTransientError {
@@ -1046,7 +1250,7 @@ async fn rewrite_ended_cause_and_error_infra_fatal_transitions() {
                 platform: "bilibili".into(),
                 error: "ignored".into(),
                 offline_check_count: 1,
-                now: t_fatal,
+                now,
             })
             .await
             .unwrap();
@@ -1056,7 +1260,7 @@ async fn rewrite_ended_cause_and_error_infra_fatal_transitions() {
                 InfraBlockReason::CircuitBreaker {
                     retry_after_secs: 60,
                 },
-                t_fatal,
+                now,
             ))
             .await
             .unwrap();
@@ -1067,7 +1271,7 @@ async fn rewrite_ended_cause_and_error_infra_fatal_transitions() {
                 old_state: StreamerState::Disabled,
                 new_state: StreamerState::OutOfSchedule,
                 reason: "ignored".into(),
-                now: t_fatal,
+                now,
             })
             .await
             .unwrap();
@@ -1079,7 +1283,7 @@ async fn rewrite_ended_cause_and_error_infra_fatal_transitions() {
                 error_type: FatalErrorType::NotFound,
                 message: "ignored".into(),
                 new_state: StreamerState::NotFound,
-                now: t_fatal,
+                now,
             })
             .await
             .unwrap();
@@ -1093,116 +1297,137 @@ async fn rewrite_ended_cause_and_error_infra_fatal_transitions() {
         assert_eq!(fetch_outbox_events(&pool).await.len(), outbox_before_dis);
     })
     .await
-    .expect("rewrite/error/fatal integration test must finish");
+    .expect("disabled streamer guard test must finish");
 }
 
-trait RewriteCheckExt {
-    fn is_updated_rewrite(&self) -> bool;
+/// Carol's open session, bound to account A of a two-account platform pool
+/// that prefers account A over account B.
+struct BoundSession {
+    pool: SqlitePool,
+    store: RecorderStore,
+    session_id: String,
+    started_at: Timestamp,
+    profile_b: CredentialProfile,
+    policy: ResolvedCredentialPolicy,
+    /// The binding the session start committed, at epoch 1.
+    binding_v1: CredentialBinding,
 }
 
-impl RewriteCheckExt for DbCommitOutcome {
-    fn is_updated_rewrite(&self) -> bool {
-        matches!(self, Self::EndedCauseRewritten { updated: true, .. })
+async fn start_bound_session() -> BoundSession {
+    let (pool, store, _committed_state, _notify) = setup_store().await;
+    insert_streamer(&pool, "s1", "Carol", StreamerState::NotLive).await;
+
+    let profile_repo = CredentialProfileRepository::new(pool.clone(), pool.clone());
+    let material_a = CredentialMaterial {
+        cookies: "SESSDATA=a".into(),
+        refresh_token: None,
+        access_token: None,
+        reauth_config: None,
+    };
+    let material_b = CredentialMaterial {
+        cookies: "SESSDATA=b".into(),
+        refresh_token: None,
+        access_token: None,
+        reauth_config: None,
+    };
+    let profile_a = profile_repo
+        .create(
+            "platform-bilibili",
+            "Acct A",
+            true,
+            &material_a,
+            &ProxyRoute::Inherit,
+        )
+        .await
+        .unwrap();
+    let profile_b = profile_repo
+        .create(
+            "platform-bilibili",
+            "Acct B",
+            true,
+            &material_b,
+            &ProxyRoute::Inherit,
+        )
+        .await
+        .unwrap();
+
+    let owner = CredentialOwner::Platform {
+        platform_id: "platform-bilibili".into(),
+    };
+    let selection = CredentialSelection::Pool {
+        credential_ids: vec![profile_a.id.clone(), profile_b.id.clone()],
+        strategy: PoolStrategy::Priority,
+        failover: true,
+        anonymous_fallback: false,
+        max_attempts: 2,
+    };
+    let config_repo = SqlxConfigRepository::new(pool.clone(), pool.clone());
+    let platform = config_repo
+        .get_platform_config("platform-bilibili")
+        .await
+        .unwrap();
+    config_repo
+        .update_platform_config_with_selection(&platform, Some(&selection))
+        .await
+        .unwrap();
+    let policy =
+        ResolvedCredentialPolicy::new("platform-bilibili".into(), owner, selection).unwrap();
+
+    let initial_binding = CredentialBinding {
+        identity: CredentialIdentity::Profile {
+            profile_id: profile_a.id.clone(),
+        },
+        revision: profile_a.revision as u64,
+        policy: policy.clone(),
+        epoch: 0,
+    };
+
+    let started_at = Timestamp::from_millisecond(1_735_020_000_000).unwrap();
+    let DbCommitOutcome::SessionStarted {
+        session_id,
+        credential_binding,
+        ..
+    } = store
+        .commit(DbCommitOp::StartOrResumeSession {
+            streamer_id: "s1".into(),
+            streamer_name: "Carol".into(),
+            title: "Managed".into(),
+            category: None,
+            current_avatar: None,
+            new_avatar: None,
+            credential_binding: Some(initial_binding),
+            now: started_at,
+        })
+        .await
+        .unwrap()
+    else {
+        panic!("expected session started");
+    };
+    BoundSession {
+        pool,
+        store,
+        session_id,
+        started_at,
+        profile_b,
+        policy,
+        binding_v1: credential_binding.expect("committed binding"),
     }
 }
 
+/// Persisting a segment advances the next segment index and adds its size to
+/// the session total; removing the danmu output subtracts its size and keeps
+/// the video output and the session segment.
 #[tokio::test]
-async fn segments_credential_bindings_and_retirement_contracts() {
+async fn persisted_segments_advance_the_index_and_removing_danmu_keeps_the_video() {
     tokio::time::timeout(Duration::from_secs(20), async {
-        let (pool, store, _committed_state, _notify) = setup_store().await;
-        insert_streamer(&pool, "s1", "Carol", StreamerState::NotLive).await;
-
-        let profile_repo = CredentialProfileRepository::new(pool.clone(), pool.clone());
-        let material_a = CredentialMaterial {
-            cookies: "SESSDATA=a".into(),
-            refresh_token: None,
-            access_token: None,
-            reauth_config: None,
-        };
-        let material_b = CredentialMaterial {
-            cookies: "SESSDATA=b".into(),
-            refresh_token: None,
-            access_token: None,
-            reauth_config: None,
-        };
-        let profile_a = profile_repo
-            .create(
-                "platform-bilibili",
-                "Acct A",
-                true,
-                &material_a,
-                &ProxyRoute::Inherit,
-            )
-            .await
-            .unwrap();
-        let profile_b = profile_repo
-            .create(
-                "platform-bilibili",
-                "Acct B",
-                true,
-                &material_b,
-                &ProxyRoute::Inherit,
-            )
-            .await
-            .unwrap();
-
-        let owner = CredentialOwner::Platform {
-            platform_id: "platform-bilibili".into(),
-        };
-        let selection = CredentialSelection::Pool {
-            credential_ids: vec![profile_a.id.clone(), profile_b.id.clone()],
-            strategy: PoolStrategy::Priority,
-            failover: true,
-            anonymous_fallback: false,
-            max_attempts: 2,
-        };
-        let config_repo = SqlxConfigRepository::new(pool.clone(), pool.clone());
-        let platform = config_repo
-            .get_platform_config("platform-bilibili")
-            .await
-            .unwrap();
-        config_repo
-            .update_platform_config_with_selection(&platform, Some(&selection))
-            .await
-            .unwrap();
-        let policy =
-            ResolvedCredentialPolicy::new("platform-bilibili".into(), owner, selection).unwrap();
-
-        let initial_binding = CredentialBinding {
-            identity: CredentialIdentity::Profile {
-                profile_id: profile_a.id.clone(),
-            },
-            revision: profile_a.revision as u64,
-            policy: policy.clone(),
-            epoch: 0,
-        };
-
-        let t0 = Timestamp::from_millisecond(1_735_020_000_000).unwrap();
-        let DbCommitOutcome::SessionStarted {
+        let BoundSession {
+            pool,
+            store,
             session_id,
-            credential_binding,
+            started_at,
             ..
-        } = store
-            .commit(DbCommitOp::StartOrResumeSession {
-                streamer_id: "s1".into(),
-                streamer_name: "Carol".into(),
-                title: "Managed".into(),
-                category: None,
-                current_avatar: None,
-                new_avatar: None,
-                credential_binding: Some(initial_binding),
-                now: t0,
-            })
-            .await
-            .unwrap()
-        else {
-            panic!("expected session started");
-        };
-        let binding_v1 = credential_binding.expect("committed binding");
-        assert_eq!(binding_v1.epoch, 1);
+        } = start_bound_session().await;
 
-        // 1. Segment persistence, index progression, and danmu output removal adjust
-        //    total_size_bytes while leaving video outputs and session_segments intact.
         assert_eq!(
             store.next_session_segment_index(&session_id).await.unwrap(),
             0
@@ -1212,7 +1437,7 @@ async fn segments_credential_bindings_and_retirement_contracts() {
             streamer_id: "s1".into(),
             segment_index: 0,
             segment_path: "/rec/seg0.flv".into(),
-            started_at: Some(t0),
+            started_at: Some(started_at),
             completed_at: Timestamp::from_millisecond(1_735_020_010_000).unwrap(),
             duration_secs: 10.0,
             size_bytes: 1_000,
@@ -1277,8 +1502,26 @@ async fn segments_credential_bindings_and_retirement_contracts() {
                 .await
                 .unwrap();
         assert_eq!(segment_count, 1);
+    })
+    .await
+    .expect("segment persistence test must finish");
+}
 
-        // 2. CommitCredentialBinding rotates to profile_b (epoch 1 -> 2), and rejects stale epoch.
+/// The session starts bound at epoch 1. Rotating it to account B commits
+/// epoch 2, and repeating the epoch-1 request is a binding conflict.
+#[tokio::test]
+async fn committing_a_credential_binding_bumps_its_epoch_and_rejects_a_stale_one() {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let BoundSession {
+            store,
+            session_id,
+            profile_b,
+            policy,
+            binding_v1,
+            ..
+        } = start_bound_session().await;
+        assert_eq!(binding_v1.epoch, 1);
+
         let rotate_req = CredentialBinding {
             identity: CredentialIdentity::Profile {
                 profile_id: profile_b.id.clone(),
@@ -1315,9 +1558,48 @@ async fn segments_credential_bindings_and_retirement_contracts() {
             matches!(stale_err, DbCommitFailure::CredentialBindingConflict { .. }),
             "stale epoch must return CredentialBindingConflict, got {stale_err:?}"
         );
+    })
+    .await
+    .expect("credential binding test must finish");
+}
 
-        // 3. EndForCredentialRetirement ends ONLY when the exact (session_id, binding)
-        //    matches an active row in retirement_credential_profiles, with no StreamOffline.
+/// EndForCredentialRetirement ends the session only when its account is
+/// retiring and the request names the session's current binding; the end
+/// enqueues no StreamOffline.
+#[tokio::test]
+async fn credential_retirement_ends_the_session_only_for_its_current_retiring_binding() {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let BoundSession {
+            pool,
+            store,
+            session_id,
+            profile_b,
+            policy,
+            binding_v1,
+            ..
+        } = start_bound_session().await;
+        let DbCommitOutcome::CredentialBindingCommitted {
+            binding: binding_v2,
+            ..
+        } = store
+            .commit(DbCommitOp::CommitCredentialBinding {
+                streamer_id: "s1".into(),
+                session_id: session_id.clone(),
+                binding: CredentialBinding {
+                    identity: CredentialIdentity::Profile {
+                        profile_id: profile_b.id.clone(),
+                    },
+                    revision: profile_b.revision as u64,
+                    policy,
+                    epoch: binding_v1.epoch,
+                },
+            })
+            .await
+            .unwrap()
+        else {
+            panic!("expected CredentialBindingCommitted");
+        };
+
         let not_retiring = store
             .commit(DbCommitOp::EndForCredentialRetirement {
                 streamer_id: "s1".into(),
@@ -1409,42 +1691,14 @@ async fn segments_credential_bindings_and_retirement_contracts() {
         );
     })
     .await
-    .expect("segment and credential binding test must finish");
-}
-
-struct LockFreeProbeListener {
-    store: RecorderStore,
-    write_pool: SqlitePool,
-    committed_state: Arc<CommittedStreamerState>,
-    observed: Arc<Mutex<Vec<PostPublicationChangeSet>>>,
-}
-
-#[async_trait]
-impl PostPublicationListener for LockFreeProbeListener {
-    async fn on_published(&self, changes: PostPublicationChangeSet) {
-        // Must acquire the single-connection write pool, the cache publication
-        // read lock, and the per-streamer serialization lease without deadlocking.
-        let _conn = tokio::time::timeout(Duration::from_secs(2), self.write_pool.acquire())
-            .await
-            .expect("write_pool must already be released before PostPublicationListener runs")
-            .unwrap();
-        let _snapshot = self.committed_state.get_streamer("s1");
-        tokio::time::timeout(
-            Duration::from_secs(2),
-            self.store.wait_for_streamer_quiescence("s1"),
-        )
-        .await
-        .expect("per-streamer lease must already be released before PostPublicationListener runs");
-        self.observed.lock().await.push(changes);
-    }
+    .expect("credential retirement test must finish");
 }
 
 #[tokio::test]
-async fn per_streamer_lease_handles_pre_commit_cancellation_and_listener_runs_lock_free() {
+async fn dropping_a_commit_before_it_seals_releases_the_lease_and_leaves_no_session() {
     tokio::time::timeout(Duration::from_secs(20), async {
-        let (pool, base_store, committed_state, outbox_notify) = setup_store().await;
+        let (pool, base_store, committed_state, _notify) = setup_store().await;
         insert_streamer(&pool, "s1", "Dave", StreamerState::NotLive).await;
-
         let observed = Arc::new(Mutex::new(Vec::new()));
         let store =
             base_store
@@ -1452,12 +1706,10 @@ async fn per_streamer_lease_handles_pre_commit_cancellation_and_listener_runs_lo
                 .with_post_publication_listener(Arc::new(LockFreeProbeListener {
                     store: base_store,
                     write_pool: pool.clone(),
-                    committed_state: committed_state.clone(),
+                    committed_state,
                     observed: observed.clone(),
                 }));
 
-        // 1. Dropping a caller BEFORE commit seals cancels cleanly without leaking
-        //    the per-streamer lease or leaving a half-created session.
         let held_write_conn = pool.acquire().await.unwrap();
         let t_aborted = Timestamp::from_millisecond(1_735_029_000_000).unwrap();
         let mut aborted_future = Box::pin(store.commit(DbCommitOp::StartOrResumeSession {
@@ -1488,9 +1740,59 @@ async fn per_streamer_lease_handles_pre_commit_cancellation_and_listener_runs_lo
         .await
         .unwrap();
         assert_eq!(open_after_abort, 0);
+        assert!(observed.lock().await.is_empty());
+    })
+    .await
+    .expect("pre-commit cancellation test must finish");
+}
 
-        // 2. Subsequent commits wake `outbox_notify` and invoke `PostPublicationListener`
-        //    with all locks (SQLite write connection, cache publication, streamer lease) free.
+struct LockFreeProbeListener {
+    store: RecorderStore,
+    write_pool: SqlitePool,
+    committed_state: Arc<CommittedStreamerState>,
+    observed: Arc<Mutex<Vec<PostPublicationChangeSet>>>,
+}
+
+#[async_trait]
+impl PostPublicationListener for LockFreeProbeListener {
+    async fn on_published(&self, changes: PostPublicationChangeSet) {
+        // Must acquire the single-connection write pool, the cache publication
+        // read lock, and the per-streamer serialization lease without deadlocking.
+        let _conn = tokio::time::timeout(Duration::from_secs(2), self.write_pool.acquire())
+            .await
+            .expect("write_pool must already be released before PostPublicationListener runs")
+            .unwrap();
+        let _snapshot = self.committed_state.get_streamer("s1");
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            self.store.wait_for_streamer_quiescence("s1"),
+        )
+        .await
+        .expect("per-streamer lease must already be released before PostPublicationListener runs");
+        self.observed.lock().await.push(changes);
+    }
+}
+
+/// A commit that enqueues an alert wakes `outbox_notify`, then runs the
+/// post-publication listener with the SQLite write connection, the cache
+/// publication lock and the streamer lease all free.
+#[tokio::test]
+async fn commits_wake_the_outbox_and_run_the_listener_with_every_lock_released() {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let (pool, base_store, committed_state, outbox_notify) = setup_store().await;
+        insert_streamer(&pool, "s1", "Dave", StreamerState::NotLive).await;
+
+        let observed = Arc::new(Mutex::new(Vec::new()));
+        let store =
+            base_store
+                .clone()
+                .with_post_publication_listener(Arc::new(LockFreeProbeListener {
+                    store: base_store,
+                    write_pool: pool.clone(),
+                    committed_state: committed_state.clone(),
+                    observed: observed.clone(),
+                }));
+
         let notified = outbox_notify.notified();
         let t_start = Timestamp::from_millisecond(1_735_030_000_000).unwrap();
         let DbCommitOutcome::SessionStarted { session_id, .. } = store
@@ -1544,7 +1846,7 @@ async fn per_streamer_lease_handles_pre_commit_cancellation_and_listener_runs_lo
         assert!(changes[1].outbox_enqueued);
     })
     .await
-    .expect("lease cancellation and post-publication listener test must finish");
+    .expect("post-publication listener test must finish");
 }
 
 #[tokio::test]

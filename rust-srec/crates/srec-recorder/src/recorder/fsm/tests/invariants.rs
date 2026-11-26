@@ -908,14 +908,12 @@ impl Harness {
                 break;
             }
         }
-        if !self.stopped {
-            for session_id in self.db_closed.clone() {
-                if !self.ended_notified.contains(&session_id) {
-                    self.violate(
-                        Invariant::SessionOwnership,
-                        format!("database ended {session_id} without a SessionEnded notification"),
-                    );
-                }
+        for session_id in self.db_closed.clone() {
+            if !self.ended_notified.contains(&session_id) {
+                self.violate(
+                    Invariant::SessionOwnership,
+                    format!("database ended {session_id} without a SessionEnded notification"),
+                );
             }
         }
     }

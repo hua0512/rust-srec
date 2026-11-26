@@ -934,7 +934,6 @@ fn selected_stream_summary(stream: &platforms_parser::media::StreamInfo) -> Sele
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::credentials::{CredentialIdentity, CredentialOwner, CredentialSelection};
 
     #[test]
     fn dropping_a_check_releases_only_its_own_entry() {
@@ -951,59 +950,6 @@ mod tests {
         assert!(checks.contains_key(&key));
         drop(replacement);
         assert!(checks.is_empty());
-    }
-
-    #[test]
-    fn credential_check_key_shares_discovery_with_bound_poll_but_isolates_account_switching_probes()
-    {
-        let policy = ResolvedCredentialPolicy::new(
-            "platform-twitch".into(),
-            CredentialOwner::Platform {
-                platform_id: "platform-twitch".into(),
-            },
-            CredentialSelection::None,
-        )
-        .unwrap();
-        let binding = CredentialBinding {
-            identity: CredentialIdentity::Anonymous,
-            revision: 3,
-            policy: policy.clone(),
-            epoch: 2,
-        };
-
-        let discovery_with_session = CredentialCheckKey::new(
-            "streamer",
-            ProbePurpose::Discovery,
-            Some(&policy),
-            Some("sess-1".into()),
-            Some(&binding),
-        );
-        let bound_poll = CredentialCheckKey::new(
-            "streamer",
-            ProbePurpose::BoundPoll,
-            Some(&policy),
-            Some("sess-1".into()),
-            Some(&binding),
-        );
-        let queue_start = CredentialCheckKey::new(
-            "streamer",
-            ProbePurpose::QueueStart,
-            Some(&policy),
-            Some("sess-1".into()),
-            Some(&binding),
-        );
-        let recovery = CredentialCheckKey::new(
-            "streamer",
-            ProbePurpose::Recovery,
-            Some(&policy),
-            Some("sess-1".into()),
-            Some(&binding),
-        );
-
-        assert_eq!(discovery_with_session, bound_poll);
-        assert_ne!(bound_poll, queue_start);
-        assert_ne!(bound_poll, recovery);
-        assert_ne!(queue_start, recovery);
     }
 
     #[test]

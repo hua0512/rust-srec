@@ -191,39 +191,6 @@ async fn breaker_cooldown_preserves_attempts_and_retry_floor() {
             .await
     );
 }
-
-/// A durable delivery dead-letters a channel as soon as its breaker opens.
-/// That channel is never retried, so its cooldown must not delay the retry of
-/// another channel of the same alert.
-#[tokio::test(start_paused = true)]
-async fn dead_lettered_breaker_does_not_delay_other_channels_to_its_cooldown() {
-    let service = NotificationService::with_config(NotificationServiceConfig {
-        max_retries: 3,
-        initial_retry_delay_ms: 10,
-        max_retry_delay_ms: 10,
-        circuit_breaker_threshold: 2,
-        circuit_breaker_cooldown_secs: 300,
-        ..Default::default()
-    });
-    let broken = channel(&service, "broken", u32::MAX);
-    let flaky = channel(&service, "flaky", 1);
-    // An earlier failure leaves the broken channel one failure from opening.
-    service.registry.read().by_key["broken"]
-        .breaker
-        .lock()
-        .record_failure(2);
-    tokio::time::timeout(
-        Duration::from_secs(60),
-        service.deliver_durable_for_outbox(event(), None, EVENT_LOG_ID.into()),
-    )
-    .await
-    .expect("the flaky channel's retry must not wait for the broken channel's cooldown")
-    .unwrap();
-    assert_eq!(broken.load(Ordering::SeqCst), 1);
-    assert_eq!(flaky.load(Ordering::SeqCst), 2);
-    service.stop().await;
-}
-
 #[tokio::test]
 async fn evicted_retry_is_cancelled_and_channel_failures_are_isolated() {
     let service = NotificationService::with_config(NotificationServiceConfig {

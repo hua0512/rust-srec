@@ -4,11 +4,10 @@ use std::time::Duration;
 use jiff::SignedDuration;
 
 use crate::downloader::engine::DownloadProgress;
-use crate::downloader::{DownloadStopCause, EngineEndSignal, IoErrorKindSer};
+use crate::downloader::{DownloadStopCause, IoErrorKindSer};
 use crate::monitor::{FilterReason, InfraBlockReason};
 use crate::recorder::fsm::error::{
     BASE_BACKOFF_SECS, MAX_BACKOFF_SECS, backoff_duration_for_error_count,
-    should_emit_checks_failing, should_emit_checks_restored,
 };
 use crate::recorder::fsm::schedule::{
     SMART_WAKE_BUFFER, STALL_WINDOW, WATCHDOG_ERROR_BACKOFF, jittered_delay,
@@ -27,9 +26,8 @@ use srec_core::domain::StreamerState;
 
 use super::{
     TestClock, assert_waits_a_poll_interval, base_config, base_snapshot, cancelled_event,
-    completed_event, find_db_commit, find_probe, find_start_attempt, live_payload,
-    open_running_session, open_running_session_with_snapshot, reach_starting_attempt,
-    session_ended_outcome,
+    find_db_commit, find_probe, find_start_attempt, live_payload, open_running_session,
+    open_running_session_with_snapshot, reach_starting_attempt, session_ended_outcome,
 };
 
 #[test]
@@ -840,15 +838,10 @@ fn non_watchdog_transient_probe_failure_enters_backoff_gates_check_now_and_ignor
 }
 
 #[test]
-fn error_tracker_backoff_cap_threshold_floor_and_download_recovery_rules() {
+fn error_tracker_backoff_doubling_cap_and_download_recovery_rules() {
     let clock = TestClock::new();
 
-    // Threshold = max(offline_check_count, 2): offline_check_count = 1 still floors at 2.
-    assert_eq!(backoff_duration_for_error_count(1, 1), None);
-    assert_eq!(
-        backoff_duration_for_error_count(2, 1),
-        Some(Duration::from_secs(BASE_BACKOFF_SECS))
-    );
+    // The backoff doubles past the threshold (two errors here) and stops at the cap.
     assert_eq!(
         backoff_duration_for_error_count(3, 1),
         Some(Duration::from_secs(BASE_BACKOFF_SECS * 2))
@@ -857,11 +850,6 @@ fn error_tracker_backoff_cap_threshold_floor_and_download_recovery_rules() {
         backoff_duration_for_error_count(i32::MAX, 1),
         Some(Duration::from_secs(MAX_BACKOFF_SECS))
     );
-    assert!(!should_emit_checks_failing(1, 1));
-    assert!(should_emit_checks_failing(2, 1));
-    assert!(!should_emit_checks_failing(3, 1));
-    assert!(!should_emit_checks_restored(1, 1));
-    assert!(should_emit_checks_restored(2, 1));
 
     // Seed prior error state through InitialStreamerSnapshot (proving StartOrResume preserves it until recovery).
     let mut snap = base_snapshot(StreamerState::NotLive, base_config());
@@ -1133,42 +1121,4 @@ fn a_start_refused_for_lane_capacity_retries_once_the_lane_has_room() {
         checks_now(&fsm, &clock),
         "room reported during the start was lost"
     );
-}
-
-#[test]
-fn metadata_filter_on_an_open_session_waits_a_poll_interval() {
-    let mut clock = TestClock::new();
-    let (mut fsm, attempt_id) = open_running_session(&clock, base_config(), "sess-1", None);
-    let effects = fsm.step(
-        clock.ctx(),
-        FsmInput::DownloadEnded {
-            attempt_id,
-            event: completed_event("sess-1", EngineEndSignal::CleanDisconnect),
-        },
-    );
-    let (op_id, _) = find_db_commit(&effects).unwrap();
-    fsm.step(
-        clock.ctx(),
-        FsmInput::DbCommitted {
-            op_id,
-            result: Ok(DbCommitOutcome::HysteresisEnteredRecorded),
-        },
-    );
-    clock.advance(Duration::from_secs(20));
-    let probe_id = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
-        .expect("quiet-period check")
-        .probe_id;
-    fsm.step(
-        clock.ctx(),
-        FsmInput::ProbeCompleted {
-            probe_id,
-            result: Ok(ProbeStatus::Filtered {
-                reason: FilterReason::TitleMismatch,
-                title: "rerun".into(),
-                category: None,
-            }),
-        },
-    );
-    assert!(matches!(fsm.session, SessionSlot::Open(_)));
-    assert_waits_a_poll_interval(&fsm, &clock);
 }

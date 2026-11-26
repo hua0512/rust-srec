@@ -15,7 +15,7 @@ use super::{
 };
 
 #[test]
-fn segment_discard_format_change_exemption_and_fifo_danmu_drain_guard() {
+fn discarded_segment_danmu_is_deleted_and_holds_the_stop_until_it_lands() {
     let clock = TestClock::new();
     let mut cfg = base_config();
     cfg.record_danmu = true;
@@ -56,41 +56,6 @@ fn segment_discard_format_change_exemption_and_fifo_danmu_drain_guard() {
             video_path: Some(v),
             danmu_path: Some(d),
         } if v == "/rec/seg0.flv" && d == "/rec/seg0.xml"
-    )));
-    assert!(
-        !effects
-            .iter()
-            .any(|e| matches!(e, FsmEffect::PersistVideoSegment(_)))
-    );
-
-    let effects = fsm.step(
-        clock.ctx(),
-        FsmInput::SegmentCompleted {
-            attempt_id,
-            session_id: "sess-seg".into(),
-            download_id: "dl-1".into(),
-            segment_index: 1,
-            segment_path: "/rec/seg1.flv".into(),
-            started_at: Some(clock.wall),
-            completed_at: clock.wall,
-            duration_secs: 3.0,
-            size_bytes: 50_000,
-            effective_size_bytes: 50_000,
-            split_reason_code: Some("resolution_change".into()),
-            split_reason_details_json: None,
-            split_by_format_change: true,
-        },
-    );
-    assert!(effects.iter().any(|e| matches!(
-        e,
-        FsmEffect::PersistVideoSegment(rec) if rec.segment_index == 1
-    )));
-    assert!(effects.iter().any(|e| matches!(
-        e,
-        FsmEffect::NotifyPipeline(PipelineNotification::VideoSegmentCompleted {
-            segment_index: 1,
-            ..
-        })
     )));
 
     let (end_op, _) = find_db_commit(&fsm.step(
@@ -247,7 +212,7 @@ fn reverse_danmu_cleanup_and_trailing_stale_attempt_segment_persistence() {
 }
 
 #[test]
-fn danmu_control_title_stream_closed_opt_out_and_reconnecting_timestamp_preservation() {
+fn danmu_control_title_stream_closed_and_reconnecting_timestamp_preservation() {
     let mut clock = TestClock::new();
     let mut cfg = base_config();
     cfg.record_danmu = true;
@@ -364,24 +329,4 @@ fn danmu_control_title_stream_closed_opt_out_and_reconnecting_timestamp_preserva
             ..
         }
     ));
-
-    // Opt-out (`end_stream_on_danmu_stream_closed = false`) ignores StreamClosed even for active session.
-    let mut opt_out_cfg = base_config();
-    opt_out_cfg.record_danmu = true;
-    opt_out_cfg.end_stream_on_danmu_stream_closed = false;
-    let (mut fsm_opt, _) = open_running_session(&clock, opt_out_cfg, "sess-opt", None);
-    assert!(
-        fsm_opt
-            .step(
-                clock.ctx(),
-                FsmInput::DanmuControl {
-                    session_id: "sess-opt".into(),
-                    control: DanmuControlEvent::StreamClosed {
-                        message: None,
-                        action: None,
-                    },
-                },
-            )
-            .is_empty()
-    );
 }

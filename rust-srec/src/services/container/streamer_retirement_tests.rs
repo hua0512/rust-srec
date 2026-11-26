@@ -13,7 +13,9 @@ use crate::database::repositories::job::JobRepository;
 use crate::database::repositories::session::SessionRepository;
 use crate::database::repositories::streamer::StreamerRepository;
 use crate::domain::StreamerState;
-use crate::recorder::{DbCommitOp, INTERACTIVE_RETIREMENT, OBSERVE_RETIREMENT};
+use crate::recorder::{
+    DbCommitOp, INTERACTIVE_RETIREMENT, OBSERVE_RETIREMENT, PipelineNotification,
+};
 use crate::session::TerminalCause;
 
 const STREAMER_ID: &str = "streamer-retire";
@@ -132,6 +134,60 @@ impl Harness {
             .fetch_optional(&self.pool)
             .await
             .expect("streamer lookup should succeed")
+    }
+
+    /// Give every session a one-step session-complete pipeline.
+    async fn configure_session_complete_pipeline(&self) {
+        use crate::database::models::{DagPipelineDefinition, DagStep, PipelineStep};
+
+        let definition = DagPipelineDefinition::new(
+            "finish",
+            vec![DagStep::new(
+                "finish",
+                PipelineStep::Inline {
+                    processor: "execute".to_string(),
+                    config: serde_json::json!({
+                        "command": if cfg!(windows) { "exit /B 0" } else { "true" }
+                    }),
+                },
+            )],
+        );
+        sqlx::query("UPDATE global_config SET session_complete_pipeline = ?, pipeline = NULL, paired_segment_pipeline = NULL, record_danmu = 0, auto_thumbnail = 0")
+            .bind(serde_json::to_string(&definition).unwrap())
+            .execute(&self.write_pool)
+            .await
+            .expect("pipeline config should update");
+        self.container
+            .config_service
+            .invalidate_streamer(STREAMER_ID);
+    }
+
+    /// Report a recorded segment of the seeded session to the pipeline, so the
+    /// session has output for its session-complete pipeline.
+    async fn record_segment(&self) {
+        let path = self._temp_dir.path().join("segment-0.flv");
+        tokio::fs::write(&path, b"recorded segment")
+            .await
+            .expect("segment file should write");
+        self.container
+            .actor_registry
+            .deliver_pipeline_notification_for_test(PipelineNotification::VideoSegmentCompleted {
+                session_id: SESSION_ID.to_string(),
+                streamer_id: STREAMER_ID.to_string(),
+                segment_index: 0,
+                path,
+                auto_thumbnail_candidate: false,
+            })
+            .await;
+    }
+
+    /// Session-complete pipeline runs created for the seeded session.
+    async fn session_complete_runs(&self) -> i64 {
+        sqlx::query_scalar("SELECT COUNT(*) FROM dag_execution WHERE session_id = ? AND segment_source = 'session_complete'")
+            .bind(SESSION_ID)
+            .fetch_one(&self.pool)
+            .await
+            .expect("run count should load")
     }
 
     async fn session_ended_events(&self) -> i64 {
@@ -538,4 +594,103 @@ async fn failed_final_dispatch_stays_recoverable_until_its_preset_is_restored() 
         harness.streamer_row().await.is_some(),
         "the published job still needs its streamer metadata"
     );
+}
+
+/// Deleting a streamer that has no actor ends its open session from the
+/// registry, which must still run the session-complete pipeline.
+#[tokio::test]
+async fn a_session_ended_by_deletion_runs_the_session_complete_pipeline() {
+    let harness = Harness::new().await;
+    harness.seed_streamer().await;
+    harness.seed_active_session().await;
+    harness.configure_session_complete_pipeline().await;
+    harness.record_segment().await;
+
+    harness
+        .container
+        .actor_registry
+        .delete_streamer(STREAMER_ID, OBSERVE_RETIREMENT)
+        .await
+        .expect("delete should succeed");
+
+    assert_eq!(harness.session_complete_runs().await, 1);
+}
+
+/// Retiring the account a recording uses ends its session from the registry,
+/// which must still run the session-complete pipeline.
+#[tokio::test]
+async fn a_session_ended_by_account_retirement_runs_the_session_complete_pipeline() {
+    use crate::credentials::{
+        CredentialBinding, CredentialIdentity, CredentialMaterial, CredentialOwner,
+        CredentialSelection, ResolvedCredentialPolicy,
+    };
+
+    let harness = Harness::new().await;
+    harness.seed_streamer().await;
+    harness.seed_active_session().await;
+    harness.configure_session_complete_pipeline().await;
+    harness.record_segment().await;
+    let profile = harness
+        .container
+        .credential_profiles
+        .create(
+            "platform-huya",
+            "Retiring account",
+            true,
+            &CredentialMaterial {
+                cookies: "session=retiring".into(),
+                refresh_token: None,
+                access_token: None,
+                reauth_config: None,
+            },
+            &crate::proxies::ProxyRoute::Inherit,
+        )
+        .await
+        .expect("profile should persist");
+    let binding = CredentialBinding {
+        identity: CredentialIdentity::Profile {
+            profile_id: profile.id.clone(),
+        },
+        revision: profile.revision as u64,
+        policy: ResolvedCredentialPolicy::new(
+            "platform-huya".into(),
+            CredentialOwner::Platform {
+                platform_id: "platform-huya".into(),
+            },
+            CredentialSelection::Fixed {
+                credential_id: profile.id.clone(),
+            },
+        )
+        .unwrap(),
+        epoch: 0,
+    };
+    sqlx::query("UPDATE live_sessions SET credential_binding = ? WHERE id = ?")
+        .bind(serde_json::to_string(&binding).unwrap())
+        .bind(SESSION_ID)
+        .execute(&harness.write_pool)
+        .await
+        .expect("binding should persist");
+    sqlx::query("INSERT INTO retirement_credential_profiles (profile_id) VALUES (?)")
+        .bind(&profile.id)
+        .execute(&harness.write_pool)
+        .await
+        .expect("retirement should persist");
+
+    harness
+        .container
+        .actor_registry
+        .settle_credential_retirement(STREAMER_ID)
+        .await;
+
+    assert!(
+        harness
+            .session_repository()
+            .get_session(SESSION_ID)
+            .await
+            .unwrap()
+            .end_time
+            .is_some(),
+        "the retirement ends the session"
+    );
+    assert_eq!(harness.session_complete_runs().await, 1);
 }

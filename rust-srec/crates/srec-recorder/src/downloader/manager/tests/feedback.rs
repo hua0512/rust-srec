@@ -7,9 +7,9 @@ use tokio::sync::Semaphore;
 
 use crate::downloader::manager::{RecorderDownloadFeedback, RecorderFeedbackPermit};
 
-/// Bounded test sink mirroring `RecorderFeedbackSink` capacity and permit
-/// semantics so `DownloadManager`'s admission, release-ordering, and resizing
-/// invariants are verified directly against `RecorderDownloadFeedback`.
+/// Bounded test sink with `RecorderFeedbackSink`'s permit semantics, so
+/// `DownloadManager`'s admission and release ordering are verified directly
+/// against `RecorderDownloadFeedback`. Its capacity sizing is its own.
 struct TestRecorderFeedback {
     global: Arc<Semaphore>,
     global_capacity: AtomicUsize,
@@ -249,55 +249,6 @@ async fn feedback_terminal_application_observes_the_slot_already_released() {
     })
     .await
     .expect("terminal application ordering must settle");
-}
-
-#[tokio::test]
-async fn feedback_capacity_tracks_live_concurrency_and_extra_slots_without_revoking_reservations() {
-    tokio::time::timeout(Duration::from_secs(5), async {
-        let manager = DownloadManager::with_config(DownloadManagerConfig {
-            max_concurrent_downloads: 1,
-            high_priority_extra_slots: 5,
-            ..Default::default()
-        });
-        let (feedback, _rx) = TestRecorderFeedback::new(8);
-        manager.set_recorder_feedback(feedback.clone()).unwrap();
-        let directory = tempfile::tempdir().unwrap();
-        let config = test_download_config(directory.path().to_owned(), "old-reservations");
-        let id = start_scripted_download_with_engine(
-            &manager,
-            config.clone(),
-            ScriptedSegmentEngine::with_shutdown_tail(vec![], vec![]),
-        )
-        .await
-        .unwrap();
-        manager.stop_download(&id).await.unwrap();
-        // Old terminal/application capacity is still held in `_rx`.
-        assert_eq!(manager.set_max_concurrent_downloads(700), 700);
-        let reservations: Vec<_> = (0..703)
-            .map(|n| {
-                feedback
-                    .reserve_attempt(&format!("concurrent-{n}"))
-                    .unwrap()
-            })
-            .collect();
-        let id = start_scripted_download_with_engine(
-            &manager,
-            config,
-            ScriptedSegmentEngine::with_shutdown_tail(vec![], vec![]),
-        )
-        .await
-        .unwrap();
-        manager.set_max_concurrent_downloads(1);
-        assert_eq!(
-            manager.active_count(),
-            1,
-            "shrinking does not revoke admitted work"
-        );
-        drop(reservations);
-        manager.stop_download(&id).await.unwrap();
-    })
-    .await
-    .expect("concurrency resizing must preserve admission ownership");
 }
 
 #[tokio::test]

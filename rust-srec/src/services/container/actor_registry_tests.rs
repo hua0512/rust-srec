@@ -1,8 +1,10 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use async_trait::async_trait;
 use jiff::Timestamp;
-use tokio::sync::mpsc;
+use tokio::sync::{Notify, mpsc};
 
 use super::ServiceContainer;
 use crate::database::committed_writer::{CommitPhase, CommitTestGate};
@@ -10,8 +12,10 @@ use crate::database::models::{LiveSessionDbModel, StreamerDbModel};
 use crate::database::repositories::session::SessionRepository;
 use crate::database::repositories::streamer::{SqlxStreamerRepository, StreamerRepository};
 use crate::domain::StreamerState;
+use crate::downloader::engine::{EngineStartError, EngineType};
 use crate::downloader::{
-    DownloadManagerEvent, DownloadProgressEvent, DownloadTerminalEvent, EngineEndSignal,
+    DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadManagerEvent,
+    DownloadProgressEvent, DownloadProtocol, DownloadTerminalEvent, EngineEndSignal, SegmentEvent,
 };
 use crate::recorder::ActorRegistry;
 use crate::recorder::fsm::FsmInput;
@@ -85,6 +89,40 @@ impl ActorHarness {
         row
     }
 
+    /// Start a recording for `streamer_id` on `engine` and wait until it runs.
+    async fn start_held_download(&self, streamer_id: &str, engine: &Arc<HeldEngine>) {
+        let coordination = self
+            .container
+            .download_coordination_receiver
+            .lock()
+            .take()
+            .expect("download coordination receiver");
+        self.registry
+            .spawn_download_bridges(coordination, &self.container.task_supervisor);
+        self.container
+            .download_manager
+            .register_engine(engine.clone());
+        self.container
+            .download_manager
+            .start_download(
+                DownloadConfig::new(
+                    "https://example.invalid/live.flv",
+                    self._temp_dir.path().join("held"),
+                    streamer_id,
+                    streamer_id,
+                    format!("sess-{streamer_id}"),
+                )
+                .with_protocol(DownloadProtocol::Flv),
+                Some("ffmpeg".to_owned()),
+                false,
+            )
+            .await
+            .expect("start held download");
+        tokio::time::timeout(Duration::from_secs(5), engine.started.notified())
+            .await
+            .expect("held download runs");
+    }
+
     async fn shutdown(self) {
         self.registry
             .shutdown_until(tokio::time::Instant::now() + Duration::from_secs(3))
@@ -94,6 +132,47 @@ impl ActorHarness {
         self.container.cancellation_token().cancel();
         self.write_pool.close().await;
         self.pool.close().await;
+    }
+}
+
+/// Records until asked to stop, then holds the recording open until
+/// `release` is notified.
+#[derive(Default)]
+struct HeldEngine {
+    started: Notify,
+    stopping: Notify,
+    release: Notify,
+}
+
+#[async_trait]
+impl DownloadEngine for HeldEngine {
+    fn engine_type(&self) -> EngineType {
+        EngineType::Ffmpeg
+    }
+
+    async fn run(&self, handle: Arc<DownloadHandle>) -> std::result::Result<(), EngineStartError> {
+        self.started.notify_one();
+        handle.cancellation_token.cancelled().await;
+        self.stopping.notify_one();
+        self.release.notified().await;
+        handle
+            .event_tx
+            .send(SegmentEvent::DownloadCompleted {
+                total_bytes: 0,
+                total_duration_secs: 0.0,
+                total_segments: 0,
+                engine_signal: EngineEndSignal::CleanDisconnect,
+            })
+            .await
+            .map_err(|error| EngineStartError::new(DownloadFailureKind::Other, error.to_string()))
+    }
+
+    fn is_available(&self) -> bool {
+        true
+    }
+
+    fn version(&self) -> Option<String> {
+        None
     }
 }
 
@@ -1092,4 +1171,115 @@ async fn a_busy_lane_asks_for_a_retry_only_once_it_has_room() {
         "retry requested while the lane was still full"
     );
     assert!(after_room.is_ok(), "no retry once the lane had room");
+}
+
+#[tokio::test]
+async fn shutdown_stops_checks_before_it_waits_for_recordings() {
+    let harness = ActorHarness::new().await;
+    let probes = Arc::new(AtomicUsize::new(0));
+    let counted = probes.clone();
+    harness
+        .container
+        .extractor_runner
+        .set_test_extraction(Some(Arc::new(move |_, _| {
+            counted.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Ok(crate::monitor::LiveStatus::Offline) })
+        })));
+    let idle = harness
+        .seed_streamer("s-idle", StreamerState::NotLive)
+        .await;
+    harness.registry.start();
+    assert!(
+        eventually(Duration::from_secs(5), || harness
+            .registry
+            .has_actor(&idle.id)
+            && probes.load(Ordering::SeqCst) > 0)
+        .await,
+        "the idle streamer is monitored"
+    );
+    let engine = Arc::new(HeldEngine::default());
+    harness.start_held_download("s-recording", &engine).await;
+
+    // While shutdown waits for the recording to finish, ask for a check.
+    let check_during_drain = async {
+        engine.stopping.notified().await;
+        let before = probes.load(Ordering::SeqCst);
+        harness.registry.check_now(&idle.id);
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let after = probes.load(Ordering::SeqCst);
+        engine.release.notify_one();
+        (before, after)
+    };
+    let (shutdown, (before, after)) = tokio::join!(
+        harness
+            .container
+            .shutdown_with_grace_period(Duration::from_secs(10)),
+        check_during_drain,
+    );
+
+    shutdown.expect("shutdown completes");
+    assert_eq!(after, before, "a streamer was checked during the drain");
+}
+
+#[tokio::test]
+async fn a_panicking_actor_has_its_recording_stopped_and_restarts() {
+    let harness = ActorHarness::new().await;
+    // Once the initial reconcile has spawned this actor, it has read the
+    // streamer list, so it cannot spawn one for the streamer seeded below.
+    let marker = harness
+        .seed_streamer("s-marker", StreamerState::NotLive)
+        .await;
+    harness.registry.start();
+    assert!(
+        eventually(Duration::from_secs(5), || harness
+            .registry
+            .has_actor(&marker.id))
+        .await
+    );
+    let row = harness
+        .seed_streamer("s-crash", StreamerState::NotLive)
+        .await;
+    let engine = Arc::new(HeldEngine::default());
+    engine.release.notify_one();
+    harness.start_held_download(&row.id, &engine).await;
+
+    harness
+        .registry
+        .supervise_panicking_actor_for_test(&row.id, 1_000);
+    let stopped = tokio::time::timeout(Duration::from_secs(5), engine.stopping.notified()).await;
+    // The first restart waits out a two-second backoff.
+    let restarted = eventually(Duration::from_secs(10), || {
+        harness.registry.has_actor(&row.id)
+    })
+    .await;
+    harness.shutdown().await;
+
+    assert!(
+        stopped.is_ok(),
+        "the crashed actor's recording kept running"
+    );
+    assert!(restarted, "the crashed actor was not restarted");
+}
+
+#[tokio::test]
+async fn disabling_a_streamer_without_an_actor_stops_its_recording() {
+    let harness = ActorHarness::new().await;
+    let row = harness
+        .seed_streamer("s-orphan", StreamerState::Disabled)
+        .await;
+    let engine = Arc::new(HeldEngine::default());
+    engine.release.notify_one();
+    harness.start_held_download(&row.id, &engine).await;
+
+    harness
+        .registry
+        .reconcile_streamer_for_test(&row.id, false)
+        .await;
+    let stopped = tokio::time::timeout(Duration::from_secs(5), engine.stopping.notified()).await;
+    harness.shutdown().await;
+
+    assert!(
+        stopped.is_ok(),
+        "the recording left without an actor kept running"
+    );
 }
