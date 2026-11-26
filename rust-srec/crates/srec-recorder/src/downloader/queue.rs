@@ -1019,7 +1019,8 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    // Paused time: the sleeps below return once every task is idle.
+    #[tokio::test(start_paused = true)]
     async fn high_priority_uses_extra_pool() {
         let q = DownloadQueue::new(1, 1);
         // total_cap=2, normal_cap=1
@@ -1049,6 +1050,7 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
+        assert_eq!(q.pending_count(), 1);
         // Drop high — n2 still queued because normal_cap is full.
         drop(g_h);
         // Give the wake path a chance.
