@@ -27,7 +27,9 @@ use sqlx::{SqliteConnection, SqlitePool};
 use tracing::{info, warn};
 
 use crate::Result;
-use crate::config::backup::{ConfigExport, CredentialProfileExport, StreamerExport};
+use crate::config::backup::{
+    ConfigExport, CredentialProfileExport, StreamerExport, unwrap_json_value,
+};
 use crate::credentials::{
     CredentialMaterial, CredentialOwner, CredentialSelection, merge_cookie_updates,
 };
@@ -69,6 +71,19 @@ pub(crate) fn upgrade_bundle(
     export: &mut ConfigExport,
     keeps_stored: impl Fn(&StreamerExport) -> bool,
 ) -> Result<()> {
+    // A bundle may hold these documents as JSON text (edited by hand, or
+    // encoded twice). Decoding them first lets every step below read and
+    // rewrite the settings and selections they hold; a value that does not
+    // decode to an object still reads as empty.
+    for platform in &mut export.platforms {
+        decode(&mut platform.platform_specific_config);
+    }
+    for template in &mut export.templates {
+        decode(&mut template.platform_overrides);
+    }
+    for streamer in &mut export.streamers {
+        decode(&mut streamer.streamer_specific_config);
+    }
     let kept: HashSet<String> = export
         .streamers
         .iter()
@@ -233,6 +248,12 @@ impl Layer<'_> {
                     .iter()
                     .any(|key| string(Some(extras), key).is_some())
             })
+    }
+}
+
+fn decode(document: &mut Option<Value>) {
+    if let Some(value) = document {
+        *value = unwrap_json_value(std::mem::take(value));
     }
 }
 
