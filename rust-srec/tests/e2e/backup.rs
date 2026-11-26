@@ -1164,6 +1164,76 @@ async fn a_rejected_import_changes_nothing_and_a_successful_one_ends_every_sessi
 }
 
 #[tokio::test]
+#[ignore = "bug: an import whose account graph is invalid fails with 500 instead of 400"]
+async fn known_bug_an_import_with_a_broken_account_graph_is_rejected_and_changes_nothing() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    let account = app
+        .post(
+            "/api/credentials/profiles",
+            &token,
+            &json!({
+                "platform_id": "platform-huya",
+                "label": "Huya main",
+                "enabled": true,
+                "material": { "cookies": "session=cookie-secret" },
+            }),
+        )
+        .await
+        .expect_status(StatusCode::OK);
+    let mut huya = app
+        .get_ok("/api/config/platforms/platform-huya", &token)
+        .await;
+    huya["credential_selection"] =
+        json!(json!({ "mode": "fixed", "credential_id": id_of(&account.body) }).to_string());
+    app.put("/api/config/platforms/platform-huya", &token, &huya)
+        .await
+        .expect_status(StatusCode::OK);
+    let baseline = export(&app, &token).await;
+
+    type Corrupt = fn(&mut Value);
+    let cases: [(&str, Corrupt, &str); 2] = [
+        (
+            "selected account missing from the bundle",
+            |bundle| bundle["credential_profiles"] = json!([]),
+            "omits a referenced credential profile",
+        ),
+        (
+            "account platform missing from the bundle",
+            |bundle| {
+                bundle["platforms"]
+                    .as_array_mut()
+                    .expect("platforms")
+                    .retain(|platform| platform["platform_name"] != "huya")
+            },
+            "omits a credential profile platform",
+        ),
+    ];
+    for (case, corrupt, message) in cases {
+        let mut bundle = baseline.clone();
+        // A valid change riding along must not be applied either.
+        bundle["global_config"]["max_concurrent_downloads"] = json!(9);
+        corrupt(&mut bundle);
+        let response = import(&app, &token, &bundle, "merge").await;
+        assert_eq!(
+            response.status,
+            StatusCode::BAD_REQUEST,
+            "{case}: {}",
+            response.text
+        );
+        assert_eq!(response.error_code(), Some("BAD_REQUEST"), "{case}");
+        let text = response.body["message"].as_str().expect("message");
+        assert!(text.contains(message), "{case}: {text}");
+    }
+
+    // The token still works, so nothing was revoked, and nothing was written.
+    let after = export(&app, &token).await;
+    assert_same_bundle(&after, &baseline);
+
+    app.shutdown().await;
+}
+
+#[tokio::test]
 async fn a_late_database_failure_rolls_back_a_replace_import() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
