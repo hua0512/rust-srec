@@ -941,6 +941,7 @@ async fn recovery_lists_files_staged_by_unfinished_attempts_only() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].job_id, "job-crashed");
     assert_eq!(listed[0].path, "/out/b.tmp-2.mp4");
+    assert_eq!(listed[0].output_path, "/out/b.mp4");
 }
 
 /// Silent uploads and long jobs are kept alive by repeating what the
