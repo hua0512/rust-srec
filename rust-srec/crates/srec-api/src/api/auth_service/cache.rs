@@ -10,6 +10,30 @@ use crate::api::auth_store::ApiKeyAccessLevel;
 /// always reloads any state that could grant access, including password remediation.
 pub(super) const USER_STATE_CACHE_TTL: Duration = Duration::from_secs(5);
 
+/// Replaces [`USER_STATE_CACHE_TTL`] when set.
+#[cfg(any(test, feature = "test-support"))]
+static USER_STATE_CACHE_TTL_OVERRIDE: parking_lot::RwLock<Option<Duration>> =
+    parking_lot::RwLock::new(None);
+
+/// Keep cached user-state denials and API-key snapshots for `ttl` instead of
+/// 5 seconds. An end-to-end test that edits a user or key row directly, which
+/// evicts nothing, then sees the edit without waiting for the production TTL.
+/// Applies to every later authorization.
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub fn override_auth_cache_ttl(ttl: Duration) {
+    *USER_STATE_CACHE_TTL_OVERRIDE.write() = Some(ttl);
+}
+
+/// [`USER_STATE_CACHE_TTL`], or the TTL `override_auth_cache_ttl` set.
+pub(super) fn user_state_cache_ttl() -> Duration {
+    #[cfg(any(test, feature = "test-support"))]
+    if let Some(ttl) = *USER_STATE_CACHE_TTL_OVERRIDE.read() {
+        return ttl;
+    }
+    USER_STATE_CACHE_TTL
+}
+
 /// Minimum interval between `api_keys.last_used_at` writes for one key, so
 /// `authorize_api_key` does not issue an UPDATE per authenticated request.
 pub(super) const API_KEY_LAST_USED_WRITE_INTERVAL: Duration = Duration::from_secs(60);

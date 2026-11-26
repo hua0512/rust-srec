@@ -32,6 +32,8 @@ use argon2::password_hash::phc::PasswordHash;
 use dashmap::DashMap;
 use tokio::sync::Semaphore;
 
+#[cfg(any(test, feature = "test-support"))]
+pub use self::cache::override_auth_cache_ttl;
 use self::cache::{CachedApiKeyState, CachedUserState};
 #[cfg(test)]
 use self::config::LOGIN_DUMMY_PASSWORD_HASH;

@@ -6,7 +6,7 @@ use std::time::Instant;
 use tracing::{info, warn};
 
 use super::AuthService;
-use super::cache::{API_KEY_LAST_USED_WRITE_INTERVAL, CachedApiKeyState, USER_STATE_CACHE_TTL};
+use super::cache::{API_KEY_LAST_USED_WRITE_INTERVAL, CachedApiKeyState, user_state_cache_ttl};
 use super::config::{API_KEY_PREFIX, AuthError, AuthPrincipal, CredentialKind};
 use crate::api::auth_store::{ApiKeyAccessLevel, ApiKeyDbModel};
 use crate::api::jwt::Claims;
@@ -102,7 +102,7 @@ impl AuthService {
                 .get(&key_hash)
                 .filter(|entry| {
                     entry.generation == generation
-                        && entry.fetched_at.elapsed() < USER_STATE_CACHE_TTL
+                        && entry.fetched_at.elapsed() < user_state_cache_ttl()
                 })
                 .map(|entry| entry.clone())
             {

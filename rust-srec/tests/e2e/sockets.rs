@@ -451,6 +451,7 @@ async fn logging_routes_sockets_and_manual_split_refuse_read_only_keys_and_bad_c
 /// closes once its key is downgraded to read-only.
 #[tokio::test]
 async fn log_stream_delivers_log_events_until_its_key_is_downgraded_to_read_only() {
+    rust_srec::api::auth_service::override_auth_cache_ttl(Duration::from_millis(500));
     let app = TestApp::start().await;
     let token = app.admin_token().await;
     let key = app.create_api_key(&token, "sockets-full", "full").await;
@@ -467,7 +468,9 @@ async fn log_stream_delivers_log_events_until_its_key_is_downgraded_to_read_only
 
     // No API changes a key's access level; the row is edited directly. The
     // open socket rereads the key on its next periodic recheck. A new upgrade
-    // reads it through a cache of up to 5 s, which the edit does not clear.
+    // reads it through the key cache, which the edit does not clear, so it is
+    // refused once the cached snapshot expires (after 500 ms here, 5 s in
+    // production).
     app.run_sql(&format!(
         "UPDATE api_keys SET access_level = 'read_only' WHERE id = '{}'",
         key.id
