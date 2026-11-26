@@ -437,6 +437,20 @@ impl OutputRootGate {
         resolve_root(output_dir, &self.configured_roots)
     }
 
+    /// Ends the cooldown of every tracked root, as if a cooldown had passed
+    /// since its last attempt. The cooldown counts wall-clock seconds, which
+    /// paused Tokio time does not move.
+    #[cfg(test)]
+    pub(crate) fn end_cooldown_for_test(&self) {
+        let cooldown = self.cooldown.as_secs().max(1);
+        for entry in self.roots.iter() {
+            let last = entry.last_attempt_unix.load(Ordering::Acquire);
+            entry
+                .last_attempt_unix
+                .store(last.saturating_sub(cooldown), Ordering::Release);
+        }
+    }
+
     /// Snapshot for the `/health` endpoint. Returns one entry per tracked
     /// root, including healthy entries (which exist if the gate previously
     /// flipped to Degraded and back).

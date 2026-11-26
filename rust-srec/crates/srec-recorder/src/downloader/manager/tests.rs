@@ -1384,7 +1384,7 @@ async fn probe_output_root_tests_a_degraded_root_once_its_cooldown_ends() {
     assert!(manager.probe_output_root(&template).await.is_err());
     assert_eq!(recoveries.load(Ordering::SeqCst), 0);
 
-    tokio::time::sleep(Duration::from_millis(1200)).await;
+    gate.end_cooldown_for_test();
     assert!(manager.probe_output_root(&template).await.is_ok());
     assert_eq!(recoveries.load(Ordering::SeqCst), 1);
     assert_eq!(
