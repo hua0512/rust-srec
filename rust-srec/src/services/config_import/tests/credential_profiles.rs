@@ -285,30 +285,6 @@ async fn merge_preserves_omitted_policies_but_explicit_inherit_replaces_them() {
 }
 
 #[tokio::test]
-async fn backup_version_follows_managed_credentials_and_keeps_the_legacy_shape() {
-    let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
-    run_migrations(&pool).await.unwrap();
-    let mut tx = begin_immediate(&pool).await.unwrap();
-    let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
-    let platform = cookie_platform(&snapshot);
-    let mut config = import_config(&snapshot.global);
-    config.platforms.push(platform_export(platform));
-    config.update_schema_version();
-    assert_eq!(config.version, "0.1.8");
-    let value = serde_json::to_value(&config).unwrap();
-    assert!(value.get("credential_profiles").is_none());
-    assert!(value["platforms"][0].get("credential_selection").is_none());
-    for selection in [CredentialSelection::Inherit, CredentialSelection::None] {
-        config.platforms[0].credential_selection = Some(selection);
-        config.update_schema_version();
-        assert_eq!(config.version, "1.0.0");
-    }
-    config.platforms.clear();
-    config.update_schema_version();
-    assert_eq!(config.version, "0.1.8");
-}
-
-#[tokio::test]
 async fn repeated_profile_import_preserves_uuid_and_rejects_collisions_atomically() {
     let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
     run_migrations(&pool).await.unwrap();

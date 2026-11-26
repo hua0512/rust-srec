@@ -986,6 +986,36 @@ async fn backups_carry_account_selections_through_replace_and_merge_imports() {
     let streamer = app
         .disabled_streamer(&token, "Selecting", "https://www.huya.com/440077")
         .await;
+    let streamer_path = format!("/api/streamers/{streamer}");
+
+    // Without accounts or selections the bundle keeps the shape older
+    // releases read.
+    let plain = export(&app, &token).await;
+    assert_eq!(plain["version"], "0.1.8");
+    assert!(plain.get("credential_profiles").is_none(), "{plain}");
+    assert!(
+        plain["platforms"]
+            .as_array()
+            .expect("platforms")
+            .iter()
+            .all(|platform| platform.get("credential_selection").is_none()),
+        "{plain}"
+    );
+    // A selection alone, even `none` with no accounts, needs schema 1.0.0, or
+    // the bundle would be refused by its own import.
+    app.put(
+        &streamer_path,
+        &token,
+        &json!({"streamer_specific_config": {"credential_selection": {"mode": "none"}}}),
+    )
+    .await
+    .ok();
+    let none_only = export(&app, &token).await;
+    assert_eq!(none_only["version"], "1.0.0");
+    import(&app, &token, &none_only, "merge")
+        .await
+        .expect_status(StatusCode::OK);
+    let token = sign_in_again(&app, ADMIN_PASSWORD).await;
 
     let mut accounts = Vec::new();
     for label in ["Huya a", "Huya b"] {
@@ -1034,7 +1064,6 @@ async fn backups_carry_account_selections_through_replace_and_merge_imports() {
         )
         .await
         .created();
-    let streamer_path = format!("/api/streamers/{streamer}");
     app.put(
         &streamer_path,
         &token,
