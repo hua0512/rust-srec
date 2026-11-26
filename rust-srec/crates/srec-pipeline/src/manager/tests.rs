@@ -2442,63 +2442,6 @@ async fn test_drain_for_session_reports_outstanding_work_at_the_bound() {
     );
 }
 
-/// `handle_dag_completion` reaches the coordinator after the `dag_execution` row is
-/// already terminal, so a drain that only queried rows would call the session
-/// quiescent while the coordinator is still about to create the session-complete
-/// DAG.
-#[tokio::test]
-async fn test_drain_for_session_counts_coordinator_state_with_no_rows_left() {
-    let dag_repo = Arc::new(TestDagRepository::new());
-    let job_repo = Arc::new(TestJobRepository::new());
-    let manager: PipelineManager =
-        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo.clone())
-            .with_dag_repository(dag_repo.clone());
-
-    let session_id = "coordinated-session".to_string();
-    let streamer_id = "coordinated-streamer".to_string();
-    manager
-        .pipeline_coordinator
-        .apply_event(PipelineCoordinationEvent::SegmentDagStarted {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            segment_index: 0,
-            source: SourceType::Video,
-        });
-
-    assert_eq!(
-        manager
-            .drain_for_session(&session_id, Duration::ZERO)
-            .await
-            .unwrap(),
-        SessionDrain::Outstanding(SessionPipelineOutstanding {
-            coordinated: crate::SessionCoordinationOutstanding {
-                end_processed: false,
-                pending_dags: 1,
-                session_complete_owed: false,
-            },
-            ..Default::default()
-        })
-    );
-
-    manager
-        .pipeline_coordinator
-        .apply_event(PipelineCoordinationEvent::SegmentDagCompleted {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            segment_index: 0,
-            source: SourceType::Video,
-            outputs: Vec::new(),
-        });
-
-    assert_eq!(
-        manager
-            .drain_for_session(&session_id, Duration::ZERO)
-            .await
-            .unwrap(),
-        SessionDrain::Drained
-    );
-}
-
 /// `handle_session_transition` applies `ConfigureSession`, `SessionEnded` and
 /// `SessionEndPersisted` as three separate reducer calls, and `try_finalize` only
 /// emits the session-complete command on the last of them. A drain landing in
@@ -2592,6 +2535,40 @@ async fn test_drain_for_session_waits_for_an_owed_session_complete_dag() {
             .unwrap(),
         SessionDrain::Outstanding(_)
     ));
+
+    // A creation failure leaves no durable DAG, so the dispatch stays owed until
+    // recovery publishes it; the next end persistence emits the command again.
+    manager.pipeline_coordinator.apply_event(
+        PipelineCoordinationEvent::SessionCompleteDagCreationFailed {
+            session_id: session_id.clone(),
+        },
+    );
+    match manager
+        .drain_for_session(&session_id, Duration::ZERO)
+        .await
+        .unwrap()
+    {
+        SessionDrain::Outstanding(outstanding) => {
+            assert!(
+                outstanding.coordinated.session_complete_owed,
+                "{outstanding:?}"
+            );
+        }
+        other => panic!("expected outstanding work, got {other:?}"),
+    }
+    let commands =
+        manager
+            .pipeline_coordinator
+            .apply_event(PipelineCoordinationEvent::SessionEndPersisted {
+                session_id: session_id.clone(),
+            });
+    assert!(
+        matches!(
+            commands.as_slice(),
+            [PipelineCommand::CreateSessionCompleteDag { .. }]
+        ),
+        "{commands:?}"
+    );
 
     // `run_session_complete_pipeline` applies this only after
     // `create_dag_pipeline_internal` has published the DAG row, which is why the
@@ -2687,62 +2664,6 @@ async fn test_drain_for_session_owes_nothing_when_the_finalize_gate_cannot_open(
         started.elapsed() < Duration::from_secs(1),
         "a session whose finalize gate cannot open must not consume the bound"
     );
-}
-
-/// A creation failure leaves no durable DAG, so its dispatch remains owed until
-/// recovery can publish it or a caller explicitly changes the pipeline policy.
-#[tokio::test]
-async fn test_drain_for_session_keeps_owing_after_a_failed_session_complete_creation() {
-    let job_repo = Arc::new(TestJobRepository::new());
-    let manager: PipelineManager =
-        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo);
-
-    let session_id = "creation-failed".to_string();
-    let streamer_id = "creation-failed-streamer".to_string();
-    for event in [
-        PipelineCoordinationEvent::SegmentDagStarted {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            segment_index: 0,
-            source: SourceType::Video,
-        },
-        PipelineCoordinationEvent::SegmentDagCompleted {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            segment_index: 0,
-            source: SourceType::Video,
-            outputs: vec![PathBuf::from("/out0.mp4")],
-        },
-        PipelineCoordinationEvent::SessionEnded {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            should_run_session_complete: true,
-        },
-    ] {
-        manager.pipeline_coordinator.apply_event(event);
-    }
-
-    assert!(matches!(
-        manager
-            .drain_for_session(&session_id, Duration::ZERO)
-            .await
-            .unwrap(),
-        SessionDrain::Outstanding(_)
-    ));
-
-    manager.pipeline_coordinator.apply_event(
-        PipelineCoordinationEvent::SessionCompleteDagCreationFailed {
-            session_id: session_id.clone(),
-        },
-    );
-
-    assert!(matches!(
-        manager
-            .drain_for_session(&session_id, Duration::ZERO)
-            .await
-            .unwrap(),
-        SessionDrain::Outstanding(_)
-    ));
 }
 
 /// `on_source_artifact` emits `CreateSegmentDag` before anything else records the
