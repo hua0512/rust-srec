@@ -345,12 +345,6 @@ impl Job {
             manifest: None,
         }
     }
-
-    /// Set the job priority.
-    pub fn with_priority(mut self, priority: i32) -> Self {
-        self.priority = priority;
-        self
-    }
 }
 
 /// Result of a completed job.

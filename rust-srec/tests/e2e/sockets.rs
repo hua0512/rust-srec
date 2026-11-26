@@ -496,7 +496,9 @@ async fn downloads_socket_snapshots_every_subscription_change_until_its_credenti
     let session = app.admin().await.clone();
 
     // An upload in progress belongs to a streamer other than the one the
-    // socket narrows to below.
+    // socket narrows to below. The queued jobs count as pending uploads by
+    // their type's prefix, whatever its case; no worker pool claims these
+    // exact types, so they stay queued.
     let started_at_ms = now_ms() - 1_000;
     app.run_sql(&format!(
         r#"INSERT INTO job (id, job_type, status, config, state, created_at, updated_at, input,
@@ -504,7 +506,17 @@ async fn downloads_socket_snapshots_every_subscription_change_until_its_credenti
            VALUES ('upload-job', 'rclone', 'PROCESSING', '{{}}',
              '{{"streamer_name": "Uploading Streamer"}}', {started_at_ms}, {started_at_ms},
              '["/recordings/part-1.flv", "/recordings/part-2.flv"]', 'uploading-streamer',
-             'upload-session', {started_at_ms})"#
+             'upload-session', {started_at_ms}),
+             ('queued-rclone', 'rclone_offsite', 'PENDING', '{{}}', '{{}}', {started_at_ms},
+             {started_at_ms}, '[]', 'uploading-streamer', 'upload-session', NULL),
+             ('queued-upload', 'upload_gdrive', 'PENDING', '{{}}', '{{}}', {started_at_ms},
+             {started_at_ms}, '[]', 'uploading-streamer', 'upload-session', NULL),
+             ('queued-baidupcs', 'BaiduPCS_main', 'PENDING', '{{}}', '{{}}', {started_at_ms},
+             {started_at_ms}, '[]', 'uploading-streamer', 'upload-session', NULL),
+             ('queued-uploader', 'uploader', 'PENDING', '{{}}', '{{}}', {started_at_ms},
+             {started_at_ms}, '[]', 'uploading-streamer', 'upload-session', NULL),
+             ('queued-remux', 'remux_hd', 'PENDING', '{{}}', '{{}}', {started_at_ms},
+             {started_at_ms}, '[]', 'uploading-streamer', 'upload-session', NULL)"#
     ))
     .await;
 
@@ -535,6 +547,7 @@ async fn downloads_socket_snapshots_every_subscription_change_until_its_credenti
         assert_eq!(upload.uploader, "rclone");
         assert_eq!(upload.files_total, 2);
         assert_eq!(upload.started_at_ms, started_at_ms);
+        assert_eq!(snapshot.pending_uploads, 3, "{snapshot:?}");
     };
     assert_upload_listed(&snapshot);
 
