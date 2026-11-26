@@ -266,11 +266,10 @@ async fn background_drain_retries_a_failed_alert_before_the_later_alerts_of_its_
         Arc::new(SqlxNotificationRepository::new(pool.clone(), pool.clone())),
     ));
     let cancellation = CancellationToken::new();
-    let drainer = Arc::new(NotificationOutboxDrainer::new(
-        pool.clone(),
-        service.clone(),
-        cancellation.clone(),
-    ));
+    let drainer = Arc::new(
+        NotificationOutboxDrainer::new(pool.clone(), service.clone(), cancellation.clone())
+            .with_retry_base_delay(Duration::from_millis(10)),
+    );
     let run = tokio::spawn({
         let drainer = drainer.clone();
         async move { drainer.run().await }
