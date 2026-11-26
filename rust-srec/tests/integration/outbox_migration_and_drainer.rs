@@ -1,6 +1,6 @@
 //! Real SQLite integration tests for the `monitor_event_outbox` `ON DELETE SET NULL`
-//! migration, `NotificationOutboxDrainer` two-level decoding, shutdown replay, and
-//! dead-letter settlement.
+//! migration, `NotificationOutboxDrainer` two-level decoding, per-streamer order,
+//! shutdown replay, and circuit-breaker dead letters.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -22,8 +22,7 @@ use rust_srec::database::repositories::{
 use rust_srec::domain::StreamerState;
 use rust_srec::domain::streamer::FatalErrorType;
 use rust_srec::notification::{
-    NotificationEvent, NotificationOutboxDrainer, NotificationService, NotificationServiceConfig,
-    OutboxDrainReport,
+    NotificationOutboxDrainer, NotificationService, NotificationServiceConfig, OutboxDrainReport,
 };
 use rust_srec::recorder::OutboxEvent;
 use rust_srec::services::maintenance::{MaintenanceConfig, MaintenanceScheduler};
@@ -518,7 +517,7 @@ async fn migration_rebuilds_outbox_with_set_null_and_preserves_rows_and_retentio
 }
 
 #[tokio::test]
-async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_streamers() {
+async fn drainer_delivers_mixed_legacy_and_v2_in_streamer_order_and_handles_deleted_streamers() {
     tokio::time::timeout(Duration::from_secs(30), async {
         let pool = rust_srec::database::init_pool_with_size("sqlite::memory:", 1)
             .await
@@ -644,7 +643,7 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
         )
         .await;
 
-        // 7. Malformed poison JSON row -> skipped so head-of-line progression continues
+        // 7. Malformed poison JSON row -> marked delivered, since it can never decode
         sqlx::query(
             "INSERT INTO monitor_event_outbox (streamer_id, event_type, payload, created_at) \
              VALUES ('s-active', 'Corrupt', '{not-json', ?)",
@@ -755,7 +754,6 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
         assert_eq!(
             report,
             OutboxDrainReport {
-                fetched: 13,
                 delivered: 8,
                 skipped: 5,
                 failed: 0,
@@ -763,8 +761,9 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
             }
         );
 
-        // Webhook observed ONLY the 8 alertable notifications in strict `id` ascending order
-        // with exact millisecond timestamps and StreamOffline duration_secs preserved.
+        // Webhook observed ONLY the 8 alertable notifications, each streamer's in
+        // `id` order, with exact millisecond timestamps and StreamOffline
+        // duration_secs preserved. Different streamers' alerts settle concurrently.
         let received = server_state.received.lock().await;
         let summary: Vec<(&str, &str, i64)> = received
             .iter()
@@ -782,47 +781,77 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
                 )
             })
             .collect();
+        let alerts_of = |streamer: &str| -> Vec<(&str, i64)> {
+            summary
+                .iter()
+                .filter(|(_, id, _)| *id == streamer)
+                .map(|(event_type, _, ts_ms)| (*event_type, *ts_ms))
+                .collect()
+        };
+        assert_eq!(summary.len(), 8);
         assert_eq!(
-            summary,
+            alerts_of("s-active"),
             vec![
-                ("fatal_error", "s-active", base_ms + 2),
-                ("stream_online", "s-active", base_ms + 3),
-                ("streamer_checks_failing", "s-deleted", base_ms + 8),
-                ("streamer_checks_failing", "s-active", base_ms + 9),
-                ("fatal_error", "s-active", base_ms + 10),
-                ("stream_offline", "s-deleted", base_ms + 11),
-                ("streamer_checks_restored", "s-active", base_ms + 12),
-                ("streamer_checks_restored", "s-active", base_ms + 13),
+                ("fatal_error", base_ms + 2),
+                ("stream_online", base_ms + 3),
+                ("streamer_checks_failing", base_ms + 9),
+                ("fatal_error", base_ms + 10),
+                ("streamer_checks_restored", base_ms + 12),
+                ("streamer_checks_restored", base_ms + 13),
             ]
         );
         assert_eq!(
-            received[5]["data"]["StreamOffline"]["duration_secs"],
+            alerts_of("s-deleted"),
+            vec![
+                ("streamer_checks_failing", base_ms + 8),
+                ("stream_offline", base_ms + 11),
+            ]
+        );
+        let offline = received
+            .iter()
+            .find(|body| body["event_type"] == "stream_offline")
+            .unwrap();
+        assert_eq!(
+            offline["data"]["StreamOffline"]["duration_secs"],
             Value::from(123.5)
         );
         drop(received);
 
-        // Also exercise the race where a streamer is deleted AFTER fetch (so the caller
-        // passes a non-NULL `streamer_id`): `SqlxNotificationRepository::add_event_log`
-        // must atomically resolve the FK column to NULL without an FK violation while
-        // preserving original streamer_id and streamer_name in JSON payload.
+        // A row can still name a streamer whose row is gone: the streamer was
+        // deleted after the row was fetched, or the row is an orphan copied while
+        // foreign keys were off. `SqlxNotificationRepository::add_event_log`
+        // resolves the foreign-key column to NULL without a violation, and the
+        // JSON payload keeps the original streamer_id and streamer_name.
         let raced_ts = base_ms + 14;
-        service
-            .deliver_durable_for_outbox(
-                NotificationEvent::FatalError {
-                    streamer_id: "s-deleted".into(),
-                    streamer_name: "Deleted Streamer".into(),
-                    error_type: "NotFound".into(),
-                    message: "raced delete".into(),
-                    timestamp: Timestamp::from_millisecond(raced_ts).unwrap(),
-                },
-                Some("s-deleted"),
-            )
+        let mut conn = pool.acquire().await.unwrap();
+        sqlx::query("PRAGMA foreign_keys = OFF")
+            .execute(&mut *conn)
             .await
             .unwrap();
+        enqueue_outbox_event(
+            &mut conn,
+            Some("s-deleted"),
+            &OutboxEvent::FatalError {
+                streamer_id: "s-deleted".into(),
+                streamer_name: "Deleted Streamer".into(),
+                error_type: FatalErrorType::NotFound,
+                message: "raced delete".into(),
+                new_state: StreamerState::NotFound,
+                occurred_at_ms: raced_ts,
+            },
+            raced_ts,
+        )
+        .await;
+        sqlx::query("PRAGMA foreign_keys = ON")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        drop(conn);
+        assert_eq!(drainer.drain_until_wait().await.unwrap().delivered, 1);
 
         let log_rows: Vec<(String, Option<String>, i64, String)> = sqlx::query_as(
             "SELECT event_type, streamer_id, created_at, payload \
-             FROM notification_event_log ORDER BY rowid",
+             FROM notification_event_log ORDER BY created_at",
         )
         .fetch_all(&pool)
         .await
@@ -851,12 +880,15 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
         .await
         .unwrap();
         assert_eq!(undelivered, 0);
-        assert!(
-            sqlx::query("PRAGMA foreign_key_check")
+        let violations: Vec<(String, String)> =
+            sqlx::query_as("SELECT \"table\", parent FROM pragma_foreign_key_check")
                 .fetch_all(&pool)
                 .await
-                .unwrap()
-                .is_empty()
+                .unwrap();
+        assert_eq!(
+            violations,
+            vec![("monitor_event_outbox".to_owned(), "streamers".to_owned())],
+            "only the deliberately orphaned outbox row may violate a foreign key"
         );
 
         service.stop().await;
@@ -867,7 +899,7 @@ async fn drainer_delivers_mixed_legacy_and_v2_in_id_order_and_handles_deleted_st
 }
 
 #[tokio::test]
-async fn drainer_preserves_head_of_line_on_shutdown_cancellation_and_dead_letter() {
+async fn drainer_keeps_streamer_order_across_shutdown_and_cancellation() {
     tokio::time::timeout(Duration::from_secs(30), async {
         let pool = rust_srec::database::init_pool_with_size("sqlite::memory:", 1)
             .await
@@ -878,8 +910,7 @@ async fn drainer_preserves_head_of_line_on_shutdown_cancellation_and_dead_letter
         let (url, server_state, server_handle) =
             spawn_webhook_server(HookMode::HoldAt { hold_on_attempt: 2 }).await;
         let repo = Arc::new(SqlxNotificationRepository::new(pool.clone(), pool.clone()));
-        let channel_id =
-            register_webhook_channel(&repo, &url, &["stream_online", "fatal_error"]).await;
+        register_webhook_channel(&repo, &url, &["stream_online"]).await;
 
         let make_service = || {
             let repo = repo.clone();
@@ -898,8 +929,9 @@ async fn drainer_preserves_head_of_line_on_shutdown_cancellation_and_dead_letter
             }
         };
 
-        // Part A: Partial-batch flush + head-of-line preservation on service shutdown.
-        // Enqueue 3 rows: row 1 settles 200 OK, row 2 is held when stop() fires, row 3 must not run.
+        // Rows of one streamer settle in order; service shutdown keeps the unsettled
+        // ones. Enqueue 3 rows: row 1 settles 200 OK, row 2 is held when stop()
+        // fires, row 3 must not run.
         let t1 = 1_735_200_000_000i64;
         let mut tx = rust_srec::database::begin_immediate(&pool).await.unwrap();
         for (offset, title) in [(0, "First"), (1000, "Second"), (2000, "Third")] {
@@ -929,7 +961,7 @@ async fn drainer_preserves_head_of_line_on_shutdown_cancellation_and_dead_letter
             CancellationToken::new(),
         );
         let arrived = server_state.held_arrived.notified();
-        let drain_task = tokio::spawn(async move { drainer1.drain_once().await.unwrap() });
+        let drain_task = tokio::spawn(async move { drainer1.drain_until_wait().await.unwrap() });
 
         arrived.await;
         service1.stop().await;
@@ -939,7 +971,6 @@ async fn drainer_preserves_head_of_line_on_shutdown_cancellation_and_dead_letter
         assert_eq!(
             report1,
             OutboxDrainReport {
-                fetched: 3,
                 delivered: 1,
                 skipped: 0,
                 failed: 1,
@@ -971,7 +1002,7 @@ async fn drainer_preserves_head_of_line_on_shutdown_cancellation_and_dead_letter
         let drainer2 =
             NotificationOutboxDrainer::new(pool.clone(), service2.clone(), drainer_cancel.clone());
         let arrived2 = server_state.held_arrived.notified();
-        let drain_task2 = tokio::spawn(async move { drainer2.drain_once().await.unwrap() });
+        let drain_task2 = tokio::spawn(async move { drainer2.drain_until_wait().await.unwrap() });
         arrived2.await;
         drainer_cancel.cancel();
         let _ = release_tx2.send(());
@@ -1003,101 +1034,18 @@ async fn drainer_preserves_head_of_line_on_shutdown_cancellation_and_dead_letter
             })
             .collect();
         assert_eq!(titles, vec!["First", "Second", "Third"]);
-
-        // Part B: Transient dead-letter insert failure records attempts & last_error and
-        // halts head-of-line progression; once DB recovers, dead-letter persistence succeeds
-        // and settles both rows in order.
-        *server_state.mode.lock().await = HookMode::Fail;
-        server_state.attempts.store(0, Ordering::SeqCst);
-        sqlx::query(
-            "CREATE TRIGGER fail_dead_letter_insert BEFORE INSERT ON notification_dead_letter \
-             BEGIN SELECT RAISE(ABORT, 'simulated dead-letter write failure'); END",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        let t2 = 1_735_200_060_000i64;
-        let mut tx = rust_srec::database::begin_immediate(&pool).await.unwrap();
-        for (offset, msg) in [(0, "dead-letter-1"), (1000, "dead-letter-2")] {
-            enqueue_outbox_event(
-                &mut tx,
-                Some("s1"),
-                &OutboxEvent::FatalError {
-                    streamer_id: "s1".into(),
-                    streamer_name: "Replay Streamer".into(),
-                    error_type: FatalErrorType::NotFound,
-                    message: msg.into(),
-                    new_state: StreamerState::NotFound,
-                    occurred_at_ms: t2 + offset,
-                },
-                t2 + offset,
-            )
-            .await;
-        }
-        tx.commit().await.unwrap();
-
-        let report_transient = drainer3.drain_once().await.unwrap();
-        assert_eq!(report_transient.delivered, 0);
-        assert_eq!(report_transient.failed, 1);
-        assert!(report_transient.needs_wait);
-        assert_eq!(server_state.attempts.load(Ordering::SeqCst), 2);
-
-        let failing_rows: Vec<(Option<i64>, i64, Option<String>)> = sqlx::query_as(
-            "SELECT delivered_at, attempts, last_error FROM monitor_event_outbox \
-             WHERE delivered_at IS NULL ORDER BY id",
-        )
-        .fetch_all(&pool)
-        .await
-        .unwrap();
-        assert_eq!(failing_rows.len(), 2);
-        assert_eq!(failing_rows[0].0, None);
-        assert_eq!(failing_rows[0].1, 1);
-        assert!(
-            failing_rows[0]
-                .2
-                .as_deref()
-                .is_some_and(|e| e.contains("dead letter"))
-        );
-        assert_eq!(
-            failing_rows[1],
-            (None, 0, None),
-            "row behind transient failure must not be attempted out of order"
-        );
-
-        // Drop fault trigger: retrying now persists dead letters and marks both rows delivered.
-        sqlx::query("DROP TRIGGER fail_dead_letter_insert")
-            .execute(&pool)
+        // Row 2 was attempted three times but is logged once, like the others.
+        let logged: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM notification_event_log")
+            .fetch_one(&pool)
             .await
             .unwrap();
-        server_state.attempts.store(0, Ordering::SeqCst);
-
-        let report_dl = drainer3.drain_until_wait().await.unwrap();
-        assert_eq!(report_dl.delivered, 2);
-        assert_eq!(report_dl.failed, 0);
-        assert_eq!(server_state.attempts.load(Ordering::SeqCst), 4);
-
-        let dl_rows = repo.list_dead_letters(Some(&channel_id), 10).await.unwrap();
-        assert_eq!(dl_rows.len(), 2);
-        assert!(
-            dl_rows
-                .iter()
-                .all(|r| r.event_name == "fatal_error" && r.retry_count == 2)
-        );
-
-        let remaining_undelivered: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM monitor_event_outbox WHERE delivered_at IS NULL",
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(remaining_undelivered, 0);
+        assert_eq!(logged, 3);
 
         service2.stop().await;
         server_handle.abort();
     })
     .await
-    .expect("head-of-line shutdown and dead-letter integration test must finish");
+    .expect("streamer-order shutdown and cancellation integration test must finish");
 }
 
 #[tokio::test]
@@ -1272,7 +1220,7 @@ async fn drainer_retains_outbox_rows_until_db_channels_load_succeeds() {
         async fn add_event_log(
             &self,
             entry: &NotificationEventLogDbModel,
-        ) -> rust_srec::database::DbResult<()> {
+        ) -> rust_srec::database::DbResult<bool> {
             self.inner.add_event_log(entry).await
         }
     }

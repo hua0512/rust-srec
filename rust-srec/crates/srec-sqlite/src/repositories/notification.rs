@@ -79,7 +79,9 @@ pub trait NotificationRepository: Send + Sync {
     ) -> Result<Vec<NotificationDeadLetterDbModel>>;
 
     // Event log
-    async fn add_event_log(&self, entry: &NotificationEventLogDbModel) -> Result<()>;
+    /// Insert `entry` unless an entry with its `id` exists; returns whether it
+    /// was inserted. Callers that may replay a notification give it a stable id.
+    async fn add_event_log(&self, entry: &NotificationEventLogDbModel) -> Result<bool>;
 }
 
 /// SQLx implementation of NotificationRepository.
@@ -310,11 +312,12 @@ impl NotificationRepository for SqlxNotificationRepository {
         Ok(entries)
     }
 
-    async fn add_event_log(&self, entry: &NotificationEventLogDbModel) -> Result<()> {
+    async fn add_event_log(&self, entry: &NotificationEventLogDbModel) -> Result<bool> {
         // Resolve the foreign-key column against `streamers` atomically so
         // replaying an event after a streamer row is physically deleted stores
         // NULL in the FK column while preserving the original IDs in `payload`.
-        sqlx::query(
+        // Only a duplicate `id` is ignored; any other constraint still fails.
+        let inserted = sqlx::query(
             r#"
             INSERT INTO notification_event_log (
                 id, event_type, priority, payload, streamer_id, created_at
@@ -323,6 +326,7 @@ impl NotificationRepository for SqlxNotificationRepository {
                 (SELECT id FROM streamers WHERE id = ?),
                 ?
             )
+            ON CONFLICT (id) DO NOTHING
             "#,
         )
         .bind(&entry.id)
@@ -332,7 +336,9 @@ impl NotificationRepository for SqlxNotificationRepository {
         .bind(&entry.streamer_id)
         .bind(entry.created_at)
         .execute(&self.write_pool)
-        .await?;
-        Ok(())
+        .await?
+        .rows_affected()
+            > 0;
+        Ok(inserted)
     }
 }

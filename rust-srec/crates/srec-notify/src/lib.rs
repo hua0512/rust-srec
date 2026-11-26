@@ -55,6 +55,6 @@ pub use outbox_drainer::{
     outbox_event_to_notification,
 };
 pub use service::{
-    DeadLetterEntry, DurableDeliveryError, NotificationChannelInstance, NotificationChannelSource,
-    NotificationService, NotificationServiceConfig, NotificationStats,
+    DeadLetterEntry, NotificationChannelInstance, NotificationChannelSource, NotificationService,
+    NotificationServiceConfig, NotificationStats,
 };

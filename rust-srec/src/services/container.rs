@@ -379,12 +379,11 @@ impl ServiceContainer {
         info!("Database maintenance scheduler started");
 
         // Start durable notification outbox drainer and recorder actor registry.
+        // The drainer scans the outbox as soon as it starts, so rows left by a
+        // previous run are replayed without waiting for a new commit.
         if let Some(drainer) = self.outbox_drainer.lock().take() {
             self.task_supervisor
                 .spawn("notification outbox drainer", async move {
-                    if let Err(error) = drainer.drain_until_wait().await {
-                        warn!(%error, "Initial notification outbox drain failed");
-                    }
                     drainer.run().await;
                 });
         }

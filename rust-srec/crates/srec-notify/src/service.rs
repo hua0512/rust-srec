@@ -54,6 +54,11 @@ const WEB_PUSH_QUEUE_CAPACITY: usize = 2048;
 const WEB_PUSH_BATCH_SIZE: usize = 64;
 const WEB_PUSH_FLUSH_INTERVAL_MS: u64 = 250;
 const MAX_NOTIFICATION_PASSES: usize = 16;
+/// Outbox rows in their first delivery pass at the same time. These passes do
+/// not count against `MAX_NOTIFICATION_PASSES`, and there are fewer of them
+/// than `MAX_CHANNEL_SENDS`, so first passes stuck on one slow channel leave
+/// passes and sends for other notifications.
+const MAX_DURABLE_PASSES: usize = 8;
 const DISPATCH_QUEUE_CAPACITY: usize = 1024;
 const MAX_CHANNEL_SENDS: usize = 16;
 
@@ -174,62 +179,48 @@ struct ChannelDeliveryState {
     last_error: Option<String>,
 }
 
-/// Error returned by [`NotificationService::deliver_durable`].
+/// Error returned by [`NotificationService::deliver_durable_for_outbox`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum DurableDeliveryError {
+pub(crate) enum DurableDeliveryError {
     /// The notification service is shutting down or was cancelled before all
     /// subscribed channels settled. The caller must keep the outbox row
     /// undelivered for replay on the next startup.
     #[error("notification service is shutting down")]
     TransientShuttingDown,
-    /// A durable persistence step (such as recording a dead-letter entry in
-    /// SQLite) failed transiently so settlement cannot be confirmed yet.
+    /// The notification could not be admitted for delivery yet: channels have
+    /// not loaded from the database, or the event log, the only record of an
+    /// alert that no channel receives, could not be written.
     #[error("durable notification settlement failed: {0}")]
     Transient(String),
 }
 
+type DurableOutcome = std::result::Result<(), DurableDeliveryError>;
+
 #[derive(Clone)]
 struct DurableSettlement {
-    inner: Arc<parking_lot::Mutex<DurableSettlementState>>,
-}
-
-struct DurableSettlementState {
-    sender: Option<oneshot::Sender<std::result::Result<(), DurableDeliveryError>>>,
-    dead_letter_error: Option<String>,
+    sender: Arc<parking_lot::Mutex<Option<oneshot::Sender<DurableOutcome>>>>,
 }
 
 impl DurableSettlement {
-    fn new(sender: oneshot::Sender<std::result::Result<(), DurableDeliveryError>>) -> Self {
+    fn new(sender: oneshot::Sender<DurableOutcome>) -> Self {
         Self {
-            inner: Arc::new(parking_lot::Mutex::new(DurableSettlementState {
-                sender: Some(sender),
-                dead_letter_error: None,
-            })),
-        }
-    }
-
-    fn record_dead_letter_error(&self, error: String) {
-        let mut guard = self.inner.lock();
-        if guard.dead_letter_error.is_none() {
-            guard.dead_letter_error = Some(error);
+            sender: Arc::new(parking_lot::Mutex::new(Some(sender))),
         }
     }
 
     fn settle_completed(&self) {
-        let mut guard = self.inner.lock();
-        let outcome = match guard.dead_letter_error.take() {
-            Some(err) => Err(DurableDeliveryError::Transient(err)),
-            None => Ok(()),
-        };
-        if let Some(tx) = guard.sender.take() {
-            let _ = tx.send(outcome);
-        }
+        self.settle(Ok(()));
     }
 
     fn settle_err(&self, err: DurableDeliveryError) {
-        let mut guard = self.inner.lock();
-        if let Some(tx) = guard.sender.take() {
-            let _ = tx.send(Err(err));
+        self.settle(Err(err));
+    }
+
+    fn settle(&self, outcome: DurableOutcome) {
+        if let Some(tx) = self.sender.lock().take() {
+            // A closed receiver means the caller stopped waiting; nothing else
+            // consumes the outcome.
+            let _ = tx.send(outcome);
         }
     }
 }
@@ -352,6 +343,7 @@ pub struct NotificationService {
     pending_queue: Arc<DashMap<u64, PendingNotification>>,
     queue_admission: parking_lot::Mutex<()>,
     dispatch_permits: Semaphore,
+    durable_pass_permits: Semaphore,
     dispatch_tx: mpsc::Sender<NotificationEvent>,
     dispatch_rx: parking_lot::Mutex<Option<mpsc::Receiver<NotificationEvent>>>,
     dispatch_dropped: AtomicU64,
@@ -450,6 +442,7 @@ impl NotificationService {
             pending_queue: Arc::new(DashMap::new()),
             queue_admission: parking_lot::Mutex::new(()),
             dispatch_permits: Semaphore::new(MAX_NOTIFICATION_PASSES),
+            durable_pass_permits: Semaphore::new(MAX_DURABLE_PASSES),
             dispatch_tx,
             dispatch_rx: parking_lot::Mutex::new(Some(dispatch_rx)),
             dispatch_dropped: AtomicU64::new(0),
@@ -523,6 +516,8 @@ impl NotificationService {
         Ok(())
     }
 
+    /// Queue `pending` for delivery; `false` means an ordinary entry was refused.
+    /// Durable entries are always queued.
     fn enqueue_pending(&self, id: u64, pending: PendingNotification) -> bool {
         // Capacity inspection, oldest selection and insertion form one admission.
         // Delivery may remove entries concurrently, but cannot add capacity.
@@ -569,56 +564,51 @@ impl NotificationService {
         self.notify_admitted(event).await
     }
 
-    /// Deliver an event with at-least-once durable settlement semantics.
+    /// Deliver the notification of one `monitor_event_outbox` row with
+    /// at-least-once settlement semantics.
     ///
     /// Returns `Ok(())` only when notifications are disabled, no subscribed
     /// channels match the event, or every subscribed channel has either
-    /// succeeded or persisted its terminal failure into
-    /// `notification_dead_letter`. Returns
-    /// [`DurableDeliveryError::TransientShuttingDown`] if the service is
-    /// shutting down or cancelled before settlement completes, ensuring the
-    /// caller retains the durable outbox row for replay.
-    pub async fn deliver_durable(
-        &self,
-        event: NotificationEvent,
-    ) -> std::result::Result<(), DurableDeliveryError> {
-        let streamer_id_fk = event.streamer_id().map(str::to_owned);
-        self.deliver_durable_inner(event, streamer_id_fk).await
-    }
-
-    /// Outbox-aware variant of [`Self::deliver_durable`] where the outbox row's
-    /// foreign-key `streamer_id` column may already have been cleared to `NULL`
-    /// after the streamer row was physically deleted.
+    /// succeeded or been dead-lettered. Recording the dead letter in
+    /// `notification_dead_letter` is best-effort: failing the settlement over
+    /// it would make the outbox resend the alert to every channel that already
+    /// received it. Returns [`DurableDeliveryError::TransientShuttingDown`] if
+    /// the service is shutting down or cancelled before settlement completes,
+    /// so the caller keeps the outbox row undelivered for replay.
     ///
-    /// When `outbox_streamer_id` is `None`, the `notification_event_log`
-    /// foreign-key column is written as `NULL` while the JSON `payload` keeps
-    /// the original `streamer_id` and `streamer_name` embedded in `event`.
-    pub async fn deliver_durable_for_outbox(
+    /// A row is delivered again when an earlier attempt did not settle, so
+    /// channels may receive it more than once. `event_log_id` must be the same
+    /// on every attempt: the `notification_event_log` entry is written once,
+    /// and the internal broadcast (which drives desktop notifications) and
+    /// Web Push go out only with the attempt that wrote it.
+    ///
+    /// The row's `streamer_id` column is cleared to `NULL` once the streamer
+    /// row is deleted. When `outbox_streamer_id` is `None`, the
+    /// `notification_event_log` foreign-key column is written as `NULL` while
+    /// the JSON `payload` keeps the original `streamer_id` and `streamer_name`
+    /// embedded in `event`.
+    pub(crate) async fn deliver_durable_for_outbox(
         &self,
         event: NotificationEvent,
         outbox_streamer_id: Option<&str>,
+        event_log_id: String,
     ) -> std::result::Result<(), DurableDeliveryError> {
         let streamer_id_fk = outbox_streamer_id
             .filter(|id| !id.is_empty())
             .and_then(|id| event.streamer_id().map(|_| id.to_owned()));
-        self.deliver_durable_inner(event, streamer_id_fk).await
-    }
-
-    async fn deliver_durable_inner(
-        &self,
-        event: NotificationEvent,
-        streamer_id_fk: Option<String>,
-    ) -> std::result::Result<(), DurableDeliveryError> {
         if self.cancellation_token.is_cancelled() {
             return Err(DurableDeliveryError::TransientShuttingDown);
         }
 
+        // The outbox drainer settles many rows at once. Their first passes have
+        // a limit of their own, so rows stuck on a slow channel cannot take the
+        // passes that other notifications need.
         let permit = tokio::select! {
             biased;
             _ = self.cancellation_token.cancelled() => {
                 return Err(DurableDeliveryError::TransientShuttingDown);
             }
-            permit = self.dispatch_permits.acquire() => {
+            permit = self.durable_pass_permits.acquire() => {
                 permit.map_err(|_| DurableDeliveryError::TransientShuttingDown)?
             }
         };
@@ -647,38 +637,53 @@ impl NotificationService {
 
         let target_channels = self.subscribed_targets_for(&event);
 
-        let _ = self.event_tx.send(event.clone());
-
-        let event_log_id = Uuid::new_v4().to_string();
-        if let Some(repo) = self.notification_repo.as_ref().cloned() {
-            let entry = NotificationEventLogDbModel {
-                id: event_log_id.clone(),
-                event_type: event.event_type().to_string(),
-                priority: event.priority().as_int() as i32,
-                payload: serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string()),
-                streamer_id: streamer_id_fk,
-                created_at: event.timestamp().as_millisecond(),
-            };
-            if let Err(e) = repo.add_event_log(&entry).await {
-                if target_channels.is_empty() {
-                    return Err(DurableDeliveryError::Transient(format!(
-                        "failed to persist notification event log: {e}"
-                    )));
+        let first_attempt = match self.notification_repo.as_ref() {
+            None => true,
+            Some(repo) => {
+                let entry = NotificationEventLogDbModel {
+                    id: event_log_id.clone(),
+                    event_type: event.event_type().to_string(),
+                    priority: event.priority().as_int() as i32,
+                    payload: serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string()),
+                    streamer_id: streamer_id_fk,
+                    created_at: event.timestamp().as_millisecond(),
+                };
+                match repo.add_event_log(&entry).await {
+                    Ok(inserted) => inserted,
+                    // With no channel subscribed, the entry is the alert's only
+                    // record: keep the outbox row for another attempt.
+                    Err(e) if target_channels.is_empty() => {
+                        return Err(DurableDeliveryError::Transient(format!(
+                            "failed to persist notification event log: {e}"
+                        )));
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "Failed to persist notification event log (non-fatal)");
+                        true
+                    }
                 }
-                warn!(error = %e, "Failed to persist notification event log (non-fatal)");
+            }
+        };
+
+        // The broadcast and the Web Push enqueue follow the write that logs the
+        // row with no await in between, so an entry that is already logged had
+        // both issued by the attempt that wrote it, unless that attempt was
+        // dropped during the write. A failed write cannot tell, so it issues
+        // them rather than risk losing them. A replay never issues them again,
+        // so a push that the queue drops (when full, or at shutdown) is lost.
+        if first_attempt {
+            let _ = self.event_tx.send(event.clone());
+            if self.web_push_service.is_some() {
+                let queued = WebPushQueuedEvent {
+                    event: event.clone(),
+                    event_log_id: Some(event_log_id),
+                };
+                self.enqueue_web_push(queued);
             }
         }
 
         if self.cancellation_token.is_cancelled() {
             return Err(DurableDeliveryError::TransientShuttingDown);
-        }
-
-        if self.web_push_service.is_some() {
-            let queued = WebPushQueuedEvent {
-                event: event.clone(),
-                event_log_id: Some(event_log_id),
-            };
-            self.enqueue_web_push(queued);
         }
 
         if target_channels.is_empty() {
@@ -692,12 +697,9 @@ impl NotificationService {
         let (settled_tx, mut settled_rx) = oneshot::channel();
         let settlement = DurableSettlement::new(settled_tx);
         let pending = PendingNotification::new_durable(id, event, target_channels, settlement);
-
-        if !self.enqueue_pending(id, pending) {
-            return Err(DurableDeliveryError::Transient(
-                "failed to enqueue durable notification".to_owned(),
-            ));
-        }
+        // Durable entries are always admitted: a full queue evicts an
+        // ordinary entry or grows past capacity, but never refuses them.
+        self.enqueue_pending(id, pending);
 
         struct DurableQueueGuard<'a> {
             id: u64,
@@ -1208,7 +1210,7 @@ mod tests {
         async fn add_event_log(
             &self,
             entry: &NotificationEventLogDbModel,
-        ) -> srec_sqlite::DbResult<()> {
+        ) -> srec_sqlite::DbResult<bool> {
             assert!(
                 !self.panic_next_event_log.swap(false, Ordering::SeqCst),
                 "injected event-log panic"
@@ -1216,8 +1218,12 @@ mod tests {
             if let Some(gate) = &self.event_log_gate {
                 gate.acquire().await.unwrap().forget();
             }
-            self.event_logs.lock().await.push(entry.clone());
-            Ok(())
+            let mut logs = self.event_logs.lock().await;
+            if logs.iter().any(|logged| logged.id == entry.id) {
+                return Ok(false);
+            }
+            logs.push(entry.clone());
+            Ok(true)
         }
     }
 

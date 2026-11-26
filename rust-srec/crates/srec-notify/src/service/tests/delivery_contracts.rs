@@ -1,6 +1,9 @@
 use std::sync::atomic::AtomicU32;
 
 use super::*;
+use crate::web_push::{WebPushConfig, generate_vapid_keypair};
+
+const EVENT_LOG_ID: &str = "00000000-0000-8000-8000-000000000001";
 
 fn event() -> NotificationEvent {
     NotificationEvent::SystemStartup {
@@ -187,6 +190,38 @@ async fn breaker_cooldown_preserves_attempts_and_retry_floor() {
             .shutdown(Duration::from_secs(1))
             .await
     );
+}
+
+/// A durable delivery dead-letters a channel as soon as its breaker opens.
+/// That channel is never retried, so its cooldown must not delay the retry of
+/// another channel of the same alert.
+#[tokio::test(start_paused = true)]
+async fn dead_lettered_breaker_does_not_delay_other_channels_to_its_cooldown() {
+    let service = NotificationService::with_config(NotificationServiceConfig {
+        max_retries: 3,
+        initial_retry_delay_ms: 10,
+        max_retry_delay_ms: 10,
+        circuit_breaker_threshold: 2,
+        circuit_breaker_cooldown_secs: 300,
+        ..Default::default()
+    });
+    let broken = channel(&service, "broken", u32::MAX);
+    let flaky = channel(&service, "flaky", 1);
+    // An earlier failure leaves the broken channel one failure from opening.
+    service.registry.read().by_key["broken"]
+        .breaker
+        .lock()
+        .record_failure(2);
+    tokio::time::timeout(
+        Duration::from_secs(60),
+        service.deliver_durable_for_outbox(event(), None, EVENT_LOG_ID.into()),
+    )
+    .await
+    .expect("the flaky channel's retry must not wait for the broken channel's cooldown")
+    .unwrap();
+    assert_eq!(broken.load(Ordering::SeqCst), 1);
+    assert_eq!(flaky.load(Ordering::SeqCst), 2);
+    service.stop().await;
 }
 
 #[tokio::test]
@@ -709,7 +744,11 @@ async fn durable_entries_survive_full_queue_eviction_and_settle_on_completion() 
 
     let durable_task = tokio::spawn({
         let service = service.clone();
-        async move { service.deliver_durable(event()).await }
+        async move {
+            service
+                .deliver_durable_for_outbox(event(), None, EVENT_LOG_ID.into())
+                .await
+        }
     });
     let (_, release_durable) = tokio::time::timeout(Duration::from_secs(1), starts.recv())
         .await
@@ -771,15 +810,65 @@ async fn durable_entries_survive_full_queue_eviction_and_settle_on_completion() 
     service2.stop().await;
 }
 
+/// Replaying an outbox row reuses its event-log id: the event log, the
+/// broadcast that drives desktop notifications and Web Push see the alert once,
+/// while channels may receive it again.
+#[tokio::test]
+async fn replayed_outbox_row_is_logged_broadcast_and_pushed_once() {
+    let repo = Arc::new(MockNotificationRepo::new());
+    let keys = generate_vapid_keypair();
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect_lazy("sqlite::memory:")
+        .unwrap();
+    let web_push = WebPushService::new(
+        pool.clone(),
+        pool,
+        WebPushConfig::from_vapid(
+            keys.public_key_b64,
+            keys.private_key_b64,
+            "mailto:test@localhost",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let service =
+        NotificationService::with_repository(NotificationServiceConfig::default(), repo.clone())
+            .with_web_push_service(Arc::new(web_push));
+    let (push_tx, mut pushes) = mpsc::channel(8);
+    *service.web_push_tx.write() = Some(push_tx);
+    let mut broadcasts = service.subscribe();
+    let sends = channel(&service, "target", 0);
+
+    for _ in 0..2 {
+        service
+            .deliver_durable_for_outbox(event(), None, EVENT_LOG_ID.into())
+            .await
+            .unwrap();
+    }
+    assert_eq!(sends.load(Ordering::SeqCst), 2);
+    assert_eq!(repo.event_logs.lock().await.len(), 1);
+    assert!(broadcasts.try_recv().is_ok());
+    assert!(broadcasts.try_recv().is_err());
+    assert_eq!(
+        pushes.try_recv().unwrap().event_log_id.as_deref(),
+        Some(EVENT_LOG_ID)
+    );
+    assert!(pushes.try_recv().is_err());
+}
+
 #[tokio::test(start_paused = true)]
-async fn deliver_durable_rejects_shutdown_and_dead_letter_persistence_failures() {
+async fn deliver_durable_rejects_shutdown_but_not_dead_letter_persistence_failures() {
     // 1. Mid-delivery shutdown and post-stop calls must return TransientShuttingDown,
     //    drop in-flight sends, and leave pending_queue empty.
     let service = Arc::new(NotificationService::new());
     let mut starts = controlled_targets(&service, &["stalled"]);
     let in_flight = tokio::spawn({
         let service = service.clone();
-        async move { service.deliver_durable(event()).await }
+        async move {
+            service
+                .deliver_durable_for_outbox(event(), None, EVENT_LOG_ID.into())
+                .await
+        }
     });
     let (_key, held_release) = tokio::time::timeout(Duration::from_secs(1), starts.recv())
         .await
@@ -797,7 +886,9 @@ async fn deliver_durable_rejects_shutdown_and_dead_letter_persistence_failures()
     );
     assert!(service.pending_queue.is_empty());
     assert_eq!(
-        service.deliver_durable(event()).await,
+        service
+            .deliver_durable_for_outbox(event(), None, EVENT_LOG_ID.into())
+            .await,
         Err(DurableDeliveryError::TransientShuttingDown)
     );
 
@@ -807,7 +898,11 @@ async fn deliver_durable_rejects_shutdown_and_dead_letter_persistence_failures()
     let mut drop_starts = controlled_targets(&drop_service, &["stalled"]);
     let caller_task = tokio::spawn({
         let service = drop_service.clone();
-        async move { service.deliver_durable(event()).await }
+        async move {
+            service
+                .deliver_durable_for_outbox(event(), None, EVENT_LOG_ID.into())
+                .await
+        }
     });
     let (_key, drop_release) = tokio::time::timeout(Duration::from_secs(1), drop_starts.recv())
         .await
@@ -827,8 +922,8 @@ async fn deliver_durable_rejects_shutdown_and_dead_letter_persistence_failures()
     assert!(drop_release.send(()).is_err());
     drop_service.stop().await;
 
-    // 3. Failing to persist the terminal dead-letter row must refuse Ok(()) settlement
-    //    and leave pending_queue empty.
+    // 3. Failing to persist the terminal dead-letter row still settles Ok(()): a
+    //    Transient error would resend the alert to channels that already got it.
     let repo = Arc::new(MockNotificationRepo {
         fail_dead_letter_insert: true,
         ..MockNotificationRepo::new()
@@ -865,14 +960,11 @@ async fn deliver_durable_rejects_shutdown_and_dead_letter_persistence_failures()
     failing_dl_service.db_loaded.store(true, Ordering::Release);
     let dl_result = tokio::time::timeout(
         Duration::from_secs(1),
-        failing_dl_service.deliver_durable(event()),
+        failing_dl_service.deliver_durable_for_outbox(event(), None, EVENT_LOG_ID.into()),
     )
     .await
     .unwrap();
-    assert!(
-        matches!(dl_result, Err(DurableDeliveryError::Transient(_))),
-        "dead-letter DB insert failure must return Transient error, got {dl_result:?}"
-    );
+    assert_eq!(dl_result, Ok(()));
     assert!(failing_dl_service.pending_queue.is_empty());
     failing_dl_service.stop().await;
 
@@ -882,18 +974,32 @@ async fn deliver_durable_rejects_shutdown_and_dead_letter_persistence_failures()
         enabled: false,
         ..Default::default()
     });
-    assert_eq!(disabled.deliver_durable(event()).await, Ok(()));
+    assert_eq!(
+        disabled
+            .deliver_durable_for_outbox(event(), None, EVENT_LOG_ID.into())
+            .await,
+        Ok(())
+    );
     disabled.stop().await;
     assert_eq!(
-        disabled.deliver_durable(event()).await,
+        disabled
+            .deliver_durable_for_outbox(event(), None, EVENT_LOG_ID.into())
+            .await,
         Err(DurableDeliveryError::TransientShuttingDown)
     );
 
     let unsubscribed = NotificationService::new();
-    assert_eq!(unsubscribed.deliver_durable(event()).await, Ok(()));
+    assert_eq!(
+        unsubscribed
+            .deliver_durable_for_outbox(event(), None, EVENT_LOG_ID.into())
+            .await,
+        Ok(())
+    );
     unsubscribed.stop().await;
     assert_eq!(
-        unsubscribed.deliver_durable(event()).await,
+        unsubscribed
+            .deliver_durable_for_outbox(event(), None, EVENT_LOG_ID.into())
+            .await,
         Err(DurableDeliveryError::TransientShuttingDown)
     );
 }

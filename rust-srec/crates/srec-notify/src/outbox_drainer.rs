@@ -2,30 +2,61 @@
 //!
 //! Scans undelivered rows from `monitor_event_outbox` in ascending `id` order,
 //! decodes both current [`OutboxEvent`] records and legacy [`LegacyOutboxEvent`]
-//! records left behind across upgrades, settles alertable events through
-//! [`NotificationService::deliver_durable_for_outbox`], and marks `delivered_at`
-//! only after settlement succeeds.
+//! records left behind across upgrades, settles alertable events through the
+//! [`NotificationService`], and marks `delivered_at` only after a row's
+//! settlement succeeds.
+//!
+//! Up to 32 rows settle at the same time, so an alert that waits on a slow or
+//! failing channel does not hold back the alerts of other streamers. A
+//! streamer's alerts still settle one at a time in `id` order: a row is
+//! admitted only after every earlier undelivered row of the same streamer has
+//! settled. A row whose settlement fails is retried with a backoff that grows
+//! with its `attempts`, holding back only the later rows of its own streamer.
 
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
 use jiff::Timestamp;
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
 use tokio::sync::Notify;
+use tokio::task::{self, JoinError, JoinSet};
+use tokio::time::{self, Instant};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use srec_core::domain::notification::OutboxEvent;
 use srec_core::domain::streamer::FatalErrorType;
-use srec_sqlite::repositories::MonitorOutboxOps;
+use srec_sqlite::repositories::{MonitorOutboxOps, OutboxEntry};
 use srec_sqlite::time::ms_to_datetime;
 
 use crate::NotifyResult as Result;
-use crate::{DurableDeliveryError, NotificationEvent, NotificationService};
+use crate::service::DurableDeliveryError;
+use crate::{NotificationEvent, NotificationService};
 
-const DEFAULT_BATCH_SIZE: i32 = 100;
-const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(1);
+/// Rows read per query while scanning for rows to admit.
+const PAGE_SIZE: i32 = 100;
+/// Fallback wake-up for rows whose commit notification was missed.
+const POLL_INTERVAL: Duration = Duration::from_secs(1);
+/// Rows whose notifications may settle at the same time.
+const MAX_IN_FLIGHT: usize = 32;
+/// Wait after a row's first failed settlement before it is admitted again.
+const RETRY_BASE_DELAY: Duration = Duration::from_secs(1);
+/// Longest wait between two attempts at a row that keeps failing.
+const RETRY_MAX_DELAY: Duration = Duration::from_secs(300);
+
+/// Wait before a row whose settlement has failed `attempts` times is admitted
+/// again: `RETRY_BASE_DELAY`, doubled for each earlier failure, at most
+/// `RETRY_MAX_DELAY`. A row's first attempt after a restart is not delayed.
+fn retry_delay(attempts: i64) -> Duration {
+    // Clamped before the cast; 2^16 seconds is far past the cap.
+    let doublings = attempts.saturating_sub(1).clamp(0, 16) as u32;
+    RETRY_BASE_DELAY
+        .saturating_mul(1 << doublings)
+        .min(RETRY_MAX_DELAY)
+}
 
 /// Minimal JSON wire-compatible projection of legacy `MonitorEvent` outbox rows.
 ///
@@ -208,32 +239,175 @@ pub fn outbox_event_to_notification(event: OutboxEvent) -> NotificationEvent {
     }
 }
 
-/// Summary of one [`NotificationOutboxDrainer::drain_once`] pass.
+/// Summary of one [`NotificationOutboxDrainer::drain_until_wait`] call.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct OutboxDrainReport {
-    /// Total undelivered rows fetched in this pass.
-    pub fetched: usize,
-    /// Alertable rows settled via [`NotificationService::deliver_durable_for_outbox`]
-    /// and marked delivered.
+    /// Alertable rows whose notification settled and that were marked delivered.
     pub delivered: usize,
     /// Non-notifying legacy rows (or unparseable poison rows) marked delivered
     /// without invoking notification delivery.
     pub skipped: usize,
-    /// Rows that could not settle (shutdown or transient delivery error) and
-    /// were kept undelivered for replay.
+    /// Deliveries that ended without settling (a transient failure, shutdown,
+    /// or cancellation of the drainer); their rows stay undelivered for replay.
     pub failed: usize,
-    /// `true` when the drainer paused early due to shutdown or a transient error.
+    /// `true` when undelivered rows were left for later: rows whose delivery
+    /// failed during the call, the later rows of their streamers, or rows
+    /// left by shutdown or cancellation.
     pub needs_wait: bool,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DrainMode {
+    /// Return once nothing is in flight and no remaining row can be admitted.
+    UntilIdle,
+    /// Keep draining until cancelled, retrying failed rows when they are due.
+    Background,
+}
+
+type DeliveryResult = std::result::Result<(), DurableDeliveryError>;
+
+struct InFlightRow {
+    id: i64,
+    event_type: String,
+    streamer: Option<String>,
+    /// The row's `attempts` when it was admitted.
+    attempts: i64,
+}
+
+/// Bookkeeping of one drain loop.
+#[derive(Default)]
+struct DrainState {
+    /// Deliveries of admitted rows. Dropping the set aborts them, which leaves
+    /// their rows undelivered for replay.
+    in_flight: JoinSet<DeliveryResult>,
+    rows: HashMap<task::Id, InFlightRow>,
+    in_flight_ids: HashSet<i64>,
+    /// Streamers with a row in flight; their later rows wait for it.
+    busy_streamers: HashSet<String>,
+    /// Rows whose settlement failed, with the time they may be admitted again.
+    retry_at: HashMap<i64, Instant>,
+    /// Rows to mark delivered: settled rows and rows that need no delivery.
+    /// They are not admitted again while the write is outstanding.
+    to_mark: HashSet<i64>,
+    /// Failures to record in the rows' `attempts` and `last_error`.
+    failures: Vec<(i64, String)>,
+    report: OutboxDrainReport,
+    /// Set once the notification service reports shutdown; nothing is
+    /// admitted after it.
+    service_stopped: bool,
+}
+
+impl DrainState {
+    /// Release the row of a finished delivery and record its outcome.
+    fn settle(&mut self, joined: std::result::Result<(task::Id, DeliveryResult), JoinError>) {
+        let (task_id, outcome) = match joined {
+            Ok((task_id, outcome)) => (task_id, outcome),
+            // A delivery that panicked is retried like a transient failure.
+            Err(error) => (
+                error.id(),
+                Err(DurableDeliveryError::Transient(format!(
+                    "notification delivery task failed: {error}"
+                ))),
+            ),
+        };
+        let Some(row) = self.rows.remove(&task_id) else {
+            return;
+        };
+        self.in_flight_ids.remove(&row.id);
+        if let Some(streamer) = &row.streamer {
+            self.busy_streamers.remove(streamer);
+        }
+        match outcome {
+            Ok(()) => {
+                self.to_mark.insert(row.id);
+                self.report.delivered += 1;
+            }
+            Err(DurableDeliveryError::TransientShuttingDown) => {
+                debug!(
+                    outbox_id = row.id,
+                    event_type = %row.event_type,
+                    "Retaining undelivered outbox entry during shutdown"
+                );
+                self.service_stopped = true;
+                self.report.failed += 1;
+            }
+            Err(DurableDeliveryError::Transient(error)) => {
+                let attempts = row.attempts.saturating_add(1);
+                let delay = retry_delay(attempts);
+                warn!(
+                    outbox_id = row.id,
+                    event_type = %row.event_type,
+                    attempts,
+                    retry_in = ?delay,
+                    %error,
+                    "Durable notification settlement failed; retaining outbox entry for retry"
+                );
+                self.retry_at.insert(row.id, Instant::now() + delay);
+                self.failures.push((row.id, error));
+                self.report.failed += 1;
+            }
+        }
+    }
+}
+
+/// The notification an outbox row asks for, or `None` for a row that needs no
+/// delivery: a non-notifying legacy record or a payload that cannot be decoded.
+fn notification_for(entry: &OutboxEntry) -> Option<NotificationEvent> {
+    match OutboxRecord::decode(&entry.payload) {
+        Ok(record) => {
+            let notification = record.into_notification_event();
+            if notification.is_none() {
+                debug!(
+                    outbox_id = entry.id,
+                    event_type = %entry.event_type,
+                    "Marking non-notifying legacy outbox record delivered"
+                );
+            }
+            notification
+        }
+        Err(error) => {
+            // Malformed JSON cannot recover on retry; leaving it undelivered
+            // would only fetch it again on every scan.
+            warn!(
+                outbox_id = entry.id,
+                event_type = %entry.event_type,
+                %error,
+                "Unparseable notification outbox payload; marking delivered"
+            );
+            None
+        }
+    }
+}
+
+/// Event-log id of an outbox row's notification, the same on every attempt to
+/// deliver that row.
+///
+/// `monitor_event_outbox.id` is a rowid without `AUTOINCREMENT`, so SQLite
+/// reuses an id once the newest rows are pruned; `created_at` tells such rows
+/// apart. Event-log ids are UUIDs elsewhere and API clients validate them as
+/// such, so the id is a name-based (version 8) UUID built from SHA-256.
+fn outbox_event_log_id(outbox_id: i64, created_at_ms: i64) -> String {
+    let digest = Sha256::new()
+        .chain_update(b"monitor_event_outbox")
+        .chain_update(outbox_id.to_be_bytes())
+        .chain_update(created_at_ms.to_be_bytes())
+        .finalize();
+    let mut bytes = [0; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    uuid::Builder::from_custom_bytes(bytes)
+        .into_uuid()
+        .to_string()
+}
+
 /// Single-consumer durable outbox drainer for `monitor_event_outbox`.
+///
+/// Only one drain, [`Self::run`] or [`Self::drain_until_wait`], may run on a
+/// database at a time; two would deliver the same rows twice.
 pub struct NotificationOutboxDrainer {
     write_pool: SqlitePool,
     notification_service: Arc<NotificationService>,
     notify: Arc<Notify>,
     cancellation: CancellationToken,
-    batch_size: i32,
-    poll_interval: Duration,
 }
 
 impl NotificationOutboxDrainer {
@@ -248,21 +422,7 @@ impl NotificationOutboxDrainer {
             notification_service,
             notify: Arc::new(Notify::new()),
             cancellation,
-            batch_size: DEFAULT_BATCH_SIZE,
-            poll_interval: DEFAULT_POLL_INTERVAL,
         }
-    }
-
-    /// Override the maximum rows fetched per drain batch (clamped to `>= 1`).
-    pub fn with_batch_size(mut self, batch_size: i32) -> Self {
-        self.batch_size = batch_size.max(1);
-        self
-    }
-
-    /// Override the fallback polling interval when no wake notification arrives.
-    pub fn with_poll_interval(mut self, poll_interval: Duration) -> Self {
-        self.poll_interval = poll_interval;
-        self
     }
 
     /// Shared wake handle notified after commits insert rows into `monitor_event_outbox`.
@@ -270,167 +430,191 @@ impl NotificationOutboxDrainer {
         self.notify.clone()
     }
 
-    /// Process up to `batch_size` undelivered outbox rows in ascending `id` order.
+    /// Drain until nothing is in flight and no remaining row can be admitted.
     ///
-    /// A row is marked `delivered_at` only after its notification has settled
-    /// (or after confirming it is a non-notifying legacy record). Shutdown or
-    /// transient settlement errors leave the affected row undelivered and halt
-    /// further head-of-line progression until retry.
-    pub async fn drain_once(&self) -> Result<OutboxDrainReport> {
-        if self.cancellation.is_cancelled() {
-            return Ok(OutboxDrainReport {
-                needs_wait: true,
-                ..Default::default()
-            });
-        }
-
-        let entries =
-            MonitorOutboxOps::fetch_undelivered(&self.write_pool, self.batch_size).await?;
-        if entries.is_empty() {
-            return Ok(OutboxDrainReport::default());
-        }
-
-        let mut report = OutboxDrainReport {
-            fetched: entries.len(),
-            ..Default::default()
-        };
-        let mut pending_skipped_ids = Vec::new();
-        let mut failed_entries: Vec<(i64, String)> = Vec::new();
-
-        for entry in entries {
-            if self.cancellation.is_cancelled() {
-                report.needs_wait = true;
-                break;
-            }
-
-            let record = match OutboxRecord::decode(&entry.payload) {
-                Ok(record) => record,
-                Err(error) => {
-                    // Malformed JSON cannot recover on retry and would block
-                    // head-of-line progression (`ORDER BY id`).
-                    warn!(
-                        outbox_id = entry.id,
-                        event_type = %entry.event_type,
-                        %error,
-                        "Unparseable notification outbox payload; marking delivered to unblock head of line"
-                    );
-                    pending_skipped_ids.push(entry.id);
-                    report.skipped += 1;
-                    continue;
-                }
-            };
-
-            let Some(notification) = record.into_notification_event() else {
-                debug!(
-                    outbox_id = entry.id,
-                    event_type = %entry.event_type,
-                    "Marking non-notifying legacy outbox record delivered"
-                );
-                pending_skipped_ids.push(entry.id);
-                report.skipped += 1;
-                continue;
-            };
-
-            let delivery = tokio::select! {
-                biased;
-                _ = self.cancellation.cancelled() => {
-                    Err(DurableDeliveryError::TransientShuttingDown)
-                }
-                result = self.notification_service.deliver_durable_for_outbox(
-                    notification,
-                    entry.streamer_id.as_deref(),
-                ) => result,
-            };
-
-            match delivery {
-                Ok(()) => {
-                    // Persist `delivered_at` per settled alertable row (along with
-                    // any preceding skipped rows) so a hard crash or forced abort
-                    // during a later row never replays already-delivered alerts.
-                    pending_skipped_ids.push(entry.id);
-                    MonitorOutboxOps::mark_delivered_batch(&self.write_pool, &pending_skipped_ids)
-                        .await?;
-                    pending_skipped_ids.clear();
-                    report.delivered += 1;
-                }
-                Err(DurableDeliveryError::TransientShuttingDown) => {
-                    debug!(
-                        outbox_id = entry.id,
-                        event_type = %entry.event_type,
-                        "Retaining undelivered outbox entry during shutdown"
-                    );
-                    report.failed += 1;
-                    report.needs_wait = true;
-                    break;
-                }
-                Err(DurableDeliveryError::Transient(error)) => {
-                    warn!(
-                        outbox_id = entry.id,
-                        event_type = %entry.event_type,
-                        %error,
-                        "Durable notification settlement failed; retaining outbox entry for retry"
-                    );
-                    failed_entries.push((entry.id, error));
-                    report.failed += 1;
-                    report.needs_wait = true;
-                    break;
-                }
-            }
-        }
-
-        // Flush any trailing skipped rows and failure records.
-        if !pending_skipped_ids.is_empty() {
-            MonitorOutboxOps::mark_delivered_batch(&self.write_pool, &pending_skipped_ids).await?;
-        }
-        if !failed_entries.is_empty() {
-            MonitorOutboxOps::record_failure_batch(&self.write_pool, &failed_entries).await?;
-        }
-
-        Ok(report)
-    }
-
-    /// Repeatedly call [`Self::drain_once`] until the outbox is empty, the
-    /// drainer is cancelled, or a transient failure requires waiting.
+    /// A row whose settlement fails is not attempted again within the call; it
+    /// and the later rows of its streamer are left undelivered and the report
+    /// sets `needs_wait`. Shutdown of the notification service or cancellation
+    /// of the drainer stops admission and abandons rows still in flight, which
+    /// stay undelivered for replay.
     pub async fn drain_until_wait(&self) -> Result<OutboxDrainReport> {
-        let mut total = OutboxDrainReport::default();
-        loop {
-            if self.cancellation.is_cancelled() {
-                total.needs_wait = true;
-                return Ok(total);
-            }
-            let step = self.drain_once().await?;
-            total.fetched += step.fetched;
-            total.delivered += step.delivered;
-            total.skipped += step.skipped;
-            total.failed += step.failed;
-            total.needs_wait = step.needs_wait;
-            if step.fetched == 0 || step.needs_wait {
-                return Ok(total);
-            }
-        }
+        self.drain(DrainMode::UntilIdle).await
     }
 
-    /// Run the background outbox drain loop until `cancellation` triggers.
+    /// Run the background outbox drain loop until `cancellation` triggers or
+    /// the notification service shuts down, retrying failed rows as their
+    /// backoff expires.
     pub async fn run(&self) {
-        loop {
-            tokio::select! {
-                biased;
-                _ = self.cancellation.cancelled() => {
-                    info!("Notification outbox drainer shutting down");
-                    break;
-                }
-                _ = self.notify.notified() => {}
-                _ = tokio::time::sleep(self.poll_interval) => {}
-            }
+        if let Err(error) = self.drain(DrainMode::Background).await {
+            warn!(%error, "Notification outbox drainer failed to record settled rows");
+        }
+        info!("Notification outbox drainer stopped");
+    }
 
+    async fn drain(&self, mode: DrainMode) -> Result<OutboxDrainReport> {
+        let background = mode == DrainMode::Background;
+        let mut state = DrainState::default();
+        let outcome = loop {
             if self.cancellation.is_cancelled() {
-                break;
+                break Ok(());
             }
-
-            if let Err(error) = self.drain_until_wait().await {
+            if let Err(error) = self.admit(&mut state, mode).await {
+                if !background {
+                    break Err(error);
+                }
                 warn!(%error, "Notification outbox drain pass failed");
             }
+            if state.in_flight.is_empty() && (!background || state.service_stopped) {
+                break Ok(());
+            }
+            // Wake for the earliest backoff that is still running. A row already
+            // due but not admitted waits for a free slot; a row settling (or the
+            // poll) wakes the loop, and waking for the past deadline would spin.
+            let now = Instant::now();
+            let retry_due = state
+                .retry_at
+                .values()
+                .copied()
+                .filter(|due| background && *due > now)
+                .min();
+            tokio::select! {
+                biased;
+                _ = self.cancellation.cancelled() => {}
+                Some(joined) = state.in_flight.join_next_with_id() => state.settle(joined),
+                _ = self.notify.notified(), if background => {}
+                _ = time::sleep_until(retry_due.unwrap_or_else(Instant::now)), if retry_due.is_some() => {}
+                _ = time::sleep(POLL_INTERVAL), if background => {}
+            }
+        };
+        // Abandoned deliveries leave their rows undelivered for replay. Those
+        // that finished before the abort still settle, so their rows are not
+        // delivered again.
+        state.in_flight.abort_all();
+        while let Some(joined) = state.in_flight.join_next_with_id().await {
+            match joined {
+                Err(error) if error.is_cancelled() => state.report.failed += 1,
+                joined => state.settle(joined),
+            }
         }
-        debug!("Notification outbox drainer stopped");
+        let recorded = self.flush(&mut state).await;
+        state.report.needs_wait =
+            self.cancellation.is_cancelled() || state.service_stopped || !state.retry_at.is_empty();
+        outcome.and(recorded).map(|()| state.report)
+    }
+
+    /// Record settled rows, then admit rows in `id` order while fewer than
+    /// `MAX_IN_FLIGHT` are in flight.
+    async fn admit(&self, state: &mut DrainState, mode: DrainMode) -> Result<()> {
+        self.flush(state).await?;
+        if state.service_stopped {
+            return Ok(());
+        }
+        let now = Instant::now();
+        // Streamers whose earliest undelivered row stays out of this pass;
+        // their later rows must not overtake it.
+        let mut held = HashSet::new();
+        let mut after_id = i64::MIN;
+        'scan: while state.in_flight.len() < MAX_IN_FLIGHT {
+            let page =
+                MonitorOutboxOps::fetch_undelivered_after(&self.write_pool, after_id, PAGE_SIZE)
+                    .await?;
+            let last_page = page.len() < PAGE_SIZE as usize;
+            for entry in page {
+                after_id = entry.id;
+                if state.in_flight.len() >= MAX_IN_FLIGHT {
+                    break 'scan;
+                }
+                if state.in_flight_ids.contains(&entry.id) || state.to_mark.contains(&entry.id) {
+                    continue;
+                }
+                let Some(notification) = notification_for(&entry) else {
+                    state.to_mark.insert(entry.id);
+                    state.report.skipped += 1;
+                    continue;
+                };
+                // Order follows the streamer named in the payload: the
+                // `streamer_id` column turns NULL when the streamer is deleted
+                // while its rows wait, and every outbox alert names one.
+                let streamer = notification.streamer_id().map(str::to_owned);
+                if streamer
+                    .as_ref()
+                    .is_some_and(|id| state.busy_streamers.contains(id) || held.contains(id))
+                {
+                    continue;
+                }
+                let waiting = state
+                    .retry_at
+                    .get(&entry.id)
+                    .is_some_and(|due| mode == DrainMode::UntilIdle || *due > now);
+                if waiting {
+                    held.extend(streamer);
+                    continue;
+                }
+                state.retry_at.remove(&entry.id);
+                self.spawn_delivery(state, entry, notification, streamer);
+            }
+            if last_page {
+                break;
+            }
+        }
+        self.flush(state).await
+    }
+
+    fn spawn_delivery(
+        &self,
+        state: &mut DrainState,
+        entry: OutboxEntry,
+        notification: NotificationEvent,
+        streamer: Option<String>,
+    ) {
+        let service = self.notification_service.clone();
+        let outbox_streamer_id = entry.streamer_id;
+        let event_log_id = outbox_event_log_id(entry.id, entry.created_at);
+        let task = state.in_flight.spawn(async move {
+            service
+                .deliver_durable_for_outbox(
+                    notification,
+                    outbox_streamer_id.as_deref(),
+                    event_log_id,
+                )
+                .await
+        });
+        state.in_flight_ids.insert(entry.id);
+        if let Some(streamer) = &streamer {
+            state.busy_streamers.insert(streamer.clone());
+        }
+        state.rows.insert(
+            task.id(),
+            InFlightRow {
+                id: entry.id,
+                event_type: entry.event_type,
+                streamer,
+                attempts: entry.attempts,
+            },
+        );
+    }
+
+    /// Write `delivered_at` for settled rows and record failures.
+    ///
+    /// Rows stay in `to_mark`, and failures in `failures`, until their write
+    /// succeeds: a failed write is retried rather than delivering the rows
+    /// again or losing the `attempts` that their backoff grows with.
+    async fn flush(&self, state: &mut DrainState) -> Result<()> {
+        if !state.to_mark.is_empty() {
+            let ids: Vec<i64> = state.to_mark.iter().copied().collect();
+            MonitorOutboxOps::mark_delivered_batch(&self.write_pool, &ids).await?;
+            state.to_mark.clear();
+        }
+        let failures = std::mem::take(&mut state.failures);
+        if let Err(error) =
+            MonitorOutboxOps::record_failure_batch(&self.write_pool, &failures).await
+        {
+            state.failures = failures;
+            return Err(error.into());
+        }
+        Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

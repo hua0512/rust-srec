@@ -201,7 +201,9 @@ clears the crash counter.
 `monitor_event_outbox` in the same SQLite transaction as state/session updates. `NotificationOutboxDrainer`
 (in `srec-notify`) scans undelivered rows in ascending `id` order, decodes both current `OutboxEvent`
 records and pre-v2 `LegacyOutboxEvent` rows left behind across upgrades, and marks `delivered_at`
-only after `NotificationService::deliver_durable_for_outbox` settles.
+only after `NotificationService::deliver_durable_for_outbox` settles. Up to 32 rows settle at once,
+so an alert that waits on a slow or failing channel does not hold back other streamers' alerts; each
+streamer's rows still settle one at a time in `id` order.
 
 ### `StreamerFsm` (single owner of session and monitoring state) {#streamerfsm-state-machine}
 

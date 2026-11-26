@@ -170,6 +170,7 @@ SQLite 行是权威数据。`StreamerManager` 为 actor 检查提供不可变的
 
 **Outbox 模式**：面向用户的通知记录（`srec-core` 中的 `OutboxEvent`）与状态/会话更新在同一 SQLite 事务中写入 `monitor_event_outbox`。
 `NotificationOutboxDrainer`（位于 `srec-notify`）按 `id` 升序扫描未投递行，同时兼容解析当前 `OutboxEvent` 与升级遗留的 `LegacyOutboxEvent`，仅在 `NotificationService::deliver_durable_for_outbox` 完成投递后才标记 `delivered_at`。
+最多 32 行同时投递，因此等待缓慢或故障通道的通知不会拖住其他主播的通知；同一主播的行仍按 `id` 顺序逐条完成。
 
 ### `StreamerFsm`（会话与监控状态的唯一所有者） {#streamerfsm-状态机}
 

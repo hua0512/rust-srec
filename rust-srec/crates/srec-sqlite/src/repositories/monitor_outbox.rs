@@ -45,15 +45,26 @@ pub struct MonitorOutboxOps;
 impl MonitorOutboxOps {
     /// Fetch undelivered events from the outbox.
     pub async fn fetch_undelivered(pool: &SqlitePool, limit: i32) -> Result<Vec<OutboxEntry>> {
+        Self::fetch_undelivered_after(pool, i64::MIN, limit).await
+    }
+
+    /// Fetch up to `limit` undelivered events whose `id` is above `after_id`,
+    /// in `id` order, so a caller can page past rows it is not ready to take.
+    pub async fn fetch_undelivered_after(
+        pool: &SqlitePool,
+        after_id: i64,
+        limit: i32,
+    ) -> Result<Vec<OutboxEntry>> {
         let rows = sqlx::query(
             r#"
             SELECT id, streamer_id, event_type, payload, created_at, attempts
             FROM monitor_event_outbox
-            WHERE delivered_at IS NULL
+            WHERE delivered_at IS NULL AND id > ?
             ORDER BY id
             LIMIT ?
             "#,
         )
+        .bind(after_id)
         .bind(limit)
         .fetch_all(pool)
         .await?;

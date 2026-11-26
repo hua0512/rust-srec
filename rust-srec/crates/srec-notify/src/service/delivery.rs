@@ -308,7 +308,6 @@ impl NotificationService {
                             breaker.record_failure(config.circuit_breaker_threshold);
                             breaker.is_open
                         };
-                        circuit_blocked |= breaker_opened;
 
                         let now = jiff::Timestamp::now();
                         let mut attempts = 0;
@@ -327,6 +326,11 @@ impl NotificationService {
                                 dead_lettered = true;
                             }
                         }
+                        // Only a channel that stays pending waits out its
+                        // breaker's cooldown. A dead-lettered channel is never
+                        // retried, so its breaker must not hold back the retries
+                        // of the notification's other channels.
+                        circuit_blocked |= breaker_opened && !dead_lettered;
 
                         if dead_lettered {
                             Self::record_dead_letter_detached(
@@ -454,17 +458,14 @@ impl NotificationService {
                         attempts as i32,
                         pending_snapshot.created_at.as_millisecond(),
                     );
+                    // Best-effort for durable deliveries too: the in-memory
+                    // entry above still records the failure.
                     if let Err(persist_error) = repo.add_to_dead_letter(&entry).await {
                         warn!(
                             channel_id = %db_channel_id,
                             error = %persist_error,
                             "Failed to persist dead letter entry"
                         );
-                        if let Some(settlement) = &ctx.durable_settled {
-                            settlement.record_dead_letter_error(format!(
-                                "failed to persist dead letter entry: {persist_error}"
-                            ));
-                        }
                     }
                 }
                 Err(serialize_error) => {
@@ -473,11 +474,6 @@ impl NotificationService {
                         error = %serialize_error,
                         "Failed to serialize dead letter entry"
                     );
-                    if let Some(settlement) = &ctx.durable_settled {
-                        settlement.record_dead_letter_error(format!(
-                            "failed to serialize dead letter entry: {serialize_error}"
-                        ));
-                    }
                 }
             }
         }

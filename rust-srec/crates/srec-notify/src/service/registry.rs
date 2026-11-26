@@ -126,6 +126,20 @@ impl NotificationService {
         }
     }
 
+    /// Register `channel` under `key` as a channel that receives every event.
+    #[cfg(test)]
+    pub(crate) fn insert_test_channel(&self, key: &str, channel: Arc<dyn NotificationChannel>) {
+        let runtime = Arc::new(RuntimeChannel {
+            key: key.to_owned(),
+            db_channel_id: None,
+            display_name: key.to_owned(),
+            channel_type: channel.channel_type().to_owned(),
+            channel,
+            breaker: self.new_breaker(),
+        });
+        self.registry.write().insert(runtime);
+    }
+
     pub(super) fn new_breaker(&self) -> Arc<parking_lot::Mutex<CircuitBreakerState>> {
         Arc::new(parking_lot::Mutex::new(CircuitBreakerState::new(
             self.config.circuit_breaker_cooldown_secs,
