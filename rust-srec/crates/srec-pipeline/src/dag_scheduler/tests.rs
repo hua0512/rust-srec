@@ -8,10 +8,7 @@ use srec_sqlite::models::{DagExecutionStatus, DagStepStatus, JobDbModel};
 async fn completion_reuses_atomic_snapshots_and_keeps_guarded_downstream_publication() {
     use crate::repositories::{SqlxDagRepository, SqlxJobRepository};
     use srec_sqlite::test_support::SqlTrace;
-    let pool = srec_sqlite::init_pool_with_size("sqlite::memory:", 1)
-        .await
-        .unwrap();
-    srec_sqlite::run_migrations(&pool).await.unwrap();
+    let pool = setup_test_pool().await;
     let dags = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
     let jobs = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
     let queue = Arc::new(JobQueue::with_repository(Default::default(), jobs.clone()));
@@ -106,15 +103,14 @@ use crate::repositories::job::JobRepository;
 use srec_sqlite::models::dag::DagStepExecutionDbModel;
 use srec_sqlite::models::{DagPipelineDefinition, DagStep, JobStatus, PipelineStep};
 use std::sync::Arc;
-use tempfile::TempDir;
 
+/// A migrated in-memory database on one connection, which `run_migrations` restores
+/// from srec-sqlite's migration template instead of replaying every migration.
 async fn setup_test_pool() -> sqlx::SqlitePool {
-    let dir = TempDir::new().unwrap();
-    let db_path = dir.path().join("dag_scheduler_test.db");
-    let db_url = format!("sqlite:{}?mode=rwc", db_path.to_string_lossy());
-    let pool = srec_sqlite::init_pool(&db_url).await.unwrap();
+    let pool = srec_sqlite::init_pool_with_size("sqlite::memory:", 1)
+        .await
+        .unwrap();
     srec_sqlite::run_migrations(&pool).await.unwrap();
-    std::mem::forget(dir);
     pool
 }
 
@@ -1331,10 +1327,7 @@ async fn recovery_settles_active_jobs_of_terminal_workflows_before_claiming() {
             ("PROCESSING", "FAILED", JobStatus::Failed),
             ("PROCESSING", "CANCELLED", JobStatus::Cancelled),
         ] {
-            let pool = srec_sqlite::init_pool_with_size("sqlite::memory:", 1)
-                .await
-                .unwrap();
-            srec_sqlite::run_migrations(&pool).await.unwrap();
+            let pool = setup_test_pool().await;
             let jobs = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
             let dags = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
             let queue = Arc::new(JobQueue::with_repository(Default::default(), jobs.clone()));
@@ -1411,10 +1404,7 @@ async fn cancelled_attempt_does_not_schedule_retry_or_apply_step_failure() {
     use srec_sqlite::models::StepRetryPolicy;
     use srec_sqlite::test_support::SqlTrace;
 
-    let pool = srec_sqlite::init_pool_with_size("sqlite::memory:", 1)
-        .await
-        .unwrap();
-    srec_sqlite::run_migrations(&pool).await.unwrap();
+    let pool = setup_test_pool().await;
     let dags = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
     let jobs = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
     let queue = Arc::new(JobQueue::with_repository(Default::default(), jobs.clone()));
