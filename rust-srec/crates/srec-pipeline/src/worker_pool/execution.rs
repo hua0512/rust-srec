@@ -45,6 +45,9 @@ pub(super) struct JobRunner {
     pub(super) event_tx: Option<broadcast::Sender<PipelineEvent>>,
     pub(super) active_workers: Arc<AtomicUsize>,
     pub(super) job_timeout: std::time::Duration,
+    /// First wait of [`FailurePersistBackoff`]; [`FailurePersistBackoff::INITIAL_DELAY`]
+    /// outside tests.
+    pub(super) failure_persist_delay: std::time::Duration,
     /// The pool's shutdown token. Distinct from the per-job token that reaches the processor
     /// through `ProcessorContext`; see [`JobRunner::execute`].
     pub(super) shutdown: CancellationToken,
@@ -91,7 +94,7 @@ impl JobRunner {
         F: FnMut() -> Fut,
         Fut: Future<Output = crate::PipelineResult<JobFailureOutcome>>,
     {
-        let mut backoff = FailurePersistBackoff::default();
+        let mut backoff = FailurePersistBackoff::starting_at(self.failure_persist_delay);
         loop {
             match persist().await {
                 Ok(outcome) => {
@@ -920,8 +923,8 @@ impl LogFlushBackoff {
 /// failure is durable or the pool shuts down. A lasting database error (typically a full disk)
 /// is retried with a widening gap and warned about on the first failure, then once per capped
 /// interval.
-#[derive(Default)]
 pub(super) struct FailurePersistBackoff {
+    initial: std::time::Duration,
     pub(super) delay: std::time::Duration,
     pub(super) failures: u32,
 }
@@ -930,11 +933,20 @@ impl FailurePersistBackoff {
     pub(super) const INITIAL_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
     pub(super) const MAX_DELAY: std::time::Duration = std::time::Duration::from_secs(30);
 
+    /// A backoff whose first wait is `initial`, doubling up to [`Self::MAX_DELAY`].
+    pub(super) fn starting_at(initial: std::time::Duration) -> Self {
+        Self {
+            initial,
+            delay: std::time::Duration::ZERO,
+            failures: 0,
+        }
+    }
+
     /// Record a failed attempt: how long to wait before the next one, and whether to warn.
     pub(super) fn on_failure(&mut self) -> (std::time::Duration, bool) {
         self.failures = self.failures.saturating_add(1);
         self.delay = if self.delay.is_zero() {
-            Self::INITIAL_DELAY
+            self.initial
         } else {
             (self.delay * 2).min(Self::MAX_DELAY)
         };

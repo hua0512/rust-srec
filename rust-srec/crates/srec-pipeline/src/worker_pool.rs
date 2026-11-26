@@ -371,6 +371,7 @@ impl WorkerPool {
                     event_tx,
                     active_workers,
                     job_timeout,
+                    failure_persist_delay: execution::FailurePersistBackoff::INITIAL_DELAY,
                     shutdown: cancellation_token.clone(),
                     lingering: lingering.clone(),
                 };

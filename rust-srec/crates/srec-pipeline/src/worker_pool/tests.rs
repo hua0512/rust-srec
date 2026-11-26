@@ -451,6 +451,7 @@ fn observed_runner(
         event_tx: Some(event_tx),
         active_workers: Arc::new(AtomicUsize::new(0)),
         job_timeout: Duration::from_secs(30),
+        failure_persist_delay: FailurePersistBackoff::INITIAL_DELAY,
         shutdown: CancellationToken::new(),
         lingering: Arc::default(),
     }
@@ -752,7 +753,7 @@ async fn forced_worker_abort_cancels_processor_and_releases_the_job_and_its_log_
 
 #[test]
 fn failure_persist_backoff_widens_to_its_cap_and_rate_limits_warnings() {
-    let mut backoff = FailurePersistBackoff::default();
+    let mut backoff = FailurePersistBackoff::starting_at(FailurePersistBackoff::INITIAL_DELAY);
     let schedule: Vec<_> = std::iter::repeat_with(|| backoff.on_failure())
         .take(8)
         .map(|(delay, warn)| (delay.as_secs(), warn))
@@ -841,6 +842,9 @@ async fn failed_status_writes_retry_without_rerunning_and_allow_cancel_or_shutdo
         let (events, mut receiver) = broadcast::channel(16);
         let mut runner = observed_runner(queue.clone(), events);
         runner.dag_scheduler = Some(scheduler.clone());
+        // Each rejected write waits before the next try; a short first wait keeps the
+        // restore and cancel endings from waiting out the production second.
+        runner.failure_persist_delay = Duration::from_millis(20);
         let runner = Arc::new(runner);
         let calls = Arc::new(AtomicUsize::new(0));
         let processor: Arc<dyn Processor> = Arc::new(CountedFailure(calls.clone()));
