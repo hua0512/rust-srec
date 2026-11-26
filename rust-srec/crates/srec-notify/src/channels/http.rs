@@ -395,33 +395,11 @@ mod tests {
         .await
     }
 
+    /// Delivery errors never carry endpoint credentials: not for an HTTP
+    /// failure whose body echoes the request, a refused connection, or a URL
+    /// that does not parse.
     #[tokio::test]
-    async fn request_errors_never_export_endpoint_credentials() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let endpoint = format!(
-            "http://{}/botPATH_SECRET/sendMessage?token=QUERY_SECRET",
-            listener.local_addr().unwrap()
-        );
-        drop(listener);
-        let http = HttpDelivery::new(
-            "telegram",
-            Duration::from_secs(2),
-            DeliveryRoute::environment(),
-        );
-        for url in [endpoint.as_str(), "http://[PATH_SECRET/?token=QUERY_SECRET"] {
-            let error = http
-                .send(
-                    http.request(Method::POST, url).await.unwrap(),
-                    RetryPolicy::Telegram,
-                )
-                .await
-                .unwrap_err();
-            assert!(!format!("{error:?} {error}").contains("SECRET"));
-        }
-    }
-
-    #[tokio::test]
-    async fn channels_do_not_export_echoed_credentials_on_http_failure() {
+    async fn channels_do_not_export_endpoint_credentials_on_failure() {
         let server = server(|| TestResponse::Reply {
             status: 400,
             headers: Vec::new(),
@@ -461,15 +439,31 @@ mod tests {
             assert!(error.to_string().contains("HTTP 400"));
             assert!(!format!("{error:?} {error}").contains("SECRET"));
         }
-        let http = HttpDelivery::new("telegram", DEFAULT_TIMEOUT, DeliveryRoute::environment());
-        let error = http
-            .send(
-                http.request(Method::POST, &server.url).await.unwrap(),
-                RetryPolicy::Telegram,
-            )
-            .await
-            .unwrap_err();
-        assert!(!format!("{error:?} {error}").contains("SECRET"));
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let refused = format!(
+            "http://{}/botPATH_SECRET/sendMessage?token=QUERY_SECRET",
+            listener.local_addr().unwrap()
+        );
+        drop(listener);
+        let http = HttpDelivery::new(
+            "telegram",
+            Duration::from_secs(2),
+            DeliveryRoute::environment(),
+        );
+        for url in [
+            server.url.as_str(),
+            refused.as_str(),
+            "http://[PATH_SECRET/?token=QUERY_SECRET",
+        ] {
+            let error = http
+                .send(
+                    http.request(Method::POST, url).await.unwrap(),
+                    RetryPolicy::Telegram,
+                )
+                .await
+                .unwrap_err();
+            assert!(!format!("{error:?} {error}").contains("SECRET"), "{url}");
+        }
     }
 
     #[tokio::test]

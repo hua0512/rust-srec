@@ -295,13 +295,29 @@ mod tests {
             .expect("entity spans complete characters")
     }
 
+    /// Every supported mode name, in any case, gives the same literal text
+    /// with UTF-16 entities and no `parse_mode`; the empty mode gives the
+    /// same text without entities; an unknown mode fails locally without
+    /// echoing the configured value.
     #[test]
-    fn supported_modes_preserve_literal_content_and_utf16_entities() {
+    fn parse_modes_send_literal_text_with_utf16_entities_or_fail_locally() {
         let special = "编😀 _*[]()~`>#+-=|{}.!\\ <b>&quot;";
         let event = event(special, special);
         for locale in ["en", "zh-CN"] {
             let expected_title = event.title_in(locale);
             let baseline = channel("HTML", locale).build_payload(&event).unwrap();
+            let plain = channel("", locale).build_payload(&event).unwrap();
+            assert_eq!(plain["text"], baseline["text"]);
+            assert!(plain.get("entities").is_none());
+            assert!(plain.get("parse_mode").is_none());
+            let error = channel("private-mode-value", locale)
+                .build_payload(&event)
+                .unwrap_err();
+            assert!(matches!(
+                error,
+                crate::NotifyError::Core(CoreError::Configuration(_))
+            ));
+            assert!(!error.to_string().contains("private-mode-value"));
             for mode in [
                 "HTML",
                 "html",
@@ -351,24 +367,6 @@ mod tests {
                 }
             }
         }
-    }
-
-    #[test]
-    fn empty_mode_is_plain_and_unknown_modes_fail_locally() {
-        let event = event("Alice", "live");
-        let plain = channel("", "en").build_payload(&event).unwrap();
-        let formatted = channel("HTML", "en").build_payload(&event).unwrap();
-        assert_eq!(plain["text"], formatted["text"]);
-        assert!(plain.get("entities").is_none());
-        assert!(plain.get("parse_mode").is_none());
-        let error = channel("private-mode-value", "en")
-            .build_payload(&event)
-            .unwrap_err();
-        assert!(matches!(
-            error,
-            crate::NotifyError::Core(CoreError::Configuration(_))
-        ));
-        assert!(!error.to_string().contains("private-mode-value"));
     }
 
     #[test]
