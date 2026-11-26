@@ -28,6 +28,21 @@ pub(crate) fn bounded_remote_delay(delay: Duration) -> Duration {
     delay.min(MAX_REMOTE_BACKOFF)
 }
 
+/// Replaces every platform's request rate when set.
+#[cfg(any(test, feature = "test-support"))]
+static RATE_LIMIT_OVERRIDE: parking_lot::RwLock<Option<f64>> = parking_lot::RwLock::new(None);
+
+/// Admit `requests_per_second` on every platform, instead of the
+/// [`MonitorConfig`] rates (about one request a second), in admissions built
+/// afterwards. End-to-end tests poll a local fake platform every few hundred
+/// milliseconds from several streamers at once; at the production rate they
+/// would wait on the token bucket rather than on the cadence they configure.
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub fn override_platform_rate_limit(requests_per_second: f64) {
+    *RATE_LIMIT_OVERRIDE.write() = Some(requests_per_second);
+}
+
 /// Refresh, lock acquisition, provider checks and extraction share this budget.
 #[derive(Debug, Clone, Copy)]
 pub struct OperationDeadline(Instant);
@@ -79,13 +94,20 @@ impl PlatformAdmission {
     }
 
     pub fn from_config(config: &MonitorConfig) -> Self {
-        let default =
-            RateLimiterConfig::with_rps(config.default_rate_limit).unwrap_or_else(|error| {
-                tracing::warn!(%error, "Invalid platform admission rate; using default");
-                RateLimiterConfig::default()
-            });
+        #[cfg(any(test, feature = "test-support"))]
+        if let Some(rate) = *RATE_LIMIT_OVERRIDE.read() {
+            return Self::from_rates(rate, &[]);
+        }
+        Self::from_rates(config.default_rate_limit, &config.platform_rate_limits)
+    }
+
+    fn from_rates(default_rate: f64, platform_rates: &[(String, f64)]) -> Self {
+        let default = RateLimiterConfig::with_rps(default_rate).unwrap_or_else(|error| {
+            tracing::warn!(%error, "Invalid platform admission rate; using default");
+            RateLimiterConfig::default()
+        });
         let mut limiter = RateLimiterManager::with_config(default);
-        for (platform, rate) in &config.platform_rate_limits {
+        for (platform, rate) in platform_rates {
             match RateLimiterConfig::with_rps(*rate) {
                 Ok(config) => limiter.set_platform_config(platform, config),
                 Err(error) => {
@@ -261,6 +283,32 @@ mod tests {
             }),
             source: RouteSource::Account,
             key: RouteKey::Proxy { id: id.into() },
+        }
+    }
+
+    /// The production rates (one request a second with a burst of two, two a
+    /// second for Twitch) hold back the request after the burst. The E2E suite
+    /// lifts these rates, so this is what pins them. The bucket refills on the
+    /// real clock, so the time is not paused; each refusal costs 50 ms.
+    #[tokio::test]
+    async fn production_rates_hold_back_the_request_after_the_burst() {
+        let mut admission = PlatformAdmission::from_config(&MonitorConfig::default());
+        admission.register_platform_name("platform-twitch", "Twitch");
+        for (platform, burst) in [("platform-other", 2), ("platform-twitch", 4)] {
+            let admit = || {
+                admission.admit(
+                    platform,
+                    &RouteKey::Direct,
+                    OperationDeadline::new(Duration::from_millis(50)),
+                )
+            };
+            for request in 0..burst {
+                assert!(admit().await.is_ok(), "{platform}: request {request}");
+            }
+            assert!(
+                matches!(admit().await, Err(CredentialError::DeadlineExceeded)),
+                "{platform}: the request after the burst must wait for a token"
+            );
         }
     }
 

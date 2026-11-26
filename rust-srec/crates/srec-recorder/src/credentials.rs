@@ -20,6 +20,8 @@ pub mod test_support;
 // Platform-specific implementations
 pub mod platforms;
 
+#[cfg(any(test, feature = "test-support"))]
+pub use admission::override_platform_rate_limit;
 pub use admission::{OperationDeadline, PlatformAdmission};
 pub use blocks::{CredentialBlock, CredentialBlockChange, CredentialBlocks};
 pub(crate) use connection::{provider_client, provider_client_for};
