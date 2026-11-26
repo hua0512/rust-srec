@@ -701,12 +701,34 @@ mod tests {
         const MIGRATION_VERSION: i64 = 20_261_016_120_000;
         const SAVED_DAG: &str = r#"{"name":"Customized Full Processing","steps":[{"id":"metadata","step":{"type":"inline","processor":"metadata","config":{"title":"{title}","artist":"Custom artist"}},"depends_on":[]}]}"#;
 
+        // Every case starts from one image of the database migrated up to,
+        // excluding, the workflow migration.
+        let (prefix, full) = pool_migrated_before(MIGRATION_VERSION).await;
+        let image = prefix
+            .acquire()
+            .await
+            .unwrap()
+            .serialize(None)
+            .await
+            .unwrap();
+        prefix.close().await;
+
         for conflict in [
             None,
             Some((NEW_PRESET_ID, "My workflow")),
             Some(("custom-id", NEW_PRESET_NAME)),
         ] {
-            let (pool, full) = pool_migrated_before(MIGRATION_VERSION).await;
+            let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+            pool.acquire()
+                .await
+                .unwrap()
+                .deserialize(
+                    None,
+                    sqlx::sqlite::SqliteOwnedBuf::try_from(&*image).unwrap(),
+                    false,
+                )
+                .await
+                .unwrap();
 
             sqlx::query(
                 "UPDATE pipeline_presets SET dag_definition = ? WHERE id = 'pipeline-full'",
