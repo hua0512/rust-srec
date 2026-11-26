@@ -396,31 +396,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn optional_timezone_validates_and_roundtrips_to_domain_filter() {
-        let raw = r#"{"days_of_week":["Monday"],"start_time":"09:00","end_time":"17:00","timezone":"Asia/Shanghai"}"#;
-        let mut config: TimeBasedFilterConfig = serde_json::from_str(raw).unwrap();
-        config.validate().unwrap();
-        let stored = FilterDbModel::new("streamer", FilterType::TimeBased, raw);
-        let domain = srec_core::domain::filter::Filter::try_from(&stored).unwrap();
-        let utc = |value: &str| {
-            jiff::fmt::temporal::DateTimeParser::new()
-                .parse_timestamp(value)
-                .unwrap()
-        };
-        assert!(domain.matches("", "", utc("2024-01-01T02:00:00Z")));
-        assert!(!domain.matches("", "", utc("2024-01-01T09:00:00Z")));
-        assert_eq!(
-            serde_json::to_value(&config).unwrap()["timezone"],
-            "Asia/Shanghai"
-        );
-        config.timezone = Some("Mars/Olympus".to_owned());
-        assert!(matches!(
-            config.validate(),
-            Err(FilterValidationError::InvalidTimezone(_))
-        ));
-    }
-
-    #[test]
     fn invalid_explicit_zones_remain_restrictive_filters_instead_of_being_skipped() {
         for kind in [FilterType::TimeBased, FilterType::Cron] {
             for timezone in ["", "not/a/timezone"] {

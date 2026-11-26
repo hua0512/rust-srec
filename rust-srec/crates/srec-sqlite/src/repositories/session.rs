@@ -898,19 +898,96 @@ mod tests {
         .unwrap();
     }
 
+    async fn pending_recovery_ids(repo: &SqlxSessionRepository) -> Vec<String> {
+        let mut ids: Vec<String> = repo
+            .list_ended_sessions_pending_pipeline_recovery(&Pagination::new(10, 0))
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|session| session.id)
+            .collect();
+        ids.sort();
+        ids
+    }
+
+    /// Besides `session-1`, which settles step by step:
+    /// - `session-published` has a published session-complete DAG but no
+    ///   marker, the window where `run_session_complete_pipeline` committed the
+    ///   DAG but had not yet marked the row; the DAG alone suppresses recovery.
+    /// - `session-orphan` belongs to a streamer that is then deleted. Startup
+    ///   recovery skips orphaned sessions because `PipelineManager` resolves a
+    ///   session-complete pipeline through
+    ///   `ConfigService::get_config_for_streamer`, which needs a streamer id.
     #[tokio::test]
     async fn ended_pipeline_recovery_includes_empty_sessions_until_explicitly_settled() {
         use crate::models::{DagExecutionDbModel, DagPipelineDefinition};
 
         let repo = setup_test_repo().await;
+        let streamer_repo = SqlxStreamerRepository::new(repo.pool.clone(), repo.write_pool.clone());
+        let definition = DagPipelineDefinition::new("session-complete", Vec::new());
+        let new_session_dag =
+            |streamer_id: &str, session_id: &str, segment_source: Option<&str>| {
+                let mut dag = DagExecutionDbModel::new(
+                    &definition,
+                    Some(streamer_id.to_string()),
+                    Some(session_id.to_string()),
+                );
+                dag.segment_source = segment_source.map(str::to_string);
+                dag
+            };
+
+        for (streamer_id, session_id) in [
+            ("streamer-published", "session-published"),
+            ("streamer-orphan", "session-orphan"),
+        ] {
+            let mut streamer = StreamerDbModel::new(
+                streamer_id,
+                format!("https://example.com/{streamer_id}"),
+                "platform-twitch",
+            );
+            streamer.id = streamer_id.to_string();
+            streamer_repo.create_streamer(&streamer).await.unwrap();
+            let mut session = LiveSessionDbModel::new(streamer_id).with_streamer_name(streamer_id);
+            session.id = session_id.to_string();
+            repo.create_session(&session).await.unwrap();
+            repo.create_media_output(&MediaOutputDbModel::new(
+                session_id,
+                format!("/tmp/{session_id}.mp4"),
+                MediaFileType::Video,
+                4096,
+            ))
+            .await
+            .unwrap();
+            repo.end_session(session_id, crate::time::now_ms())
+                .await
+                .unwrap();
+        }
+        repo.create_session_segment(&SessionSegmentDbModel::new(
+            "session-published",
+            0,
+            "/tmp/segment-published.ts",
+            1.0,
+            1024,
+            Default::default(),
+            Default::default(),
+        ))
+        .await
+        .unwrap();
+        insert_dag_row(
+            &repo.write_pool,
+            &new_session_dag(
+                "streamer-published",
+                "session-published",
+                Some("session_complete"),
+            ),
+        )
+        .await;
+
         let ended_at = crate::time::now_ms();
         repo.end_session("session-1", ended_at).await.unwrap();
         assert_eq!(
-            repo.list_ended_sessions_pending_pipeline_recovery(&Pagination::new(10, 0))
-                .await
-                .unwrap()
-                .len(),
-            1
+            pending_recovery_ids(&repo).await,
+            ["session-1", "session-orphan"]
         );
 
         repo.create_session_segment(&SessionSegmentDbModel::new(
@@ -924,82 +1001,39 @@ mod tests {
         ))
         .await
         .unwrap();
-        let candidates = repo
-            .list_ended_sessions_pending_pipeline_recovery(&Pagination::new(10, 0))
-            .await
-            .unwrap();
-        assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0].id, "session-1");
+        assert_eq!(
+            pending_recovery_ids(&repo).await,
+            ["session-1", "session-orphan"]
+        );
 
         // An untagged session-scoped DAG is a thumbnail run and says nothing about
         // session-complete dispatch, so the session stays a candidate.
-        let definition = DagPipelineDefinition::new("session-complete", Vec::new());
-        let new_session_dag = |segment_source: Option<&str>| {
-            let mut dag = DagExecutionDbModel::new(
-                &definition,
-                Some("streamer-1".to_string()),
-                Some("session-1".to_string()),
-            );
-            dag.segment_source = segment_source.map(str::to_string);
-            dag
-        };
-        insert_dag_row(&repo.write_pool, &new_session_dag(None)).await;
+        insert_dag_row(
+            &repo.write_pool,
+            &new_session_dag("streamer-1", "session-1", None),
+        )
+        .await;
         assert_eq!(
-            repo.list_ended_sessions_pending_pipeline_recovery(&Pagination::new(10, 0))
-                .await
-                .unwrap()
-                .len(),
-            1
+            pending_recovery_ids(&repo).await,
+            ["session-1", "session-orphan"]
         );
+
+        // The physical delete is what the reaper runs once a retirement
+        // acknowledges, and it only touches rows carrying the marker.
+        streamer_repo
+            .mark_streamer_deleted("streamer-orphan")
+            .await
+            .unwrap();
+        streamer_repo
+            .delete_marked_streamer("streamer-orphan")
+            .await
+            .unwrap();
+        assert_eq!(pending_recovery_ids(&repo).await, ["session-1"]);
 
         repo.mark_session_complete_dispatched("session-1")
             .await
             .unwrap();
-        assert!(
-            repo.list_ended_sessions_pending_pipeline_recovery(&Pagination::new(10, 0))
-                .await
-                .unwrap()
-                .is_empty()
-        );
-    }
-
-    /// A published session-complete DAG suppresses recovery on its own, covering the window
-    /// where `run_session_complete_pipeline` committed the DAG but had not yet marked the row.
-    #[tokio::test]
-    async fn published_session_complete_dag_suppresses_recovery_without_the_marker() {
-        use crate::models::{DagExecutionDbModel, DagPipelineDefinition};
-
-        let repo = setup_test_repo().await;
-        repo.end_session("session-1", crate::time::now_ms())
-            .await
-            .unwrap();
-        repo.create_session_segment(&SessionSegmentDbModel::new(
-            "session-1",
-            0,
-            "/tmp/segment-000.ts",
-            1.0,
-            1024,
-            Default::default(),
-            Default::default(),
-        ))
-        .await
-        .unwrap();
-
-        let definition = DagPipelineDefinition::new("session-complete", Vec::new());
-        let mut dag = DagExecutionDbModel::new(
-            &definition,
-            Some("streamer-1".to_string()),
-            Some("session-1".to_string()),
-        );
-        dag.segment_source = Some("session_complete".to_string());
-        insert_dag_row(&repo.write_pool, &dag).await;
-
-        assert!(
-            repo.list_ended_sessions_pending_pipeline_recovery(&Pagination::new(10, 0))
-                .await
-                .unwrap()
-                .is_empty()
-        );
+        assert!(pending_recovery_ids(&repo).await.is_empty());
     }
 
     #[tokio::test]
@@ -1163,62 +1197,5 @@ mod tests {
             .await
             .unwrap();
         assert!(active_sessions.is_empty());
-    }
-
-    /// Startup pipeline recovery skips orphaned sessions:
-    /// `PipelineManager` resolves a session-complete pipeline through
-    /// `ConfigService::get_config_for_streamer`, which needs a streamer id.
-    #[tokio::test]
-    async fn pipeline_recovery_skips_sessions_whose_streamer_was_deleted() {
-        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
-        run_migrations(&pool).await.unwrap();
-
-        let streamer_repo = SqlxStreamerRepository::new(pool.clone(), pool.clone());
-        let mut streamer = StreamerDbModel::new(
-            "Streamer One",
-            "https://example.com/streamer-1",
-            "platform-twitch",
-        );
-        streamer.id = "streamer-1".to_string();
-        streamer_repo.create_streamer(&streamer).await.unwrap();
-
-        let repo = SqlxSessionRepository::new(pool.clone(), pool.clone());
-        let mut session = LiveSessionDbModel::new("streamer-1").with_streamer_name("Streamer One");
-        session.id = "session-1".to_string();
-        repo.create_session(&session).await.unwrap();
-        repo.create_media_output(&MediaOutputDbModel::new(
-            "session-1",
-            "/tmp/session-1.mp4",
-            MediaFileType::Video,
-            4096,
-        ))
-        .await
-        .unwrap();
-        repo.end_session("session-1", crate::time::now_ms())
-            .await
-            .unwrap();
-
-        let pending = repo
-            .list_ended_sessions_pending_pipeline_recovery(&Pagination::new(10, 0))
-            .await
-            .unwrap();
-        assert_eq!(pending.len(), 1, "owned session is a recovery candidate");
-
-        // The physical delete is what the reaper runs once a retirement
-        // acknowledges, and it only touches rows carrying the marker.
-        streamer_repo
-            .mark_streamer_deleted("streamer-1")
-            .await
-            .unwrap();
-        streamer_repo
-            .delete_marked_streamer("streamer-1")
-            .await
-            .unwrap();
-
-        let pending = repo
-            .list_ended_sessions_pending_pipeline_recovery(&Pagination::new(10, 0))
-            .await
-            .unwrap();
-        assert!(pending.is_empty(), "orphaned session must not be recovered");
     }
 }

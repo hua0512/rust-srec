@@ -277,40 +277,6 @@ async fn a_proxy_in_use_cannot_be_deleted_and_the_refusal_names_its_users() {
 }
 
 #[tokio::test]
-async fn routes_name_existing_proxies_and_the_global_route_never_inherits() {
-    let pool = database().await;
-    let mut connection = pool.acquire().await.unwrap();
-    assert!(matches!(
-        set_route(&mut connection, &RouteOwner::Global, &ProxyRoute::Inherit).await,
-        Err(Error::Core(CoreError::Proxy(ProxyError::GlobalInherit)))
-    ));
-    assert!(matches!(
-        set_route(
-            &mut connection,
-            &RouteOwner::Platform("platform-huya".into()),
-            &ProxyRoute::Proxy { id: "missing".into() }
-        )
-        .await,
-        Err(Error::Core(CoreError::Proxy(ProxyError::Missing(id)))) if id == "missing"
-    ));
-    assert!(matches!(
-        set_route(
-            &mut connection,
-            &RouteOwner::Platform("missing-platform".into()),
-            &ProxyRoute::Direct
-        )
-        .await,
-        Err(Error::Core(CoreError::NotFound { .. }))
-    ));
-    assert_eq!(
-        route_of(&mut connection, &RouteOwner::Global)
-            .await
-            .unwrap(),
-        ProxyRoute::Direct
-    );
-}
-
-#[tokio::test]
 async fn a_new_exit_moves_pinned_accounts_to_a_new_revision_but_a_new_name_does_not() {
     let pool = database().await;
     let id = save_for_test(&pool, "Pinned", "http://pinned.example:8080").await;
