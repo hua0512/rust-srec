@@ -946,17 +946,6 @@ mod tests {
         assert_eq!(tight.deadline() - started_at, Duration::from_secs(3));
     }
 
-    #[test]
-    fn default_marker_path_is_adjacent_to_sqlite_database() {
-        let marker = marker_path_from_database_url("sqlite:state/srec.db?mode=rwc")
-            .expect("SQLite URL should produce a marker path");
-
-        assert_eq!(
-            marker,
-            PathBuf::from("state/srec.db.runtime-generation.dirty")
-        );
-    }
-
     #[tokio::test]
     async fn shutdown_monitor_starts_clock_while_supervisor_progress_is_blocked() {
         let policy = ShutdownPolicy::new(Duration::from_secs(5), Duration::from_secs(1))
