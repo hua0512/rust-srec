@@ -39,16 +39,12 @@ impl Harness {
     /// first and seed afterwards.
     async fn new() -> Self {
         let temp_dir = tempfile::tempdir().expect("test directory should initialize");
-        let database_url = format!(
-            "sqlite:{}?mode=rwc",
-            temp_dir.path().join("retirement.sqlite").to_string_lossy()
-        );
+        let database_path = temp_dir.path().join("retirement.sqlite");
+        srec_sqlite::test_support::write_migrated_database(&database_path).await;
+        let database_url = format!("sqlite:{}?mode=rwc", database_path.to_string_lossy());
         let (pool, write_pool) = crate::database::init_database_pools(&database_url)
             .await
             .expect("test database pools should initialize");
-        crate::database::run_migrations(&pool)
-            .await
-            .expect("test migrations should succeed");
 
         let container = super::ServiceContainer::new(pool.clone(), write_pool.clone())
             .await

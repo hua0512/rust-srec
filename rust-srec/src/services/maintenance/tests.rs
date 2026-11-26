@@ -184,15 +184,13 @@ async fn setup_with_config(config: MaintenanceConfig) -> TestDatabase {
         "sqlite:{}?mode=rwc",
         path.to_string_lossy().replace('\\', "/")
     );
+    srec_sqlite::test_support::write_migrated_database(&path).await;
     let pool = crate::database::init_pool_with_size(&url, 1)
         .await
         .expect("read pool");
     let write_pool = crate::database::init_write_pool(&url)
         .await
         .expect("write pool");
-    crate::database::run_migrations(&pool)
-        .await
-        .expect("migrations");
     let scheduler = Arc::new(
         MaintenanceScheduler::new(pool.clone(), write_pool.clone(), config)
             .with_output_files_gate(Arc::new(tokio::sync::RwLock::new(()))),
@@ -872,11 +870,28 @@ async fn a_failing_retention_policy_skips_only_its_own_task() {
     );
 }
 
+/// The desktop app relies on `run_migrations` alone to choose incremental
+/// auto-vacuum for a new database file, so this test migrates a fresh file
+/// rather than copying the migrated template the other fixtures use.
 #[tokio::test]
 async fn new_database_enables_incremental_auto_vacuum() {
-    let database = setup(10).await;
+    let directory = tempfile::tempdir().expect("temporary database directory");
+    let url = format!(
+        "sqlite:{}?mode=rwc",
+        directory
+            .path()
+            .join("fresh.db")
+            .to_string_lossy()
+            .replace('\\', "/")
+    );
+    let pool = crate::database::init_pool_with_size(&url, 1)
+        .await
+        .expect("pool");
+    crate::database::run_migrations(&pool)
+        .await
+        .expect("migrations");
     let (mode,): (i64,) = sqlx::query_as("PRAGMA auto_vacuum")
-        .fetch_one(&database.pool)
+        .fetch_one(&pool)
         .await
         .expect("auto-vacuum mode");
     assert_eq!(mode, AUTO_VACUUM_INCREMENTAL);

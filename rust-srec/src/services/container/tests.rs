@@ -168,12 +168,10 @@ async fn graceful_shutdown_flushes_and_persists_the_final_segment_before_pool_cl
     let expected_size = 19;
     let danmu_path = segment_path.with_extension("xml");
 
+    srec_sqlite::test_support::write_migrated_database(&database_path).await;
     let (pool, write_pool) = crate::database::init_database_pools(&database_url)
         .await
         .expect("test database pools should initialize");
-    crate::database::run_migrations(&pool)
-        .await
-        .expect("test migrations should succeed");
     let paired_segment_pipeline = crate::database::models::DagPipelineDefinition::new(
         "Shutdown Paired Segment Pipeline",
         vec![crate::database::models::DagStep::new(

@@ -519,9 +519,10 @@ mod tests {
     #[tokio::test]
     async fn existing_database_keeps_saved_docker_default_output() {
         let dir = tempfile::tempdir().unwrap();
-        let database_url = format!("sqlite:{}", dir.path().join("srec.db").display());
+        let database_path = dir.path().join("srec.db");
+        srec_sqlite::test_support::write_migrated_database(&database_path).await;
+        let database_url = format!("sqlite:{}", database_path.display());
         let (pool, write_pool) = init_database_pools(&database_url).await.unwrap();
-        run_migrations(&pool).await.unwrap();
         sqlx::query("UPDATE global_config SET output_folder = '/app/output'")
             .execute(&write_pool)
             .await

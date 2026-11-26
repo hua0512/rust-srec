@@ -37,13 +37,11 @@ impl ActorHarness {
     async fn new() -> Self {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let db_path = temp_dir.path().join("actor-registry.db");
+        srec_sqlite::test_support::write_migrated_database(&db_path).await;
         let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
         let (pool, write_pool) = crate::database::init_database_pools(&db_url)
             .await
             .expect("init pools");
-        crate::database::run_migrations(&pool)
-            .await
-            .expect("run migrations");
         let container = ServiceContainer::with_config(
             pool.clone(),
             write_pool.clone(),
