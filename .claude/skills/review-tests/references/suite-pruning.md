@@ -1,12 +1,12 @@
 # Suite pruning
 
-Use this procedure to cut a crate's or package's test suite while keeping its coverage. The goal is faster compile and test runs; test count is only a proxy, so measure time before and after. Deleting tests without checking what still pins their behavior has lost real coverage before: one sampled audit found about a fifth of a pass's deletions had no remaining test. With this procedure, a later pass lost 1 of 45, plus an assertion a merge had dropped, and the audit caught both before the PR.
+Use this procedure to cut a crate's or package's test suite while keeping its coverage. The goal is faster compile and test runs; test count is only a proxy, so measure time before and after. Deleting tests without checking what still pins their behavior has lost real coverage before: one sampled audit found about a fifth of a pass's deletions had no remaining test. With this procedure, a later pass over seven crates (959 → 766 unit tests) had at most one lost behaviour per crate, and the audits caught every one before its PR.
 
 Work one crate or package per PR.
 
 ## 1. Measure
 
-- **Test time**: `cargo nextest run --locked -p <package> -j 4 --status-level pass` prints each test's duration (`-j 4` matches CI's runners). Sum the durations per binary and list the slowest tests. For the backend, include the `rust-srec` E2E binary: it dominates test time, so a change that adds E2E tests can make CI slower while the count drops.
+- **Test time**: `cargo nextest run --locked -p <package> -j 4 --status-level pass` prints each test's duration (`-j 4` matches CI's runners). Compare warm runs: the first run after a rebuild also pays for one-off setup, such as building the migration template. Sum the durations per binary and list the slowest tests. For the backend, include the `rust-srec` E2E binary: it dominates test time, so a change that adds E2E tests can make CI slower while the count drops.
 - **Compile time**: change a source file in the lowest crate the package depends on, then run `cargo nextest run --locked -p <package> --no-run --timings`, and read the per-unit durations in the HTML report under `target/cargo-timings/`. Each crate's unit tests build as a separate `lib (test)` unit, so the unit tests' cost shows up there.
 - Record the CI test step's duration on the base commit (Linux, macOS and Windows).
 
@@ -22,6 +22,8 @@ The user reviews the inventory before anything is deleted. Close calls (partial 
 - For a MERGE, diff the merged test's assertions against every test it replaces; a dropped assertion is lost coverage.
 - Write a deletion log as `file | test | reason | covered_by`, one row per removed or merged test.
 - Every new E2E scenario and every assertion added to an existing E2E test must fail against a temporary mutation of the production code that breaks the behavior it pins. Record each mutation and its result, and never commit one.
+- Restore a mutated file with a fresh modification time (`touch` it after restoring, or write the original content back instead of copying a saved file with `cp -p`, `shutil.copy2` or a move). Cargo decides what to rebuild by modification time, so a restore that keeps the old time leaves the mutant compiled in, and later gates and mutations silently test it. If in doubt, `touch` the sources and rebuild before trusting a result.
+- An assertion that something did not happen ("no further check", "nothing received") needs a positive check first that the thing exists and the window really elapsed; otherwise it passes when the setup is broken. When a test-only setting shortens timers or lifts a limit, re-check every window that was measured in events of that timer.
 - Apply the "slow for its signal" fixes in separate commits.
 - Remove dead helpers in the same pass, then run the package's formatting, Clippy and tests, and the full E2E binary when its support code changed.
 
