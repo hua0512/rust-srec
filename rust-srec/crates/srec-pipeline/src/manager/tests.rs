@@ -2187,7 +2187,8 @@ async fn test_drain_for_session_returns_immediately_when_nothing_is_attached() {
 }
 
 /// The drain returns only once the job it was waiting on leaves `PROCESSING`.
-#[tokio::test]
+/// The repositories are in memory, so paused time skips the poll gaps.
+#[tokio::test(start_paused = true)]
 async fn test_drain_for_session_waits_for_a_running_job() {
     let job_repo = Arc::new(TestJobRepository::new());
     let manager: PipelineManager =
@@ -2226,7 +2227,7 @@ async fn test_drain_for_session_waits_for_a_running_job() {
         })
     };
 
-    let started = std::time::Instant::now();
+    let started = tokio::time::Instant::now();
     assert_eq!(
         manager
             .drain_for_session(session_id, Duration::from_secs(30))
@@ -2242,8 +2243,9 @@ async fn test_drain_for_session_waits_for_a_running_job() {
 }
 
 /// When the caller's bound expires the drain names what it gave up on, rather
-/// than reporting a bare timeout.
-#[tokio::test]
+/// than reporting a bare timeout. The repositories are in memory, so paused
+/// time skips the wait.
+#[tokio::test(start_paused = true)]
 async fn test_drain_for_session_reports_outstanding_work_at_the_bound() {
     let dag_repo = Arc::new(TestDagRepository::new());
     let job_repo = Arc::new(TestJobRepository::new());
@@ -2289,7 +2291,7 @@ async fn test_drain_for_session_reports_outstanding_work_at_the_bound() {
     dag.status = DagExecutionStatus::Processing.as_str().to_string();
     dag_repo.insert(dag);
 
-    let started = std::time::Instant::now();
+    let started = tokio::time::Instant::now();
     let drain = manager
         .drain_for_session(session_id, Duration::from_millis(250))
         .await
