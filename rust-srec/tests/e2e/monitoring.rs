@@ -1,14 +1,19 @@
 //! Monitoring: what the scheduler does with each answer a platform gives.
 //!
-//! Every app here is seeded with [`Seed::live`]: checks every 200 ms, at most
-//! about one per second per platform after a burst of two, and a global route
-//! that ends at a recorder answering 502.
+//! Every app here is seeded with [`Seed::live`]: checks every 200 ms (the E2E
+//! launcher lifts the platform's production rate limit, so checks are not
+//! paced by it), and a global route that ends at a recorder answering 502.
 
 use serde_json::{Value, json};
 
 use crate::support::{
     FakePlatform, Seed, TestApp, WAIT, eventually, id_of, millis, now_ms, seeded_streamer,
 };
+
+/// Checks of a control streamer that a "no further checks" window waits for.
+/// At the 200 ms cadence (10% jitter) eight checks span at least 1.44 s, longer
+/// than the 1 s offline-check floor a wrongly scheduled re-check would use.
+const QUIET_WINDOW_CHECKS: usize = 8;
 
 async fn watch(app: &TestApp, token: &str, name: &str, url: &str) -> String {
     id_of(
@@ -93,7 +98,8 @@ async fn fatal_platform_answers_stop_monitoring_until_the_error_is_cleared() {
     // The scheduler keeps checking the control streamer, but never again the
     // fatal ones. History rows are written in check order, so the control's
     // later rows mean the fatal checks' rows are in too.
-    app.wait_for_more_checks(&token, &control_id, 2).await;
+    app.wait_for_more_checks(&token, &control_id, QUIET_WINDOW_CHECKS)
+        .await;
     assert!(fake.requests_to(&full_room, "status").is_empty());
     assert!(fake.requests_to(&marked_room, "status").is_empty());
     eventually(WAIT, "the marked row to be reaped", || async {
@@ -155,7 +161,8 @@ async fn backing_off(fake: &FakePlatform) -> (TestApp, String, String, String) {
         (!app.streamer(&token, &id).await["disabled_until"].is_null()).then_some(())
     })
     .await;
-    app.wait_for_more_checks(&token, &control_id, 2).await;
+    app.wait_for_more_checks(&token, &control_id, QUIET_WINDOW_CHECKS)
+        .await;
     assert_eq!(fake.requests_to(&flaky, "status").len(), 2);
     assert_eq!(app.checks(&token, &id).await.len(), 2);
     (app, token, id, control_id)
@@ -231,7 +238,8 @@ async fn clear_error_leaves_a_disabled_streamer_disabled() {
         assert!(streamer["disabled_until"].is_null(), "{streamer}");
         assert!(streamer["last_error"].is_null(), "{streamer}");
     }
-    app.wait_for_more_checks(&token, &control_id, 2).await;
+    app.wait_for_more_checks(&token, &control_id, QUIET_WINDOW_CHECKS)
+        .await;
     assert_eq!(fake.requests_to(&flaky, "status").len(), 2);
 
     app.shutdown().await;

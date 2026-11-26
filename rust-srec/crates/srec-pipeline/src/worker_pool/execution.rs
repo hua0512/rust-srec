@@ -16,8 +16,8 @@ use super::lingering::{
     LingeringAttempts, LingeringGuard, STALLED_OPERATION_THRESHOLD, StalledOperation, timeout_error,
 };
 use super::{
-    ActiveWorkerGuard, LOG_CHANNEL_CAPACITY, NO_PROCESSOR_ERROR, SHUTDOWN_DRAIN_GRACE, WorkerType,
-    emit_event,
+    ActiveWorkerGuard, LOG_CHANNEL_CAPACITY, NO_PROCESSOR_ERROR, WorkerType, emit_event,
+    shutdown_drain_grace,
 };
 use crate::dag_scheduler::{
     DagCompletionInfo, DagJobCompletedUpdate, DagJobFailedUpdate, DagScheduler, FailedStepAttempt,
@@ -497,7 +497,7 @@ impl JobRunner {
             let shutdown = self.shutdown.clone();
             async move {
                 shutdown.cancelled().await;
-                tokio::time::sleep(SHUTDOWN_DRAIN_GRACE).await;
+                tokio::time::sleep(shutdown_drain_grace()).await;
             }
         };
 

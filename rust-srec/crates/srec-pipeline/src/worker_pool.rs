@@ -32,6 +32,29 @@ pub use lingering::StalledOperation;
 /// caller gives up and calls `WorkerPool::abort`.
 pub(super) const SHUTDOWN_DRAIN_GRACE: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// Replaces [`SHUTDOWN_DRAIN_GRACE`] when set.
+#[cfg(any(test, feature = "test-support"))]
+static SHUTDOWN_DRAIN_GRACE_OVERRIDE: parking_lot::RwLock<Option<std::time::Duration>> =
+    parking_lot::RwLock::new(None);
+
+/// Give a running job `grace` instead of [`SHUTDOWN_DRAIN_GRACE`] to finish after a pool
+/// shutdown starts, so an end-to-end test can interrupt a job with a restart without waiting
+/// the production 10 seconds. Applies to shutdowns that start afterwards.
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub fn override_shutdown_drain_grace(grace: std::time::Duration) {
+    *SHUTDOWN_DRAIN_GRACE_OVERRIDE.write() = Some(grace);
+}
+
+/// [`SHUTDOWN_DRAIN_GRACE`], or the duration `override_shutdown_drain_grace` set.
+pub(super) fn shutdown_drain_grace() -> std::time::Duration {
+    #[cfg(any(test, feature = "test-support"))]
+    if let Some(grace) = *SHUTDOWN_DRAIN_GRACE_OVERRIDE.read() {
+        return grace;
+    }
+    SHUTDOWN_DRAIN_GRACE
+}
+
 /// Capacity of the per-job channel between `JobLogSink` and its collector task. Overflow is
 /// counted by the sink and reported in the job's log rather than blocking the processor.
 pub(super) const LOG_CHANNEL_CAPACITY: usize = 1024;

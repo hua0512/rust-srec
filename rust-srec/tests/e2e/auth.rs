@@ -494,6 +494,9 @@ async fn failed_logins_are_generic_and_lock_the_account_after_five() {
 
 #[tokio::test]
 async fn disabling_an_account_cuts_off_sessions_keys_and_sockets() {
+    // Runs on the production auth-cache TTL: the SQL edit below evicts no
+    // cached grant, so the wait for the key's rejection bounds how long a
+    // disabled account's API key keeps working.
     let app = TestApp::start().await;
     let admin = app.admin().await.clone();
     let api_key = app
@@ -895,7 +898,7 @@ async fn api_keys_are_validated_created_listed_used_revoked_and_expire() {
     let created = create_key(
         &app,
         &token,
-        &json!({ "name": "short-lived", "access_level": "read_only", "expires_at": now_ms() + 5000 }),
+        &json!({ "name": "short-lived", "access_level": "read_only", "expires_at": now_ms() + 1000 }),
     )
     .await;
     let short_lived = raw_key(&created);

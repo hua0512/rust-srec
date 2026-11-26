@@ -38,6 +38,10 @@ pub(super) async fn serve(
     // seconds so a retry or a revoked socket settles well within `WAIT`.
     rust_srec::pipeline::override_retry_sweep_interval(Duration::from_millis(250));
     rust_srec::override_socket_revalidation_interval(Duration::from_millis(250));
+    // The production platform rate (about one request a second, shared by
+    // every streamer on the platform) would pace checks the seeds schedule
+    // every 200 ms.
+    rust_srec::credentials::override_platform_rate_limit(1_000.0);
     let (pool, write_pool) = backend::init_database_pools(database_url)
         .await
         .expect("open the runtime pools");

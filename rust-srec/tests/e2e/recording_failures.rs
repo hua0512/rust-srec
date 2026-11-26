@@ -3,9 +3,9 @@
 //!
 //! Apps here are seeded with [`Seed::live`]: one offline check confirms an
 //! end, and two failures in a row put the streamer into its 60 s error
-//! backoff. A failed start parks its session for two offline-check intervals,
-//! widened from 1 s to 2 s ([`parking`]) so a loaded machine still retries
-//! the start inside them.
+//! backoff. A failed start parks its session for two offline-check intervals
+//! (2 s at the backend's 1 s floor); the start is retried at once, well
+//! inside them.
 
 use reqwest::StatusCode;
 use serde_json::{Value, json};
@@ -14,11 +14,6 @@ use crate::support::cdn::{FakeCdn, HlsMedia};
 use crate::support::{
     FakePlatform, FakeRoom, Seed, TestApp, WAIT, eventually, id_of, millis, now_ms,
 };
-
-/// [`Seed::live`] with offline checks 2 s apart.
-fn parking() -> Seed {
-    Seed::live().global("offline_check_delay_ms", 2_000)
-}
 
 /// A stream at `url` that outranks the FLV stream every live answer of the
 /// room also offers.
@@ -77,7 +72,7 @@ async fn a_refused_start_ends_its_session_and_backs_the_streamer_off() {
     let cdn = FakeCdn::start().await;
     cdn.put("/forbidden/live.flv", "video/x-flv", "FLV");
     cdn.fail("/forbidden/live.flv", 10, 403, &[]);
-    let app = TestApp::start_with(parking()).await;
+    let app = TestApp::start_with(Seed::live()).await;
     let token = app.admin_token().await;
     let room = fake.room("forbidden");
     room.set_live(room.live("forbidden").stream(cdn_stream(
@@ -237,7 +232,7 @@ async fn a_drm_protected_broadcast_is_not_retried_and_the_next_one_records() {
 async fn rate_limited_playlists_are_retried_within_the_session() {
     let fake = FakePlatform::start().await;
     let cdn = FakeCdn::start().await;
-    let app = TestApp::start_with(parking()).await;
+    let app = TestApp::start_with(Seed::live()).await;
     let token = app.admin_token().await;
     let retry_after = [("retry-after", "1")];
 

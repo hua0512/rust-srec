@@ -8,7 +8,12 @@
 //! also runs it, but in one process every backend shares the `tracing`
 //! subscriber and its log filter: a backend starting in another test
 //! re-applies its stored filter while the log-filter test in [`sockets`]
-//! asserts the one it set, so that test can fail there.
+//! asserts the one it set, so that test can fail there. Two scenarios also
+//! shorten process-wide timings for themselves: the pipeline shutdown grace
+//! (in [`restart`]) and the auth-cache TTL (in [`sockets`]). In one process
+//! these leak into later tests, so the tests that rely on the production
+//! values, such as the change-password and import eviction checks, check
+//! less there.
 
 mod support;
 

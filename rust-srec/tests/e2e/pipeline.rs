@@ -3017,7 +3017,7 @@ async fn a_step_with_a_retry_budget_runs_again_before_its_workflow_fails() {
             vec![with(
                 execute("run", &distinct_fail_cmd, &[]),
                 "retry",
-                json!({ "max_attempts": 2, "backoff_secs": 2 }),
+                json!({ "max_attempts": 2, "backoff_secs": 1 }),
             )],
         ),
     )

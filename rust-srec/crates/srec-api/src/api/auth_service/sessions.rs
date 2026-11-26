@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use tracing::{debug, info, warn};
 
 use super::AuthService;
-use super::cache::{CachedUserState, USER_STATE_CACHE_TTL};
+use super::cache::{CachedUserState, user_state_cache_ttl};
 use super::config::{
     API_KEY_PREFIX, AuthError, AuthPrincipal, AuthResponse, CredentialKind,
     LOGIN_DUMMY_PASSWORD_HASH, SessionInfo, bounded_device_info, session_expiration,
@@ -79,7 +79,7 @@ impl AuthService {
             .get(&claims.sub)
             .filter(|entry| {
                 !fresh_user
-                    && entry.fetched_at.elapsed() < USER_STATE_CACHE_TTL
+                    && entry.fetched_at.elapsed() < user_state_cache_ttl()
                     && (!entry.is_active
                         || (entry.must_change_password && !allow_password_remediation))
             })
