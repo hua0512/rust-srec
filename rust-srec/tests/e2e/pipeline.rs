@@ -447,12 +447,32 @@ async fn validate_runs_the_creation_checks_once_the_graph_is_sound() {
     assert_eq!(unknown["valid"], false);
     let errors = strings(&unknown["errors"]);
     assert_eq!(errors.len(), 1, "{errors:?}");
-    assert!(
-        errors[0].starts_with(
-            "Pipeline references unknown processor(s): 'transmogrify' (step 'odd'). Available processors: "
-        ),
-        "{errors:?}"
-    );
+    let (_, available) = errors[0]
+        .split_once(
+            "Pipeline references unknown processor(s): 'transmogrify' (step 'odd'). Available processors: ",
+        )
+        .unwrap_or_else(|| panic!("{errors:?}"));
+    let available: BTreeSet<&str> = available.split(", ").collect();
+    // Every processor the workflow editor offers
+    // (`frontend/src/components/pipeline/presets/processors/registry.ts`) must have a pool
+    // that claims it, or its jobs stay queued forever. The seeded `archive_zip` job preset
+    // relies on `compression`.
+    for processor in [
+        "remux",
+        "rclone",
+        "baidupcs",
+        "thumbnail",
+        "execute",
+        "audio_extract",
+        "compression",
+        "copy_move",
+        "delete",
+        "metadata",
+        "danmaku_factory",
+        "ass_burnin",
+    ] {
+        assert!(available.contains(processor), "{processor}: {available:?}");
+    }
 
     // A preset name that matches no job preset is taken as a processor name.
     let missing_preset = validate(
@@ -500,6 +520,113 @@ async fn validate_runs_the_creation_checks_once_the_graph_is_sound() {
         let report = validate(&app, &token, definition("refused", steps)).await;
         assert_eq!(report["valid"], false, "{report}");
         assert_eq!(report["errors"], json!([error]), "{report}");
+    }
+
+    // A step that removes the files it receives races every sibling that reads them,
+    // two destructive roots included, unless it depends on them. `consumer` and
+    // `thumbnail` below both read the outputs of `remux`.
+    let beside_reader = |processor: &str, config: Value| {
+        vec![
+            inline("remux", "remux", json!({}), &[]),
+            inline("thumbnail", "thumbnail", json!({}), &["remux"]),
+            inline("consumer", processor, config, &["remux"]),
+        ]
+    };
+    let races_thumbnail = "Step 'consumer' removes the outputs of 'remux' while 'thumbnail' still read them; make 'consumer' depend on that step so it runs after them";
+    let refused = [
+        (
+            vec![
+                inline("delete", "delete", json!({}), &[]),
+                inline("move", "copy_move", json!({ "operation": "move" }), &[]),
+            ],
+            "Step 'delete' removes the pipeline's inputs while 'move' still read them; make 'delete' depend on that step so it runs after them",
+        ),
+        (beside_reader("delete", json!({})), races_thumbnail),
+        (
+            beside_reader("copy_move", json!({ "operation": "move" })),
+            races_thumbnail,
+        ),
+        (
+            beside_reader("rclone", json!({ "operation": "Move" })),
+            races_thumbnail,
+        ),
+        (
+            beside_reader("baidupcs", json!({ "remove_source_after_upload": true })),
+            races_thumbnail,
+        ),
+    ];
+    for (steps, error) in refused {
+        let report = validate(&app, &token, definition("racing", steps)).await;
+        assert_eq!(report["valid"], false, "{report}");
+        assert_eq!(report["errors"], json!([error]), "{report}");
+        assert_eq!(report["warnings"], json!([]), "{report}");
+    }
+
+    // Removal through a processor option only warns, naming the option.
+    let warned = [
+        ("remux", "remove_input_on_success"),
+        ("metadata", "remove_input_on_success"),
+        ("ass_burnin", "delete_source_videos_on_success"),
+        ("ass_burnin", "delete_source_ass_on_success"),
+        ("danmaku_factory", "delete_source_xml_on_success"),
+    ];
+    for (processor, option) in warned {
+        let steps = beside_reader(processor, json!({ option: true }));
+        let report = validate(&app, &token, definition("warned", steps)).await;
+        assert_eq!(report["valid"], true, "{report}");
+        assert_eq!(report["errors"], json!([]), "{report}");
+        assert_eq!(
+            report["warnings"],
+            json!([format!(
+                "Step 'consumer' deletes the outputs of 'remux' once it succeeds ({option}) while 'thumbnail' still read them; whichever finishes first decides whether the other finds its files. Make 'consumer' depend on that step or turn the option off"
+            )]),
+            "{report}"
+        );
+    }
+
+    // Copies, an upload that keeps its sources, options turned off, and removal
+    // ordered after every reader are accepted without a warning.
+    let accepted = [
+        beside_reader("copy_move", json!({ "operation": "copy" })),
+        beside_reader("rclone", json!({})),
+        beside_reader("baidupcs", json!({ "remove_source_after_upload": false })),
+        beside_reader("remux", json!({ "remove_input_on_success": false })),
+        beside_reader("remux", json!({})),
+        beside_reader("thumbnail", json!({})),
+        vec![
+            inline("remux", "remux", json!({}), &[]),
+            inline("thumbnail", "thumbnail", json!({}), &["remux"]),
+            inline("delete", "delete", json!({}), &["thumbnail"]),
+        ],
+        // The delete reaches `thumbnail` through `upload`, so it runs after it.
+        vec![
+            inline("remux", "remux", json!({}), &[]),
+            inline("thumbnail", "thumbnail", json!({}), &["remux"]),
+            inline(
+                "upload",
+                "rclone",
+                json!({ "operation": "copy" }),
+                &["thumbnail"],
+            ),
+            inline("delete", "delete", json!({}), &["remux", "upload"]),
+        ],
+        // The seeded "Stream Archive" shape: the thumbnail reads the remux's
+        // outputs, not the inputs the remux deletes.
+        vec![
+            inline(
+                "remux",
+                "remux",
+                json!({ "remove_input_on_success": true }),
+                &[],
+            ),
+            inline("thumbnail", "thumbnail", json!({}), &["remux"]),
+        ],
+    ];
+    for steps in accepted {
+        let report = validate(&app, &token, definition("accepted", steps)).await;
+        assert_eq!(report["valid"], true, "{report}");
+        assert_eq!(report["errors"], json!([]), "{report}");
+        assert_eq!(report["warnings"], json!([]), "{report}");
     }
 
     // Removal through a processor option only warns: the files go after the
@@ -1088,8 +1215,9 @@ async fn creating_a_pipeline_returns_its_first_job_and_an_invalid_definition_cre
     .await;
     empty.assert_error(StatusCode::BAD_REQUEST, "BAD_REQUEST");
 
-    // A structural fault below a sound root, and an unknown processor: the
-    // two stages creation checks a definition in.
+    // A structural fault below a sound root, an unknown processor, and a step
+    // that removes files a sibling still reads: the stages creation checks a
+    // definition in.
     let invalid = [
         (
             "cycle",
@@ -1105,6 +1233,16 @@ async fn creating_a_pipeline_returns_its_first_job_and_an_invalid_definition_cre
         (
             "unknown processor",
             definition("x", vec![inline("odd", "transmogrify", json!({}), &[])]),
+        ),
+        (
+            "racing delete",
+            definition(
+                "x",
+                vec![
+                    execute("probe", "exit 0", &[]),
+                    inline("tidy", "delete", json!({}), &[]),
+                ],
+            ),
         ),
     ];
     for (label, dag) in invalid {
@@ -1630,6 +1768,37 @@ async fn cancelling_a_queued_job_sticks_and_cancels_its_workflow_but_a_finished_
     let unknown = post_empty(&app, &token, &cancel("no-such-job")).await;
     unknown.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
 
+    // The workflow is looked up before the job changes, so a step job whose step row
+    // is gone is refused and stays queued.
+    seed_standalone_job(&app, "job-orphan-step", "PENDING", 0).await;
+    app.run_sql(
+        "PRAGMA foreign_keys = OFF;
+         UPDATE job SET dag_step_execution_id = 'no-such-step' WHERE id = 'job-orphan-step';",
+    )
+    .await;
+    let orphan = post_empty(&app, &token, &cancel("job-orphan-step")).await;
+    orphan.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
+    assert_eq!(
+        job(&app, &token, "job-orphan-step").await["status"],
+        "PENDING"
+    );
+
+    // A queued step job of a workflow that already failed is cancelled, and the
+    // workflow keeps its outcome.
+    let late_job = seed_queued_dag(&app, "dag-failed-parent").await;
+    app.run_sql(
+        "UPDATE dag_execution SET status = 'FAILED', error = 'seeded' WHERE id = 'dag-failed-parent';
+         UPDATE dag_step_execution SET status = 'FAILED' WHERE dag_id = 'dag-failed-parent';",
+    )
+    .await;
+    let cancelled = post_ok(&app, &token, &cancel(&late_job)).await;
+    assert_eq!(cancelled["success"], true, "{cancelled}");
+    assert_eq!(job(&app, &token, &late_job).await["status"], "CANCELLED");
+    assert_eq!(
+        app.dag(&token, "dag-failed-parent").await["status"],
+        "FAILED"
+    );
+
     app.shutdown().await;
 }
 
@@ -2128,40 +2297,74 @@ async fn retrying_a_failed_dag_reruns_the_failed_branch_and_keeps_completed_step
     let source = app.write_output_file("recordings/clip.flv", "recording");
     let conflict = app.write_output_file("published/clip.flv", "someone else's file");
     let staged = joined(&app.output_path("staging"), "clip.flv");
+    let mirrored = joined(&app.output_path("mirror"), "clip.flv");
+    // `mirror` is a branch beside `publish`; `report` joins the two.
+    let branches = vec![
+        inline(
+            "mirror",
+            "copy_move",
+            json!({ "destination": app.output_path("mirror"), "operation": "copy" }),
+            &["stage"],
+        ),
+        execute("report", "exit 0", &["publish", "mirror"]),
+    ];
 
     let (dag_id, failed) =
-        run_pipeline(&app, &token, &[source], publish_definition(&app, vec![])).await;
+        run_pipeline(&app, &token, &[source], publish_definition(&app, branches)).await;
     assert_eq!(failed["status"], "FAILED");
     assert_eq!(step(&failed, "stage")["status"], "COMPLETED");
     assert_eq!(step(&failed, "stage")["outputs"], json!([staged]));
     assert_eq!(step(&failed, "publish")["status"], "FAILED");
+    assert_eq!(step(&failed, "mirror")["status"], "COMPLETED");
+    assert_eq!(step(&failed, "mirror")["outputs"], json!([mirrored]));
     // A failed step cancels the steps that depend on it.
-    assert_eq!(step(&failed, "announce")["status"], "CANCELLED");
-    assert_eq!(step(&failed, "announce")["job_id"], Value::Null);
+    for cancelled in ["announce", "report"] {
+        assert_eq!(
+            step(&failed, cancelled)["status"],
+            "CANCELLED",
+            "{cancelled}"
+        );
+        assert_eq!(
+            step(&failed, cancelled)["job_id"],
+            Value::Null,
+            "{cancelled}"
+        );
+    }
     let stage_job = job(&app, &token, &step_job_id(&failed, "stage")).await;
+    let mirror_job = job(&app, &token, &step_job_id(&failed, "mirror")).await;
     let publish_job = step_job_id(&failed, "publish");
 
     std::fs::remove_file(&conflict).expect("remove the conflicting file");
     let retry = format!("/api/pipeline/dag/{dag_id}/retry");
     let retried = post_ok(&app, &token, &retry).await;
     assert_eq!(retried["dag_id"], dag_id.as_str());
-    assert_eq!(retried["retried_steps"], 2);
+    assert_eq!(retried["retried_steps"], 3, "publish, announce and report");
     assert_eq!(retried["job_ids"], json!([publish_job]));
     assert!(retried["message"].is_string(), "{retried}");
 
     let rerun = app.settled_dag(&token, &dag_id).await;
     assert_eq!(rerun["status"], "COMPLETED", "{rerun}");
+    assert_eq!(rerun["error"], Value::Null, "{rerun}");
+    assert_eq!(rerun["failed_steps"], 0, "{rerun}");
     assert_eq!(step(&rerun, "stage")["outputs"], json!([staged]));
-    assert_eq!(
-        step_job_id(&rerun, "stage"),
-        stage_job["id"].as_str().expect("id")
-    );
-    let stage_after = job(&app, &token, stage_job["id"].as_str().expect("id")).await;
-    assert_eq!(stage_after["retry_count"], 0);
-    assert_eq!(stage_after["completed_at"], stage_job["completed_at"]);
+    for (step_id, before) in [("stage", &stage_job), ("mirror", &mirror_job)] {
+        let id = before["id"].as_str().expect("id");
+        assert_eq!(step_job_id(&rerun, step_id), id, "{step_id}");
+        let after = job(&app, &token, id).await;
+        assert_eq!(after["retry_count"], 0, "{step_id}");
+        assert_eq!(after["completed_at"], before["completed_at"], "{step_id}");
+    }
     assert_eq!(step_job_id(&rerun, "publish"), publish_job);
     assert_eq!(job(&app, &token, &publish_job).await["retry_count"], 1);
     assert_eq!(step(&rerun, "announce")["status"], "COMPLETED");
+    // The fan-in step gets the rerun branch's and the kept branch's outputs in
+    // dependency order, although `mirror` finished first.
+    let report = job(&app, &token, &step_job_id(&rerun, "report")).await;
+    assert_eq!(
+        report["input_path"],
+        json!([joined(&app.output_path("published"), "clip.flv"), mirrored]),
+        "{report}"
+    );
     assert_eq!(read_file(&conflict), "recording");
 
     let refused = post_empty(&app, &token, &retry).await;
@@ -2603,10 +2806,40 @@ async fn a_step_left_without_inputs_settles_without_a_job_on_completion_and_on_r
     assert_eq!(resettled["status"], "COMPLETED", "{resettled}");
     assert_eq!(step(&resettled, "sweep")["status"], "COMPLETED");
     assert_eq!(step(&resettled, "sweep")["job_id"], Value::Null);
-    assert_eq!(
-        job(&app, &token, &step_job_id(&resettled, "notify")).await["retry_count"],
-        0
-    );
+    let old_notify = step_job_id(&resettled, "notify");
+    assert_eq!(job(&app, &token, &old_notify).await["retry_count"], 0);
+
+    // A step whose job was never created (or is gone) is cancelled without one; the
+    // retry gives it a new job with its dependency's outputs, and the steps after it
+    // run again once it completes.
+    let old_tidy = step_job_id(&resettled, "tidy");
+    app.run_sql(&format!(
+        "UPDATE dag_step_execution SET status = 'CANCELLED', job_id = NULL \
+             WHERE dag_id = '{dag_id}' AND step_id IN ('tidy', 'notify', 'sweep');
+         DELETE FROM job WHERE id IN ('{old_tidy}', '{old_notify}');
+         UPDATE dag_execution SET status = 'FAILED', error = 'Stopped', completed_steps = 1 \
+             WHERE id = '{dag_id}';"
+    ))
+    .await;
+    let retried = post_ok(&app, &token, &format!("/api/pipeline/dag/{dag_id}/retry")).await;
+    assert_eq!(retried["retried_steps"], 3, "{retried}");
+    let new_jobs = strings(&retried["job_ids"]);
+    assert_eq!(new_jobs.len(), 1, "{retried}");
+    assert_ne!(new_jobs[0], old_tidy);
+    let rerun = app.settled_dag(&token, &dag_id).await;
+    assert_eq!(rerun["status"], "COMPLETED", "{rerun}");
+    assert_eq!(step_job_id(&rerun, "tidy"), new_jobs[0]);
+    let tidy = job(&app, &token, &new_jobs[0]).await;
+    assert_eq!(tidy["status"], "COMPLETED", "{tidy}");
+    assert_eq!(tidy["retry_count"], 0);
+    let copied = step(&rerun, "copy")["outputs"].clone();
+    assert_eq!(copied.as_array().map(Vec::len), Some(1), "{rerun}");
+    assert_eq!(tidy["input_path"], copied);
+    let notify_id = step_job_id(&rerun, "notify");
+    assert_ne!(notify_id, old_notify);
+    assert_eq!(job(&app, &token, &notify_id).await["status"], "COMPLETED");
+    assert_eq!(step(&rerun, "sweep")["status"], "COMPLETED");
+    assert_eq!(step(&rerun, "sweep")["job_id"], Value::Null);
 
     app.shutdown().await;
 }
