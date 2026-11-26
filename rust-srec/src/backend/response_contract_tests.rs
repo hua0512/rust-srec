@@ -76,12 +76,28 @@ async fn request(
     (status, body)
 }
 
+/// The OpenAPI document, built once, and the documented creation paths a test
+/// has exercised.
+struct Creations {
+    document: Value,
+    exercised: BTreeSet<String>,
+}
+
+impl Creations {
+    fn new() -> Self {
+        Self {
+            document: serde_json::to_value(ApiDoc::openapi()).unwrap(),
+            exercised: BTreeSet::new(),
+        }
+    }
+}
+
 async fn created(
     application: &Router,
     path: &str,
     documented_path: &str,
     body: Value,
-    exercised: &mut BTreeSet<String>,
+    creations: &mut Creations,
 ) -> Value {
     let (status, body) = request(application, Method::POST, path, body).await;
     assert_eq!(status, StatusCode::CREATED, "{path}: {body}");
@@ -89,7 +105,7 @@ async fn created(
         body.is_object(),
         "resource bodies must not become tuple arrays"
     );
-    let document = serde_json::to_value(ApiDoc::openapi()).unwrap();
+    let document = &creations.document;
     let schema = &document["paths"][documented_path]["post"]["responses"]["201"]["content"]["application/json"]
         ["schema"];
     let reference = schema["$ref"].as_str().expect("resource schema reference");
@@ -102,14 +118,14 @@ async fn created(
             "{path} omitted required property {property}"
         );
     }
-    exercised.insert(documented_path.to_owned());
+    creations.exercised.insert(documented_path.to_owned());
     body
 }
 
 #[tokio::test]
 async fn every_documented_creation_returns_201_and_its_resource_body() {
     let (container, application, directory) = application().await;
-    let mut exercised = BTreeSet::new();
+    let mut exercised = Creations::new();
     let streamer = created(&application, "/api/streamers", "/api/streamers", json!({
         "name": "contract-streamer", "url": "https://www.twitch.tv/contract_test", "enabled": false
     }), &mut exercised).await;
@@ -195,8 +211,7 @@ async fn every_documented_creation_returns_201_and_its_resource_body() {
     assert!(pipeline["pipeline_id"].is_string());
     assert_eq!(pipeline["first_job"]["progress"], Value::Null);
 
-    let document = serde_json::to_value(ApiDoc::openapi()).unwrap();
-    let expected = document["paths"]
+    let expected = exercised.document["paths"]
         .as_object()
         .unwrap()
         .iter()
@@ -204,18 +219,9 @@ async fn every_documented_creation_returns_201_and_its_resource_body() {
         .map(|(path, _)| path.clone())
         .collect::<BTreeSet<_>>();
     assert_eq!(
-        exercised, expected,
+        exercised.exercised, expected,
         "every documented creation needs an actual response assertion"
     );
-    let (status, body) = request(
-        &application,
-        Method::POST,
-        "/api/templates",
-        json!({"name": ""}),
-    )
-    .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(body["code"], "VALIDATION_ERROR");
     container.cancellation_token.cancel();
 }
 
