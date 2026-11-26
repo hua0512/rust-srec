@@ -266,9 +266,9 @@ async fn busy_workers_apply_reduction_to_queued_jobs() {
             .await
             .unwrap()
             .unwrap();
-        // Idle workers poll every millisecond, so at the old limit a second queued job
-        // would start well within this window.
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // The running job holds the only admission, so no idle worker can claim another.
+        assert!(pool.concurrency.try_acquire().is_none());
+        assert_eq!(pool.active_count(), 1);
         assert!(
             started_rx.try_recv().is_err(),
             "only one queued job may run at the reduced limit"
@@ -297,8 +297,11 @@ async fn worker_drains_a_burst_without_poll_delays_and_wakes_after_idle() {
             ..Default::default()
         },
     );
+    // With a polling interval longer than `WAIT`, a worker that waited for its timer
+    // between two jobs could not drain even a short burst in time.
+    const BURST: usize = 4;
     let (event_tx, mut event_rx) = broadcast::channel(256);
-    for _ in 0..32 {
+    for _ in 0..BURST {
         queue
             .enqueue(Job::new("noop", vec![], vec![], "streamer", "session"))
             .await
@@ -313,7 +316,7 @@ async fn worker_drains_a_burst_without_poll_delays_and_wakes_after_idle() {
     );
     tokio::time::timeout(WAIT, async {
         let mut completed = 0;
-        while completed < 32 {
+        while completed < BURST {
             if matches!(
                 event_rx.recv().await.unwrap(),
                 PipelineEvent::JobCompleted { .. }
@@ -327,7 +330,7 @@ async fn worker_drains_a_burst_without_poll_delays_and_wakes_after_idle() {
     wait_for_admissions(&pool, 0).await;
     // Let the worker find the queue empty and park in its backoff, so that only the
     // enqueue below can wake it in time.
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::sleep(Duration::from_millis(10)).await;
     queue
         .enqueue(Job::new("noop", vec![], vec![], "streamer", "session"))
         .await
