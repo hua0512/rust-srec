@@ -117,24 +117,25 @@ async fn a_room_going_live_is_recorded_and_its_end_is_confirmed_per_room() {
 async fn a_peer_batch_starts_recording_before_the_rooms_next_poll() {
     let fake = FakePlatform::start().await;
     let room = fake.room("peer");
-    // An offline batch answer is reused for a quarter of the 4 s check
+    // An offline batch answer is reused for a quarter of the 8 s check
     // interval, so the trigger's first poll makes a new batch call only once
-    // the silence below has passed. The deadline comes before the room's
-    // earliest routine poll, at 90% of the interval.
+    // the 2.1 s silence below has passed. The 7 s deadline comes before the
+    // room's earliest routine poll, at 90% of the interval, and leaves about
+    // 5 s for the trigger's poll to wake the peer on a loaded CI runner.
     let app =
-        TestApp::start_with(with_batch_detection().global("streamer_check_delay_ms", 4_000)).await;
+        TestApp::start_with(with_batch_detection().global("streamer_check_delay_ms", 8_000)).await;
     let token = app.admin_token().await;
     let mut socket = query_socket(&app, "/api/downloads/ws", &token).await;
     next_payload(&mut socket, "the initial downloads snapshot", |payload| {
         matches!(payload, Payload::Snapshot(_)).then_some(())
     })
     .await;
-    let deadline = tokio::time::Instant::now() + Duration::from_millis(3_500);
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(7_000);
     let id = app.watch(&token, "Peer", &room, Value::Null).await;
     assert_eq!(next_check(&mut socket, &id).await.1, "batch");
     room.set_live(room.live("Peer"));
     assert!(
-        tokio::time::timeout(Duration::from_millis(1100), next_check(&mut socket, &id))
+        tokio::time::timeout(Duration::from_millis(2_100), next_check(&mut socket, &id))
             .await
             .is_err()
     );
