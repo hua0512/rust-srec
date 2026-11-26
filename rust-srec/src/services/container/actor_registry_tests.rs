@@ -674,52 +674,6 @@ async fn retire_streamer_requires_all_four_physical_owners_past_stop_deadline() 
     harness.shutdown().await;
 }
 
-/// A streamer persisted in `OutOfSpace` must stay dormant on startup (no resident
-/// actor) until `OutputRootGate` recovery clears its error state (`OutOfSpace -> NotLive`),
-/// at which point `PostPublicationListener` wakes it asynchronously.
-#[tokio::test]
-async fn persisted_out_of_space_stays_dormant_on_startup_and_wakes_on_recovery() {
-    let harness = ActorHarness::new().await;
-    let row = harness
-        .seed_streamer("s-out-of-space", StreamerState::OutOfSpace)
-        .await;
-
-    harness.registry.start();
-    // Allow initial AllStreamers reconciliation pass to run.
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    assert!(
-        !harness.registry.has_actor(&row.id),
-        "persisted OutOfSpace streamer must stay dormant on startup"
-    );
-
-    // Simulate OutputRootGate recovery hook clearing OutOfSpace -> NotLive.
-    harness
-        .container
-        .streamer_manager
-        .clear_error_state(&row.id)
-        .await
-        .expect("clear OutOfSpace error state");
-
-    tokio::time::timeout(Duration::from_secs(3), async {
-        while !harness.registry.has_actor(&row.id) {
-            tokio::time::sleep(Duration::from_millis(15)).await;
-        }
-    })
-    .await
-    .expect("clearing OutOfSpace must wake a resident actor via PostPublicationListener");
-    assert_eq!(
-        harness
-            .container
-            .streamer_manager
-            .get_streamer(&row.id)
-            .expect("woken streamer metadata must remain cached")
-            .state,
-        StreamerState::NotLive
-    );
-
-    harness.shutdown().await;
-}
-
 /// Even after a streamer's actor has exited, a trailing `SegmentCompleted` event
 /// delivered over the download coordination channel must still persist the closed
 /// segment row into `session_segments` and acknowledge completion.

@@ -6,7 +6,9 @@
 
 use serde_json::{Value, json};
 
-use crate::support::{FakePlatform, Seed, TestApp, WAIT, eventually, id_of, millis};
+use crate::support::{
+    FakePlatform, Seed, TestApp, WAIT, eventually, id_of, millis, now_ms, seeded_streamer,
+};
 
 async fn watch(app: &TestApp, token: &str, name: &str, url: &str) -> String {
     id_of(
@@ -21,11 +23,24 @@ async fn clear_error(app: &TestApp, token: &str, id: &str) -> Value {
 }
 
 /// Fatal answers stop monitoring and are recorded in the check history;
-/// clearing the error resumes monitoring.
+/// clearing the error resumes monitoring. A streamer a previous run stopped
+/// for lack of disk space stays stopped the same way, and a row a crash left
+/// marked for deletion is reaped at startup without being checked.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn fatal_platform_answers_stop_monitoring_until_the_error_is_cleared() {
     let fake = FakePlatform::start().await;
-    let app = TestApp::start_with(Seed::live()).await;
+    let full_room = fake.room("full");
+    let marked_room = fake.room("marked");
+    let marked_at = now_ms().to_string();
+    let seed = Seed::live()
+        .rows(&seeded_streamer("full", &full_room, "OUT_OF_SPACE", &[]))
+        .rows(&seeded_streamer(
+            "marked",
+            &marked_room,
+            "NOT_LIVE",
+            &[("deleted_at", &marked_at)],
+        ));
+    let app = TestApp::start_with(seed).await;
     let token = app.admin_token().await;
     let cases = [
         (
@@ -79,6 +94,15 @@ async fn fatal_platform_answers_stop_monitoring_until_the_error_is_cleared() {
     // fatal ones. History rows are written in check order, so the control's
     // later rows mean the fatal checks' rows are in too.
     app.wait_for_more_checks(&token, &control_id, 2).await;
+    assert!(fake.requests_to(&full_room, "status").is_empty());
+    assert!(fake.requests_to(&marked_room, "status").is_empty());
+    eventually(WAIT, "the marked row to be reaped", || async {
+        (app.query_i64("SELECT COUNT(*) FROM streamers WHERE id = 'marked'")
+            .await
+            == 0)
+            .then_some(())
+    })
+    .await;
     for ((kind, _, fatal_kind, _), (room, id)) in cases.iter().zip(&watched) {
         assert_eq!(fake.requests_to(room, "status").len(), 1, "{kind}");
         let history = app.checks(&token, id).await;
@@ -95,6 +119,8 @@ async fn fatal_platform_answers_stop_monitoring_until_the_error_is_cleared() {
     let (gone, gone_id) = &watched[0];
     gone.set_offline();
     clear_error(&app, &token, gone_id).await;
+    // Clearing a stored out-of-space error resets that streamer as well.
+    clear_error(&app, &token, "full").await;
     eventually(WAIT, "a check after clear-error", || async {
         let history = app.checks(&token, gone_id).await;
         history
@@ -104,6 +130,12 @@ async fn fatal_platform_answers_stop_monitoring_until_the_error_is_cleared() {
     })
     .await;
     assert_eq!(app.streamer(&token, gone_id).await["state"], "NOT_LIVE");
+    // Waking a cleared streamer is the path `gone` took above; what is
+    // specific to out-of-space is the state reset.
+    eventually(WAIT, "the cleared streamer to read NOT_LIVE", || async {
+        (app.streamer(&token, "full").await["state"] == "NOT_LIVE").then_some(())
+    })
+    .await;
 
     app.shutdown().await;
 }
