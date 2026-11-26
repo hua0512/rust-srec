@@ -903,9 +903,10 @@ mod tests {
     async fn empty_global_config_read_never_creates_default_rows() {
         tokio::time::timeout(Duration::from_secs(20), async {
             let dir = tempfile::tempdir().unwrap();
-            let url = format!("sqlite:{}", dir.path().join("config.db").display());
-            let writer = crate::init_migration_pool(&url).await.unwrap();
-            crate::run_migrations(&writer).await.unwrap();
+            let path = dir.path().join("config.db");
+            crate::test_support::write_migrated_database(&path).await;
+            let url = format!("sqlite:{}", path.display());
+            let writer = crate::init_write_pool(&url).await.unwrap();
             let reader = crate::init_pool_with_size(&url, 1).await.unwrap();
             let repo = SqlxConfigRepository::new(reader.clone(), writer.clone());
             let original = repo.get_global_config().await.unwrap();
