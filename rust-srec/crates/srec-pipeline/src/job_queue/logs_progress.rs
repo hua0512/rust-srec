@@ -16,8 +16,7 @@ use super::{
     ActiveJobInfo, AttemptToken, EXECUTION_INFO_MAX_LOGS, HEARTBEAT_INTERVAL, Job,
     JobExecutionInfo, JobLogEntry, JobQueue, LOG_PERSISTENCE_LOCK_SHARDS, LogCursorCleanup,
     LogLevel, LogPersistence, LongJobTrack, MAX_PERSISTED_LOG_ROWS_PER_JOB,
-    PROGRESS_FLUSH_INTERVAL_MS, UPLOAD_QUEUE_POLL_INTERVAL, db_model_to_job, non_empty,
-    upload_kind_for_job_type,
+    UPLOAD_QUEUE_POLL_INTERVAL, db_model_to_job, non_empty, upload_kind_for_job_type,
 };
 use crate::PipelineResult as Result;
 use crate::processors::{UploadItemStatus, UploadResultItem, utils as processor_utils};
@@ -888,6 +887,7 @@ fn announce_due_long_jobs(
 pub(super) fn spawn_progress_aggregator(
     repo: Arc<dyn JobRepository>,
     long_job_after: std::time::Duration,
+    flush_every: std::time::Duration,
     mut rx: tokio::sync::mpsc::Receiver<JobProgressUpdate>,
     jobs_cache: Arc<DashMap<String, Job>>,
     cancellation_tokens: Arc<DashMap<String, AttemptToken>>,
@@ -904,7 +904,6 @@ pub(super) fn spawn_progress_aggregator(
 
     Some(tokio::spawn(async move {
         let mut pending: HashMap<String, JobProgressSnapshot> = HashMap::new();
-        let flush_every = std::time::Duration::from_millis(PROGRESS_FLUSH_INTERVAL_MS);
         let mut tick = tokio::time::interval(flush_every);
         let mut heartbeat = tokio::time::interval_at(
             tokio::time::Instant::now() + HEARTBEAT_INTERVAL,

@@ -1036,8 +1036,10 @@ async fn heartbeat_reannounces_live_uploads_and_long_jobs() {
 /// listed in the connect snapshot. Shorter jobs stay off it entirely.
 #[tokio::test]
 async fn long_jobs_reach_the_socket_after_the_long_job_delay() {
-    // Far longer than the few database calls a short job makes here.
-    const LONG_JOB_AFTER: std::time::Duration = std::time::Duration::from_millis(500);
+    // Far longer than the few database calls a short job makes here, and a few
+    // flush ticks long.
+    const LONG_JOB_AFTER: std::time::Duration = std::time::Duration::from_millis(200);
+    const FLUSH_EVERY: std::time::Duration = std::time::Duration::from_millis(20);
     async fn next_event(
         rx: &mut tokio::sync::broadcast::Receiver<crate::UploadBroadcastEnvelope>,
     ) -> Arc<UploadStatusEvent> {
@@ -1059,6 +1061,7 @@ async fn long_jobs_reach_the_socket_after_the_long_job_delay() {
     let queue = JobQueue::with_repository(
         JobQueueConfig {
             long_job_after: LONG_JOB_AFTER,
+            progress_flush_interval: FLUSH_EVERY,
             ..Default::default()
         },
         crate::test_support::job_repository().await,

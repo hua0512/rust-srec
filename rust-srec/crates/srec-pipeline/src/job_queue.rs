@@ -65,7 +65,8 @@ pub(super) fn non_empty(value: &str) -> Option<String> {
 }
 
 pub(super) const EXECUTION_INFO_MAX_LOGS: usize = 200;
-pub(super) const PROGRESS_FLUSH_INTERVAL_MS: u64 = 250;
+/// Default for [`JobQueueConfig::progress_flush_interval`].
+const PROGRESS_FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
 /// Must stay well under the frontend's upload staleness window
 /// (`STALE_AFTER_MS`, 2 minutes); see [`logs_progress::heartbeat_events`].
 pub(super) const HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
@@ -164,6 +165,9 @@ pub struct JobQueueConfig {
     /// How long a job other than an upload runs before it reaches the
     /// WebSocket.
     pub long_job_after: std::time::Duration,
+    /// How often reported progress, long-job announcements and their ends are
+    /// published.
+    pub progress_flush_interval: std::time::Duration,
 }
 
 impl Default for JobQueueConfig {
@@ -173,6 +177,7 @@ impl Default for JobQueueConfig {
             critical_threshold: 500,
             poll_interval_ms: 100,
             long_job_after: LONG_JOB_AFTER,
+            progress_flush_interval: PROGRESS_FLUSH_INTERVAL,
         }
     }
 }
@@ -478,6 +483,7 @@ impl JobQueue {
         let progress_aggregator = spawn_progress_aggregator(
             repository.clone(),
             config.long_job_after,
+            config.progress_flush_interval,
             progress_rx,
             jobs_cache.clone(),
             cancellation_tokens.clone(),
