@@ -892,6 +892,12 @@ async fn concurrent_health_change_after_reservation_prevents_stale_account_extra
             _ = &mut operation => panic!("platform backoff must hold extraction"),
             published = &mut health => published.unwrap(),
         }
+        // End the backoff without waiting for it. The clock runs again before
+        // the operation's queries: paused time would auto-advance while they
+        // wait on the SQLite worker thread.
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_millis(500)).await;
+        tokio::time::resume();
         let result = operation.await.unwrap();
         assert_eq!(result.value, "account=B");
         assert_eq!(*used.lock(), vec!["account=B"]);
