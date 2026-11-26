@@ -73,6 +73,10 @@ const CRASH_RESTART_MAX_BACKOFF: Duration = Duration::from_secs(60);
 const CONFIG_RETRY_BASE: Duration = Duration::from_secs(5);
 const CONFIG_RETRY_MAX: Duration = Duration::from_secs(5 * 60);
 
+fn duration_ms(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+}
+
 /// `base` for the first failure, doubled for each further one, capped at `max`.
 fn doubling_backoff(base: Duration, failures: u32, max: Duration) -> Duration {
     let doublings = failures.saturating_sub(1).min(16);
@@ -287,6 +291,10 @@ pub struct ActorRegistry {
     danmu_session_streamers: DashMap<String, String>,
     deps: ActorRuntimeDeps,
     check_interval_ms: AtomicU64,
+    /// First crash-restart delay, [`CRASH_RESTART_BASE_BACKOFF`] outside tests.
+    crash_restart_base_ms: AtomicU64,
+    /// First config-lookup retry delay, [`CONFIG_RETRY_BASE`] outside tests.
+    config_retry_base_ms: AtomicU64,
     feedback: Arc<RecorderFeedbackSink>,
     actor_tasks: TaskSupervisor,
     reconcile_tasks: TaskSupervisor,
@@ -325,6 +333,8 @@ impl ActorRegistry {
             danmu_session_streamers: DashMap::new(),
             deps: actor_deps,
             check_interval_ms: AtomicU64::new(deps.check_interval_ms.max(100)),
+            crash_restart_base_ms: AtomicU64::new(duration_ms(CRASH_RESTART_BASE_BACKOFF)),
+            config_retry_base_ms: AtomicU64::new(duration_ms(CONFIG_RETRY_BASE)),
             feedback: feedback.clone(),
             actor_tasks: TaskSupervisor::with_cancellation(deps.root_cancel.child_token()),
             reconcile_tasks: TaskSupervisor::with_cancellation(deps.root_cancel.child_token()),
@@ -1527,7 +1537,7 @@ impl ActorRegistry {
                     streamer_id,
                     false,
                     doubling_backoff(
-                        CRASH_RESTART_BASE_BACKOFF,
+                        Duration::from_millis(self.crash_restart_base_ms.load(Ordering::Acquire)),
                         attempts,
                         CRASH_RESTART_MAX_BACKOFF,
                     ),
@@ -1605,7 +1615,8 @@ impl ActorRegistry {
             std::mem::replace(&mut retry.pending, cancel.clone()).cancel();
             retry.failures
         };
-        let delay = doubling_backoff(CONFIG_RETRY_BASE, failures, CONFIG_RETRY_MAX);
+        let base = Duration::from_millis(self.config_retry_base_ms.load(Ordering::Acquire));
+        let delay = doubling_backoff(base, failures, CONFIG_RETRY_MAX);
         self.reconcile_later("recorder config retry", streamer_id, true, delay, cancel);
         delay
     }
@@ -2421,6 +2432,21 @@ impl ActorRegistry {
         };
         let (actor, handle) = StreamerActor::new(generation, snapshot, self.deps.clone());
         self.supervise_actor_for_test(streamer_id, generation, actor, handle);
+    }
+
+    /// Shorten the first crash-restart and config-retry delays, which are
+    /// seconds long outside tests. Each further failure still doubles them up
+    /// to the usual caps.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_retry_delays_for_test(
+        &self,
+        crash_restart_base: Duration,
+        config_retry_base: Duration,
+    ) {
+        self.crash_restart_base_ms
+            .store(duration_ms(crash_restart_base), Ordering::Release);
+        self.config_retry_base_ms
+            .store(duration_ms(config_retry_base), Ordering::Release);
     }
 
     /// Install `actor` as `streamer_id`'s resident actor and run it under the

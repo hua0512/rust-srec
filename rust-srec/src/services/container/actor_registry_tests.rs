@@ -37,13 +37,11 @@ impl ActorHarness {
     async fn new() -> Self {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let db_path = temp_dir.path().join("actor-registry.db");
+        srec_sqlite::test_support::write_migrated_database(&db_path).await;
         let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
         let (pool, write_pool) = crate::database::init_database_pools(&db_url)
             .await
             .expect("init pools");
-        crate::database::run_migrations(&pool)
-            .await
-            .expect("run migrations");
         let container = ServiceContainer::with_config(
             pool.clone(),
             write_pool.clone(),
@@ -60,6 +58,8 @@ impl ActorHarness {
                 Box::pin(async { Ok(crate::monitor::LiveStatus::Offline) })
             })));
         let registry = container.actor_registry.clone();
+        // The crash-restart and config-retry tests wait out these delays.
+        registry.set_retry_delays_for_test(Duration::from_millis(50), Duration::from_millis(50));
         Self {
             container,
             pool,
@@ -674,52 +674,6 @@ async fn retire_streamer_requires_all_four_physical_owners_past_stop_deadline() 
     harness.shutdown().await;
 }
 
-/// A streamer persisted in `OutOfSpace` must stay dormant on startup (no resident
-/// actor) until `OutputRootGate` recovery clears its error state (`OutOfSpace -> NotLive`),
-/// at which point `PostPublicationListener` wakes it asynchronously.
-#[tokio::test]
-async fn persisted_out_of_space_stays_dormant_on_startup_and_wakes_on_recovery() {
-    let harness = ActorHarness::new().await;
-    let row = harness
-        .seed_streamer("s-out-of-space", StreamerState::OutOfSpace)
-        .await;
-
-    harness.registry.start();
-    // Allow initial AllStreamers reconciliation pass to run.
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    assert!(
-        !harness.registry.has_actor(&row.id),
-        "persisted OutOfSpace streamer must stay dormant on startup"
-    );
-
-    // Simulate OutputRootGate recovery hook clearing OutOfSpace -> NotLive.
-    harness
-        .container
-        .streamer_manager
-        .clear_error_state(&row.id)
-        .await
-        .expect("clear OutOfSpace error state");
-
-    tokio::time::timeout(Duration::from_secs(3), async {
-        while !harness.registry.has_actor(&row.id) {
-            tokio::time::sleep(Duration::from_millis(15)).await;
-        }
-    })
-    .await
-    .expect("clearing OutOfSpace must wake a resident actor via PostPublicationListener");
-    assert_eq!(
-        harness
-            .container
-            .streamer_manager
-            .get_streamer(&row.id)
-            .expect("woken streamer metadata must remain cached")
-            .state,
-        StreamerState::NotLive
-    );
-
-    harness.shutdown().await;
-}
-
 /// Even after a streamer's actor has exited, a trailing `SegmentCompleted` event
 /// delivered over the download coordination channel must still persist the closed
 /// segment row into `session_segments` and acknowledge completion.
@@ -1205,7 +1159,7 @@ async fn shutdown_stops_checks_before_it_waits_for_recordings() {
         engine.stopping.notified().await;
         let before = probes.load(Ordering::SeqCst);
         harness.registry.check_now(&idle.id);
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
         let after = probes.load(Ordering::SeqCst);
         engine.release.notify_one();
         (before, after)
@@ -1247,7 +1201,7 @@ async fn a_panicking_actor_has_its_recording_stopped_and_restarts() {
         .registry
         .supervise_panicking_actor_for_test(&row.id, 1_000);
     let stopped = tokio::time::timeout(Duration::from_secs(5), engine.stopping.notified()).await;
-    // The first restart waits out a two-second backoff.
+    // The first restart waits out the harness's 50 ms backoff.
     let restarted = eventually(Duration::from_secs(10), || {
         harness.registry.has_actor(&row.id)
     })

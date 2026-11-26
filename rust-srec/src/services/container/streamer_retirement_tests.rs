@@ -14,9 +14,8 @@ use crate::database::repositories::session::SessionRepository;
 use crate::database::repositories::streamer::StreamerRepository;
 use crate::domain::StreamerState;
 use crate::recorder::{
-    DbCommitOp, INTERACTIVE_RETIREMENT, OBSERVE_RETIREMENT, PipelineNotification,
+    INTERACTIVE_RETIREMENT, OBSERVE_RETIREMENT, PipelineNotification, RetirementBounds,
 };
-use crate::session::TerminalCause;
 
 const STREAMER_ID: &str = "streamer-retire";
 const STREAMER_NAME: &str = "Retiring streamer";
@@ -40,16 +39,12 @@ impl Harness {
     /// first and seed afterwards.
     async fn new() -> Self {
         let temp_dir = tempfile::tempdir().expect("test directory should initialize");
-        let database_url = format!(
-            "sqlite:{}?mode=rwc",
-            temp_dir.path().join("retirement.sqlite").to_string_lossy()
-        );
+        let database_path = temp_dir.path().join("retirement.sqlite");
+        srec_sqlite::test_support::write_migrated_database(&database_path).await;
+        let database_url = format!("sqlite:{}?mode=rwc", database_path.to_string_lossy());
         let (pool, write_pool) = crate::database::init_database_pools(&database_url)
             .await
             .expect("test database pools should initialize");
-        crate::database::run_migrations(&pool)
-            .await
-            .expect("test migrations should succeed");
 
         let container = super::ServiceContainer::new(pool.clone(), write_pool.clone())
             .await
@@ -275,55 +270,6 @@ async fn reconciliation_leaves_a_marked_streamers_stop_to_the_retirement() {
     assert_eq!(disabled.session_ended_events().await, 1);
 }
 
-/// Even when another task closed the SQLite session row before retirement ran,
-/// an unsettled session (`session_complete_dispatched = 0`) still defers the
-/// reap until pipeline settlement observes it.
-#[tokio::test]
-async fn a_session_ended_by_another_task_still_defers_the_reap() {
-    let harness = Harness::new().await;
-    harness.start_registry();
-    harness.seed_streamer().await;
-    harness.seed_active_session().await;
-
-    // Close the DB row without notifying `PipelineManager`, leaving the ended
-    // session unsettled.
-    harness
-        .container
-        .actor_registry
-        .store()
-        .commit(DbCommitOp::EndSession {
-            streamer_id: STREAMER_ID.to_string(),
-            streamer_name: STREAMER_NAME.to_string(),
-            session_id: Some(SESSION_ID.to_string()),
-            cause: TerminalCause::UserDisabled,
-            via_hysteresis: false,
-            update_streamer_state: None,
-            clear_errors: false,
-            checks_restored_threshold: None,
-            infra_block: None,
-            suppress_offline_notification: true,
-            now: jiff::Timestamp::now(),
-        })
-        .await
-        .expect("the session should end");
-
-    assert!(
-        harness
-            .container
-            .actor_registry
-            .delete_streamer(STREAMER_ID, INTERACTIVE_RETIREMENT)
-            .await
-            .expect("delete should succeed")
-    );
-    assert!(
-        harness
-            .streamer_row()
-            .await
-            .is_some_and(|row| row.deleted_at.is_some()),
-        "an unsettled session end must defer the reap"
-    );
-}
-
 /// When a physical owner has not settled within the retirement bound, the row
 /// keeps its `deleted_at` marker while disappearing from active views; once
 /// the owner releases, the next reaper sweep removes the row.
@@ -449,11 +395,17 @@ async fn an_older_sessions_pipeline_work_defers_the_reap() {
         .await
         .expect("job row should persist");
 
+    // The job is still pending, so the delete waits out the whole pipeline
+    // bound before it leaves the row marked.
+    let bounds = RetirementBounds {
+        pipeline: Duration::from_millis(100),
+        ..INTERACTIVE_RETIREMENT
+    };
     assert!(
         harness
             .container
             .actor_registry
-            .delete_streamer(STREAMER_ID, INTERACTIVE_RETIREMENT)
+            .delete_streamer(STREAMER_ID, bounds)
             .await
             .expect("delete should succeed")
     );

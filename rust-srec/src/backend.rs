@@ -47,8 +47,6 @@ mod bootstrap_tests;
 mod import_contract_tests;
 #[cfg(test)]
 mod response_contract_tests;
-#[cfg(test)]
-mod timezone_import_tests;
 
 fn map_auth_import_error(error: AuthImportError) -> ConfigurationImportError {
     match error {

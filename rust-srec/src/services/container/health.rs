@@ -920,23 +920,25 @@ mod tests {
         }
     }
 
+    /// A healthy probe reports the filesystem's capacity and notifies nobody;
+    /// once free space falls under the critical threshold the probe itself
+    /// hands the event to the notification service.
     #[tokio::test]
-    async fn disk_probe_reports_capacity_while_healthy() {
+    async fn disk_probe_reports_capacity_and_sends_out_of_space_to_the_notification_service() {
+        const GIB: u64 = 1024 * 1024 * 1024;
+        let service = Arc::new(NotificationService::new());
+        let mut events = service.subscribe();
         let probe = DiskSpaceProbe::new(
             "/rec".to_string(),
             std::path::PathBuf::from("/rec/huya"),
             0.80,
             0.95,
-            Weak::new(),
+            Arc::downgrade(&service),
         );
-        let health = probe
-            .probe(snapshot_with_disk(
-                "/",
-                60 * 1024 * 1024 * 1024,
-                100 * 1024 * 1024 * 1024,
-            ))
-            .await;
 
+        let health = probe
+            .probe(snapshot_with_disk("/", 60 * GIB, 100 * GIB))
+            .await;
         assert_eq!(health.status, HealthStatus::Healthy);
         assert!(health.message.is_none());
         let disk = health
@@ -944,8 +946,23 @@ mod tests {
             .expect("a resolved filesystem must report its capacity");
         assert_eq!(disk.path, "/rec");
         assert_eq!(disk.mount_point, "/");
-        assert_eq!(disk.available_bytes, 60 * 1024 * 1024 * 1024);
-        assert_eq!(disk.total_bytes, 100 * 1024 * 1024 * 1024);
+        assert_eq!(disk.available_bytes, 60 * GIB);
+        assert_eq!(disk.total_bytes, 100 * GIB);
+        assert!(events.try_recv().is_err(), "a healthy disk notifies nobody");
+
+        probe.probe(snapshot_with_disk("/", 4, 100)).await;
+        let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+            .await
+            .expect("the probe should send a notification")
+            .expect("the notification channel should stay open");
+        assert!(
+            matches!(
+                &event,
+                NotificationEvent::OutOfSpace { path, available_bytes: 4, threshold_bytes: 5, .. }
+                    if path == "/rec"
+            ),
+            "unexpected event: {event:?}"
+        );
     }
 
     /// Hosts with mounts sysinfo cannot map to the output path must not fail
@@ -995,36 +1012,6 @@ mod tests {
         assert!(
             probe.out_of_space_event(0, 0).is_none(),
             "an unreadable disk is not out of space"
-        );
-    }
-
-    /// The probe itself must hand the event to the notification service, not
-    /// only decide that one is due.
-    #[tokio::test]
-    async fn disk_probe_sends_out_of_space_to_the_notification_service() {
-        let service = Arc::new(NotificationService::new());
-        let mut events = service.subscribe();
-        let probe = DiskSpaceProbe::new(
-            "/rec".to_string(),
-            std::path::PathBuf::from("/rec"),
-            0.80,
-            0.95,
-            Arc::downgrade(&service),
-        );
-
-        probe.probe(snapshot_with_disk("/", 4, 100)).await;
-
-        let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
-            .await
-            .expect("the probe should send a notification")
-            .expect("the notification channel should stay open");
-        assert!(
-            matches!(
-                &event,
-                NotificationEvent::OutOfSpace { path, available_bytes: 4, threshold_bytes: 5, .. }
-                    if path == "/rec"
-            ),
-            "unexpected event: {event:?}"
         );
     }
 }

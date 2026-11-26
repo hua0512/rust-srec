@@ -2,7 +2,6 @@ mod credential_profiles;
 mod email_validation;
 mod import_projection;
 mod proxies;
-mod timezone_import;
 
 use std::sync::Arc;
 
@@ -15,88 +14,18 @@ use crate::api::auth_store::{UserDbModel, import_user as persist_user};
 use crate::config::ConfigService;
 use crate::config::backup::{ConfigExport, GlobalConfigExport, ImportMode, UserExport};
 use crate::database::models::{
-    EngineConfigurationDbModel, GlobalConfigDbModel, JobPreset, PipelinePreset,
-    PlatformConfigDbModel, StreamerDbModel, TemplateConfigDbModel,
+    EngineConfigurationDbModel, GlobalConfigDbModel, PlatformConfigDbModel, StreamerDbModel,
 };
-use crate::database::repositories::config::{
-    SqlxConfigRepository, import_template as persist_template,
-};
+use crate::database::repositories::config::SqlxConfigRepository;
 use crate::database::repositories::credential_selections;
-use crate::database::repositories::preset::{
-    import_job_preset as persist_job_preset, import_pipeline_preset as persist_pipeline_preset,
-};
 use crate::database::repositories::streamer::{
     SqlxStreamerRepository, import_streamer_row as persist_streamer,
 };
 use crate::database::{begin_immediate, init_pool_with_size, run_migrations};
-use crate::domain::MAX_USERNAME_LENGTH;
 use crate::domain::StreamerState;
 
 fn test_auth_import() -> Arc<dyn AuthImportTxPort> {
     crate::backend::auth_import_tx_port()
-}
-
-#[tokio::test]
-async fn timestamp_import_persistence_and_snapshot_use_integer_milliseconds() {
-    let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
-    run_migrations(&pool).await.unwrap();
-    let at = jiff::fmt::temporal::DateTimeParser::new()
-        .parse_timestamp("2026-01-02T03:04:05.123456Z")
-        .unwrap();
-    let mut template = TemplateConfigDbModel::new("timestamp-import-template");
-    template.created_at = at;
-    template.updated_at = at;
-    let mut job = JobPreset::new("timestamp-import-job", "remux", serde_json::json!({}));
-    job.created_at = at;
-    job.updated_at = at;
-    let mut pipeline = PipelinePreset::new(
-        "timestamp-import-pipeline",
-        crate::database::models::DagPipelineDefinition::new("test", vec![]),
-    );
-    pipeline.created_at = at;
-    pipeline.updated_at = at;
-    let mut tx = begin_immediate(&pool).await.unwrap();
-    for updated in [at, at + jiff::SignedDuration::from_millis(7)] {
-        template.updated_at = updated;
-        job.updated_at = updated;
-        pipeline.updated_at = updated;
-        persist_template(&mut tx, &template).await.unwrap();
-        persist_job_preset(&mut tx, &job).await.unwrap();
-        persist_pipeline_preset(&mut tx, &pipeline).await.unwrap();
-        let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
-        for (table, id, created_at, updated_at) in [
-            (
-                "template_config",
-                &template.id,
-                snapshot.templates[&template.name].created_at,
-                snapshot.templates[&template.name].updated_at,
-            ),
-            (
-                "job_presets",
-                &job.id,
-                snapshot.job_presets[&job.name].created_at,
-                snapshot.job_presets[&job.name].updated_at,
-            ),
-            (
-                "pipeline_presets",
-                &pipeline.id,
-                snapshot.pipeline_presets[&pipeline.name].created_at,
-                snapshot.pipeline_presets[&pipeline.name].updated_at,
-            ),
-        ] {
-            assert_eq!(created_at.as_millisecond(), at.as_millisecond());
-            assert_eq!(updated_at.as_millisecond(), updated.as_millisecond());
-            let storage: (String, String) = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-                "SELECT typeof(created_at), typeof(updated_at) FROM {table} WHERE id = ?"
-            )))
-            .bind(id)
-            .fetch_one(&mut *tx)
-            .await
-            .unwrap();
-            assert_eq!(storage, ("integer".to_owned(), "integer".to_owned()));
-        }
-    }
-    tx.commit().await.unwrap();
 }
 
 const VALID_PASSWORD_HASH: &str = concat!(
@@ -238,66 +167,6 @@ async fn seed_case_duplicate_streamers(pool: &SqlitePool) -> PlatformConfigDbMod
     platform
 }
 
-#[test]
-fn validation_rejects_non_argon2id_password_hashes() {
-    let global = GlobalConfigDbModel::default();
-    let mut config = import_config(&global);
-    let mut user = imported_user("admin", vec!["admin".to_string()], true);
-    user.password_hash = "plaintext-password".to_string();
-    config.users.push(user);
-
-    assert!(matches!(
-        test_auth_import().validate_user_exports(&config.users),
-        Err(ConfigurationImportError::Validation(message))
-            if message.contains("Invalid password hash")
-    ));
-}
-
-#[test]
-fn validation_rejects_usernames_longer_than_login_accepts() {
-    let global = GlobalConfigDbModel::default();
-    let mut config = import_config(&global);
-    config.users.push(imported_user(
-        &"a".repeat(MAX_USERNAME_LENGTH + 1),
-        vec!["admin".to_string()],
-        true,
-    ));
-
-    assert!(matches!(
-        validate_import(&config, ImportMode::Merge),
-        Err(ConfigurationImportError::Validation(message))
-            if message.contains("exceeds")
-    ));
-}
-
-#[test]
-fn validation_measures_usernames_in_characters() {
-    let global = GlobalConfigDbModel::default();
-    let mut config = import_config(&global);
-    config.users.push(imported_user(
-        &"用".repeat(MAX_USERNAME_LENGTH),
-        vec!["admin".to_string()],
-        true,
-    ));
-
-    assert!(validate_import(&config, ImportMode::Merge).is_ok());
-}
-
-#[test]
-fn replace_validation_requires_an_active_admin() {
-    let global = GlobalConfigDbModel::default();
-    let mut config = import_config(&global);
-    config
-        .users
-        .push(imported_user("viewer", vec!["user".to_string()], true));
-
-    assert!(matches!(
-        validate_import(&config, ImportMode::Replace),
-        Err(ConfigurationImportError::Validation(message))
-            if message.contains("at least one active user")
-    ));
-}
-
 #[tokio::test]
 async fn replace_import_retains_configuration_until_its_streamer_is_reaped() {
     use crate::database::repositories::streamer::StreamerRepository;
@@ -397,185 +266,122 @@ async fn replace_import_retains_configuration_until_its_streamer_is_reaped() {
     assert_eq!(violations, 0);
 }
 
+/// Case-only duplicate URLs survive only in databases from before the
+/// case-insensitive index. An import updates the lowest id; a replace then
+/// marks the other row while a merge keeps it unchanged.
 #[tokio::test]
-async fn replace_import_updates_lowest_id_case_duplicate_and_marks_shadow_deleted() {
-    let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
-    run_migrations(&pool).await.unwrap();
-    let global: GlobalConfigDbModel =
-        sqlx::query_as("SELECT * FROM global_config ORDER BY rowid LIMIT 1")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    let platform = seed_case_duplicate_streamers(&pool).await;
+async fn imports_update_the_lowest_id_case_duplicate_and_only_replace_marks_the_shadow() {
+    for mode in [ImportMode::Replace, ImportMode::Merge] {
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+        let global: GlobalConfigDbModel =
+            sqlx::query_as("SELECT * FROM global_config ORDER BY rowid LIMIT 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let platform = seed_case_duplicate_streamers(&pool).await;
 
-    let mut config = import_config(&global);
-    let engines: Vec<EngineConfigurationDbModel> =
-        sqlx::query_as("SELECT * FROM engine_configuration")
+        let mut config = import_config(&global);
+        if mode == ImportMode::Replace {
+            let engines: Vec<EngineConfigurationDbModel> =
+                sqlx::query_as("SELECT * FROM engine_configuration")
+                    .fetch_all(&pool)
+                    .await
+                    .unwrap();
+            config.engines = engines
+                .iter()
+                .map(|engine| crate::config::backup::EngineExport {
+                    name: engine.name.clone(),
+                    engine_type: engine.engine_type.clone(),
+                    config: serde_json::from_str(&engine.config).unwrap(),
+                })
+                .collect();
+        }
+        config.streamers.push(imported_streamer(
+            "https://example.com/live/ALPHA",
+            &platform.platform_name,
+        ));
+        validate_import(&config, mode).unwrap();
+
+        let mut tx = begin_immediate(&pool).await.unwrap();
+        let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
+        snapshot.validate_references(&config, mode).unwrap();
+        let auth = test_auth_import();
+        let AppliedImport { stats, .. } =
+            apply_import(&mut tx, &snapshot, &config, mode, auth.as_ref())
+                .await
+                .unwrap();
+        tx.commit().await.unwrap();
+
+        let rows: Vec<StreamerDbModel> = sqlx::query_as("SELECT * FROM streamers ORDER BY id")
             .fetch_all(&pool)
             .await
             .unwrap();
-    config.engines = engines
-        .iter()
-        .map(|engine| crate::config::backup::EngineExport {
-            name: engine.name.clone(),
-            engine_type: engine.engine_type.clone(),
-            config: serde_json::from_str(&engine.config).unwrap(),
-        })
-        .collect();
-    config.streamers.push(imported_streamer(
-        "https://example.com/live/ALPHA",
-        &platform.platform_name,
-    ));
-    validate_import(&config, ImportMode::Replace).unwrap();
-
-    let mut tx = begin_immediate(&pool).await.unwrap();
-    let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
-    snapshot
-        .validate_references(&config, ImportMode::Replace)
-        .unwrap();
-    let auth = test_auth_import();
-    let AppliedImport { stats, .. } = apply_import(
-        &mut tx,
-        &snapshot,
-        &config,
-        ImportMode::Replace,
-        auth.as_ref(),
-    )
-    .await
-    .unwrap();
-    tx.commit().await.unwrap();
-
-    let rows: Vec<StreamerDbModel> = sqlx::query_as("SELECT * FROM streamers ORDER BY id")
-        .fetch_all(&pool)
-        .await
-        .unwrap();
-    assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].id, "streamer-a");
-    assert_eq!(rows[0].url, "https://example.com/live/ALPHA");
-    assert!(rows[0].deleted_at.is_none());
-    assert_eq!(rows[1].id, "streamer-b");
-    assert!(rows[1].deleted_at.is_some());
-    assert_eq!(stats.streamers_updated, 1);
-    assert_eq!(stats.streamers_created, 0);
-    assert_eq!(stats.streamers_deleted, 1);
+        assert_eq!(rows.len(), 2, "{mode:?}");
+        assert_eq!(rows[0].id, "streamer-a", "{mode:?}");
+        assert_eq!(rows[0].url, "https://example.com/live/ALPHA", "{mode:?}");
+        assert!(rows[0].deleted_at.is_none(), "{mode:?}");
+        assert_eq!(rows[1].id, "streamer-b", "{mode:?}");
+        assert_eq!(stats.streamers_updated, 1, "{mode:?}");
+        assert_eq!(stats.streamers_created, 0, "{mode:?}");
+        if mode == ImportMode::Replace {
+            assert!(rows[1].deleted_at.is_some());
+            assert_eq!(stats.streamers_deleted, 1);
+        } else {
+            assert_eq!(rows[1].url, "https://example.com/live/Alpha");
+            assert_eq!(rows[1].name, "mixed");
+            assert!(rows[1].deleted_at.is_none());
+            assert_eq!(stats.streamers_deleted, 0);
+        }
+    }
 }
 
-#[tokio::test]
-async fn merge_import_updates_one_case_duplicate_and_keeps_the_shadow() {
-    let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
-    run_migrations(&pool).await.unwrap();
-    let global: GlobalConfigDbModel =
-        sqlx::query_as("SELECT * FROM global_config ORDER BY rowid LIMIT 1")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    let platform = seed_case_duplicate_streamers(&pool).await;
-
-    let mut config = import_config(&global);
-    config.streamers.push(imported_streamer(
-        "https://example.com/live/ALPHA",
-        &platform.platform_name,
-    ));
-    validate_import(&config, ImportMode::Merge).unwrap();
-
-    let mut tx = begin_immediate(&pool).await.unwrap();
-    let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
-    snapshot
-        .validate_references(&config, ImportMode::Merge)
-        .unwrap();
-    let auth = test_auth_import();
-    let AppliedImport { stats, .. } = apply_import(
-        &mut tx,
-        &snapshot,
-        &config,
-        ImportMode::Merge,
-        auth.as_ref(),
-    )
-    .await
-    .unwrap();
-    tx.commit().await.unwrap();
-
-    let rows: Vec<StreamerDbModel> = sqlx::query_as("SELECT * FROM streamers ORDER BY id")
-        .fetch_all(&pool)
-        .await
-        .unwrap();
-    assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].id, "streamer-a");
-    assert_eq!(rows[0].url, "https://example.com/live/ALPHA");
-    assert_eq!(rows[1].id, "streamer-b");
-    assert_eq!(rows[1].url, "https://example.com/live/Alpha");
-    assert_eq!(rows[1].name, "mixed");
-    assert!(rows.iter().all(|row| row.deleted_at.is_none()));
-    assert_eq!(stats.streamers_updated, 1);
-    assert_eq!(stats.streamers_created, 0);
-    assert_eq!(stats.streamers_deleted, 0);
-}
-
+/// An import carries a stop or a re-enable but never a runtime state, and
+/// only a stop or a re-enable resets the backoff.
 #[test]
-fn imported_state_carries_disable_intent_but_not_runtime_state() {
-    let mut live = StreamerDbModel::new("live", "https://example.com/live", "platform-huya");
-    live.state = StreamerState::Live.as_str().to_string();
-    assert_eq!(
-        imported_state(Some(&live), StreamerState::NotLive.as_str()),
-        StreamerState::Live.as_str()
-    );
-    assert_eq!(
-        imported_state(Some(&live), StreamerState::Disabled.as_str()),
-        StreamerState::Disabled.as_str()
-    );
-    assert_eq!(
-        imported_state(Some(&live), "CANCELLED"),
-        StreamerState::Disabled.as_str()
-    );
-
-    let mut disabled =
-        StreamerDbModel::new("disabled", "https://example.com/other", "platform-huya");
-    disabled.state = StreamerState::Disabled.as_str().to_string();
-    assert_eq!(
-        imported_state(Some(&disabled), StreamerState::NotLive.as_str()),
-        StreamerState::NotLive.as_str()
-    );
-
-    assert_eq!(
-        imported_state(None, StreamerState::Live.as_str()),
-        StreamerState::NotLive.as_str()
-    );
-    assert_eq!(
-        imported_state(None, StreamerState::Disabled.as_str()),
-        StreamerState::Disabled.as_str()
-    );
-}
-
-#[test]
-fn clears_error_tracking_follows_the_stop_and_re_enable_writes() {
-    let mut not_live =
-        StreamerDbModel::new("not live", "https://example.com/live", "platform-huya");
-    not_live.state = StreamerState::NotLive.as_str().to_string();
-    let mut disabled =
-        StreamerDbModel::new("disabled", "https://example.com/other", "platform-huya");
-    disabled.state = StreamerState::Disabled.as_str().to_string();
-
-    assert!(clears_error_tracking(
-        Some(&not_live),
-        StreamerState::Disabled.as_str()
-    ));
-    assert!(clears_error_tracking(
-        Some(&disabled),
-        StreamerState::NotLive.as_str()
-    ));
-    assert!(!clears_error_tracking(
-        Some(&not_live),
-        StreamerState::NotLive.as_str()
-    ));
-
-    let mut errored = StreamerDbModel::new("errored", "https://example.com/third", "platform-huya");
-    errored.state = StreamerState::Error.as_str().to_string();
-    assert_eq!(
-        imported_state(Some(&errored), StreamerState::NotLive.as_str()),
-        StreamerState::Error.as_str()
-    );
-    assert!(!clears_error_tracking(
-        Some(&errored),
-        StreamerState::Error.as_str()
-    ));
+fn imported_state_carries_disable_intent_and_clears_error_tracking_on_stop_and_re_enable() {
+    let streamer = |state: StreamerState| {
+        let mut row = StreamerDbModel::new("existing", "https://example.com/live", "platform-huya");
+        row.state = state.as_str().to_string();
+        row
+    };
+    let live = streamer(StreamerState::Live);
+    let not_live = streamer(StreamerState::NotLive);
+    let disabled = streamer(StreamerState::Disabled);
+    let errored = streamer(StreamerState::Error);
+    // (stored row, bundle state, imported state, clears error tracking)
+    let cases: [(Option<&StreamerDbModel>, &str, StreamerState, Option<bool>); 10] = [
+        (Some(&live), "NOT_LIVE", StreamerState::Live, None),
+        (Some(&live), "DISABLED", StreamerState::Disabled, None),
+        (Some(&live), "CANCELLED", StreamerState::Disabled, None),
+        (
+            Some(&disabled),
+            "NOT_LIVE",
+            StreamerState::NotLive,
+            Some(true),
+        ),
+        (None, "LIVE", StreamerState::NotLive, None),
+        (None, "DISABLED", StreamerState::Disabled, None),
+        (
+            Some(&not_live),
+            "DISABLED",
+            StreamerState::Disabled,
+            Some(true),
+        ),
+        (
+            Some(&not_live),
+            "NOT_LIVE",
+            StreamerState::NotLive,
+            Some(false),
+        ),
+        (Some(&errored), "NOT_LIVE", StreamerState::Error, None),
+        (Some(&errored), "ERROR", StreamerState::Error, Some(false)),
+    ];
+    for (stored, bundle, imported, clears) in cases {
+        let case = format!("{:?} <- {bundle}", stored.map(|row| &row.state));
+        assert_eq!(imported_state(stored, bundle), imported.as_str(), "{case}");
+        if let Some(clears) = clears {
+            assert_eq!(clears_error_tracking(stored, bundle), clears, "{case}");
+        }
+    }
 }

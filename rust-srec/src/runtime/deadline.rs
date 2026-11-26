@@ -230,33 +230,32 @@ mod tests {
         assert!(fired.load(Ordering::SeqCst));
     }
 
+    /// Disarming or dropping a watchdog before its deadline suppresses the
+    /// callback. Drop also joins the thread, so a deadline that already
+    /// elapsed has fired by the time drop returns.
     #[test]
-    fn explicit_disarm_prevents_callback() {
-        let fired = Arc::new(AtomicBool::new(false));
-        let fired_by_callback = Arc::clone(&fired);
-        let watchdog =
-            HardDeadlineWatchdog::arm(Instant::now() + Duration::from_secs(60), move || {
+    fn disarm_or_drop_before_the_deadline_prevents_callback() {
+        let arm = |deadline: Instant| {
+            let fired = Arc::new(AtomicBool::new(false));
+            let fired_by_callback = Arc::clone(&fired);
+            let watchdog = HardDeadlineWatchdog::arm(deadline, move || {
                 fired_by_callback.store(true, Ordering::SeqCst)
             })
             .unwrap();
+            (watchdog, fired)
+        };
+        let pending = Instant::now() + Duration::from_secs(60);
 
+        let (watchdog, fired) = arm(pending);
         watchdog.disarm().unwrap();
-
         assert!(!fired.load(Ordering::SeqCst));
-    }
 
-    #[test]
-    fn drop_disarms_and_joins_the_watchdog() {
-        let fired = Arc::new(AtomicBool::new(false));
-        let fired_by_callback = Arc::clone(&fired);
-        let watchdog =
-            HardDeadlineWatchdog::arm(Instant::now() + Duration::from_secs(60), move || {
-                fired_by_callback.store(true, Ordering::SeqCst)
-            })
-            .unwrap();
-
+        let (watchdog, fired) = arm(pending);
         drop(watchdog);
-
         assert!(!fired.load(Ordering::SeqCst));
+
+        let (watchdog, fired) = arm(Instant::now() - Duration::from_millis(1));
+        drop(watchdog);
+        assert!(fired.load(Ordering::SeqCst));
     }
 }

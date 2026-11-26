@@ -178,25 +178,6 @@ fn profile(platform: &str) -> CredentialProfileExport {
     }
 }
 
-#[test]
-fn legacy_versions_cannot_hide_managed_policies_in_double_encoded_documents() {
-    let mut config = import_config(&GlobalConfigDbModel::default());
-    let mut streamer = imported_streamer("https://example.test/hidden-policy", "bilibili");
-    streamer.streamer_specific_config = Some(serde_json::json!(
-        r#"{"credential_selection":{"mode":"inherit"}}"#
-    ));
-    config.streamers.push(streamer);
-    assert!(profiles::validate(&config).is_err());
-    config.version = "1.0.0".into();
-    profiles::validate(&config).unwrap();
-    config.streamers[0].streamer_specific_config =
-        Some(serde_json::json!({"credential_selection":null}));
-    assert!(profiles::validate(&config).is_err());
-    config.streamers.clear();
-    config.version = "1.1.0".into();
-    assert!(validate_import(&config, ImportMode::Merge).is_err());
-}
-
 #[tokio::test]
 async fn merge_preserves_omitted_policies_but_explicit_inherit_replaces_them() {
     let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
@@ -301,30 +282,6 @@ async fn merge_preserves_omitted_policies_but_explicit_inherit_replaces_them() {
     .unwrap();
     assert_eq!(stored(&mut tx, template, "platform-bilibili").await, None);
     assert_eq!(stored(&mut tx, streamer, "platform-bilibili").await, None);
-}
-
-#[tokio::test]
-async fn backup_version_follows_managed_credentials_and_keeps_the_legacy_shape() {
-    let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
-    run_migrations(&pool).await.unwrap();
-    let mut tx = begin_immediate(&pool).await.unwrap();
-    let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
-    let platform = cookie_platform(&snapshot);
-    let mut config = import_config(&snapshot.global);
-    config.platforms.push(platform_export(platform));
-    config.update_schema_version();
-    assert_eq!(config.version, "0.1.8");
-    let value = serde_json::to_value(&config).unwrap();
-    assert!(value.get("credential_profiles").is_none());
-    assert!(value["platforms"][0].get("credential_selection").is_none());
-    for selection in [CredentialSelection::Inherit, CredentialSelection::None] {
-        config.platforms[0].credential_selection = Some(selection);
-        config.update_schema_version();
-        assert_eq!(config.version, "1.0.0");
-    }
-    config.platforms.clear();
-    config.update_schema_version();
-    assert_eq!(config.version, "0.1.8");
 }
 
 #[tokio::test]

@@ -162,7 +162,7 @@ async fn output_retention_removes_files_and_reconciles_missing_files() {
 }
 
 #[tokio::test]
-async fn output_retention_preserves_active_recent_and_retry_dependencies() {
+async fn output_retention_preserves_active_recent_and_retry_dependencies_and_their_history() {
     let database = setup(20).await;
     seed_streamer(&database).await;
     policy(&database, 30, true).await;
@@ -227,12 +227,43 @@ async fn output_retention_preserves_active_recent_and_retry_dependencies() {
         dag.updated_at = updated;
         database.dag_repository.create_dag(&dag).await.unwrap();
     }
+    // A failed workflow whose job waits on a retry keeps its history and its
+    // session's output until the retry settles.
+    let retry_dag_output = output(&database, "retry-session").await;
+    insert_dag_job(
+        &database,
+        DagJobFixture {
+            dag_id: "retry-dag",
+            dag_status: DagExecutionStatus::Failed,
+            dag_updated_at: OLD,
+            step_id: "retry-step",
+            job_id: "retry-dag-job",
+            job_status: JobStatus::Failed,
+            job_updated_at: OLD,
+        },
+    )
+    .await;
+    sqlx::query(
+        "UPDATE job SET retry_after = ?, session_id = 'retry-session' WHERE id = 'retry-dag-job'",
+    )
+    .bind(NOW + MILLIS_PER_DAY)
+    .execute(&database.pool)
+    .await
+    .unwrap();
     for _ in 0..2 {
         let report = database.scheduler.run_maintenance_at(NOW).await;
         assert!(report.failures.is_empty(), "{:?}", report.failures);
-        assert_eq!(report.outputs_deleted, 0);
+        assert_eq!(
+            (
+                report.outputs_deleted,
+                report.jobs_deleted,
+                report.dags_deleted
+            ),
+            (0, 0, 0)
+        );
     }
     assert!(database.job_repository.get_job("retry-job").await.is_ok());
+    assert!(retry_dag_output.exists());
 }
 
 #[tokio::test]
@@ -394,45 +425,4 @@ async fn output_retention_preserves_shared_paths_and_unavailable_directories() {
     assert!(modified.exists());
     assert!(has_output(&database, "recently-modified").await);
     assert!(has_output(&database, "offline").await);
-}
-
-#[tokio::test]
-async fn output_retention_keeps_retry_dag_history_until_retry_settles() {
-    let database = setup(10).await;
-    seed_streamer(&database).await;
-    policy(&database, 30, true).await;
-    let path = output(&database, "retry-session").await;
-    insert_dag_job(
-        &database,
-        DagJobFixture {
-            dag_id: "retry-dag",
-            dag_status: DagExecutionStatus::Failed,
-            dag_updated_at: OLD,
-            step_id: "retry-step",
-            job_id: "retry-job",
-            job_status: JobStatus::Failed,
-            job_updated_at: OLD,
-        },
-    )
-    .await;
-    sqlx::query(
-        "UPDATE job SET retry_after = ?, session_id = 'retry-session' WHERE id = 'retry-job'",
-    )
-    .bind(NOW + MILLIS_PER_DAY)
-    .execute(&database.pool)
-    .await
-    .unwrap();
-    for _ in 0..2 {
-        let report = database.scheduler.run_maintenance_at(NOW).await;
-        assert_eq!(
-            (
-                report.outputs_deleted,
-                report.jobs_deleted,
-                report.dags_deleted
-            ),
-            (0, 0, 0)
-        );
-        assert!(report.failures.is_empty(), "{:?}", report.failures);
-    }
-    assert!(path.exists());
 }

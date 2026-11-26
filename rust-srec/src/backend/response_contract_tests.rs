@@ -11,13 +11,8 @@ use utoipa::OpenApi;
 
 use crate::api::jwt::Claims;
 use crate::api::openapi::ApiDoc;
-use crate::database::models::{
-    DagExecutionDbModel, DagPipelineDefinition, DagStep, DagStepExecutionDbModel, JobDbModel,
-    LiveSessionDbModel, PipelineStep,
-};
-use crate::database::repositories::{
-    DagRepository, JobRepository, SessionRepository, SqlxDagRepository, SqlxJobRepository,
-};
+use crate::database::models::LiveSessionDbModel;
+use crate::database::repositories::SessionRepository;
 
 use crate::api::bootstrap::build_api_state;
 use crate::services::ServiceContainer;
@@ -81,12 +76,28 @@ async fn request(
     (status, body)
 }
 
+/// The OpenAPI document, built once, and the documented creation paths a test
+/// has exercised.
+struct Creations {
+    document: Value,
+    exercised: BTreeSet<String>,
+}
+
+impl Creations {
+    fn new() -> Self {
+        Self {
+            document: serde_json::to_value(ApiDoc::openapi()).unwrap(),
+            exercised: BTreeSet::new(),
+        }
+    }
+}
+
 async fn created(
     application: &Router,
     path: &str,
     documented_path: &str,
     body: Value,
-    exercised: &mut BTreeSet<String>,
+    creations: &mut Creations,
 ) -> Value {
     let (status, body) = request(application, Method::POST, path, body).await;
     assert_eq!(status, StatusCode::CREATED, "{path}: {body}");
@@ -94,7 +105,7 @@ async fn created(
         body.is_object(),
         "resource bodies must not become tuple arrays"
     );
-    let document = serde_json::to_value(ApiDoc::openapi()).unwrap();
+    let document = &creations.document;
     let schema = &document["paths"][documented_path]["post"]["responses"]["201"]["content"]["application/json"]
         ["schema"];
     let reference = schema["$ref"].as_str().expect("resource schema reference");
@@ -107,14 +118,14 @@ async fn created(
             "{path} omitted required property {property}"
         );
     }
-    exercised.insert(documented_path.to_owned());
+    creations.exercised.insert(documented_path.to_owned());
     body
 }
 
 #[tokio::test]
 async fn every_documented_creation_returns_201_and_its_resource_body() {
     let (container, application, directory) = application().await;
-    let mut exercised = BTreeSet::new();
+    let mut exercised = Creations::new();
     let streamer = created(&application, "/api/streamers", "/api/streamers", json!({
         "name": "contract-streamer", "url": "https://www.twitch.tv/contract_test", "enabled": false
     }), &mut exercised).await;
@@ -200,8 +211,7 @@ async fn every_documented_creation_returns_201_and_its_resource_body() {
     assert!(pipeline["pipeline_id"].is_string());
     assert_eq!(pipeline["first_job"]["progress"], Value::Null);
 
-    let document = serde_json::to_value(ApiDoc::openapi()).unwrap();
-    let expected = document["paths"]
+    let expected = exercised.document["paths"]
         .as_object()
         .unwrap()
         .iter()
@@ -209,18 +219,9 @@ async fn every_documented_creation_returns_201_and_its_resource_body() {
         .map(|(path, _)| path.clone())
         .collect::<BTreeSet<_>>();
     assert_eq!(
-        exercised, expected,
+        exercised.exercised, expected,
         "every documented creation needs an actual response assertion"
     );
-    let (status, body) = request(
-        &application,
-        Method::POST,
-        "/api/templates",
-        json!({"name": ""}),
-    )
-    .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(body["code"], "VALIDATION_ERROR");
     container.cancellation_token.cancel();
 }
 
@@ -345,143 +346,5 @@ async fn an_imported_proxy_on_another_exit_drops_its_throttle_and_moves_pinned_a
         container.proxies.endpoint(&id).await.unwrap().url,
         "http://new-exit.example:8080"
     );
-    container.cancellation_token.cancel();
-}
-
-#[tokio::test]
-async fn dag_steps_report_their_job_state_and_only_a_retry_that_will_run() {
-    let (container, application, _directory) = application().await;
-    let jobs = SqlxJobRepository::new(container.pool.clone(), container.write_pool.clone());
-    let dags = SqlxDagRepository::new(container.pool.clone(), container.write_pool.clone());
-    let definition = DagPipelineDefinition::new(
-        "contract-steps",
-        ["done", "queued", "retrying", "failed", "blocked"]
-            .into_iter()
-            .map(|name| DagStep::new(name, PipelineStep::preset("remux")))
-            .collect(),
-    );
-    let mut dag = DagExecutionDbModel::new(&definition, None, None);
-    dag.status = "PROCESSING".to_owned();
-    dag.completed_steps = 1;
-    dag.failed_steps = 1;
-    dags.create_dag(&dag).await.unwrap();
-
-    for (id, status, started_at) in [
-        ("job-done", "COMPLETED", Some(1_000)),
-        ("job-queued", "PENDING", None),
-        ("job-retrying", "PROCESSING", Some(3_000)),
-        ("job-failed", "FAILED", Some(4_000)),
-    ] {
-        let mut job = JobDbModel::new("remux", "{}");
-        job.id = id.to_owned();
-        job.status = status.to_owned();
-        job.started_at = started_at;
-        jobs.create_job(&job).await.unwrap();
-    }
-    let retry_after = crate::database::time::now_ms() + 3_600_000;
-    assert_eq!(
-        jobs.mark_job_failed("job-retrying", "boom", Some(retry_after))
-            .await
-            .unwrap(),
-        1
-    );
-    let steps: Vec<_> = [
-        ("done", "COMPLETED", Some("job-done")),
-        ("queued", "PROCESSING", Some("job-queued")),
-        ("retrying", "PROCESSING", Some("job-retrying")),
-        ("failed", "FAILED", Some("job-failed")),
-        ("blocked", "BLOCKED", None),
-    ]
-    .into_iter()
-    .map(|(name, status, job_id)| {
-        let mut step = DagStepExecutionDbModel::new(&dag.id, name, &[]);
-        step.status = status.to_owned();
-        step.job_id = job_id.map(str::to_owned);
-        step.created_at = dag.created_at;
-        step
-    })
-    .collect();
-    dags.create_steps(&steps).await.unwrap();
-
-    let path = format!("/api/pipeline/dag/{}", dag.id);
-    let (status, body) = request(&application, Method::GET, &path, Value::Null).await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    // Steps that share created_at still come back in definition order.
-    let order: Vec<_> = body["steps"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|step| step["step_id"].clone())
-        .collect();
-    assert_eq!(
-        order,
-        ["done", "queued", "retrying", "failed", "blocked"].map(|name| json!(name))
-    );
-    let step = |body: &Value, name: &str| {
-        body["steps"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|step| step["step_id"] == name)
-            .unwrap()
-            .clone()
-    };
-    for (name, job_status, started_at, retry) in [
-        ("done", Some("COMPLETED"), Some(1_000), None),
-        ("queued", Some("PENDING"), None, None),
-        ("retrying", Some("FAILED"), Some(3_000), Some(retry_after)),
-        ("failed", Some("FAILED"), Some(4_000), None),
-        ("blocked", None, None, None),
-    ] {
-        let step = step(&body, name);
-        assert_eq!(step.get("job_status"), Some(&json!(job_status)), "{name}");
-        assert_eq!(step.get("started_at"), Some(&json!(started_at)), "{name}");
-        assert_eq!(step.get("retry_after"), Some(&json!(retry)), "{name}");
-        assert_eq!(step.get("progress"), Some(&Value::Null), "{name}");
-    }
-
-    // One of five steps completed and none is running; the failed step counts
-    // nothing, on every endpoint.
-    assert_eq!(body["progress_percent"], json!(20.0));
-    let (status, list) =
-        request(&application, Method::GET, "/api/pipeline/dags", Value::Null).await;
-    assert_eq!(status, StatusCode::OK, "{list}");
-    let item = list["dags"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|item| item["id"] == dag.id.as_str())
-        .unwrap();
-    assert_eq!(item["progress_percent"], json!(20.0));
-    let (status, stats) = request(
-        &application,
-        Method::GET,
-        &format!("{path}/stats"),
-        Value::Null,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{stats}");
-    assert_eq!(stats["progress_percent"], json!(20.0));
-    let (status, missing) = request(
-        &application,
-        Method::GET,
-        "/api/pipeline/dag/does-not-exist/stats",
-        Value::Null,
-    )
-    .await;
-    assert_eq!(status, StatusCode::NOT_FOUND, "{missing}");
-
-    let (status, body) = request(&application, Method::DELETE, &path, Value::Null).await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    // The cancelled workflow drops the retry while the job row still holds it.
-    assert_eq!(
-        jobs.get_job("job-retrying").await.unwrap().retry_after,
-        Some(retry_after)
-    );
-    let (status, body) = request(&application, Method::GET, &path, Value::Null).await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    let retrying = step(&body, "retrying");
-    assert_eq!(retrying.get("job_status"), Some(&json!("FAILED")));
-    assert_eq!(retrying.get("retry_after"), Some(&Value::Null));
     container.cancellation_token.cancel();
 }

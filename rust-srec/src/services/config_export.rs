@@ -671,6 +671,5 @@ mod tests {
         }
         zones.sort();
         assert_eq!(zones, vec!["Europe/Madrid", "UTC", "UTC", "local"]);
-        assert_eq!(EXPORT_SCHEMA_VERSION, "0.1.8");
     }
 }

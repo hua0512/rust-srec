@@ -2664,6 +2664,125 @@ async fn dag_list_stats_detail_and_graph_agree_on_status_strings() {
         assert_missing(&app, &token, path).await;
     }
 
+    // A workflow whose steps share one creation time and whose jobs are in
+    // every state, seeded after the list checks above so their counts stay.
+    // Its jobs have a type no worker claims.
+    let mixed = "dag-mixed";
+    let now = now_ms();
+    let retry_after = now + 3_600_000;
+    let names = ["done", "queued", "retrying", "failed", "blocked"];
+    let steps = names
+        .iter()
+        .map(|name| inline(name, UNCLAIMED_JOB_TYPE, Value::Null, &[]))
+        .collect();
+    let mixed_definition = definition("Mixed", steps).to_string();
+    let mut sql = format!(
+        "INSERT INTO dag_execution (id, dag_definition, status, created_at, updated_at, \
+             total_steps, completed_steps, failed_steps) VALUES \
+             ('{mixed}', '{mixed_definition}', 'PROCESSING', {now}, {now}, 5, 1, 1);"
+    );
+    // (step, step status, job status, job started_at, job retry_after)
+    for (name, step_status, job) in [
+        (
+            "done",
+            "COMPLETED",
+            Some(("COMPLETED", "1000", "NULL".to_string())),
+        ),
+        (
+            "queued",
+            "PROCESSING",
+            Some(("PENDING", "NULL", "NULL".to_string())),
+        ),
+        (
+            "retrying",
+            "PROCESSING",
+            Some(("FAILED", "3000", retry_after.to_string())),
+        ),
+        (
+            "failed",
+            "FAILED",
+            Some(("FAILED", "4000", "NULL".to_string())),
+        ),
+        ("blocked", "BLOCKED", None),
+    ] {
+        let step_row = format!("{mixed}-{name}");
+        let job_id = job
+            .as_ref()
+            .map_or("NULL".to_string(), |_| format!("'{mixed}-{name}-job'"));
+        if let Some((job_status, started_at, retry)) = &job {
+            sql.push_str(&format!(
+                "INSERT INTO job (id, job_type, status, config, state, created_at, updated_at, \
+                     input, outputs, priority, retry_count, pipeline_id, started_at, \
+                     retry_after) VALUES \
+                     ({job_id}, '{UNCLAIMED_JOB_TYPE}', '{job_status}', '{{}}', '{{}}', {now}, \
+                     {now}, '[]', '[]', 0, 0, '{mixed}', {started_at}, {retry});"
+            ));
+        }
+        // Inserted in definition order, which is the order steps that share a
+        // creation time come back in.
+        sql.push_str(&format!(
+            "INSERT INTO dag_step_execution (id, dag_id, step_id, job_id, status, \
+                 depends_on_step_ids, created_at, updated_at) VALUES ('{step_row}', '{mixed}', \
+                 '{name}', {job_id}, '{step_status}', '[]', {now}, {now}); \
+             UPDATE job SET dag_step_execution_id = '{step_row}' WHERE id = {job_id};"
+        ));
+    }
+    app.run_sql(&sql).await;
+
+    let detail = app.dag(&token, mixed).await;
+    let order: Vec<&Value> = detail["steps"]
+        .as_array()
+        .expect("steps")
+        .iter()
+        .map(|step| &step["step_id"])
+        .collect();
+    assert_eq!(
+        order,
+        names.map(|name| json!(name)).iter().collect::<Vec<_>>()
+    );
+    // Each step reports its own job's state; only a retry the workflow still
+    // waits on shows `retry_after`, and no step runs, so none has progress.
+    for (name, job_status, started_at, retry) in [
+        ("done", json!("COMPLETED"), json!(1000), Value::Null),
+        ("queued", json!("PENDING"), Value::Null, Value::Null),
+        ("retrying", json!("FAILED"), json!(3000), json!(retry_after)),
+        ("failed", json!("FAILED"), json!(4000), Value::Null),
+        ("blocked", Value::Null, Value::Null, Value::Null),
+    ] {
+        let detail = step(&detail, name);
+        assert_eq!(detail["job_status"], job_status, "{name}");
+        assert_eq!(detail["started_at"], started_at, "{name}");
+        assert_eq!(detail["retry_after"], retry, "{name}");
+        assert_eq!(detail.get("progress"), Some(&Value::Null), "{name}");
+    }
+    // One of five steps completed; the failed step counts nothing, on every
+    // endpoint.
+    assert_eq!(detail["progress_percent"], 20.0);
+    let listed = app
+        .get_ok(&format!("/api/pipeline/dags?search={mixed}"), &token)
+        .await;
+    assert_eq!(list_ids(&listed), [mixed]);
+    assert_eq!(listed["dags"][0]["progress_percent"], 20.0);
+    let mixed_stats = app
+        .get_ok(&format!("/api/pipeline/dag/{mixed}/stats"), &token)
+        .await;
+    assert_eq!(mixed_stats["progress_percent"], 20.0);
+
+    // A cancelled workflow no longer waits on the retry, so the step drops it
+    // while the job row keeps it.
+    delete_ok(&app, &token, &format!("/api/pipeline/dag/{mixed}")).await;
+    assert_eq!(
+        app.query_i64(&format!(
+            "SELECT retry_after FROM job WHERE id = '{mixed}-retrying-job'"
+        ))
+        .await,
+        retry_after
+    );
+    let cancelled = app.dag(&token, mixed).await;
+    let retrying = step(&cancelled, "retrying");
+    assert_eq!(retrying["job_status"], "FAILED");
+    assert_eq!(retrying["retry_after"], Value::Null);
+
     app.shutdown().await;
 }
 

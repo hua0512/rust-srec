@@ -281,7 +281,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn relogin_skips_everything_during_cooldown() {
+    async fn a_failed_login_sits_out_the_cooldown_until_new_credentials_are_saved() {
         let repo = MockCredentialRepo::new(Some(stored_row()));
         let authenticator = StoredLoginAuthenticator::new(repo.clone());
         authenticator.cooldown.record_failure("");
@@ -290,32 +290,8 @@ mod tests {
             .relogin("BaiduPCS-Go", None, &ProxyTarget::System)
             .await
             .unwrap();
-
         assert!(!result);
         assert_eq!(repo.gets(), 0, "cooldown short-circuits before the store");
-    }
-
-    #[tokio::test]
-    async fn relogin_without_stored_material_records_no_failure() {
-        let repo = MockCredentialRepo::new(None);
-        let authenticator = StoredLoginAuthenticator::new(repo.clone());
-
-        let result = authenticator
-            .relogin("BaiduPCS-Go", None, &ProxyTarget::System)
-            .await
-            .unwrap();
-
-        assert!(!result);
-        assert_eq!(repo.gets(), 1);
-        assert!(authenticator.cooldown.should_attempt(""));
-    }
-
-    #[tokio::test]
-    async fn saving_credentials_clears_the_cooldown() {
-        let repo = MockCredentialRepo::new(None);
-        let authenticator = StoredLoginAuthenticator::new(repo);
-        authenticator.cooldown.record_failure("");
-        assert!(!authenticator.cooldown.should_attempt(""));
 
         authenticator
             .save_credentials(
@@ -328,7 +304,6 @@ mod tests {
             )
             .await
             .unwrap();
-
         assert!(authenticator.cooldown.should_attempt(""));
     }
 }

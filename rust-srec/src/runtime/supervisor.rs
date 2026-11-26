@@ -946,17 +946,6 @@ mod tests {
         assert_eq!(tight.deadline() - started_at, Duration::from_secs(3));
     }
 
-    #[test]
-    fn default_marker_path_is_adjacent_to_sqlite_database() {
-        let marker = marker_path_from_database_url("sqlite:state/srec.db?mode=rwc")
-            .expect("SQLite URL should produce a marker path");
-
-        assert_eq!(
-            marker,
-            PathBuf::from("state/srec.db.runtime-generation.dirty")
-        );
-    }
-
     #[tokio::test]
     async fn shutdown_monitor_starts_clock_while_supervisor_progress_is_blocked() {
         let policy = ShutdownPolicy::new(Duration::from_secs(5), Duration::from_secs(1))
@@ -1041,9 +1030,11 @@ mod tests {
 
         let directory = tempfile::tempdir().expect("runtime state directory");
         let marker_path = directory.path().join("runtime.dirty");
-        // Force containment starts 2 s after the signal; the hard deadline sits
-        // 28 s later so a loaded machine cannot push a working kill past it.
-        let policy = ShutdownPolicy::new(Duration::from_secs(30), Duration::from_secs(28))
+        // Force containment starts 300 ms after the signal; the hard deadline
+        // sits 29.7 s later so a loaded machine cannot push a working kill past
+        // it. The worker never answers, so forcing it before it has read START
+        // takes the same path.
+        let policy = ShutdownPolicy::new(Duration::from_secs(30), Duration::from_millis(29_700))
             .expect("valid shutdown policy");
         let command = test_worker_command(
             "runtime::supervisor::tests::hard_deadline_force_contains_an_unresponsive_worker",

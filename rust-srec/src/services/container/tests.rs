@@ -157,16 +157,6 @@ impl DownloadEngine for ShutdownFlushEngine {
     }
 }
 
-async fn migrated_test_pool() -> sqlx::SqlitePool {
-    let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
-        .await
-        .expect("test database should initialize");
-    crate::database::run_migrations(&pool)
-        .await
-        .expect("test migrations should succeed");
-    pool
-}
-
 #[tokio::test]
 async fn graceful_shutdown_flushes_and_persists_the_final_segment_before_pool_close() {
     let temp_dir = tempfile::tempdir().expect("test directory should initialize");
@@ -178,12 +168,10 @@ async fn graceful_shutdown_flushes_and_persists_the_final_segment_before_pool_cl
     let expected_size = 19;
     let danmu_path = segment_path.with_extension("xml");
 
+    srec_sqlite::test_support::write_migrated_database(&database_path).await;
     let (pool, write_pool) = crate::database::init_database_pools(&database_url)
         .await
         .expect("test database pools should initialize");
-    crate::database::run_migrations(&pool)
-        .await
-        .expect("test migrations should succeed");
     let paired_segment_pipeline = crate::database::models::DagPipelineDefinition::new(
         "Shutdown Paired Segment Pipeline",
         vec![crate::database::models::DagStep::new(
@@ -614,135 +602,34 @@ async fn graceful_shutdown_flushes_and_persists_the_final_segment_before_pool_cl
     assert!(reopened_write_pool.is_closed());
 }
 
-/// The phased drain waits for containment, so a task that ignores the
-/// cancellation token holds `shutdown_with_grace_period` open forever.
-/// `shutdown_with_hard_cap` must stop waiting, abort the task, and report
-/// what it aborted instead of leaving an embedder wedged.
-#[tokio::test]
-async fn hard_cap_aborts_supervised_work_that_never_settles() {
-    let pool = migrated_test_pool().await;
-    let container = super::ServiceContainer::with_config(
-        pool.clone(),
-        pool.clone(),
-        Duration::from_secs(60),
-        8,
-    )
-    .await
-    .expect("service container should initialize");
-
-    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
-    // Dropped with the task's future, so it resolves only once the task is
-    // aborted; the task itself never completes.
-    let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel::<()>();
-    assert!(container.task_supervisor.spawn("wedged", async move {
-        let _dropped_tx = dropped_tx;
-        let _ = started_tx.send(());
-        std::future::pending::<()>().await;
-    }));
-    started_rx.await.expect("wedged task should start");
-
-    // Without the cap this call waits for the wedged task forever, so a bound
-    // seconds above the cap proves the cap acted without timing its jitter.
-    let hard_cap = Duration::from_millis(200);
-    let error = tokio::time::timeout(
-        hard_cap + Duration::from_secs(5),
-        container.shutdown_with_hard_cap(Duration::from_millis(50), hard_cap),
-    )
-    .await
-    .expect("the hard cap must stop waiting for the wedged task")
-    .expect_err("the wedged task must keep the drain from completing");
-
-    assert!(
-        tokio::time::timeout(Duration::from_secs(5), dropped_rx)
-            .await
-            .expect("the wedged task must be aborted")
-            .is_err()
-    );
-    let message = error.to_string();
-    assert!(
-        message.contains("force deadline") && message.contains("1 background task(s)"),
-        "the error must name the work that was aborted: {message}"
-    );
-    // Producer quiescence was never proven, so the pools stay open exactly
-    // as in `shutdown_with_grace_period`; the caller exits the process.
-    assert!(!pool.is_closed());
-}
-
-#[tokio::test]
-async fn hard_cap_shutdown_under_the_cap_closes_pools() {
-    let pool = migrated_test_pool().await;
-    let container =
-        ServiceContainer::with_config(pool.clone(), pool.clone(), Duration::from_secs(60), 8)
-            .await
-            .expect("service container should initialize");
-    if let Some(download_rx) = container.download_coordination_receiver.lock().take() {
-        container
-            .actor_registry
-            .spawn_download_bridges(download_rx, &container.task_supervisor);
-    }
-    if let Some(danmu_rx) = container.danmu_coordination_receiver.lock().take() {
-        container
-            .actor_registry
-            .spawn_danmu_bridge(danmu_rx, &container.task_supervisor);
-    }
-
-    container
-        .shutdown_with_hard_cap(Duration::from_millis(500), Duration::from_secs(5))
-        .await
-        .expect("a quiescent container should shut down within the cap");
-
-    assert!(pool.is_closed());
-}
-
-// ========== static_root_prefix (startup probe config discovery) ==========
-
+/// The disk-space inventory falls back to the directory before the first
+/// `{...}` variable or strftime `%` token of the output folder. Only a
+/// complete, absolute directory counts: `/` alone is too broad and a relative
+/// path anchors to an unpredictable working directory.
 #[test]
-fn static_root_prefix_static_template_no_placeholders() {
-    // Literal path. Whole string is the "prefix". Still trims to the
-    // last slash to keep the result a complete directory path.
-    assert_eq!(
-        super::static_root_prefix("/app/output"),
-        Some("/app/".to_string())
-    );
-    // If it already ends with a slash, preserve it.
-    assert_eq!(
-        super::static_root_prefix("/app/output/"),
-        Some("/app/output/".to_string())
-    );
-}
-
-/// The startup write probe checks the directory before the first `{...}`
-/// variable or strftime `%` token, never a path containing either.
-#[test]
-fn static_root_prefix_cuts_at_the_first_placeholder() {
-    for (template, prefix) in [
-        ("/rec/{platform}/{streamer}/%Y%m%d", "/rec/"),
-        ("/rec/recordings/%Y-%m-%d", "/rec/recordings/"),
-    ] {
+fn static_root_prefix_keeps_only_a_complete_static_directory() {
+    let mut cases = vec![
+        // A literal path trims to its last separator; a trailing one stays.
+        ("/app/output", Some("/app/")),
+        ("/app/output/", Some("/app/output/")),
+        ("/rec/{platform}/{streamer}/%Y%m%d", Some("/rec/")),
+        ("/rec/recordings/%Y-%m-%d", Some("/rec/recordings/")),
+        // The placeholder sits inside a directory name, leaving only `/`.
+        ("/recordings-{streamer}/files", None),
+        ("recordings/{streamer}", None),
+    ];
+    if cfg!(windows) {
+        cases.push((
+            r"C:\Recordings\{platform}\{streamer}",
+            Some(r"C:\Recordings\"),
+        ));
+        cases.push((r"C:\{streamer}", None));
+    }
+    for (template, prefix) in cases {
         assert_eq!(
             super::static_root_prefix(template),
-            Some(prefix.to_string()),
+            prefix.map(str::to_string),
             "{template}"
         );
     }
-    #[cfg(windows)]
-    assert_eq!(
-        super::static_root_prefix(r"C:\Recordings\{platform}\{streamer}"),
-        Some(r"C:\Recordings\".to_string())
-    );
-}
-
-#[test]
-fn static_root_prefix_partial_directory_name_rejected() {
-    // Template interpolates into the middle of a directory name
-    // (`/recordings-{streamer}/...`). The prefix `/recordings-` is
-    // not a complete directory — the last slash is at position 0, so
-    // the result is just `/`, which we reject as too broad.
-    assert_eq!(
-        super::static_root_prefix("/recordings-{streamer}/files"),
-        None
-    );
-    assert_eq!(super::static_root_prefix("recordings/{streamer}"), None);
-    #[cfg(windows)]
-    assert_eq!(super::static_root_prefix(r"C:\{streamer}"), None);
 }

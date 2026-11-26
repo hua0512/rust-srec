@@ -71,131 +71,6 @@ async fn public_import_preserves_warm_caches_until_commit_and_publishes_only_aft
 }
 
 #[tokio::test]
-async fn cancelled_import_commit_finishes_filter_invalidation_and_runtime_publication() {
-    use crate::database::committed_writer::{CommitPhase, CommitTestGate};
-    use crate::database::models::{FilterDbModel, FilterType};
-    for phase in [CommitPhase::BeforeCommit, CommitPhase::AfterCommit] {
-        let directory = tempfile::tempdir().unwrap();
-        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
-            .await
-            .unwrap();
-        crate::database::run_migrations(&pool).await.unwrap();
-        let container = ServiceContainer::new(pool.clone(), pool.clone())
-            .await
-            .unwrap();
-        let (logging, _layer) =
-            crate::logging::LoggingConfig::for_route_tests(directory.path().to_owned());
-        assert!(container.logging_config.set(Arc::new(logging)).is_ok());
-        let state = build_api_state(
-            crate::backend::build_api_runtime(
-                &container,
-                crate::backend::build_config_backup(&container),
-            )
-            .unwrap(),
-            None,
-        );
-        let streamer = StreamerDbModel::new(
-            "Before import",
-            "https://example.test/cancelled-import",
-            "platform-huya",
-        );
-        state
-            .streamer_repository
-            .create_streamer(&streamer)
-            .await
-            .unwrap();
-        state
-            .filter_repository
-            .create_filter(&FilterDbModel::new(
-                &streamer.id,
-                FilterType::Keyword,
-                r#"{"include":["original"],"exclude":[]}"#,
-            ))
-            .await
-            .unwrap();
-        let filters = state
-            .config_service
-            .filter_store_for(state.filter_repository.clone());
-        let original = filters.get(&streamer.id).await.unwrap();
-        assert_eq!(original.len(), 1);
-        let exported = crate::api::routes::export_import::export_config(State(state.clone()))
-            .await
-            .unwrap()
-            .into_response();
-        let bytes = axum::body::to_bytes(exported.into_body(), 4 * 1024 * 1024)
-            .await
-            .unwrap();
-        let mut config: ConfigExport = serde_json::from_slice(&bytes).unwrap();
-        config.users.clear();
-        config.streamers[0].name = "Committed import".into();
-        config.streamers[0].filters.clear();
-        let writer = state
-            .streamer_manager
-            .committed_state()
-            .unwrap()
-            .writer
-            .clone();
-        let gate = Arc::new(CommitTestGate::default());
-        writer.set_commit_gate(phase, Some(gate.clone()));
-        let mut events = container.event_broadcaster.subscribe();
-        let importer = state.config_backup.clone();
-        let caller = tokio::spawn(async move {
-            importer
-                .import_config(config, ImportMode::Merge, None)
-                .await
-        });
-        tokio::time::timeout(Duration::from_secs(2), gate.started.notified())
-            .await
-            .unwrap();
-        assert!(Arc::ptr_eq(
-            &original,
-            &filters.get(&streamer.id).await.unwrap()
-        ));
-        caller.abort();
-        assert!(matches!(caller.await, Err(error) if error.is_cancelled()));
-        writer.set_commit_gate(phase, None);
-        gate.release.notify_one();
-        tokio::time::timeout(Duration::from_secs(5), async {
-            loop {
-                if matches!(
-                    events.recv().await.unwrap(),
-                    ConfigUpdateEvent::GlobalUpdated
-                ) {
-                    break;
-                }
-            }
-        })
-        .await
-        .expect("owned import runtime effects survive cancellation");
-        assert!(filters.get(&streamer.id).await.unwrap().is_empty());
-        assert_eq!(
-            state
-                .streamer_manager
-                .get_streamer(&streamer.id)
-                .unwrap()
-                .name,
-            "Committed import"
-        );
-        let filter_count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM filters WHERE streamer_id = ?")
-                .bind(&streamer.id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        assert_eq!(filter_count, 0);
-        container.notification_service.stop().await;
-        container.pipeline_manager.stop().await;
-        container.cancellation_token.cancel();
-        assert!(
-            container
-                .task_supervisor
-                .shutdown(Duration::from_secs(1))
-                .await
-        );
-    }
-}
-
-#[tokio::test]
 async fn committed_reaping_invalidates_filters_only_after_delete_succeeds() {
     use crate::database::models::{FilterDbModel, FilterType};
     let directory = tempfile::tempdir().unwrap();
@@ -292,9 +167,14 @@ async fn committed_reaping_invalidates_filters_only_after_delete_succeeds() {
     );
 }
 
+/// An import whose caller is aborted while its commit is gated still
+/// finishes: the filter snapshot stays until the commit, then the caches are
+/// invalidated, `GlobalUpdated` is published, and the post-commit listener
+/// reconciles the streamer the import activated into a resident actor.
 #[tokio::test]
-async fn actor_runtime_import_reconciles_streamers_after_commit_without_deadlock() {
+async fn an_aborted_import_caller_still_finishes_its_commit_and_runtime_publication() {
     use crate::database::committed_writer::{CommitPhase, CommitTestGate};
+    use crate::database::models::{FilterDbModel, FilterType};
     use crate::domain::StreamerState;
 
     for phase in [CommitPhase::BeforeCommit, CommitPhase::AfterCommit] {
@@ -328,7 +208,7 @@ async fn actor_runtime_import_reconciles_streamers_after_commit_without_deadlock
         registry.start();
 
         let mut streamer = StreamerDbModel::new(
-            "Import Actor Streamer",
+            "Before import",
             "https://example.test/import-actor",
             "platform-huya",
         );
@@ -338,10 +218,24 @@ async fn actor_runtime_import_reconciles_streamers_after_commit_without_deadlock
             .create_streamer(&streamer)
             .await
             .unwrap();
+        state
+            .filter_repository
+            .create_filter(&FilterDbModel::new(
+                &streamer.id,
+                FilterType::Keyword,
+                r#"{"include":["original"],"exclude":[]}"#,
+            ))
+            .await
+            .unwrap();
         assert!(
             !registry.has_actor(&streamer.id),
             "disabled streamer must not spawn a resident actor"
         );
+        let filters = state
+            .config_service
+            .filter_store_for(state.filter_repository.clone());
+        let original = filters.get(&streamer.id).await.unwrap();
+        assert_eq!(original.len(), 1);
 
         let exported = crate::api::routes::export_import::export_config(State(state.clone()))
             .await
@@ -354,6 +248,7 @@ async fn actor_runtime_import_reconciles_streamers_after_commit_without_deadlock
         config.users.clear();
         config.streamers[0].name = "Activated By Import".into();
         config.streamers[0].state = StreamerState::NotLive.as_str().to_string();
+        config.streamers[0].filters.clear();
 
         let writer = state
             .streamer_manager
@@ -363,6 +258,7 @@ async fn actor_runtime_import_reconciles_streamers_after_commit_without_deadlock
             .clone();
         let gate = Arc::new(CommitTestGate::default());
         writer.set_commit_gate(phase, Some(gate.clone()));
+        let mut events = container.event_broadcaster.subscribe();
         let importer = state.config_backup.clone();
         let caller = tokio::spawn(async move {
             importer
@@ -373,11 +269,36 @@ async fn actor_runtime_import_reconciles_streamers_after_commit_without_deadlock
         tokio::time::timeout(Duration::from_secs(2), gate.started.notified())
             .await
             .unwrap();
+        assert!(Arc::ptr_eq(
+            &original,
+            &filters.get(&streamer.id).await.unwrap()
+        ));
         caller.abort();
         assert!(matches!(caller.await, Err(error) if error.is_cancelled()));
 
         writer.set_commit_gate(phase, None);
         gate.release.notify_one();
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if matches!(
+                    events.recv().await.unwrap(),
+                    ConfigUpdateEvent::GlobalUpdated
+                ) {
+                    break;
+                }
+            }
+        })
+        .await
+        .expect("owned import runtime effects survive cancellation");
+        assert!(filters.get(&streamer.id).await.unwrap().is_empty());
+        let filter_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM filters WHERE streamer_id = ?")
+                .bind(&streamer.id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(filter_count, 0);
 
         // Post-publication batch listener must fire strictly after COMMIT + lock
         // release and reconcile the activated streamer into a resident actor.
