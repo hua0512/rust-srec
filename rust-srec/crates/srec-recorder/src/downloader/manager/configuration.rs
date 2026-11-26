@@ -344,7 +344,6 @@ mod tests {
     async fn manager_with_repository() -> (DownloadManager, sqlx::SqlitePool) {
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
-            .acquire_timeout(std::time::Duration::from_millis(50))
             .connect("sqlite::memory:")
             .await
             .unwrap();
@@ -448,16 +447,23 @@ mod tests {
             assert!(!error.to_string().contains("private-token"));
         }
 
-        let _occupied_connection = pool.acquire().await.unwrap();
+        // A repository error other than a missing row.
+        sqlx::query("DROP TABLE engine_configuration")
+            .execute(&pool)
+            .await
+            .unwrap();
         let overrides = serde_json::json!({"FFMPEG": {"timeout_secs": 7}});
         for (id, overrides) in [("custom", None), ("FFMPEG", Some(&overrides))] {
             let result = manager.resolve_engine(Some(id), overrides).await;
-            assert!(matches!(
-                result,
-                Err(crate::Error::Db(DbError::DatabaseSqlx(
-                    sqlx::Error::PoolTimedOut
-                )))
-            ));
+            assert!(
+                matches!(
+                    result,
+                    Err(crate::Error::Db(DbError::DatabaseSqlx(
+                        sqlx::Error::Database(_)
+                    )))
+                ),
+                "{id}"
+            );
         }
         assert!(
             manager.resolve_engine(None, None).await.is_ok(),
