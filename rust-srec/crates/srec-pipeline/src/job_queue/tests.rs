@@ -39,11 +39,10 @@ fn job_state_round_trips_the_manifest() {
         db_model_to_job(&job_to_db_model(&job)).manifest,
         job.manifest
     );
-    let named = job
-        .clone()
-        .with_streamer_name("StreamerName")
-        .with_session_title("SessionTitle")
-        .with_platform("Twitch");
+    let mut named = job.clone();
+    named.streamer_name = Some("StreamerName".to_string());
+    named.session_title = Some("SessionTitle".to_string());
+    named.platform = Some("Twitch".to_string());
     let restored = db_model_to_job(&job_to_db_model(&named));
     assert_eq!(restored.manifest, job.manifest);
     assert_eq!(restored.platform.as_deref(), Some("Twitch"));
@@ -419,67 +418,6 @@ async fn test_resolve_job_metadata_persists_backfilled_state() {
         parse_job_state(&db_job.state).manifest.as_deref(),
         Some(manifest.as_ref())
     );
-}
-
-/// A failed parent finalization must not leave runnable split jobs:
-/// split_job_for_single_input rolls back already-created jobs through
-/// cancel_job when marking the original job completed fails.
-#[tokio::test]
-async fn split_rollback_cancels_created_jobs_when_parent_finalization_fails() {
-    let dir = tempfile::TempDir::new().unwrap();
-    let db_path = dir.path().join("job_queue_split_rollback.db");
-    let db_url = format!("sqlite:{}?mode=rwc", db_path.to_string_lossy());
-    let pool = srec_sqlite::init_pool(&db_url).await.unwrap();
-    srec_sqlite::run_migrations(&pool).await.unwrap();
-
-    // Satisfy the live_sessions -> streamers -> platform_config FK chain.
-    sqlx::query("INSERT INTO platform_config (id, platform_name) VALUES ('p1', 'test')")
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query(
-        "INSERT INTO streamers (id, name, url, platform_config_id, state) \
-         VALUES ('streamer-1', 'Streamer', 'https://example.com/s1', 'p1', 'NOT_LIVE')",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        "INSERT INTO live_sessions (id, streamer_id, start_time) \
-         VALUES ('session-1', 'streamer-1', 1704152700000)",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    let job_repo: Arc<dyn JobRepository> = Arc::new(
-        crate::repositories::job::SqlxJobRepository::new(pool.clone(), pool.clone()),
-    );
-    let queue = JobQueue::with_repository(JobQueueConfig::default(), job_repo.clone());
-
-    // The parent is never enqueued, so repo.get_job(&job.id) in the
-    // finalization step fails after both split jobs were created.
-    let job = Job::new(
-        "remux",
-        vec!["/input-a.flv".to_string(), "/input-b.flv".to_string()],
-        vec![],
-        "streamer-1",
-        "session-1",
-    );
-
-    let result = queue.split_job_for_single_input(&job).await;
-    assert!(result.is_err());
-
-    let pending = job_repo
-        .list_jobs_by_status(JobStatus::Pending)
-        .await
-        .unwrap();
-    assert!(pending.is_empty(), "split jobs must not stay runnable");
-    let cancelled = job_repo
-        .list_jobs_by_status(JobStatus::Cancelled)
-        .await
-        .unwrap();
-    assert_eq!(cancelled.len(), 2);
 }
 
 #[test]
@@ -956,58 +894,6 @@ async fn due_retry_waits_for_the_failed_attempt_cleanup() {
         queue.attempt_token(&job_id).map(|token| token.id()),
         Some(successor.id())
     );
-}
-
-// ========================================================================
-// Fan-out and Multi-input Support Tests
-// ========================================================================
-
-/// Test that split jobs preserve pipeline context.
-#[tokio::test]
-async fn test_split_job_preserves_pipeline_context() {
-    let queue = JobQueue::with_repository(
-        Default::default(),
-        crate::test_support::job_repository().await,
-    );
-
-    let job = Job::new(
-        "remux",
-        vec![
-            "/input1.flv".to_string(),
-            "/input2.flv".to_string(),
-            "/input3.flv".to_string(),
-        ],
-        vec![],
-        "streamer-1",
-        "session-1",
-    )
-    .with_pipeline_id("pipeline-1".to_string())
-    .with_streamer_name("StreamerName".to_string())
-    .with_session_title("SessionTitle".to_string())
-    .with_platform("Twitch".to_string());
-
-    let original_id = job.id.clone();
-    queue.enqueue(job.clone()).await.unwrap();
-
-    let split_ids = queue.split_job_for_single_input(&job).await.unwrap();
-
-    // Should create 3 new jobs
-    assert_eq!(split_ids.len(), 3);
-
-    // Original job should be marked as completed
-    let original = queue.get_job(&original_id).await.unwrap().unwrap();
-    assert_eq!(original.status, JobStatus::Completed);
-
-    // Verify each split job has single input and preserves pipeline context
-    for split_id in split_ids.iter() {
-        let split_job = queue.get_job(split_id).await.unwrap().unwrap();
-        assert_eq!(split_job.inputs.len(), 1);
-        assert_eq!(split_job.job_type, "remux");
-        assert_eq!(split_job.pipeline_id, Some("pipeline-1".to_string()));
-        assert_eq!(split_job.streamer_name.as_deref(), Some("StreamerName"));
-        assert_eq!(split_job.session_title.as_deref(), Some("SessionTitle"));
-        assert_eq!(split_job.platform.as_deref(), Some("Twitch"));
-    }
 }
 
 // ========================================================================

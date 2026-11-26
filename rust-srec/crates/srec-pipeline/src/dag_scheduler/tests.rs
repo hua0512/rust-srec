@@ -1858,7 +1858,7 @@ async fn job_attempt_failure_is_retried_or_applied_by_kind_budget_and_persistenc
     let outcome = scheduler
         .on_job_attempt_failed(
             &step_id("B"),
-            attempt(&job_b, 0, StepFailureKind::NonBatchInput),
+            attempt(&job_b, 0, StepFailureKind::NonRetryable),
             record(job_b.clone()),
         )
         .await

@@ -381,10 +381,6 @@ impl Processor for MetadataProcessor {
         "MetadataProcessor"
     }
 
-    fn supports_batch_input(&self) -> bool {
-        true
-    }
-
     async fn process(
         &self,
         input: &ProcessorInput,

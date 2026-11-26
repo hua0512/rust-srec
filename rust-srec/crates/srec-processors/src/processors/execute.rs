@@ -470,12 +470,6 @@ impl Processor for ExecuteCommandProcessor {
         "ExecuteCommandProcessor"
     }
 
-    fn supports_batch_input(&self) -> bool {
-        // Execute is an arbitrary command runner and can consume many inputs in a single job.
-        // This is important for session/paired pipelines where inputs are provided as a list.
-        true
-    }
-
     async fn process(
         &self,
         input: &ProcessorInput,

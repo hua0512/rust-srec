@@ -570,6 +570,9 @@ pub trait Processor: Send + Sync {
 
     /// Process the input and produce output.
     ///
+    /// A job may carry several inputs (a fan-in step, or a session or paired pipeline);
+    /// they all arrive in one call, so a DAG step completes exactly once.
+    ///
     /// # Cancel Safety
     ///
     /// This method MUST be cancel-safe. The worker pool may cancel the future if the job times out
@@ -583,16 +586,6 @@ pub trait Processor: Send + Sync {
 
     /// Get the processor name.
     fn name(&self) -> &'static str;
-
-    /// Indicates if this processor supports multiple inputs in a single job (batch processing).
-    ///
-    /// When `true`, the processor can handle multiple input files in a single `process()` call.
-    /// When `false` (default), the worker pool splits a multi-input standalone job into one
-    /// job per input; a multi-input DAG step job is failed instead, because a step must not
-    /// complete more than once.
-    fn supports_batch_input(&self) -> bool {
-        false
-    }
 
     /// Whether retries of this processor consume prior per-file
     /// [`ConfirmedUpload`] state carried in [`ProcessorContext`].

@@ -346,86 +346,9 @@ impl Job {
         }
     }
 
-    /// Create a new pipeline step job with pipeline ID.
-    pub fn new_pipeline_step(
-        job_type: impl Into<String>,
-        inputs: Vec<String>,
-        outputs: Vec<String>,
-        streamer_id: impl Into<String>,
-        session_id: impl Into<String>,
-        pipeline_id: Option<String>,
-    ) -> Self {
-        Self {
-            id: uuid::Uuid::new_v4().to_string(),
-            job_type: job_type.into(),
-            inputs,
-            outputs,
-            priority: 0,
-            status: JobStatus::Pending,
-            streamer_id: streamer_id.into(),
-            session_id: session_id.into(),
-            streamer_name: None,
-            session_title: None,
-            platform: None,
-            session_start: None,
-            config: None,
-            created_at: Timestamp::now(),
-            started_at: None,
-            completed_at: None,
-            error: None,
-            retry_count: 0,
-            retry_after: None,
-            timeout_secs: None,
-            has_step_retry: None,
-            enqueued_at_ms: None,
-            pipeline_id,
-            execution_info: None,
-            duration_secs: None,
-            queue_wait_secs: None,
-            dag_step_execution_id: None,
-            manifest: None,
-        }
-    }
-
     /// Set the job priority.
     pub fn with_priority(mut self, priority: i32) -> Self {
         self.priority = priority;
-        self
-    }
-
-    /// Set the job configuration.
-    pub fn with_config(mut self, config: impl Into<String>) -> Self {
-        self.config = Some(config.into());
-        self
-    }
-
-    /// Set the pipeline ID.
-    pub fn with_pipeline_id(mut self, pipeline_id: impl Into<String>) -> Self {
-        self.pipeline_id = Some(pipeline_id.into());
-        self
-    }
-
-    /// Set the streamer name.
-    pub fn with_streamer_name(mut self, name: impl Into<String>) -> Self {
-        self.streamer_name = Some(name.into());
-        self
-    }
-
-    /// Set the session title.
-    pub fn with_session_title(mut self, title: impl Into<String>) -> Self {
-        self.session_title = Some(title.into());
-        self
-    }
-
-    /// Set the platform.
-    pub fn with_platform(mut self, platform: impl Into<String>) -> Self {
-        self.platform = Some(platform.into());
-        self
-    }
-
-    /// Set the session start timestamp.
-    pub fn with_session_start(mut self, session_start: Timestamp) -> Self {
-        self.session_start = Some(session_start);
         self
     }
 }

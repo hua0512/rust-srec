@@ -160,84 +160,7 @@ impl JobRunner {
             return;
         };
 
-        if self.settle_multi_input(&job, &processor, &attempt).await {
-            return;
-        }
-
         self.execute_job(job, &processor, attempt).await;
-    }
-
-    /// Handle a multi-input job routed to a processor that takes one input at a time.
-    ///
-    /// Returns `true` when the job has been dealt with here and must not be executed: either
-    /// it was split into single-input jobs, or — for a DAG step, where splitting would let one
-    /// step complete several times — it was failed and its DAG failed with it.
-    async fn settle_multi_input(
-        &self,
-        job: &Job,
-        processor: &Arc<dyn Processor>,
-        attempt: &AttemptToken,
-    ) -> bool {
-        if job.inputs.len() <= 1 || processor.supports_batch_input() {
-            return false;
-        }
-
-        if let Some(dag_step_id) = job.dag_step_execution_id.as_deref() {
-            let reason = format!(
-                "DAG step job has {} inputs but processor '{}' does not support batch inputs",
-                job.inputs.len(),
-                processor.name()
-            );
-            error!(job_id = %job.id, dag_step_execution_id = %dag_step_id, "{}", reason);
-
-            let facts = JobFacts {
-                id: job.id.clone(),
-                job_type: job.job_type.clone(),
-                processor_name: processor.name(),
-                dag_step_execution_id: Some(dag_step_id.to_string()),
-                retry_count: job.retry_count,
-                attempt: attempt.clone(),
-            };
-            self.finish_failed(&facts, &reason, StepFailureKind::NonBatchInput, &[], None)
-                .await;
-
-            return true;
-        }
-
-        info!(
-            "Splitting job {} with {} inputs for single-input processor {}",
-            job.id,
-            job.inputs.len(),
-            processor.name()
-        );
-        match self.job_queue.split_job_for_single_input(job).await {
-            Ok(split_ids) => {
-                info!(
-                    "Split job {} into {} jobs: {:?}",
-                    job.id,
-                    split_ids.len(),
-                    split_ids
-                );
-            }
-            Err(e) => {
-                error!("Failed to split job {}: {}", job.id, e);
-                let reason = format!("Failed to split job: {e}");
-                if let Err(fail_error) = self
-                    .persist_failure_with_retry(&job.id, || {
-                        self.job_queue.fail_attempt(&job.id, attempt, &reason)
-                    })
-                    .await
-                {
-                    error!(
-                        job_id = %job.id,
-                        error = %fail_error,
-                        "Failed to persist job split failure"
-                    );
-                }
-            }
-        }
-
-        true
     }
 
     /// Run one job through its processor and record the terminal state it reached.
@@ -838,7 +761,6 @@ impl JobRunner {
                         dag_step_id, cancelled_count
                     ),
                     StepFailureKind::ProcessorError
-                    | StepFailureKind::NonBatchInput
                     | StepFailureKind::ExecutionStart
                     | StepFailureKind::NonRetryable => info!(
                         "DAG step {} failed, cancelled {} jobs (fail-fast)",

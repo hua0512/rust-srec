@@ -327,10 +327,6 @@ impl Processor for CopyMoveProcessor {
         "CopyMoveProcessor"
     }
 
-    fn supports_batch_input(&self) -> bool {
-        true
-    }
-
     async fn process(
         &self,
         input: &ProcessorInput,

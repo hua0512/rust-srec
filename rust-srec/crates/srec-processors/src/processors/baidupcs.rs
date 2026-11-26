@@ -575,12 +575,6 @@ impl Processor for BaiduPcsProcessor {
         "BaiduPcsProcessor"
     }
 
-    /// `upload` natively takes N local files and one remote directory, so
-    /// batches run as a single invocation.
-    fn supports_batch_input(&self) -> bool {
-        true
-    }
-
     fn carries_forward_completed_uploads(&self) -> bool {
         true
     }
