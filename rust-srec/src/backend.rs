@@ -357,6 +357,16 @@ impl ServiceContainer {
         self.api.start_api_server_bound(runtime).await
     }
 
+    /// The runtime the `start_api_server*` methods serve. The end-to-end
+    /// suite serves it without authentication through
+    /// `ApiServerHost::bind_and_spawn_api_server_for_tests`, because the
+    /// production path reads `AUTH_DISABLED` from the process environment,
+    /// which the suite must not change.
+    #[doc(hidden)]
+    pub fn api_runtime(&self) -> Result<ApiServerRuntime> {
+        build_api_runtime(&self.core, self.config_backup.clone())
+    }
+
     /// Initialize and start the API server, returning the resolved bind
     /// address, using a caller-provided JWT secret.
     ///

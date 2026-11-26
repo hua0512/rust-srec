@@ -26,6 +26,7 @@ mod health;
 mod lifecycle;
 mod mcp;
 mod monitoring;
+mod no_auth;
 mod notifications;
 mod output_names;
 mod parse;

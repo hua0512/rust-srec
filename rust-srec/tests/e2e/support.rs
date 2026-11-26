@@ -60,6 +60,7 @@ pub mod tools;
 pub use api::{TERMINAL_DAG_STATUSES, inline, step, succeed};
 pub use fake_platform::{FakePlatform, FakeRoom};
 pub use http::{ClosedPort, ConnectRecorder, LocalHttpServer, ReceivedRequest};
+use launch::Authentication;
 pub use media::FlvLoop;
 pub use seed::{Seed, seeded_streamer, sql_text};
 pub use smtp::SmtpFixture;
@@ -99,9 +100,10 @@ const SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(20);
 
 /// Settings the backend reads from the environment that change what the
 /// scenarios assert: token lifetimes, the password and lockout rules, the JWT
-/// claims tests decode, whether Web Push is configured, and the locale of the
-/// messages some tests pin.
-const DEFAULT_ONLY_ENV: [&str; 13] = [
+/// claims tests decode, whether Web Push is configured, the locale of the
+/// messages some tests pin, and the browser origins an app without
+/// authentication allows.
+const DEFAULT_ONLY_ENV: [&str; 14] = [
     "ACCESS_TOKEN_EXPIRATION_SECS",
     "REFRESH_TOKEN_EXPIRATION_SECS",
     "REFRESH_TOKEN_REUSE_GRACE_SECS",
@@ -115,6 +117,7 @@ const DEFAULT_ONLY_ENV: [&str; 13] = [
     "WEB_PUSH_VAPID_PUBLIC_KEY",
     "WEB_PUSH_VAPID_PRIVATE_KEY",
     "RUST_SREC_LOCALE",
+    "API_CORS_ORIGINS",
 ];
 
 const PROXY_ENV: [&str; 6] = [
@@ -345,7 +348,14 @@ impl TestApp {
     /// migration seeds: [`SEEDED_ADMIN_PASSWORD`], with a forced password
     /// change pending. [`Self::admin`] does not work in this app.
     pub async fn start_with_seeded_admin() -> Self {
-        Self::boot("", None, false, DownloadManagerConfig::default()).await
+        Self::boot(
+            "",
+            None,
+            false,
+            DownloadManagerConfig::default(),
+            Authentication::Jwt,
+        )
+        .await
     }
 
     /// Start a backend after running `seed_sql` on the migrated database.
@@ -356,7 +366,14 @@ impl TestApp {
     /// database on each request can be inserted after start with
     /// [`Self::run_sql`] or [`Self::database`] instead.
     pub async fn start_seeded(seed_sql: &str) -> Self {
-        Self::boot(seed_sql, None, true, DownloadManagerConfig::default()).await
+        Self::boot(
+            seed_sql,
+            None,
+            true,
+            DownloadManagerConfig::default(),
+            Authentication::Jwt,
+        )
+        .await
     }
 
     /// Start a backend that monitors streamers, seeded with `seed` (see
@@ -364,7 +381,14 @@ impl TestApp {
     pub async fn start_with(seed: Seed) -> Self {
         let dead_end = ConnectRecorder::start().await;
         let sql = seed.sql(&dead_end);
-        Self::boot(&sql, Some(dead_end), true, DownloadManagerConfig::default()).await
+        Self::boot(
+            &sql,
+            Some(dead_end),
+            true,
+            DownloadManagerConfig::default(),
+            Authentication::Jwt,
+        )
+        .await
     }
 
     async fn boot(
@@ -372,6 +396,7 @@ impl TestApp {
         dead_end: Option<ConnectRecorder>,
         change_admin_password: bool,
         downloads: DownloadManagerConfig,
+        authentication: Authentication,
     ) -> Self {
         assert_default_environment();
         backend::install_rustls_provider();
@@ -402,7 +427,8 @@ impl TestApp {
                 .expect("run the seed SQL");
         }
         migration_pool.close().await;
-        let (container, address) = launch::serve(&database_url, &output_dir, downloads).await;
+        let (container, address) =
+            launch::serve(&database_url, &output_dir, downloads, authentication).await;
 
         let client = reqwest::Client::builder()
             .no_proxy()
