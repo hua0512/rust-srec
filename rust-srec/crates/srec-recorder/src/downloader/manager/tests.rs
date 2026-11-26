@@ -1332,23 +1332,18 @@ async fn prepare_output_dir_degrades_an_unwritable_root_and_recovers_it_once() {
     assert_eq!(counter.load(Ordering::SeqCst), 0);
 
     // Fix the filesystem: remove the blocking file and recreate the
-    // directory structure. Wait past the 1s cooldown before retrying.
+    // directory structure. No cooldown applies, for the same reason.
     std::fs::remove_file(&doomed).unwrap();
     std::fs::create_dir_all(&under_doomed).unwrap();
-    tokio::time::sleep(Duration::from_millis(1200)).await;
 
-    // Retry. The winning CAS caller's ensure_output_dir succeeds, the
-    // gate flips to Healthy, the recovery hook fires.
+    // Retry. ensure_output_dir succeeds, the gate flips to Healthy, and the
+    // recovery hook runs inline.
     let second = manager.prepare_output_dir(&bad_config).await;
     assert!(
         second.is_ok(),
-        "retry should succeed after cooldown and filesystem fix: {:?}",
+        "retry should succeed after the filesystem fix: {:?}",
         second
     );
-
-    // Recovery hook is spawned on a tokio task; yield so it runs.
-    tokio::task::yield_now().await;
-    tokio::time::sleep(Duration::from_millis(50)).await;
     assert_eq!(
         counter.load(Ordering::SeqCst),
         1,
