@@ -391,18 +391,6 @@ impl HealthChecker {
         self.start_with_sampler(cancel, SystemSampler::new)
     }
 
-    /// Exercise the refresh lifecycle in crate tests without querying the host OS.
-    #[cfg(test)]
-    pub(crate) fn start_with_test_metrics(
-        self: &Arc<Self>,
-        cancel: CancellationToken,
-        metrics: SystemMetricsSnapshot,
-    ) -> JoinHandle<()> {
-        self.start_with_sampler(cancel, move || {
-            SystemSampler::with_sampling_fn(move |_| Ok(metrics.clone()))
-        })
-    }
-
     fn start_with_sampler(
         self: &Arc<Self>,
         cancel: CancellationToken,
@@ -819,12 +807,10 @@ mod tests {
             HealthStatus::Degraded
         );
         assert!(usage.used_percent >= (checker.disk_warning_threshold() * 100.0) as f32);
-    }
 
-    #[test]
-    fn disk_usage_handles_unknown_total() {
-        let usage = DiskUsage::new("/rec", "/", 0, 0);
-        assert_eq!(usage.used_bytes, 0);
-        assert_eq!(usage.used_percent, 0.0);
+        // An unknown filesystem size reports nothing used.
+        let unknown = DiskUsage::new("/rec", "/", 0, 0);
+        assert_eq!(unknown.used_bytes, 0);
+        assert_eq!(unknown.used_percent, 0.0);
     }
 }
