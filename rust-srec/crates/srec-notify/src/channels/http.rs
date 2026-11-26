@@ -357,7 +357,7 @@ mod tests {
             .await;
             let http = HttpDelivery::new(
                 "telegram",
-                Duration::from_millis(100),
+                Duration::from_millis(30),
                 DeliveryRoute::environment(),
             );
             let error = tokio::time::timeout(
@@ -376,13 +376,22 @@ mod tests {
             assert!(error.to_string().contains("timed out"));
             assert!(!format!("{error:?}").contains("SECRET"));
 
+            // Deliveries on one route share a pooled client, so this checks
+            // that the client still works after the timeout, with a deadline
+            // that loaded runners cannot miss.
             let later = server_ok().await;
-            http.send(
-                http.request(Method::POST, &later.url).await.unwrap(),
-                RetryPolicy::None,
-            )
-            .await
-            .unwrap();
+            let unhurried = HttpDelivery::new(
+                "telegram",
+                Duration::from_secs(5),
+                DeliveryRoute::environment(),
+            );
+            unhurried
+                .send(
+                    unhurried.request(Method::POST, &later.url).await.unwrap(),
+                    RetryPolicy::None,
+                )
+                .await
+                .unwrap();
         }
     }
 
