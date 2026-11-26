@@ -537,7 +537,29 @@ async fn templates_are_replaced_whole_counted_by_their_streamers_and_cloned() {
     in_use.assert_error(StatusCode::CONFLICT, "TEMPLATE_IN_USE");
     assert_eq!(in_use.body["details"]["streamer_count"], 1);
 
-    // A clone copies the fields and the route under a new id and name.
+    // A clone copies the fields, the route and the account selections under a
+    // new id and name.
+    let account = create_profile(&app, &token, bilibili_profile("Clone source")).await;
+    let selecting = json!({
+        "bilibili": {
+            "credential_selection": {"mode": "fixed", "credential_id": id_of(&account)},
+            "quality": 10000,
+        },
+        "huya": {"credential_selection": {"mode": "none"}},
+    });
+    let selected = app
+        .put(
+            &path,
+            &token,
+            &json!({
+                "output_file_format": "flv",
+                "offline_check_count": 5,
+                "platform_overrides": selecting,
+            }),
+        )
+        .await
+        .ok();
+    assert_eq!(selected["platform_overrides"], selecting, "{selected}");
     let clone_path = format!("{path}/clone");
     let clone = app
         .post(&clone_path, &token, &json!({"new_name": "Evening copy"}))
@@ -549,6 +571,12 @@ async fn templates_are_replaced_whole_counted_by_their_streamers_and_cloned() {
     for field in ["output_file_format", "offline_check_count", "proxy_route"] {
         assert_eq!(clone[field], replaced[field], "{field}: {clone}");
     }
+    assert_eq!(clone["platform_overrides"], selecting, "{clone}");
+    // The source keeps its selections: the clone copies them.
+    assert_eq!(
+        app.get_ok(&path, &token).await["platform_overrides"],
+        selecting
+    );
     for (path, new_name, status, code) in [
         (
             &clone_path,
@@ -847,7 +875,7 @@ async fn saved_proxies_never_return_their_password_and_report_conflicts_by_code(
         (
             json!({
                 "name": "Same exit",
-                "url": "http://10.20.30.40:3128",
+                "url": "HTTP://10.20.30.40:3128/",
                 "username": "recorder",
                 "password": "another",
             }),
@@ -880,6 +908,30 @@ async fn saved_proxies_never_return_their_password_and_report_conflicts_by_code(
             assert_eq!(refused.body["details"], json!({"name": name}));
         }
     }
+    // Another username on the same address is another exit.
+    let other_login = app
+        .post(
+            "/api/proxies",
+            &token,
+            &json!({
+                "name": "Other login",
+                "url": "http://10.20.30.40:3128",
+                "username": "other",
+                "password": "x",
+            }),
+        )
+        .await
+        .expect_status(StatusCode::CREATED);
+    let deleted = app
+        .delete(
+            &format!(
+                "/api/proxies/{}?expected_version=1",
+                id_of(&other_login.body)
+            ),
+            &token,
+        )
+        .await;
+    assert_eq!(deleted.status, StatusCode::NO_CONTENT, "{}", deleted.text);
 
     let listed = app
         .get("/api/proxies", &token)

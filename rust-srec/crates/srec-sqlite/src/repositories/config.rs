@@ -796,16 +796,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cancelled_platform_and_template_deletes_publish_after_commit() {
+    async fn cancelled_platform_and_template_writes_publish_after_commit() {
         tokio::time::timeout(Duration::from_secs(5), async {
-            for template in [false, true] {
+            for (template, delete) in [(false, true), (true, true), (false, false), (true, false)] {
                 let pool = crate::init_pool_with_size("sqlite::memory:", 1)
                     .await
                     .unwrap();
                 crate::run_migrations(&pool).await.unwrap();
                 let repository = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
                 sqlx::query(
-                    "INSERT INTO template_config(id,name) VALUES ('deleted-template','Deleted')",
+                    "INSERT INTO template_config(id,name) VALUES ('deleted-template','Deleted'), \
+                     ('committed-template','Original')",
                 )
                 .execute(&pool)
                 .await
@@ -827,14 +828,33 @@ mod tests {
                 );
                 let task_repository = repository.clone();
                 let caller = tokio::spawn(async move {
-                    if template {
-                        task_repository
-                            .delete_template_config("deleted-template")
-                            .await
-                    } else {
-                        task_repository
-                            .delete_platform_config("deleted-platform")
-                            .await
+                    match (template, delete) {
+                        (true, true) => {
+                            task_repository
+                                .delete_template_config("deleted-template")
+                                .await
+                        }
+                        (false, true) => {
+                            task_repository
+                                .delete_platform_config("deleted-platform")
+                                .await
+                        }
+                        (true, false) => {
+                            let mut config = task_repository
+                                .get_template_config("committed-template")
+                                .await
+                                .unwrap();
+                            config.name = "Edited".into();
+                            task_repository.update_template_config(&config).await
+                        }
+                        (false, false) => {
+                            let mut config = task_repository
+                                .get_platform_config("platform-huya")
+                                .await
+                                .unwrap();
+                            config.fetch_delay_ms = Some(1234);
+                            task_repository.update_platform_config(&config).await
+                        }
                     }
                 });
                 gate.started.notified().await;
@@ -843,85 +863,35 @@ mod tests {
                 gate.release.notify_one();
                 let owner = receiver.recv().await.unwrap();
                 assert_eq!(owner.kind(), if template { "template" } else { "platform" });
-                assert!(if template {
-                    repository.get_template_config("deleted-template").await.is_err()
-                } else {
-                    repository.get_platform_config("deleted-platform").await.is_err()
-                });
-            }
-        })
-        .await
-        .unwrap();
-    }
-
-    #[tokio::test]
-    async fn cancelled_platform_and_template_requests_publish_after_commit() {
-        tokio::time::timeout(Duration::from_secs(5), async {
-            for template in [false, true] {
-                let pool = crate::init_pool_with_size("sqlite::memory:", 1)
-                    .await
-                    .unwrap();
-                crate::run_migrations(&pool).await.unwrap();
-                let repository = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
-                sqlx::query(
-                    "INSERT INTO template_config(id,name) VALUES ('committed-template','Original')",
-                )
-                .execute(&pool)
-                .await
-                .unwrap();
-                let (published, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-                repository.bind_config_publication(Arc::new(move |write| {
-                    if let ConfigWritePublication::Owner(owner) = write {
-                        published.send(owner).unwrap();
-                    }
-                }));
-                let gate = Arc::new(crate::committed_writer::CommitTestGate::default());
-                repository.writer.set_commit_gate(
-                    crate::committed_writer::CommitPhase::AfterCommit,
-                    Some(gate.clone()),
-                );
-                let task_repository = repository.clone();
-                let caller = tokio::spawn(async move {
-                    if template {
-                        let mut config = task_repository
-                            .get_template_config("committed-template")
+                match (template, delete) {
+                    (true, true) => assert!(
+                        repository
+                            .get_template_config("deleted-template")
                             .await
-                            .unwrap();
-                        config.name = "Edited".into();
-                        task_repository.update_template_config(&config).await
-                    } else {
-                        let mut config = task_repository
-                            .get_platform_config("platform-huya")
+                            .is_err()
+                    ),
+                    (false, true) => assert!(
+                        repository
+                            .get_platform_config("deleted-platform")
                             .await
-                            .unwrap();
-                        config.fetch_delay_ms = Some(1234);
-                        task_repository.update_platform_config(&config).await
-                    }
-                });
-                gate.started.notified().await;
-                caller.abort();
-                assert!(caller.await.unwrap_err().is_cancelled());
-                gate.release.notify_one();
-                let owner = receiver.recv().await.unwrap();
-                assert_eq!(owner.kind(), if template { "template" } else { "platform" });
-                if template {
-                    assert_eq!(
+                            .is_err()
+                    ),
+                    (true, false) => assert_eq!(
                         repository
                             .get_template_config("committed-template")
                             .await
                             .unwrap()
                             .name,
                         "Edited"
-                    );
-                } else {
-                    assert_eq!(
+                    ),
+                    (false, false) => assert_eq!(
                         repository
                             .get_platform_config("platform-huya")
                             .await
                             .unwrap()
                             .fetch_delay_ms,
                         Some(1234)
-                    );
+                    ),
                 }
             }
         })
@@ -933,9 +903,10 @@ mod tests {
     async fn empty_global_config_read_never_creates_default_rows() {
         tokio::time::timeout(Duration::from_secs(20), async {
             let dir = tempfile::tempdir().unwrap();
-            let url = format!("sqlite:{}", dir.path().join("config.db").display());
-            let writer = crate::init_migration_pool(&url).await.unwrap();
-            crate::run_migrations(&writer).await.unwrap();
+            let path = dir.path().join("config.db");
+            crate::test_support::write_migrated_database(&path).await;
+            let url = format!("sqlite:{}", path.display());
+            let writer = crate::init_write_pool(&url).await.unwrap();
             let reader = crate::init_pool_with_size(&url, 1).await.unwrap();
             let repo = SqlxConfigRepository::new(reader.clone(), writer.clone());
             let original = repo.get_global_config().await.unwrap();

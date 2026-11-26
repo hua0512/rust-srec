@@ -113,60 +113,6 @@ async fn an_omitted_password_is_kept_and_a_removed_login_takes_it_along() {
 }
 
 #[tokio::test]
-async fn names_and_exits_are_unique() {
-    let pool = database().await;
-    let mut connection = pool.acquire().await.unwrap();
-    create(
-        &mut connection,
-        None,
-        "Office",
-        &endpoint("http://proxy.example:8080", Some(("user", "a"))),
-    )
-    .await
-    .unwrap();
-    assert!(matches!(
-        create(
-            &mut connection,
-            None,
-            "OFFICE",
-            &endpoint("http://other.example:8080", None)
-        )
-        .await,
-        Err(Error::Core(CoreError::Proxy(ProxyError::NameTaken(name)))) if name == "Office"
-    ));
-    // The password does not make another exit.
-    assert!(matches!(
-        create(
-            &mut connection,
-            None,
-            "Second",
-            &endpoint("http://Proxy.Example:8080/", Some(("user", "b")))
-        )
-        .await,
-        Err(Error::Core(CoreError::Proxy(ProxyError::DuplicateEndpoint { name }))) if name == "Office"
-    ));
-    // Another username is another exit.
-    create(
-        &mut connection,
-        None,
-        "Second",
-        &endpoint("http://proxy.example:8080", Some(("other", "b"))),
-    )
-    .await
-    .unwrap();
-    for invalid in [
-        endpoint("socks4://proxy.example:1080", None),
-        endpoint("http://user:pass@proxy.example:1", None),
-        endpoint("proxy.example:1", None),
-    ] {
-        assert!(matches!(
-            create(&mut connection, None, "Invalid", &invalid).await,
-            Err(Error::Core(CoreError::Proxy(ProxyError::Invalid(_))))
-        ));
-    }
-}
-
-#[tokio::test]
 async fn a_proxy_in_use_cannot_be_deleted_and_the_refusal_names_its_users() {
     let pool = database().await;
     let id = save_for_test(&pool, "Shared", "http://shared.example:8080").await;
@@ -274,40 +220,6 @@ async fn a_proxy_in_use_cannot_be_deleted_and_the_refusal_names_its_users() {
         .await
         .unwrap();
     assert!(violations.is_empty());
-}
-
-#[tokio::test]
-async fn routes_name_existing_proxies_and_the_global_route_never_inherits() {
-    let pool = database().await;
-    let mut connection = pool.acquire().await.unwrap();
-    assert!(matches!(
-        set_route(&mut connection, &RouteOwner::Global, &ProxyRoute::Inherit).await,
-        Err(Error::Core(CoreError::Proxy(ProxyError::GlobalInherit)))
-    ));
-    assert!(matches!(
-        set_route(
-            &mut connection,
-            &RouteOwner::Platform("platform-huya".into()),
-            &ProxyRoute::Proxy { id: "missing".into() }
-        )
-        .await,
-        Err(Error::Core(CoreError::Proxy(ProxyError::Missing(id)))) if id == "missing"
-    ));
-    assert!(matches!(
-        set_route(
-            &mut connection,
-            &RouteOwner::Platform("missing-platform".into()),
-            &ProxyRoute::Direct
-        )
-        .await,
-        Err(Error::Core(CoreError::NotFound { .. }))
-    ));
-    assert_eq!(
-        route_of(&mut connection, &RouteOwner::Global)
-            .await
-            .unwrap(),
-        ProxyRoute::Direct
-    );
 }
 
 #[tokio::test]

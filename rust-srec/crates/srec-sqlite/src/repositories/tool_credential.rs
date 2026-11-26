@@ -148,12 +148,9 @@ mod tests {
         assert!(repo.get("baidupcs", "").await.unwrap().is_none());
         // Deleting again is a no-op.
         repo.delete("baidupcs", "").await.unwrap();
-    }
 
-    /// Removing one account deletes only that tool's row for that account.
-    #[tokio::test]
-    async fn rows_are_keyed_by_tool_and_account() {
-        let repo = setup().await;
+        // Rows are keyed by tool and account: removing one account deletes
+        // only that tool's row for that account.
         repo.upsert(&model("baidupcs", "")).await.unwrap();
         repo.upsert(&model("baidupcs", "/app/config/BaiduPCS-Go"))
             .await

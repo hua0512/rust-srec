@@ -6796,7 +6796,6 @@ dependencies = [
  "parking_lot",
  "pipeline-common",
  "proxy-target",
- "rand 0.10.4",
  "regex",
  "reqwest",
  "rustls",

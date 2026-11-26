@@ -802,7 +802,7 @@ mod tests {
     }
 
     #[test]
-    fn login_material_prefers_cookies_over_bduss() {
+    fn login_material_builds_quoted_repl_input_and_refuses_line_breaks() {
         let material = LoginMaterial {
             cookies: Some("BDUSS=a; STOKEN=B".to_string()),
             bduss: Some("ignored".to_string()),
@@ -813,10 +813,7 @@ mod tests {
             String::from_utf8(material.login_input().unwrap()).unwrap(),
             "login -cookies=\"BDUSS=a; STOKEN=B\"\nquit\n"
         );
-    }
 
-    #[test]
-    fn login_material_bduss_form_and_unusable() {
         let material = LoginMaterial {
             cookies: None,
             bduss: Some("bd".to_string()),
@@ -835,5 +832,34 @@ mod tests {
         };
         assert!(!empty.is_usable());
         assert!(empty.login_input().is_err());
+
+        // The input is a script for BaiduPCS-Go's REPL on stdin: quotes and
+        // backslashes stay inside the quoted value, and a value that could end
+        // the line and start another command is refused.
+        let quoting = LoginMaterial {
+            cookies: Some(r#"BDUSS="a\b"#.to_string()),
+            ..LoginMaterial::default()
+        };
+        assert_eq!(
+            String::from_utf8(quoting.login_input().unwrap()).unwrap(),
+            "login -cookies=\"BDUSS=\\\"a\\\\b\"\nquit\n"
+        );
+        for material in [
+            LoginMaterial {
+                cookies: Some("BDUSS=a\nquit".to_string()),
+                ..LoginMaterial::default()
+            },
+            LoginMaterial {
+                bduss: Some("bd\rquit".to_string()),
+                ..LoginMaterial::default()
+            },
+            LoginMaterial {
+                bduss: Some("bd".to_string()),
+                stoken: Some("ST\0quit".to_string()),
+                ..LoginMaterial::default()
+            },
+        ] {
+            assert!(material.login_input().is_err(), "{material:?}");
+        }
     }
 }

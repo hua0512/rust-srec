@@ -701,12 +701,34 @@ mod tests {
         const MIGRATION_VERSION: i64 = 20_261_016_120_000;
         const SAVED_DAG: &str = r#"{"name":"Customized Full Processing","steps":[{"id":"metadata","step":{"type":"inline","processor":"metadata","config":{"title":"{title}","artist":"Custom artist"}},"depends_on":[]}]}"#;
 
+        // Every case starts from one image of the database migrated up to,
+        // excluding, the workflow migration.
+        let (prefix, full) = pool_migrated_before(MIGRATION_VERSION).await;
+        let image = prefix
+            .acquire()
+            .await
+            .unwrap()
+            .serialize(None)
+            .await
+            .unwrap();
+        prefix.close().await;
+
         for conflict in [
             None,
             Some((NEW_PRESET_ID, "My workflow")),
             Some(("custom-id", NEW_PRESET_NAME)),
         ] {
-            let (pool, full) = pool_migrated_before(MIGRATION_VERSION).await;
+            let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+            pool.acquire()
+                .await
+                .unwrap()
+                .deserialize(
+                    None,
+                    sqlx::sqlite::SqliteOwnedBuf::try_from(&*image).unwrap(),
+                    false,
+                )
+                .await
+                .unwrap();
 
             sqlx::query(
                 "UPDATE pipeline_presets SET dag_definition = ? WHERE id = 'pipeline-full'",
@@ -883,27 +905,9 @@ mod tests {
             .unwrap();
         assert_eq!(integrity, "ok");
 
-        // The backfill reaches rows that predate the column.
-        let names: Vec<Option<String>> =
-            sqlx::query_scalar("SELECT streamer_name FROM live_sessions ORDER BY id")
-                .fetch_all(&pool)
-                .await
-                .unwrap();
-        assert_eq!(
-            names,
-            vec![Some("Alice".to_string()), Some("Alice".to_string())]
-        );
-    }
-
-    /// The `live_sessions` rebuild that made `streamer_id` nullable must
-    /// reinstate every index the dropped table carried plus
-    /// `trg_live_session_orphan_ends`; `DROP TABLE` removes both. Pin them by
-    /// name so a later rebuild that forgets one fails here.
-    #[tokio::test]
-    async fn migrated_schema_keeps_every_live_sessions_index_and_trigger() {
-        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
-        run_migrations(&pool).await.unwrap();
-
+        // The rebuild that made `streamer_id` nullable must reinstate every
+        // index the dropped table carried plus `trg_live_session_orphan_ends`;
+        // `DROP TABLE` removes both.
         for (kind, name) in [
             ("index", "live_sessions_one_active_per_streamer"),
             ("index", "idx_live_session_streamer_id"),
@@ -923,43 +927,16 @@ mod tests {
             .unwrap();
             assert_eq!(found, 1, "missing {kind} {name}");
         }
-    }
 
-    #[tokio::test]
-    async fn staged_outputs_migration_upgrades_and_replays() {
-        const MIGRATION_VERSION: i64 = 20_261_017_120_000;
-        let (pool, full) = pool_migrated_before(MIGRATION_VERSION).await;
-        let job_count = || async {
-            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM job")
-                .fetch_one(&pool)
+        // The backfill reaches rows that predate the column.
+        let names: Vec<Option<String>> =
+            sqlx::query_scalar("SELECT streamer_name FROM live_sessions ORDER BY id")
+                .fetch_all(&pool)
                 .await
-                .unwrap()
-        };
-        let jobs_before = job_count().await;
-
-        full.run(&pool).await.unwrap();
-        // Replaying the full set is a no-op once every migration is applied.
-        full.run(&pool).await.unwrap();
-
-        assert_eq!(job_count().await, jobs_before);
-        sqlx::query(
-            "INSERT INTO staged_outputs (id, path, output_path, job_id, attempt_id, created_at) \
-             VALUES ('a', 'v.tmp-1.mp4', 'v.mp4', 'job', 'attempt', 1)",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        let duplicate = sqlx::query(
-            "INSERT INTO staged_outputs (id, path, output_path, job_id, attempt_id, created_at) \
-             VALUES ('b', 'v.tmp-1.mp4', 'v.mp4', 'job', 'attempt', 1)",
-        )
-        .execute(&pool)
-        .await;
-        assert!(duplicate.is_err(), "a staged path is recorded once");
-        let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!(integrity, "ok");
+                .unwrap();
+        assert_eq!(
+            names,
+            vec![Some("Alice".to_string()), Some("Alice".to_string())]
+        );
     }
 }

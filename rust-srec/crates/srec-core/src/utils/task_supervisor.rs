@@ -440,19 +440,6 @@ mod tests {
 
     use super::TaskSupervisor;
 
-    #[tokio::test]
-    async fn shutdown_contains_tasks_after_grace_deadline() {
-        let cancellation_token = CancellationToken::new();
-        let supervisor = TaskSupervisor::with_cancellation(cancellation_token.clone());
-        assert!(supervisor.spawn("pending", async move {
-            cancellation_token.cancelled().await;
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }));
-
-        assert!(!supervisor.shutdown(std::time::Duration::ZERO).await);
-        assert_eq!(supervisor.task_count(), 0);
-    }
-
     /// `shutdown` never returns while a task ignores cancellation. A caller
     /// that stops awaiting it must still be able to reach that task, so the
     /// drained `JoinSet` is returned to the supervisor when the `shutdown`
@@ -485,13 +472,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shutdown_rejects_late_tasks() {
-        let supervisor = TaskSupervisor::new();
-        assert!(supervisor.shutdown(std::time::Duration::from_secs(1)).await);
-        assert!(!supervisor.spawn("late", async {}));
-    }
-
-    #[tokio::test]
     async fn spawn_reaps_completed_tasks() {
         let cancellation_token = CancellationToken::new();
         let supervisor = TaskSupervisor::with_cancellation(cancellation_token.clone());
@@ -508,7 +488,9 @@ mod tests {
         }));
         assert_eq!(supervisor.task_count(), 1);
 
+        // Past the grace deadline, shutdown still contains the task.
         assert!(!supervisor.shutdown(std::time::Duration::ZERO).await);
+        assert_eq!(supervisor.task_count(), 0);
     }
 
     #[tokio::test]
@@ -528,6 +510,7 @@ mod tests {
                 .is_err()
         );
         assert!(supervisor.shutdown(Duration::from_secs(1)).await);
+        assert!(!supervisor.spawn("late", async {}));
     }
 
     #[tokio::test]
@@ -546,10 +529,8 @@ mod tests {
         assert_eq!(failure.error, "test failure");
         assert!(cancellation_token.is_cancelled());
         assert!(supervisor.shutdown(Duration::from_secs(1)).await);
-    }
 
-    #[tokio::test]
-    async fn critical_panic_signals_failure() {
+        // A panic is published the same way, with its payload as the error.
         let supervisor = TaskSupervisor::new();
 
         assert!(supervisor.spawn_critical("critical panic", async {

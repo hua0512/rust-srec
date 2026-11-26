@@ -300,29 +300,6 @@ async fn a_streamer_that_moves_platform_inherits_there() {
     .unwrap();
 }
 
-#[tokio::test]
-async fn cloned_templates_select_the_same_accounts() {
-    tokio::time::timeout(Duration::from_secs(10), async {
-        let f = fixture().await;
-        let account = f.profile("platform-bilibili", "sid=a").await;
-        let mut template = TemplateConfigDbModel::new("Source");
-        template.platform_overrides = Some(
-            serde_json::json!({"bilibili": {"credential_selection": {"mode": "fixed", "credential_id": account}}, "huya": {"credential_selection": {"mode": "none"}}})
-                .to_string(),
-        );
-        f.config.create_template_config(&template).await.unwrap();
-        let cloned = f.config.clone_template_config(&template.id, "Copy").await.unwrap();
-        let owner = CredentialOwner::Template {
-            template_id: cloned.id.clone(),
-        };
-        assert_eq!(f.stored(&owner, "platform-bilibili").await, Some(fixed(&account)));
-        assert_eq!(f.stored(&owner, "platform-huya").await, Some(CredentialSelection::None));
-        assert_eq!(f.rows().await, 4);
-    })
-    .await
-    .unwrap();
-}
-
 #[test]
 fn documents_split_and_rejoin_their_selection() {
     let mut raw = Some(

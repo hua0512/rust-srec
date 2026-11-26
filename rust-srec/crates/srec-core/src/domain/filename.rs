@@ -165,7 +165,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn metadata_percent_tokens_remain_literal_in_paths_and_recording_templates() {
+    fn placeholders_fall_back_to_the_streamer_id_and_keep_metadata_percent_tokens_literal() {
         let name = "频道%Y%n%%";
         let title = "Top 5%d %i";
         let path = expand_placeholders_at(
@@ -194,6 +194,17 @@ mod tests {
             )),
             format!("root/{name}")
         );
+
+        // Without a name, `{streamer}` falls back to the streamer id.
+        let result = expand_placeholders(
+            "remote:/{streamer}/videos",
+            "streamer-123",
+            "session-456",
+            None,
+            None,
+            None,
+        );
+        assert_eq!(result, "remote:/streamer-123/videos");
     }
 
     #[test]
@@ -216,34 +227,17 @@ mod tests {
     }
 
     #[test]
-    fn test_reserved_name_with_extension() {
-        assert_eq!(sanitize_filename("CON.txt"), "_CON.txt");
-        assert_eq!(sanitize_filename("nul.exe"), "_nul.exe");
-    }
-
-    #[test]
-    fn test_leading_trailing_spaces_and_dots() {
-        assert_eq!(sanitize_filename("  hello  "), "hello");
-        assert_eq!(sanitize_filename("...hello..."), "hello");
-        assert_eq!(sanitize_filename(" . hello . "), "hello");
-    }
-
-    #[test]
-    fn test_control_characters() {
-        assert_eq!(sanitize_filename("hello\x00world"), "hello_world");
-        assert_eq!(sanitize_filename("test\x1Ffile"), "test_file");
-    }
-
-    #[test]
-    fn test_expand_placeholders_streamer_fallback() {
-        let result = expand_placeholders(
-            "remote:/{streamer}/videos",
-            "streamer-123",
-            "session-456",
-            None,
-            None,
-            None,
-        );
-        assert_eq!(result, "remote:/streamer-123/videos");
+    fn sanitize_filename_avoids_reserved_names_edge_dots_and_control_characters() {
+        for (input, sanitized) in [
+            ("CON.txt", "_CON.txt"),
+            ("nul.exe", "_nul.exe"),
+            ("  hello  ", "hello"),
+            ("...hello...", "hello"),
+            (" . hello . ", "hello"),
+            ("hello\x00world", "hello_world"),
+            ("test\x1Ffile", "test_file"),
+        ] {
+            assert_eq!(sanitize_filename(input), sanitized, "{input:?}");
+        }
     }
 }

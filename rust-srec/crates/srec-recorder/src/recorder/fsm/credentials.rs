@@ -17,8 +17,11 @@ use crate::recorder::ports::{DbCommitOp, ProbeFailure, ProbePurpose, ProbeReques
 /// Signed media URLs extracted during a credential diagnostic expire quickly.
 pub const RECOVERED_MEDIA_TTL: Duration = Duration::from_secs(30);
 
-/// Deterministic retry delay matching [`RetryPolicy::delay_for_attempt`] without
-/// touching thread-local randomness.
+/// Exponential retry delay for `attempt` (0-indexed) under `policy`: the
+/// initial delay times `backoff_multiplier` per attempt, capped at
+/// `max_delay_ms`, and `max_delay_ms` itself once `attempt` reaches
+/// `max_retries`. The caller supplies the jitter, so no thread-local
+/// randomness is involved.
 ///
 /// Maps `jitter_bps` (`9000..=11000`) linearly into `0%..=25%` additive jitter
 /// when `policy.use_jitter` is enabled, capped at `policy.max_delay_ms`.

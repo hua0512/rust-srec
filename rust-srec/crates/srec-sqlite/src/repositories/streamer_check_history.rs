@@ -211,28 +211,47 @@ mod tests {
         let pool = setup_pool().await;
         let repo = SqlxStreamerCheckHistoryRepository::new(pool.clone(), pool.clone());
 
-        // Insert KEEP_PER_STREAMER + 5 rows; the trim should converge to
-        // exactly KEEP_PER_STREAMER, keeping the most-recent ones.
+        // Seed KEEP_PER_STREAMER + 4 untrimmed rows (checked_at 0..), then
+        // insert one more; the trim should converge to exactly
+        // KEEP_PER_STREAMER, keeping the most-recent ones.
         let total = KEEP_PER_STREAMER + 5;
-        for i in 0..total {
-            repo.insert(&row(outcome::LIVE, i)).await.unwrap();
-        }
+        sqlx::query(
+            "WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i + 1 < ?) \
+             INSERT INTO streamer_check_history (streamer_id, checked_at, duration_ms, outcome) \
+             SELECT 's1', i, 42, 'live' FROM n",
+        )
+        .bind(total - 1)
+        .execute(&pool)
+        .await
+        .unwrap();
+        repo.insert(&row(outcome::LIVE, total - 1)).await.unwrap();
 
+        // Count the stored rows directly: `list_recent` clamps its limit to
+        // KEEP_PER_STREAMER, so it cannot show rows the trim missed.
+        let (count, oldest): (i64, i64) = sqlx::query_as(
+            "SELECT COUNT(*), MIN(checked_at) FROM streamer_check_history \
+             WHERE streamer_id = 's1'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            count, KEEP_PER_STREAMER,
+            "writer must trim to KEEP_PER_STREAMER on insert"
+        );
+        // The five oldest rows (checked_at 0..5) must be gone.
+        assert_eq!(
+            oldest,
+            total - KEEP_PER_STREAMER,
+            "the oldest 5 rows must have been trimmed"
+        );
         let rows = repo
             .list_recent("s1", KEEP_PER_STREAMER + 50)
             .await
             .unwrap();
-        assert_eq!(
-            rows.len() as i64,
-            KEEP_PER_STREAMER,
-            "writer must trim to KEEP_PER_STREAMER on insert"
-        );
-        // Newest first. The five oldest rows (checked_at 0..5) must be gone.
+        assert_eq!(rows.len() as i64, KEEP_PER_STREAMER);
+        // Newest first.
         assert_eq!(rows[0].checked_at, total - 1);
-        assert_eq!(
-            rows.last().unwrap().checked_at,
-            total - KEEP_PER_STREAMER,
-            "the oldest 5 rows must have been trimmed"
-        );
+        assert_eq!(rows.last().unwrap().checked_at, total - KEEP_PER_STREAMER);
     }
 }

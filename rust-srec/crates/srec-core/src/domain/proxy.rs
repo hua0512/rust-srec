@@ -874,9 +874,7 @@ mod tests {
     #[test]
     fn the_system_route_shares_the_direct_path_without_an_environment_proxy() {
         let none = SystemProxy::default();
-        let set = SystemProxy::from_lookup(|name| {
-            (name == "HTTPS_PROXY").then(|| "http://proxy.example:3128".to_owned())
-        });
+        let set = environment(&[("HTTPS_PROXY", "http://proxy.example:3128")]);
         assert_eq!(
             ResolvedRoute::system(RouteSource::Global, &none).key,
             RouteKey::Direct
@@ -885,12 +883,7 @@ mod tests {
             ResolvedRoute::system(RouteSource::Global, &set).key,
             RouteKey::System
         );
-    }
-
-    #[test]
-    fn system_route_directness_follows_env_and_os_proxy_support() {
-        let none = SystemProxy::default();
-        let set = environment(&[("HTTPS_PROXY", "http://proxy.example:3128")]);
+        // Directness follows the environment and OS proxy support.
         assert_eq!(
             none.connects_directly(&ProxyTarget::System),
             !OS_PROXY_SETTINGS

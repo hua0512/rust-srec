@@ -190,18 +190,6 @@ impl StreamerTxOps {
     ///
     /// When a timestamp is provided, also sets state to TEMPORAL_DISABLED.
     /// When clearing (None), sets state back to NOT_LIVE.
-    pub async fn set_disabled_until(
-        tx: &mut SqliteConnection,
-        streamer_id: &str,
-        disabled_until: Option<Timestamp>,
-    ) -> Result<u64> {
-        Ok(u64::from(
-            Self::set_disabled_until_row(tx, streamer_id, disabled_until)
-                .await?
-                .is_some(),
-        ))
-    }
-
     pub async fn set_disabled_until_row(
         tx: &mut SqliteConnection,
         streamer_id: &str,
@@ -272,68 +260,5 @@ impl StreamerTxOps {
         .await?;
 
         Ok(result)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::models::StreamerDbModel;
-    use crate::repositories::{SqlxStreamerRepository, StreamerRepository as _};
-    use crate::{init_pool_with_size, run_migrations};
-    use sqlx::SqlitePool;
-
-    async fn setup_test_db() -> SqlitePool {
-        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
-        run_migrations(&pool).await.unwrap();
-
-        let mut streamer = StreamerDbModel::new(
-            "Test Streamer",
-            "https://example.com/test",
-            "platform-twitch",
-        );
-        streamer.id = "test-1".to_string();
-        SqlxStreamerRepository::new(pool.clone(), pool.clone())
-            .create_streamer(&streamer)
-            .await
-            .unwrap();
-        pool
-    }
-
-    #[tokio::test]
-    async fn test_set_disabled_until() {
-        let pool = setup_test_db().await;
-        let mut tx = pool.begin().await.unwrap();
-
-        let until = Timestamp::now() + jiff::SignedDuration::from_hours(1);
-        StreamerTxOps::set_disabled_until(&mut tx, "test-1", Some(until))
-            .await
-            .unwrap();
-
-        tx.commit().await.unwrap();
-
-        // Verify disabled_until set AND state changed to TEMPORAL_DISABLED
-        let row: (String, Option<i64>) =
-            sqlx::query_as("SELECT state, disabled_until FROM streamers WHERE id = 'test-1'")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        assert_eq!(row.0, "TEMPORAL_DISABLED");
-        assert!(row.1.is_some());
-
-        // Test clearing disabled_until resets state to NOT_LIVE
-        let mut tx2 = pool.begin().await.unwrap();
-        StreamerTxOps::set_disabled_until(&mut tx2, "test-1", None)
-            .await
-            .unwrap();
-        tx2.commit().await.unwrap();
-
-        let row2: (String, Option<i64>) =
-            sqlx::query_as("SELECT state, disabled_until FROM streamers WHERE id = 'test-1'")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        assert_eq!(row2.0, "NOT_LIVE");
-        assert!(row2.1.is_none());
     }
 }

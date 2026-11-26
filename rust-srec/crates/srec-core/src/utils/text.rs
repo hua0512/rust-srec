@@ -132,26 +132,15 @@ mod tests {
         );
     }
 
-    // ---- truncate_chars ----
-
     #[test]
-    fn chars_passthrough_when_input_fits() {
+    fn truncation_keeps_fitting_input_and_counts_characters() {
         assert_eq!(truncate_chars("hello", 10), "hello");
         assert_eq!(truncate_chars("hello", 5), "hello");
-    }
-
-    #[test]
-    fn chars_handles_multibyte_correctly() {
         // 3-byte CJK char × 5 = 15 bytes total, 5 chars
         let out = truncate_chars("字字字字字", 3);
         assert_eq!(out, "字字字…");
         assert_eq!(out.chars().count(), 4);
-    }
 
-    // ---- truncate_bytes ----
-
-    #[test]
-    fn bytes_passthrough_when_input_fits() {
         assert_eq!(truncate_bytes("hello", 10), "hello");
         assert_eq!(truncate_bytes("hello", 5), "hello");
     }

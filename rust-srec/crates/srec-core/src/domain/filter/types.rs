@@ -490,10 +490,7 @@ mod tests {
         assert!(filter.matches("just chatting")); // Case insensitive
         assert!(filter.matches("Art"));
         assert!(!filter.matches("Gaming"));
-    }
 
-    #[test]
-    fn test_category_filter_empty() {
         let filter = CategoryFilter::new(vec![]);
         assert!(filter.matches("Anything"));
     }
