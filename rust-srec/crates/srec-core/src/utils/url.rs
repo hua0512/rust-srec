@@ -46,10 +46,7 @@ mod tests {
             extract_host("https://cdn.example.com:8443/path?x=1"),
             Some("cdn.example.com:8443".to_string())
         );
-    }
-
-    #[test]
-    fn strips_userinfo() {
+        // Userinfo never reaches the host.
         assert_eq!(
             extract_host("https://user:pass@cdn.example.com/live"),
             Some("cdn.example.com".to_string())

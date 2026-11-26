@@ -150,10 +150,7 @@ mod tests {
         }
         .sanitized();
         assert_eq!(capped_words.top_words, DanmuStatisticsConfig::MAX_REPORTED);
-    }
 
-    #[test]
-    fn sanitized_normalizes_stop_words() {
         let config = DanmuStatisticsConfig {
             extra_stop_words: vec!["  LOL ".to_string(), String::new(), "Nice".to_string()],
             ..Default::default()

@@ -1405,10 +1405,7 @@ mod tests {
         ] {
             assert_eq!(normalize_site(input).unwrap(), site, "{input}");
         }
-    }
-
-    #[test]
-    fn a_site_needs_a_domain_below_the_top_level() {
+        // A site needs a domain below the top level.
         for input in [
             "",
             "   ",
