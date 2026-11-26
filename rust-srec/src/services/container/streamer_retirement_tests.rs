@@ -13,7 +13,9 @@ use crate::database::repositories::job::JobRepository;
 use crate::database::repositories::session::SessionRepository;
 use crate::database::repositories::streamer::StreamerRepository;
 use crate::domain::StreamerState;
-use crate::recorder::{INTERACTIVE_RETIREMENT, OBSERVE_RETIREMENT, PipelineNotification};
+use crate::recorder::{
+    INTERACTIVE_RETIREMENT, OBSERVE_RETIREMENT, PipelineNotification, RetirementBounds,
+};
 
 const STREAMER_ID: &str = "streamer-retire";
 const STREAMER_NAME: &str = "Retiring streamer";
@@ -397,11 +399,17 @@ async fn an_older_sessions_pipeline_work_defers_the_reap() {
         .await
         .expect("job row should persist");
 
+    // The job is still pending, so the delete waits out the whole pipeline
+    // bound before it leaves the row marked.
+    let bounds = RetirementBounds {
+        pipeline: Duration::from_millis(100),
+        ..INTERACTIVE_RETIREMENT
+    };
     assert!(
         harness
             .container
             .actor_registry
-            .delete_streamer(STREAMER_ID, INTERACTIVE_RETIREMENT)
+            .delete_streamer(STREAMER_ID, bounds)
             .await
             .expect("delete should succeed")
     );
