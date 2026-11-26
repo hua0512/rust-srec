@@ -891,12 +891,15 @@ async fn due_retry_waits_for_the_failed_attempt_cleanup() {
         () = uploads.entered.notified() => {}
     }
 
+    // The paused failure holds the lease a retry has to take exclusively.
+    assert!(queue.attempt_gate.try_write().is_err());
     let mut successor = std::pin::pin!(async {
         queue.retry_job(&job_id).await.unwrap();
         queue.dequeue(None).await.unwrap().unwrap().1
     });
+    // A retry that skipped the lease would claim within a few milliseconds here.
     assert!(
-        tokio::time::timeout(Duration::from_millis(200), &mut successor)
+        tokio::time::timeout(Duration::from_millis(20), &mut successor)
             .await
             .is_err(),
         "the retry started while the failed attempt was still cleaning up"
