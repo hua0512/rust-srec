@@ -413,7 +413,9 @@ mod tests {
 
         let manager = Arc::new(RateLimiterManager::with_config(RateLimiterConfig {
             max_tokens: 5,
-            refill_rate: 100.0, // Fast refill for testing
+            // The last five callers each wait for a refilled token; at this
+            // rate each wait is one timer tick.
+            refill_rate: 10_000.0,
             initial_tokens: 5,
         }));
 
