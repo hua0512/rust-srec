@@ -310,6 +310,9 @@ pub struct HealthChecker {
     start_time: Instant,
     /// System version.
     version: String,
+    /// How long one refresh waits for the system sampler before it keeps
+    /// the previous metrics and marks disk probes stale.
+    sample_timeout: Duration,
 }
 
 /// Used-space fraction at which a disk is reported as degraded.
@@ -337,7 +340,16 @@ impl HealthChecker {
             started: AtomicBool::new(false),
             start_time: Instant::now(),
             version: env!("CARGO_PKG_VERSION").to_string(),
+            sample_timeout: SYSTEM_SAMPLE_TIMEOUT,
         }
+    }
+
+    /// Wait at most `timeout` for each system sample, so tests that block
+    /// the sampler do not wait the production budget.
+    #[cfg(test)]
+    fn with_sample_timeout(mut self, timeout: Duration) -> Self {
+        self.sample_timeout = timeout;
+        self
     }
 
     /// Disk-warning threshold used by the disk health probes.
@@ -469,7 +481,7 @@ impl HealthChecker {
         // top-level fields drive the dashboard headline numbers; users
         // expect them to update faster than per-component cadences.
         let include_disks = due.iter().any(|probe| probe.needs_disk_snapshot());
-        let sampled = sampler.sample(include_disks, SYSTEM_SAMPLE_TIMEOUT).await;
+        let sampled = sampler.sample(include_disks, self.sample_timeout).await;
         let sampling_failure = sampled.as_ref().err().cloned();
         let metrics = sampled.unwrap_or_else(|_| sampler.latest());
         let cpu_usage = metrics.cpu_usage;
