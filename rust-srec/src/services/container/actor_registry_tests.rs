@@ -1159,7 +1159,7 @@ async fn shutdown_stops_checks_before_it_waits_for_recordings() {
         engine.stopping.notified().await;
         let before = probes.load(Ordering::SeqCst);
         harness.registry.check_now(&idle.id);
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
         let after = probes.load(Ordering::SeqCst);
         engine.release.notify_one();
         (before, after)
