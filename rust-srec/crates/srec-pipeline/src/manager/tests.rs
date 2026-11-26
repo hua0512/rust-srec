@@ -327,7 +327,6 @@ struct TestSessionRepository {
     sessions: Mutex<HashMap<String, LiveSessionDbModel>>,
     segments: Mutex<HashMap<String, Vec<SessionSegmentDbModel>>>,
     outputs: Mutex<HashMap<String, Vec<MediaOutputDbModel>>>,
-    active_session_queries: AtomicUsize,
     session_complete_dispatched: Mutex<HashSet<String>>,
 }
 
@@ -338,7 +337,6 @@ impl TestSessionRepository {
             sessions: Mutex::new(HashMap::new()),
             segments: Mutex::new(HashMap::new()),
             outputs: Mutex::new(HashMap::new()),
-            active_session_queries: AtomicUsize::new(0),
             session_complete_dispatched: Mutex::new(HashSet::new()),
         }
     }
@@ -366,10 +364,6 @@ impl TestSessionRepository {
             .entry(output.session_id.clone())
             .or_default()
             .push(output);
-    }
-
-    fn active_session_queries(&self) -> usize {
-        self.active_session_queries.load(Ordering::SeqCst)
     }
 }
 
@@ -436,8 +430,6 @@ impl SessionRepository for TestSessionRepository {
         &self,
         pagination: &Pagination,
     ) -> DbResult<Vec<LiveSessionDbModel>> {
-        self.active_session_queries.fetch_add(1, Ordering::SeqCst);
-
         let mut sessions = self
             .sessions
             .lock()
@@ -2061,130 +2053,6 @@ async fn configured_recovery_services(
         streamer_repo.clone(),
     ));
     (config_repo, streamer_repo, config_service)
-}
-
-#[tokio::test]
-async fn test_recovery_ignores_historical_ended_sessions() {
-    let session_repo = Arc::new(TestSessionRepository::new(None));
-    session_repo.insert_session(test_session(
-        "old-session",
-        "streamer-1",
-        Some(jiff::Timestamp::now().as_millisecond()),
-    ));
-    session_repo.insert_segment(test_segment("old-session", 0, "/missing-old.flv"));
-
-    let dag_repo = Arc::new(TestDagRepository::new());
-    let job_repo = Arc::new(TestJobRepository::new());
-    let manager: PipelineManager =
-        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
-            .with_session_port(session_port(session_repo.clone()))
-            .with_dag_repository(dag_repo.clone());
-
-    manager.recover_pipeline_coordination().await.unwrap();
-
-    assert_eq!(
-        manager.pipeline_coordinator.active_session_count(),
-        0,
-        "startup recovery must not hydrate ordinary old ended sessions"
-    );
-    assert_eq!(
-        dag_repo.create_calls(),
-        0,
-        "startup recovery must not replay historical segments into new DAGs"
-    );
-    assert!(
-        session_repo.active_session_queries() > 0,
-        "recovery should query active sessions, not the full historical session list"
-    );
-}
-
-#[tokio::test]
-async fn recovery_recreates_missing_segment_dag_once_after_artifact_persistence() {
-    let session_id = "missing-segment-dag";
-    let streamer_id = "streamer-1";
-    let segment_pipeline = DagPipelineDefinition::new(
-        "segment",
-        vec![DagStep::new(
-            "segment-step",
-            PipelineStep::inline("remux", serde_json::json!({})),
-        )],
-    );
-    let session_pipeline = DagPipelineDefinition::new(
-        "session",
-        vec![DagStep::new(
-            "session-step",
-            PipelineStep::inline("remux", serde_json::json!({})),
-        )],
-    );
-    let (_config_repo, streamer_repo, config_service) =
-        configured_recovery_services(streamer_id, Some(&segment_pipeline), &session_pipeline).await;
-    let session_repo = Arc::new(TestSessionRepository::new(None));
-    session_repo.insert_session(test_session(
-        session_id,
-        streamer_id,
-        Some(jiff::Timestamp::now().as_millisecond()),
-    ));
-    session_repo.insert_segment(test_segment(session_id, 0, "/persisted.flv"));
-    let dag_repo = Arc::new(TestDagRepository::new());
-    let job_repo = Arc::new(TestJobRepository::new());
-    let (sess_port, cfg_port) = wired_ports(session_repo, streamer_repo, config_service);
-    let manager = PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
-        .with_session_port(sess_port)
-        .with_config_port(cfg_port)
-        .with_dag_repository(dag_repo.clone());
-
-    manager.recover_pipeline_coordination().await.unwrap();
-    manager.recover_pipeline_coordination().await.unwrap();
-
-    assert_eq!(dag_repo.create_calls(), 1);
-    let dags = dag_repo
-        .list_dags(None, Some(session_id), 10, 0)
-        .await
-        .unwrap();
-    assert_eq!(dags.len(), 1);
-    assert_eq!(dags[0].segment_source.as_deref(), Some("video"));
-    assert_eq!(dags[0].segment_index, Some(0));
-}
-
-#[tokio::test]
-async fn recovery_recreates_missing_session_complete_dag_with_durable_marker() {
-    let session_id = "missing-session-complete";
-    let streamer_id = "streamer-1";
-    let session_pipeline = DagPipelineDefinition::new(
-        "session",
-        vec![DagStep::new(
-            "session-step",
-            PipelineStep::inline("remux", serde_json::json!({})),
-        )],
-    );
-    let (_config_repo, streamer_repo, config_service) =
-        configured_recovery_services(streamer_id, None, &session_pipeline).await;
-    let session_repo = Arc::new(TestSessionRepository::new(None));
-    session_repo.insert_session(test_session(
-        session_id,
-        streamer_id,
-        Some(jiff::Timestamp::now().as_millisecond()),
-    ));
-    session_repo.insert_segment(test_segment(session_id, 0, "/persisted.flv"));
-    let dag_repo = Arc::new(TestDagRepository::new());
-    let job_repo = Arc::new(TestJobRepository::new());
-    let (sess_port, cfg_port) = wired_ports(session_repo, streamer_repo, config_service);
-    let manager = PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
-        .with_session_port(sess_port)
-        .with_config_port(cfg_port)
-        .with_dag_repository(dag_repo.clone());
-
-    manager.recover_pipeline_coordination().await.unwrap();
-    manager.recover_pipeline_coordination().await.unwrap();
-
-    assert_eq!(dag_repo.create_calls(), 1);
-    let dags = dag_repo
-        .list_dags(None, Some(session_id), 10, 0)
-        .await
-        .unwrap();
-    assert_eq!(dags.len(), 1);
-    assert_eq!(dags[0].segment_source.as_deref(), Some("session_complete"));
-    assert!(dags[0].segment_index.is_none());
 }
 
 /// An ended session that startup recovery reaches only through one of its

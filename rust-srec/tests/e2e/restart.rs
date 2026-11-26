@@ -7,7 +7,8 @@ use std::path::PathBuf;
 use serde_json::{Value, json};
 
 use crate::support::{
-    FakePlatform, FlvLoop, Seed, TestApp, WAIT, eventually, files_under, id_of, succeed,
+    FakePlatform, FlvLoop, Seed, TestApp, WAIT, eventually, files_under, id_of, now_ms,
+    seeded_streamer, sql_text, succeed,
 };
 
 /// A restart in the middle of a recording keeps its session: the stopped
@@ -183,6 +184,83 @@ async fn a_restart_runs_again_the_job_it_interrupted_and_the_jobs_still_queued()
     for job_id in [&interrupted_job, &queued_job] {
         assert_eq!(job_status(&app, job_id).await, "COMPLETED", "{job_id}");
     }
+
+    app.shutdown().await;
+}
+
+/// An ended session with `session_complete_dispatched` and one recorded part.
+fn ended_session(id: &str, streamer_id: &str, dispatched: bool) -> String {
+    let ended = now_ms() - 60_000;
+    let started = ended - 600_000;
+    format!(
+        "INSERT INTO live_sessions (id, streamer_id, streamer_name, start_time, end_time, \
+             titles, total_size_bytes, session_complete_dispatched) \
+         VALUES ('{id}', '{streamer_id}', '{streamer_id}', {started}, {ended}, '[]', 1000, {});\n\
+         INSERT INTO session_segments (id, session_id, segment_index, file_path, duration_secs, \
+             size_bytes, created_at, completed_at, persisted_at) \
+         VALUES ('{id}-part', '{id}', 0, '/recordings/{id}.flv', 10.0, 1000, {ended}, {ended}, \
+             {ended});\n",
+        i32::from(dispatched),
+    )
+}
+
+/// Startup recovery runs what an ended session still owes, once: a part that was
+/// stored without its segment workflow gets one, and the session-complete workflow
+/// follows it. A session whose end was already dispatched gets nothing, and the next
+/// start finds nothing owed. The streamer is disabled, so nothing but recovery acts.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn startup_recovery_runs_what_an_ended_session_still_owes_exactly_once() {
+    let fake = FakePlatform::start().await;
+    let room = fake.room("owed");
+    let app = TestApp::start_with(
+        Seed::live()
+            .platform("pipeline", sql_text(&succeed("segment").to_string()))
+            .session_complete_pipeline(&succeed("after-recovery"))
+            .rows(&format!(
+                "{}{}{}",
+                seeded_streamer("owed", &room, "DISABLED", &[]),
+                ended_session("owed-session", "owed", false),
+                ended_session("old-session", "owed", true),
+            )),
+    )
+    .await;
+    let token = app.admin_token().await;
+
+    let names = |dags: &[Value]| {
+        let mut names: Vec<String> = dags
+            .iter()
+            .map(|dag| dag["name"].as_str().expect("name").to_owned())
+            .collect();
+        names.sort();
+        names
+    };
+    let owed = eventually(WAIT, "the owed workflows to complete", || async {
+        let dags = app.dags(&token, "owed-session").await;
+        (dags.len() == 2 && dags.iter().all(|dag| dag["status"] == "COMPLETED")).then_some(dags)
+    })
+    .await;
+    assert_eq!(names(&owed), ["after-recovery", "segment"]);
+    assert_eq!(
+        app.query_i64(
+            "SELECT segment_index FROM dag_execution \
+             WHERE session_id = 'owed-session' AND segment_source = 'video'"
+        )
+        .await,
+        0
+    );
+    assert_eq!(
+        app.query_i64(
+            "SELECT session_complete_dispatched FROM live_sessions WHERE id = 'owed-session'"
+        )
+        .await,
+        1
+    );
+    assert_eq!(app.dags(&token, "old-session").await, Vec::<Value>::new());
+
+    // Startup recovery has finished when the restarted backend answers.
+    let app = app.restart().await;
+    assert_eq!(names(&app.dags(&token, "owed-session").await), names(&owed));
+    assert_eq!(app.dags(&token, "old-session").await, Vec::<Value>::new());
 
     app.shutdown().await;
 }
