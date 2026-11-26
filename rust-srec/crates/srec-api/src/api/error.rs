@@ -553,6 +553,10 @@ mod tests {
             assert!(!error.message.contains("secret"));
             assert!(!error.message.contains("private"));
         }
+        let auth_database = ApiError::from(AuthError::Database("private-auth-detail".to_string()));
+        assert_eq!(auth_database.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(auth_database.code, "SERVICE_UNAVAILABLE");
+        assert!(!auth_database.message.contains("private"));
         let validation = ApiError::from(Error::validation("At most 100 IDs are allowed"));
         assert_eq!(validation.status, StatusCode::UNPROCESSABLE_ENTITY);
         assert_eq!(validation.message, "At most 100 IDs are allowed");
@@ -594,14 +598,5 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn test_auth_database_error_is_generic_service_unavailable() {
-        let api_err = ApiError::from(AuthError::Database("sensitive details".to_string()));
-
-        assert_eq!(api_err.status, StatusCode::SERVICE_UNAVAILABLE);
-        assert_eq!(api_err.code, "SERVICE_UNAVAILABLE");
-        assert!(!api_err.message.contains("sensitive"));
     }
 }
