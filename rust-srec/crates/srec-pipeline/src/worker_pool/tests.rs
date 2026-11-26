@@ -485,7 +485,7 @@ impl Processor for ContextHandoffProcessor {
 
 /// Short enough that a timed-out job ends promptly, long enough that the processor has
 /// started by then even on a loaded machine.
-const SHORT_JOB_TIMEOUT: Duration = Duration::from_millis(200);
+const SHORT_JOB_TIMEOUT: Duration = Duration::from_millis(50);
 
 /// Poll `execution` together with `until` and return what `until` yields, failing if the
 /// execution ends first or `until` takes longer than `WAIT`. A test must not touch the
@@ -521,10 +521,6 @@ async fn wait_for_lingering(
 
 #[tokio::test]
 async fn user_cancellation_during_timeout_log_drain_keeps_the_recorded_timeout() {
-    assert_timeout_with_retained_sink(true).await;
-}
-
-async fn assert_timeout_with_retained_sink(cancel_during_drain: bool) {
     let queue = Arc::new(JobQueue::with_repository(
         Default::default(),
         crate::test_support::job_repository().await,
@@ -573,9 +569,7 @@ async fn assert_timeout_with_retained_sink(cancel_during_drain: bool) {
         stored.error
     );
     assert_eq!(runner.active_workers.load(Ordering::SeqCst), 1);
-    if cancel_during_drain {
-        assert!(queue.cancel_job(&id).await.is_err());
-    }
+    assert!(queue.cancel_job(&id).await.is_err());
     drop(retained);
     tokio::time::timeout(WAIT, execution).await.unwrap();
     assert_eq!(
@@ -663,7 +657,7 @@ async fn ended_job_is_reported_stalled_until_its_retained_work_returns() {
             .older_than(STALLED_OPERATION_THRESHOLD)
             .is_empty()
     );
-    let threshold = Duration::from_millis(100);
+    let threshold = Duration::from_millis(20);
     let stalled = drive_until(
         execution.as_mut(),
         wait_for_lingering(&runner.lingering, threshold),
