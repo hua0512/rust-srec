@@ -72,86 +72,56 @@ fn committing_start_gates_attempt_on_authoritative_db_commit_and_uses_db_epoch()
     assert!(!spec.from_hysteresis_resume);
 }
 
+/// A start commit that fails transiently or is suppressed leaves no session
+/// and no attempt, and the first reconcile stays pending. A transient failure
+/// waits a poll interval; a suppression blocks until its retry time.
 #[test]
-fn committing_start_transient_db_failure_rolls_back_and_waits_a_poll_interval() {
-    let clock = TestClock::new();
-    let mut fsm = StreamerFsm::new(
-        base_snapshot(StreamerState::NotLive, base_config()),
-        clock.now,
-        clock.wall,
-    );
+fn committing_start_failure_or_suppression_rolls_back_without_clearing_reconcile() {
+    let transient = Err(DbCommitFailure::Transient {
+        message: "sqlite busy".into(),
+    });
+    let suppressed = Ok(DbCommitOutcome::SessionStartSuppressed {
+        state: StreamerState::TemporalDisabled,
+        retry_after: Some(Duration::from_secs(120)),
+    });
+    for (result, suppressed) in [(transient, false), (suppressed, true)] {
+        let clock = TestClock::new();
+        let mut fsm = StreamerFsm::new(
+            base_snapshot(StreamerState::NotLive, base_config()),
+            clock.now,
+            clock.wall,
+        );
 
-    let probe_id = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
-        .unwrap()
-        .probe_id;
-    let effects = fsm.step(
-        clock.ctx(),
-        FsmInput::ProbeCompleted {
-            probe_id,
-            result: Ok(ProbeStatus::Live(live_payload("Live"))),
-        },
-    );
-    let (op_id, _) = find_db_commit(&effects).unwrap();
+        let probe_id = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
+            .unwrap()
+            .probe_id;
+        let effects = fsm.step(
+            clock.ctx(),
+            FsmInput::ProbeCompleted {
+                probe_id,
+                result: Ok(ProbeStatus::Live(live_payload("Live"))),
+            },
+        );
+        let (op_id, _) = find_db_commit(&effects).unwrap();
 
-    let effects = fsm.step(
-        clock.ctx(),
-        FsmInput::DbCommitted {
-            op_id,
-            result: Err(DbCommitFailure::Transient {
-                message: "sqlite busy".into(),
-            }),
-        },
-    );
+        let effects = fsm.step(clock.ctx(), FsmInput::DbCommitted { op_id, result });
 
-    assert!(find_start_attempt(&effects).is_none());
-    assert!(matches!(fsm.session, SessionSlot::None));
-    assert!(fsm.initial_reconcile_pending);
-    assert!(matches!(fsm.monitor, MonitorPhase::Idle { .. }));
-    assert_waits_a_poll_interval(&fsm, &clock);
-}
-
-#[test]
-fn committing_start_suppressed_inactive_rolls_back_without_clearing_reconcile() {
-    let clock = TestClock::new();
-    let mut fsm = StreamerFsm::new(
-        base_snapshot(StreamerState::NotLive, base_config()),
-        clock.now,
-        clock.wall,
-    );
-
-    let probe_id = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
-        .unwrap()
-        .probe_id;
-    let effects = fsm.step(
-        clock.ctx(),
-        FsmInput::ProbeCompleted {
-            probe_id,
-            result: Ok(ProbeStatus::Live(live_payload("Live"))),
-        },
-    );
-    let (op_id, _) = find_db_commit(&effects).unwrap();
-
-    let effects = fsm.step(
-        clock.ctx(),
-        FsmInput::DbCommitted {
-            op_id,
-            result: Ok(DbCommitOutcome::SessionStartSuppressed {
-                state: StreamerState::TemporalDisabled,
-                retry_after: Some(Duration::from_secs(120)),
-            }),
-        },
-    );
-
-    assert!(find_start_attempt(&effects).is_none());
-    assert!(matches!(fsm.session, SessionSlot::None));
-    assert!(fsm.initial_reconcile_pending);
-    assert_eq!(
-        fsm.monitor,
-        MonitorPhase::Blocked {
-            kind: BlockedKind::TemporalDisabled,
-            retry_at: clock.now + Duration::from_secs(120),
+        assert!(find_start_attempt(&effects).is_none());
+        assert!(matches!(fsm.session, SessionSlot::None));
+        assert!(fsm.initial_reconcile_pending);
+        if suppressed {
+            assert_eq!(
+                fsm.monitor,
+                MonitorPhase::Blocked {
+                    kind: BlockedKind::TemporalDisabled,
+                    retry_at: clock.now + Duration::from_secs(120),
+                }
+            );
+        } else {
+            assert!(matches!(fsm.monitor, MonitorPhase::Idle { .. }));
+            assert_waits_a_poll_interval(&fsm, &clock);
         }
-    );
+    }
 }
 
 #[test]

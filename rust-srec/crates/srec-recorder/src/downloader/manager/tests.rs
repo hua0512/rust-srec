@@ -531,18 +531,16 @@ async fn cancelled_queued_start_clears_event_and_capacity_while_maintenance_is_a
     }
 }
 
-#[test]
-fn relative_segment_paths_are_resolved_without_canonicalizing() {
+/// Relative paths join the working directory; absolute ones, including `..`,
+/// are kept as the engine reported them on every event.
+#[tokio::test]
+async fn segment_completion_preserves_engine_reported_path() {
     let relative = std::path::Path::new("recordings").join("segment.flv");
     let expected = std::env::current_dir()
         .expect("current directory")
         .join(&relative);
-
     assert_eq!(resolve_segment_path(&relative), expected.to_string_lossy());
-}
 
-#[tokio::test]
-async fn segment_completion_preserves_engine_reported_path() {
     let temp = tempfile::tempdir().expect("tempdir");
     let nested = temp.path().join("nested");
     tokio::fs::create_dir_all(&nested)
@@ -1253,7 +1251,7 @@ async fn early_cancellation_does_not_charge_breaker_but_racing_failure_does() {
 }
 
 #[tokio::test]
-async fn prepare_output_dir_on_unwritable_parent_trips_gate() {
+async fn prepare_output_dir_degrades_an_unwritable_root_and_recovers_it_once() {
     // Force create_dir_all to fail portably. GHA's Windows runner
     // runs as admin, so `C:\nonexistent\...` is creatable there;
     // Linux CI sandboxes often mount `/` read-only → EROFS. Instead,
@@ -1263,65 +1261,6 @@ async fn prepare_output_dir_on_unwritable_parent_trips_gate() {
     // classifies into DownloadFailureKind::OutputRootUnavailable.
     // We don't pin the exact io_kind because the classification
     // bucket (never `Other`) is what's actually under test.
-    let temp = tempfile::tempdir().expect("tempdir");
-    let blocker = temp.path().join("blocker");
-    std::fs::write(&blocker, b"i am a file, not a dir").unwrap();
-    let bad_output = blocker.join("huya").join("X").join("20260415");
-    let (manager, counter, gate) = manager_with_gate();
-
-    let config = test_config_with_output_dir(bad_output.clone());
-    let result = manager.prepare_output_dir(&config).await;
-
-    // Must fail with OutputRootUnavailable{...}, NOT the generic Io
-    // kind — this proves `EngineStartError::from` correctly walked
-    // the error chain and the manager's `prepare_output_dir` routed
-    // the io::Error into the gate before returning.
-    let err = result.expect_err("should fail on unwritable parent");
-    let io_kind = match err.kind {
-        DownloadFailureKind::OutputRootUnavailable { io_kind } => io_kind,
-        other => panic!("expected OutputRootUnavailable{{_}}, got {:?}", other),
-    };
-    assert!(
-        !matches!(io_kind, IoErrorKindSer::Other),
-        "expected a classified io_kind (NotFound / PermissionDenied / \
-         ReadOnlyFilesystem / StorageFull / TimedOut), got Other"
-    );
-
-    // The gate must now be tracking a Degraded root with a matching
-    // cached error kind.
-    let snapshot = gate.snapshot();
-    assert_eq!(snapshot.len(), 1);
-    assert_eq!(
-        snapshot[0].state,
-        crate::downloader::RootHealthState::Degraded
-    );
-    let last_error = snapshot[0]
-        .last_error
-        .as_ref()
-        .expect("degraded root must have cached error");
-    assert_eq!(last_error.0, io_kind);
-
-    // A second `prepare_output_dir` call inside the cooldown window
-    // must fast-reject via `gate.check()`, not re-try `create_dir_all`.
-    // This bounds filesystem retries while the output root is unavailable.
-    let result2 = manager.prepare_output_dir(&config).await;
-    let err2 = result2.expect_err("second call should fast-reject");
-    assert!(matches!(
-        err2.kind,
-        DownloadFailureKind::OutputRootUnavailable { .. }
-    ));
-    // Recovery hook must NOT have fired — we're still Degraded.
-    assert_eq!(counter.load(Ordering::SeqCst), 0);
-}
-
-#[tokio::test]
-async fn prepare_output_dir_recovers_after_path_becomes_valid() {
-    // Trip the gate by pointing at a child of a regular file (fails
-    // portably on Unix ENOTDIR and Windows ERROR_DIRECTORY — tokio's
-    // create_dir_all will not recreate a file-as-directory ancestor).
-    // Then fix the filesystem, wait past the cooldown, retry. The
-    // winning CAS caller should see ensure_output_dir succeed, flip
-    // the gate to Healthy, and fire the recovery hook exactly once.
     let temp = tempfile::tempdir().expect("tempdir");
 
     use super::super::output_root_gate::{OutputRootGate, RecoveryHook};
@@ -1342,23 +1281,54 @@ async fn prepare_output_dir_recovers_after_path_becomes_valid() {
     let manager = DownloadManager::new();
     manager.set_output_root_gate(gate.clone());
 
-    // `doomed` is a regular file; any path under it will fail
-    // create_dir_all because an ancestor component is not a directory.
     let doomed = temp.path().join("doomed");
     std::fs::write(&doomed, b"i am a file, not a dir").unwrap();
     let under_doomed = doomed.join("will-fail");
-
-    // Now `create_dir_all(under_doomed)` will fail with NotADirectory
-    // or similar because one of the ancestor components is a regular
-    // file. On Linux this surfaces as ErrorKind::NotFound or
-    // ErrorKind::NotADirectory depending on kernel version; either
-    // way the gate records a failure.
     let bad_config = test_config_with_output_dir(under_doomed.clone());
-    let first = manager.prepare_output_dir(&bad_config).await;
-    assert!(first.is_err(), "should fail when ancestor is a file");
-    let snap = gate.snapshot();
-    assert_eq!(snap.len(), 1, "gate should be tracking the configured root");
-    assert_eq!(snap[0].state, crate::downloader::RootHealthState::Degraded);
+    let result = manager.prepare_output_dir(&bad_config).await;
+
+    // Must fail with OutputRootUnavailable{...}, NOT the generic Io
+    // kind — this proves `EngineStartError::from` correctly walked
+    // the error chain and the manager's `prepare_output_dir` routed
+    // the io::Error into the gate before returning.
+    let err = result.expect_err("should fail on unwritable parent");
+    let io_kind = match err.kind {
+        DownloadFailureKind::OutputRootUnavailable { io_kind } => io_kind,
+        other => panic!("expected OutputRootUnavailable{{_}}, got {:?}", other),
+    };
+    assert!(
+        !matches!(io_kind, IoErrorKindSer::Other),
+        "expected a classified io_kind (NotFound / PermissionDenied / \
+         ReadOnlyFilesystem / StorageFull / TimedOut), got Other"
+    );
+
+    // The gate must now be tracking a Degraded root with a matching
+    // cached error kind.
+    let snapshot = gate.snapshot();
+    assert_eq!(
+        snapshot.len(),
+        1,
+        "gate should be tracking the configured root"
+    );
+    assert_eq!(
+        snapshot[0].state,
+        crate::downloader::RootHealthState::Degraded
+    );
+    let last_error = snapshot[0]
+        .last_error
+        .as_ref()
+        .expect("degraded root must have cached error");
+    assert_eq!(last_error.0, io_kind);
+
+    // `prepare_output_dir` does not consult the gate, so a second call while
+    // the path is still broken runs `create_dir_all` again and fails the same way.
+    let result2 = manager.prepare_output_dir(&bad_config).await;
+    let err2 = result2.expect_err("second call should fail while the path is broken");
+    assert!(matches!(
+        err2.kind,
+        DownloadFailureKind::OutputRootUnavailable { .. }
+    ));
+    // Recovery hook must NOT have fired — we're still Degraded.
     assert_eq!(counter.load(Ordering::SeqCst), 0);
 
     // Fix the filesystem: remove the blocking file and recreate the

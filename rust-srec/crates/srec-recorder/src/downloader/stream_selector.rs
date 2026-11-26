@@ -374,8 +374,10 @@ mod tests {
 
     // ========== StreamSelectionConfig::merge tests ==========
 
+    /// A set field overrides the base; an empty list (`None` or `Some(vec![])`,
+    /// as deserialized from `"preferred_formats": []`) or a zero bitrate inherits it.
     #[test]
-    fn test_merge_partial_override() {
+    fn merge_overrides_set_fields_and_inherits_empty_or_zero_ones() {
         let base = StreamSelectionConfig {
             preferred_formats: Some(vec![StreamFormat::Flv]),
             preferred_qualities: vec!["1080p".to_string()],
@@ -385,34 +387,28 @@ mod tests {
             ..Default::default()
         };
         let other = StreamSelectionConfig {
-            preferred_formats: Some(vec![StreamFormat::Hls]), // Override
-            preferred_qualities: vec![],                      // Keep base
-            preferred_cdns: vec![],                           // Keep base
-            min_bitrate: 0,                                   // Keep base
-            max_bitrate: 8000,                                // Override
+            preferred_formats: Some(vec![StreamFormat::Hls]),
+            preferred_qualities: vec![],
+            preferred_cdns: vec![],
+            min_bitrate: 0,
+            max_bitrate: 8000,
             ..Default::default()
         };
 
         let merged = base.merge(&other);
 
-        assert_eq!(merged.preferred_formats, Some(vec![StreamFormat::Hls])); // Overridden
-        assert_eq!(merged.preferred_qualities, vec!["1080p".to_string()]); // Kept
-        assert_eq!(merged.preferred_cdns, vec!["cdn1".to_string()]); // Kept
-        assert_eq!(merged.min_bitrate, 1000); // Kept
-        assert_eq!(merged.max_bitrate, 8000); // Overridden
-    }
+        assert_eq!(merged.preferred_formats, Some(vec![StreamFormat::Hls]));
+        assert_eq!(merged.preferred_qualities, vec!["1080p".to_string()]);
+        assert_eq!(merged.preferred_cdns, vec!["cdn1".to_string()]);
+        assert_eq!(merged.min_bitrate, 1000);
+        assert_eq!(merged.max_bitrate, 8000);
 
-    #[test]
-    fn test_merge_empty_vec_preserves_base() {
-        // This test verifies that Some(vec![]) (from JSON "preferred_formats": [])
-        // is treated the same as None and preserves the base config
         let base = StreamSelectionConfig {
             preferred_formats: Some(vec![StreamFormat::Flv, StreamFormat::Hls]),
             preferred_qualities: vec!["1080p".to_string(), "720p".to_string()],
             ..Default::default()
         };
         let other = StreamSelectionConfig {
-            // Simulates deserializing {"preferred_formats": []} from JSON
             preferred_formats: Some(vec![]),
             preferred_qualities: vec![],
             ..Default::default()
@@ -420,7 +416,6 @@ mod tests {
 
         let merged = base.merge(&other);
 
-        // Empty array should NOT override - base config should be preserved
         assert_eq!(
             merged.preferred_formats,
             Some(vec![StreamFormat::Flv, StreamFormat::Hls])
@@ -607,31 +602,37 @@ mod tests {
     }
 
     /// Each case's preferred stream has the lower bitrate, so it can only win
-    /// on its quality score.
+    /// on its quality score. A preference no stream matches leaves the choice
+    /// to bitrate. Both stream orders are tried, so list position cannot decide.
     #[test]
     fn preferred_quality_beats_a_higher_bitrate() {
-        let cases: [(&[&str], [&str; 2], &str); 4] = [
+        let cases: [(&[&str], [&str; 2], &str); 5] = [
             // List order: the first preference that any stream matches wins.
             (&["720p", "1080p"], ["1080p", "720p"], "720p"),
             (&["4K", "720p", "1080p"], ["1080p", "720p"], "720p"),
             (&["SOURCE"], ["1080p", "Source"], "Source"),
             // A CJK preference matches inside a longer platform label.
             (&["原画", "蓝光"], ["超清", "蓝光4M"], "蓝光4M"),
+            // Nothing matches: the higher bitrate wins.
+            (&["4K"], ["1080p", "720p"], "1080p"),
         ];
         for (preferences, [higher, lower], expected) in cases {
             let selector = StreamSelector::with_config(StreamSelectionConfig {
                 preferred_qualities: preferences.iter().map(|q| q.to_string()).collect(),
                 ..Default::default()
             });
-            let streams = [
+            let mut streams = [
                 create_test_stream("http://a/high", StreamFormat::Flv, higher, 8_000_000, 1),
                 create_test_stream("http://a/low", StreamFormat::Flv, lower, 2_000_000, 1),
             ];
-            assert_eq!(
-                selector.select_best(&streams).unwrap().quality,
-                expected,
-                "{preferences:?}"
-            );
+            for _ in 0..2 {
+                assert_eq!(
+                    selector.select_best(&streams).unwrap().quality,
+                    expected,
+                    "{preferences:?}"
+                );
+                streams.reverse();
+            }
         }
     }
 
@@ -694,38 +695,6 @@ mod tests {
     }
 
     #[test]
-    fn test_select_best_fallback_to_bitrate() {
-        // When no quality preferences match, should fall back to highest bitrate
-        let config = StreamSelectionConfig {
-            preferred_qualities: vec!["4K".to_string()], // Won't match any stream
-            ..Default::default()
-        };
-        let selector = StreamSelector::with_config(config);
-
-        let streams = vec![
-            create_test_stream(
-                "http://example.com/low.flv",
-                StreamFormat::Flv,
-                "720p",
-                3000000,
-                1,
-            ),
-            create_test_stream(
-                "http://example.com/high.flv",
-                StreamFormat::Flv,
-                "1080p",
-                5000000,
-                1,
-            ),
-        ];
-
-        let best = selector.select_best(&streams);
-        assert!(best.is_some());
-        // Should pick higher bitrate when quality doesn't match
-        assert_eq!(best.unwrap().bitrate, 5000000);
-    }
-
-    #[test]
     fn test_select_best_cdn_priority_over_format() {
         // Test that preferred CDN is selected even if it's not the preferred format
         // Default config should have no preference for format, but we set one here to test priority
@@ -774,110 +743,59 @@ mod tests {
         assert_eq!(best.unwrap().url, "http://example.com/hls.m3u8");
     }
 
+    /// The blacklist matches a stream's `cdn` extra case-insensitively, wins
+    /// over a CDN preference, and is checked against the extra instead of the
+    /// URL when the extra is present.
     #[test]
-    fn test_blacklist_case_insensitive() {
-        let config = StreamSelectionConfig {
+    fn cdn_blacklist_matches_the_cdn_extra_case_insensitively_and_beats_preferences() {
+        let with_cdn = |url: &str, format, priority, cdn: &str| {
+            let mut stream = create_test_stream(url, format, "1080p", 5000000, priority);
+            stream.extras = Some(serde_json::json!({ "cdn": cdn }));
+            stream
+        };
+
+        let selector = StreamSelector::with_config(StreamSelectionConfig {
             blacklisted_cdns: vec!["BADCDN".to_string()],
             ..Default::default()
-        };
-        let selector = StreamSelector::with_config(config);
-
-        let mut stream = create_test_stream(
+        });
+        let streams = [with_cdn(
             "http://example.com/stream.flv",
             StreamFormat::Flv,
-            "1080p",
-            5000000,
             1,
-        );
-        let mut extras = serde_json::Map::new();
-        extras.insert(
-            "cdn".to_string(),
-            serde_json::Value::String("badcdn".to_string()),
-        );
-        stream.extras = Some(serde_json::Value::Object(extras));
+            "badcdn",
+        )];
+        assert!(selector.select_best(&streams).is_none());
 
-        let streams = vec![stream];
-        let result = selector.select_best(&streams);
-
-        // Stream should be blacklisted (case insensitive match)
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_blacklist_with_preferences() {
-        // Preferred CDN should still be excluded if also blacklisted
-        let config = StreamSelectionConfig {
+        // The blacklisted stream is preferred and has the better priority.
+        let selector = StreamSelector::with_config(StreamSelectionConfig {
             preferred_cdns: vec!["goodcdn".to_string(), "badcdn".to_string()],
             blacklisted_cdns: vec!["badcdn".to_string()],
             ..Default::default()
-        };
-        let selector = StreamSelector::with_config(config);
-
-        let mut stream_good = create_test_stream(
-            "http://example.com/good.flv",
-            StreamFormat::Flv,
-            "1080p",
-            5000000,
-            2, // Lower priority
+        });
+        let streams = [
+            with_cdn("http://example.com/bad.flv", StreamFormat::Flv, 1, "badcdn"),
+            with_cdn(
+                "http://example.com/good.flv",
+                StreamFormat::Flv,
+                2,
+                "goodcdn",
+            ),
+        ];
+        assert_eq!(
+            selector.select_best(&streams).unwrap().url,
+            "http://example.com/good.flv"
         );
-        let mut extras_good = serde_json::Map::new();
-        extras_good.insert(
-            "cdn".to_string(),
-            serde_json::Value::String("goodcdn".to_string()),
-        );
-        stream_good.extras = Some(serde_json::Value::Object(extras_good));
 
-        let mut stream_bad = create_test_stream(
-            "http://example.com/bad.flv",
-            StreamFormat::Flv,
-            "1080p",
-            5000000,
-            1, // Higher priority
-        );
-        let mut extras_bad = serde_json::Map::new();
-        extras_bad.insert(
-            "cdn".to_string(),
-            serde_json::Value::String("badcdn".to_string()),
-        );
-        stream_bad.extras = Some(serde_json::Value::Object(extras_bad));
-
-        let streams = vec![stream_bad, stream_good];
-        let best = selector.select_best(&streams);
-
-        // Even though badcdn has higher priority and is preferred,
-        // it should be excluded because it's blacklisted
-        assert!(best.is_some());
-        assert_eq!(best.unwrap().url, "http://example.com/good.flv");
-    }
-
-    #[test]
-    fn test_cdn_extra_takes_precedence_over_url() {
-        // When extras["cdn"] exists, it should be used instead of URL
-        let config = StreamSelectionConfig {
+        let selector = StreamSelector::with_config(StreamSelectionConfig {
             blacklisted_cdns: vec!["badcdn".to_string()],
             ..Default::default()
-        };
-        let selector = StreamSelector::with_config(config);
-
-        // Stream with "badcdn" in URL but different cdn in extras
-        let mut stream = create_test_stream(
+        });
+        let streams = [with_cdn(
             "https://badcdn.example.com/stream.m3u8",
             StreamFormat::Hls,
-            "1080p",
-            5000000,
             1,
-        );
-        let mut extras = serde_json::Map::new();
-        extras.insert(
-            "cdn".to_string(),
-            serde_json::Value::String("goodcdn".to_string()),
-        );
-        stream.extras = Some(serde_json::Value::Object(extras));
-
-        let streams = vec![stream];
-        let result = selector.select_best(&streams);
-
-        // Should NOT be blacklisted because extras["cdn"] = "goodcdn" takes precedence
-        assert!(result.is_some());
+            "goodcdn",
+        )];
+        assert!(selector.select_best(&streams).is_some());
     }
 }

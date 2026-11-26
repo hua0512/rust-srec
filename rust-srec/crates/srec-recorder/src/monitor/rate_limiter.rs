@@ -316,7 +316,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tokens_refill_at_the_rate_up_to_a_burst_of_twice_the_rps() {
+    fn with_rps_rejects_unusable_rates_and_refills_up_to_twice_the_rps() {
+        // A zero or NaN rate would stall admission, which falls back to its
+        // default limiter on an error.
+        assert!(RateLimiterConfig::with_rps(0.0).is_err());
+        assert!(RateLimiterConfig::with_rps(-1.0).is_err());
+        assert!(RateLimiterConfig::with_rps(f64::NAN).is_err());
+        assert!(RateLimiterConfig::with_rps(f64::INFINITY).is_err());
+
         for (rps, burst) in [(5.0, 10), (2.5, 5), (0.2, 1)] {
             let config = RateLimiterConfig::with_rps(rps).unwrap();
             assert_eq!(
@@ -349,14 +356,6 @@ mod tests {
             assert!(limiter.try_acquire());
         }
         assert!(!limiter.try_acquire());
-    }
-
-    #[test]
-    fn test_rate_limiter_config_with_invalid_rps() {
-        assert!(RateLimiterConfig::with_rps(0.0).is_err());
-        assert!(RateLimiterConfig::with_rps(-1.0).is_err());
-        assert!(RateLimiterConfig::with_rps(f64::NAN).is_err());
-        assert!(RateLimiterConfig::with_rps(f64::INFINITY).is_err());
     }
 
     #[tokio::test(start_paused = true)]

@@ -117,7 +117,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn repeats_keep_the_start_and_publish_only_transitions() {
+    fn repeats_keep_the_start_a_platform_move_restarts_it_and_only_transitions_publish() {
         let blocks = CredentialBlocks::new();
         let mut changes = blocks.subscribe();
         blocks.block("s", "platform-a", UnavailableReason::LoginRequired);
@@ -149,11 +149,7 @@ mod tests {
                 },
             ]
         );
-    }
 
-    #[test]
-    fn moving_to_another_platform_starts_a_new_block() {
-        let blocks = CredentialBlocks::new();
         blocks.block("s", "platform-a", UnavailableReason::LoginRequired);
         let first = blocks.get("s").unwrap();
         std::thread::sleep(std::time::Duration::from_millis(2));
