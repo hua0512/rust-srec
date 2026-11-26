@@ -3,7 +3,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use srec_core::CoreError;
 use srec_sqlite::DbError;
@@ -12,7 +12,6 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
 use tracing::{debug, error, info, warn};
 
-use super::autoscaling::update_avg_runtime_ms;
 use super::lingering::{
     LingeringAttempts, LingeringGuard, STALLED_OPERATION_THRESHOLD, StalledOperation, timeout_error,
 };
@@ -45,7 +44,6 @@ pub(super) struct JobRunner {
     pub(super) dag_notify_tx: Option<tokio::sync::mpsc::Sender<DagCompletionInfo>>,
     pub(super) event_tx: Option<broadcast::Sender<PipelineEvent>>,
     pub(super) active_workers: Arc<AtomicUsize>,
-    pub(super) avg_runtime_ms: Arc<AtomicU64>,
     pub(super) job_timeout: std::time::Duration,
     /// The pool's shutdown token. Distinct from the per-job token that reaches the processor
     /// through `ProcessorContext`; see [`JobRunner::execute`].
@@ -324,7 +322,6 @@ impl JobRunner {
 
         self.active_workers.fetch_add(1, Ordering::SeqCst);
         let _active_worker = ActiveWorkerGuard(&self.active_workers);
-        let started = std::time::Instant::now();
 
         // True when this job has been attempted before, which is what makes a processor's
         // resume path legitimate (see CopyMoveProcessor's absent-source handling).
@@ -507,8 +504,6 @@ impl JobRunner {
         if processor_token.is_cancelled() {
             self.job_queue.finalize_attempt(&facts.id, &job_token).await;
         }
-
-        update_avg_runtime_ms(&self.avg_runtime_ms, started.elapsed().as_millis() as u64);
     }
 
     /// Wait for the log collector, which finishes once the last log sender is gone, including

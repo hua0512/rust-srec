@@ -282,59 +282,6 @@ async fn busy_workers_apply_reduction_to_queued_jobs() {
 }
 
 #[tokio::test]
-async fn adaptive_pool_can_resume_from_zero_and_stop() {
-    let queue = Arc::new(JobQueue::with_repository(
-        Default::default(),
-        crate::test_support::job_repository().await,
-    ));
-    let pool = WorkerPool::with_config(
-        WorkerType::Cpu,
-        WorkerPoolConfig {
-            max_workers: 2,
-            poll_interval_ms: 1,
-            adaptive: AdaptiveWorkerPoolConfig {
-                enabled: true,
-                min_workers: 0,
-                interval_ms: 100,
-                scale_down_idle_ticks: 1,
-                ..Default::default()
-            },
-            ..Default::default()
-        },
-    );
-    let (event_tx, mut event_rx) = broadcast::channel(8);
-    pool.start_with_dag_scheduler(
-        queue.clone(),
-        vec![Arc::new(NoopProcessor)],
-        None,
-        None,
-        Some(event_tx),
-    );
-    assert_eq!(pool.desired_max_workers(), 0);
-    queue
-        .enqueue(Job::new("noop", vec![], vec![], "streamer", "session"))
-        .await
-        .unwrap();
-    tokio::time::timeout(WAIT, async {
-        while !matches!(
-            event_rx.recv().await.unwrap(),
-            PipelineEvent::JobCompleted { .. }
-        ) {}
-    })
-    .await
-    .unwrap();
-    tokio::time::timeout(WAIT, async {
-        while pool.desired_max_workers() != 0 {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .unwrap();
-    tokio::time::timeout(WAIT, pool.stop()).await.unwrap();
-    assert_eq!(pool.concurrency.state.lock().admitted, 0);
-}
-
-#[tokio::test]
 async fn worker_drains_a_burst_without_poll_delays_and_wakes_after_idle() {
     // Far longer than `WAIT`: a worker that waited for its polling timer, between jobs or
     // to notice new work, could not finish within it.
@@ -457,7 +404,6 @@ fn test_pool_config() -> WorkerPoolConfig {
         max_workers: 1,
         job_timeout_secs: 30,
         poll_interval_ms: 10,
-        adaptive: AdaptiveWorkerPoolConfig::default(),
     }
 }
 
@@ -505,7 +451,6 @@ fn observed_runner(
         dag_notify_tx: None,
         event_tx: Some(event_tx),
         active_workers: Arc::new(AtomicUsize::new(0)),
-        avg_runtime_ms: Arc::new(AtomicU64::new(0)),
         job_timeout: Duration::from_secs(30),
         shutdown: CancellationToken::new(),
         lingering: Arc::default(),
