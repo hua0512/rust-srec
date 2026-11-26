@@ -141,6 +141,29 @@ async fn a_qr_account_is_used_refreshed_and_kept_separate_from_other_accounts() 
         .await;
     assert_eq!(unchanged["profile"]["revision"], other["revision"]);
     assert_eq!(accounts.refreshes_of("session=other-qr-e2e"), 0);
+    // A disabled account refuses manual actions before the provider is asked.
+    let disabled = app
+        .post(
+            "/api/credentials/profiles",
+            &token,
+            &json!({
+                "platform_id": "platform-fake", "label": "Disabled account", "enabled": false,
+                "material": {"cookies": "session=disabled-qr-e2e"},
+            }),
+        )
+        .await
+        .ok();
+    accounts.refresh_to("session=disabled-qr-e2e", "session=enabled-qr-e2e", || {});
+    for action in ["validate", "refresh"] {
+        app.post(
+            &format!("/api/credentials/profiles/{}/{action}", id_of(&disabled)),
+            &token,
+            &json!({}),
+        )
+        .await
+        .assert_error(StatusCode::CONFLICT, "CREDENTIAL_PROFILE_DISABLED");
+    }
+    assert_eq!(accounts.refreshes_of("session=disabled-qr-e2e"), 0);
     let backup = app.get_ok("/api/config/backup/export", &token).await;
     let profiles = backup["credential_profiles"].as_array().unwrap();
     for (label, cookies) in [

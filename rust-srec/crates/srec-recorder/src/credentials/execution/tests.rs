@@ -974,8 +974,11 @@ async fn unchanged_refresh_keeps_the_revision_bound_recordings_rely_on() {
     assert_eq!(health.reason_code, None);
 }
 
+/// The E2E fake provider cannot check accounts, so only this test pins that
+/// a disabled profile's validation never reaches the provider's check.
+/// Refresh is pinned in `credential_providers.rs`.
 #[tokio::test]
-async fn disabled_profiles_reject_manual_actions_before_any_provider_call() {
+async fn disabled_profiles_reject_validation_before_any_provider_check() {
     let (repository, mut service, _policy, profiles) = fixture().await;
     let manager = Arc::new(UnchangedRefresh {
         calls: Default::default(),
@@ -990,12 +993,6 @@ async fn disabled_profiles_reject_manual_actions_before_any_provider_call() {
     let deadline = OperationDeadline::new(Duration::from_secs(5));
     assert!(matches!(
         service.validate_profile(&profiles[0].id, deadline).await,
-        Err(Error::Core(CoreError::CredentialProfile(
-            ProfileError::Disabled
-        )))
-    ));
-    assert!(matches!(
-        service.refresh_profile(&profiles[0].id, deadline).await,
         Err(Error::Core(CoreError::CredentialProfile(
             ProfileError::Disabled
         )))
