@@ -33,8 +33,8 @@ const MANIFEST: &str = concat!(
 
 /// A loopback media origin for [`LocalHttpServer::start_with`]: an HLS
 /// manifest and segment, a Range-aware media file that sets a cookie, a page
-/// disguised as media, redirect chains, and redirects to targets the proxy
-/// must refuse.
+/// disguised as media, redirect chains, a redirect to the manifest, and
+/// redirects to targets the proxy must refuse.
 fn upstream_reply(address: SocketAddr, request: &ReceivedRequest) -> UpstreamResponse {
     let path = request.path.split('?').next().unwrap_or_default();
     if let Some(remaining) = path.strip_prefix("/hops/") {
@@ -82,6 +82,9 @@ fn upstream_reply(address: SocketAddr, request: &ReceivedRequest) -> UpstreamRes
             } else {
                 (common, "abc").into_response()
             }
+        }
+        "/to-manifest" => {
+            (StatusCode::FOUND, [(header::LOCATION, "/live/index.m3u8")]).into_response()
         }
         "/to-file" => (
             StatusCode::FOUND,
@@ -216,6 +219,17 @@ async fn proxy_refuses_dangerous_targets_and_relays_public_ones_by_default() {
             not_allowed,
         ),
         ("http://[2001:0:a00:1:8000:63bf:f7f7:f7f7]/", not_allowed),
+        // An embedded IPv4 address is never more public than the address
+        // itself: IPv4-mapped, IPv4-compatible and NAT64 forms of 8.8.8.8,
+        // 6to4 around 10.0.0.1, and a Teredo client of 127.0.0.1.
+        ("http://[::ffff:8.8.8.8]/", not_allowed),
+        ("http://[::8.8.8.8]/", not_allowed),
+        ("http://[64:ff9b::808:808]/", not_allowed),
+        ("http://[2002:a00:1::]/", not_allowed),
+        (
+            "http://[2001:0:4136:e378:8000:63bf:80ff:fffe]/",
+            not_allowed,
+        ),
         ("http://user:pass@1.2.3.4/", CREDENTIALS_REFUSED),
         ("not a url", "Invalid url parameter"),
     ] {
@@ -280,12 +294,21 @@ async fn proxy_refuses_dangerous_targets_and_relays_public_ones_by_default() {
     )
     .await
     .expect_status(StatusCode::OK);
-    let public = "http://[2606:4700:4700::1111]/live.flv";
-    let relayed = fetch(&app, &proxy_path(&[("url", public), ("token", &token)]))
-        .await
-        .expect_status(StatusCode::OK);
-    assert_eq!(relayed.text, "relayed");
-    assert_eq!(paths(&forward_proxy), [public]);
+    // Public IPv6 addresses, including 6to4 around 8.8.8.8 and a Teredo
+    // client of 8.8.8.8.
+    let public = [
+        "http://[2606:4700:4700::1111]/live.flv",
+        "http://[2001:4860::8888]/live.flv",
+        "http://[2002:808:808::1]/live.flv",
+        "http://[2001:0:4136:e378:8000:63bf:f7f7:f7f7]/live.flv",
+    ];
+    for target in public {
+        let relayed = fetch(&app, &proxy_path(&[("url", target), ("token", &token)]))
+            .await
+            .expect_status(StatusCode::OK);
+        assert_eq!(relayed.text, "relayed", "{target}");
+    }
+    assert_eq!(paths(&forward_proxy), public);
 
     app.shutdown().await;
 }
@@ -348,9 +371,214 @@ async fn allowing_private_targets_applies_to_the_next_request_and_manifests_stay
     assert_eq!(segment.text, "segment-one");
     assert_eq!(paths(&upstream), ["/live/index.m3u8", "/live/seg-1.ts"]);
 
+    // A manifest reached through a redirect resolves its links against the
+    // URL it was finally served from.
+    let redirected = upstream.url("/to-manifest");
+    let rewritten = fetch(
+        &app,
+        &proxy_path(&[("url", &redirected), ("token", &token)]),
+    )
+    .await
+    .expect_status(StatusCode::OK)
+    .text;
+    let targets: Vec<_> = manifest_links(&rewritten)
+        .iter()
+        .map(|link| query_value(link, "url"))
+        .collect();
+    assert_eq!(
+        targets,
+        [
+            Some(upstream.url("/live/init.mp4")),
+            Some(upstream.url("/live/seg-1.ts"))
+        ],
+        "{rewritten}"
+    );
+    assert_eq!(paths(&upstream)[2..], ["/to-manifest", "/live/index.m3u8"]);
+
     allow_private_targets(&app, &token, false).await;
     assert_refused(&app, &manifest, BAD_REQUEST, "Target host is not allowed").await;
-    assert_eq!(paths(&upstream).len(), 2, "refused again without a restart");
+    assert_eq!(paths(&upstream).len(), 4, "refused again without a restart");
+
+    app.shutdown().await;
+}
+
+/// A forward proxy for [`LocalHttpServer::start_with`] standing in for every
+/// public origin: an HLS manifest for `*.m3u8`, two bytes of three for a
+/// ranged request, and on `/redirect` a redirect to a loopback target the
+/// relay must refuse.
+fn forward_proxy_reply(_: SocketAddr, request: &ReceivedRequest) -> UpstreamResponse {
+    let target = url::Url::parse(&request.path).expect("an absolute-form proxy request");
+    if target.path() == "/redirect" {
+        return (
+            StatusCode::FOUND,
+            [(header::LOCATION, "http://127.0.0.1/private")],
+        )
+            .into_response();
+    }
+    if target.path().ends_with(".m3u8") {
+        return (
+            [(header::CONTENT_TYPE, "application/vnd.apple.mpegurl")],
+            "#EXTM3U\n#EXTINF:2.0,\nsegment.ts\n",
+        )
+            .into_response();
+    }
+    if request.header("range").is_some() {
+        return (
+            StatusCode::PARTIAL_CONTENT,
+            [(header::CONTENT_RANGE, "bytes 0-1/3")],
+            "ab",
+        )
+            .into_response();
+    }
+    "abc".into_response()
+}
+
+/// Save a proxy for `server` and return its route.
+async fn saved_proxy_route(
+    app: &TestApp,
+    token: &str,
+    name: &str,
+    server: &LocalHttpServer,
+    login: Option<(&str, &str)>,
+) -> Value {
+    let mut body = json!({ "name": name, "url": server.url("") });
+    if let Some((username, password)) = login {
+        body["username"] = json!(username);
+        body["password"] = json!(password);
+    }
+    let created = app.post("/api/proxies", token, &body).await.created();
+    json!({ "kind": "proxy", "id": id_of(&created) })
+}
+
+/// The relay takes the route of whoever owns the source URL (a registered
+/// streamer, else its platform, else the global setting) and sends the
+/// saved proxy's login. Every target is a public literal and every request
+/// ends at a loopback forward proxy, so nothing leaves the machine.
+#[tokio::test]
+async fn a_saved_proxy_carries_relayed_media_by_the_source_urls_owner_and_redirects_stay_checked() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    let global = LocalHttpServer::start_with(forward_proxy_reply).await;
+    let platform = LocalHttpServer::start_with(forward_proxy_reply).await;
+    let streamer = LocalHttpServer::start_with(forward_proxy_reply).await;
+    let global_route =
+        saved_proxy_route(&app, &token, "Global", &global, Some(("user", "pass"))).await;
+    let platform_route = saved_proxy_route(&app, &token, "Platform", &platform, None).await;
+    let streamer_route = saved_proxy_route(&app, &token, "Streamer", &streamer, None).await;
+    app.patch(
+        "/api/config/global",
+        &token,
+        &json!({ "proxy_route": global_route }),
+    )
+    .await
+    .ok();
+    const BILIBILI: &str = "/api/config/platforms/platform-bilibili";
+    let mut bilibili = app.get_ok(BILIBILI, &token).await;
+    bilibili["proxy_route"] = platform_route.clone();
+    app.put(BILIBILI, &token, &bilibili).await.ok();
+    app.create_disabled_streamer(
+        &token,
+        json!({
+            "name": "Routed streamer",
+            "url": "https://live.bilibili.com/9300",
+            "streamer_specific_config": { "proxy_route": streamer_route },
+        }),
+    )
+    .await;
+
+    // A web manifest: links address the web server's `/stream-proxy`, keep
+    // the source URL and never carry the backend token.
+    let manifest = "http://8.8.8.8/live.m3u8";
+    let response = fetch(
+        &app,
+        &proxy_path(&[
+            ("url", manifest),
+            ("source_url", SOURCE),
+            ("web", "true"),
+            ("token", &token),
+        ]),
+    )
+    .await
+    .expect_status(StatusCode::OK);
+    assert_eq!(
+        response.header(header::CACHE_CONTROL),
+        Some("private, no-store")
+    );
+    let received = global.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].path, manifest);
+    assert_eq!(
+        received[0].header("proxy-authorization"),
+        Some("Basic dXNlcjpwYXNz")
+    );
+    let rewritten = response.text;
+    assert!(!rewritten.contains("token="), "{rewritten}");
+    assert!(!rewritten.contains("/api/"), "{rewritten}");
+    let segment = rewritten
+        .lines()
+        .find(|line| line.starts_with("/stream-proxy?"))
+        .unwrap_or_else(|| panic!("no proxied segment in {rewritten}"));
+    let link = url::Url::parse(&format!("http://web{segment}")).expect("valid proxy link");
+    assert_eq!(query_value(&link, "source_url").as_deref(), Some(SOURCE));
+
+    // The web server forwards the link to the API with its own credential.
+    let response = app
+        .client()
+        .get(app.url(&format!("/api{segment}&token={token}")))
+        .header(header::RANGE, "bytes=0-1")
+        .send()
+        .await
+        .expect("fetch the segment through the proxy");
+    assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes 0-1/3");
+    assert_eq!(TestApp::read(response).await.text, "ab");
+    assert_eq!(paths(&global), [manifest, "http://8.8.8.8/segment.ts"]);
+
+    // An unregistered room takes its platform's route; a registered
+    // streamer's room takes the streamer's.
+    for (source, server) in [
+        ("https://live.bilibili.com/9399", &platform),
+        ("https://live.bilibili.com/9300", &streamer),
+    ] {
+        let pairs = [
+            ("url", "http://8.8.8.8/media"),
+            ("source_url", source),
+            ("token", &token),
+        ];
+        let relayed = fetch(&app, &proxy_path(&pairs))
+            .await
+            .expect_status(StatusCode::OK);
+        assert_eq!(relayed.text, "abc", "{source}");
+        assert_eq!(paths(server), ["http://8.8.8.8/media"], "{source}");
+    }
+    assert_eq!(paths(&global).len(), 2);
+
+    // A redirect from behind the proxy is held to the target policy too.
+    let pairs = [("url", "http://8.8.8.8/redirect"), ("token", &token)];
+    assert_refused(&app, &pairs, BAD_REQUEST, "Target host is not allowed").await;
+    assert_eq!(
+        paths(&global)[2..],
+        ["http://8.8.8.8/redirect"],
+        "the redirect target is never fetched"
+    );
+
+    // A changed route applies to the next request.
+    app.patch(
+        "/api/config/global",
+        &token,
+        &json!({ "proxy_route": platform_route }),
+    )
+    .await
+    .ok();
+    let pairs = [("url", "http://8.8.8.8/next"), ("token", &token)];
+    fetch(&app, &proxy_path(&pairs))
+        .await
+        .expect_status(StatusCode::OK);
+    assert_eq!(
+        paths(&platform),
+        ["http://8.8.8.8/media", "http://8.8.8.8/next"]
+    );
+    assert_eq!(paths(&global).len(), 3);
 
     app.shutdown().await;
 }

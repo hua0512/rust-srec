@@ -1071,16 +1071,11 @@ mod tests {
     use super::*;
     use crate::config::{ConfigEventBroadcaster, ConfigService};
     use crate::credentials::CredentialProviderRegistry;
-    use crate::database::models::StreamerDbModel;
     use crate::database::repositories::credential_selections::test_support::set_platform_selection;
-    use crate::database::repositories::{
-        SqlxConfigRepository, SqlxStreamerRepository, StreamerRepository as _,
-    };
+    use crate::database::repositories::{SqlxConfigRepository, SqlxStreamerRepository};
     use crate::database::{init_pool_with_size, run_migrations};
     use crate::streamer::StreamerManager;
     use std::sync::Arc;
-
-    const STREAMER_ID: &str = "streamer-under-test";
 
     #[test]
     fn playback_invalidation_requests_renewal_but_preserves_infrastructure_errors() {
@@ -1366,41 +1361,13 @@ mod tests {
         pool.close().await;
     }
 
+    /// An unregistered URL is previewed with the extractor its platform's
+    /// streamers would start with.
     #[tokio::test]
-    async fn requests_for_a_url_take_the_config_of_its_streamer_platform_or_global() {
-        use crate::database::repositories::proxies::{self, RouteOwner};
-        use crate::proxies::{ProxyRoute, RouteKind, RouteSource};
+    async fn an_unregistered_url_is_previewed_with_its_platforms_extractor() {
         let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
         run_migrations(&pool).await.unwrap();
-        let streamer_repo = SqlxStreamerRepository::new(pool.clone(), pool.clone());
         let state = route_state(&pool, test_execution(&pool));
-        let manager = state.streamer_manager.clone();
-        let global_proxy =
-            proxies::save_for_test(&pool, "global", "http://global-proxy.example:8080").await;
-        let platform_proxy =
-            proxies::save_for_test(&pool, "platform", "http://platform-proxy.example:8080").await;
-        let global = state.config_service.get_global_config().await.unwrap();
-        state
-            .config_service
-            .update_global_config_with_route(
-                &global,
-                Some(&ProxyRoute::Proxy {
-                    id: global_proxy.clone(),
-                }),
-            )
-            .await
-            .unwrap();
-        let unknown = resolve_route_for_url(&state, "https://cdn.example/video")
-            .await
-            .unwrap();
-        assert_eq!(unknown.source, RouteSource::Global);
-        assert_eq!(
-            unknown
-                .target
-                .endpoint()
-                .map(|endpoint| endpoint.url.as_str()),
-            Some("http://global-proxy.example:8080")
-        );
         let mut platform = state
             .config_service
             .get_platform_config("platform-bilibili")
@@ -1409,51 +1376,12 @@ mod tests {
         platform.extractor = Some("streamlink".to_string());
         state
             .config_service
-            .update_platform_config_scoped(
-                &platform,
-                None,
-                Some(&ProxyRoute::Proxy {
-                    id: platform_proxy.clone(),
-                }),
-            )
+            .update_platform_config(&platform)
             .await
             .unwrap();
-        let recognized = resolve_route_for_url(&state, STREAMER_URL).await.unwrap();
-        assert_eq!(recognized.source, RouteSource::Platform);
-        assert_eq!(recognized.proxy_name(), Some("platform"));
-        // An unregistered URL is previewed with its platform's extractor.
         let (preview, _) = resolve_url_config(&state, STREAMER_URL, None)
             .await
             .unwrap();
         assert_eq!(preview.extractor, ExtractorSelection::Streamlink);
-
-        let mut streamer = StreamerDbModel::new("Source", STREAMER_URL, "platform-bilibili");
-        streamer.id = STREAMER_ID.to_string();
-        streamer.streamer_specific_config =
-            Some(serde_json::json!({ "proxy_route": {"kind": "direct"} }).to_string());
-        streamer_repo.create_streamer(&streamer).await.unwrap();
-        manager.hydrate().await.unwrap();
-        let registered = resolve_route_for_url(&state, STREAMER_URL).await.unwrap();
-        assert_eq!(
-            (registered.kind(), registered.source),
-            (RouteKind::Direct, RouteSource::Streamer)
-        );
-        // The route is stored in its own columns, not in the document.
-        let stored = streamer_repo.get_streamer(STREAMER_ID).await.unwrap();
-        assert!(
-            !stored
-                .streamer_specific_config
-                .unwrap_or_default()
-                .contains("proxy_route")
-        );
-        assert_eq!(
-            proxies::route_of(
-                &mut pool.acquire().await.unwrap(),
-                &RouteOwner::Streamer(STREAMER_ID.into())
-            )
-            .await
-            .unwrap(),
-            ProxyRoute::Direct
-        );
     }
 }
