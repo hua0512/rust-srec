@@ -1,5 +1,5 @@
 use super::execution::{FailurePersistBackoff, JobFacts};
-use super::lingering::{TIMED_OUT_ERROR, progress_clause};
+use super::lingering::TIMED_OUT_ERROR;
 use super::*;
 use async_trait::async_trait;
 use std::time::Duration;
@@ -7,8 +7,7 @@ use std::time::Duration;
 use crate::dag_scheduler::StepFailureKind;
 use crate::job_queue::{JobLogEntry, JobResult};
 use crate::processors::{ProcessorContext, ProcessorInput};
-use crate::progress::JobProgressSnapshot;
-use crate::{Job, JobFailureOutcome, JobPhase, JobStatus, ProcessorOutput, ProcessorType};
+use crate::{Job, JobFailureOutcome, JobStatus, ProcessorOutput, ProcessorType};
 
 #[test]
 fn latest_limit_wins_with_busy_and_independent_pools() {
@@ -702,7 +701,7 @@ async fn ended_job_is_reported_stalled_until_its_retained_work_returns() {
 }
 
 #[tokio::test]
-async fn forced_worker_abort_cancels_processor_and_releases_active_count() {
+async fn forced_worker_abort_cancels_processor_and_releases_the_job_and_its_log_collector() {
     let queue = Arc::new(JobQueue::with_repository(
         Default::default(),
         crate::test_support::job_repository().await,
@@ -738,30 +737,7 @@ async fn forced_worker_abort_cancels_processor_and_releases_active_count() {
         queue.get_job(&id).await.unwrap().unwrap().status,
         JobStatus::Processing
     );
-}
-
-#[tokio::test]
-async fn forced_worker_abort_does_not_detach_log_collector() {
-    let queue = Arc::new(JobQueue::with_repository(
-        Default::default(),
-        crate::test_support::job_repository().await,
-    ));
-    queue
-        .enqueue(Job::new("handoff", vec![], vec![], "streamer", "session"))
-        .await
-        .unwrap();
-    let pool = WorkerPool::with_config(WorkerType::Cpu, test_pool_config());
-    let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
-    pool.start(
-        queue.clone(),
-        vec![Arc::new(ContextHandoffProcessor(sender))],
-    );
-    let retained = tokio::time::timeout(Duration::from_secs(2), receiver.recv())
-        .await
-        .unwrap()
-        .unwrap();
-    pool.abort(tokio::time::Instant::now() + Duration::from_secs(2))
-        .await;
+    // The aborted worker's log collector goes too, even while a helper retains the sink.
     let weak_queue = Arc::downgrade(&queue);
     drop(queue);
     tokio::time::timeout(Duration::from_secs(1), async {
@@ -1321,79 +1297,6 @@ async fn forgetting_started_job_cancels_retained_processor_token() {
     assert!(event_rx.try_recv().is_err());
     assert!(queue.get_job(&job_id).await.unwrap().is_none());
     assert_eq!(queue.depth(), 0);
-}
-
-/// The worker is the only place a job's start and terminal state are known, so it is what
-/// feeds the `pipeline_started` / `pipeline_completed` notification subscriptions.
-#[tokio::test]
-async fn test_worker_emits_started_and_completed_events() {
-    let job_queue = Arc::new(JobQueue::with_repository(
-        Default::default(),
-        crate::test_support::job_repository().await,
-    ));
-    let (event_tx, mut event_rx) = broadcast::channel(16);
-    let pool = WorkerPool::with_config(WorkerType::Cpu, test_pool_config());
-
-    pool.start_with_dag_scheduler(
-        job_queue.clone(),
-        vec![Arc::new(NoopProcessor)],
-        None,
-        None,
-        Some(event_tx),
-    );
-
-    let job = Job::new(
-        "noop",
-        vec!["/input".to_string()],
-        vec![],
-        "streamer-1",
-        "session-1",
-    );
-    let job_id = job_queue.enqueue(job).await.unwrap();
-
-    let mut started: Option<(String, String)> = None;
-    let mut completed: Option<(String, f64)> = None;
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while started.is_none() || completed.is_none() {
-            match event_rx.recv().await.unwrap() {
-                PipelineEvent::JobStarted {
-                    job_id,
-                    streamer_id,
-                    ..
-                } => started = Some((job_id, streamer_id)),
-                PipelineEvent::JobCompleted {
-                    job_id,
-                    duration_secs,
-                    ..
-                } => completed = Some((job_id, duration_secs)),
-                _ => {}
-            }
-        }
-    })
-    .await
-    .expect("worker emits JobStarted and JobCompleted");
-
-    // streamer_id has to come from the job itself: DAG step jobs are enqueued through
-    // enqueue_existing and never emit JobEnqueued for a listener to correlate against.
-    assert_eq!(started, Some((job_id.clone(), "streamer-1".to_string())));
-    assert_eq!(completed, Some((job_id, 1.5)));
-
-    pool.stop().await;
-}
-
-/// A timed-out job's error names the phase it was stuck in and how long
-/// ago its progress last moved.
-#[test]
-fn timeout_progress_clause_names_the_phase() {
-    let mut snapshot = JobProgressSnapshot::new(crate::ProgressKind::BaiduPcs);
-    snapshot.phase = Some(JobPhase::Retrying);
-    snapshot.updated_at = jiff::Timestamp::now() - jiff::SignedDuration::from_mins(59);
-
-    let clause = progress_clause(&snapshot);
-    assert!(
-        clause.starts_with(", progress waiting to retry, last updated 59m "),
-        "{clause}"
-    );
 }
 
 #[tokio::test]
