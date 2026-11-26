@@ -169,6 +169,9 @@ session, preserving recording continuity across a restart.
 Before spawning an actor or pushing updated configuration, `ActorRegistry` resolves the
 Global → Platform → Template → Streamer hierarchy through `ConfigService` and allocates a monotonic
 config revision before awaiting resolution so slower lookups cannot overwrite newer updates.
+If a lookup fails, a running actor keeps its last good configuration, no actor starts, and the
+lookup is retried with exponential backoff (5 s base, 5 min cap).
+Configuration updates never force a check; only credential, filter and error-clear events request one.
 Recurring checks sample an interval within ±10% of the configured cadence. An unchanged effective
 interval preserves the pending deadline; a changed interval can bring it forward without postponing
 an already scheduled check. Smart-wake hints, admission/cooldown deadlines, explicit immediate checks,

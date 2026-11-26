@@ -57,9 +57,11 @@ enum Invariant {
     StopAfterCommits,
     /// A new attempt never starts while an earlier attempt is unfinished.
     SingleAttempt,
-    /// A probe that follows an attempt-start failure, a failed session-start
-    /// commit, or a failed or filtered probe result, with no external trigger
-    /// in between, waits at least the shortest configured poll interval.
+    /// When an attempt-start failure, a failed session-start commit, or a
+    /// failed or filtered probe result reschedules the next check, that check
+    /// waits at least the shortest configured poll interval, unless an
+    /// external trigger or a download end (which warrants an immediate status
+    /// check) comes between.
     ProbeRateFloor,
 }
 
@@ -111,19 +113,16 @@ fn assert_holds(checked: &[Invariant]) {
 }
 
 #[test]
-fn random_inputs_keep_single_flight_session_ownership_and_stop_convergence() {
+fn random_inputs_keep_the_state_machine_invariants() {
     assert_holds(&[
         Invariant::SingleFlight,
         Invariant::SessionOwnership,
         Invariant::StopConverges,
+        Invariant::TimerProgress,
+        Invariant::BoundedQueue,
+        Invariant::ProbeRateFloor,
+        Invariant::SingleAttempt,
     ]);
-}
-
-#[test]
-#[ignore = "bug: the quiet-period backstop stays due while a commit is pending or the monitor \
-            is stopping, so TimerFired spins and queues duplicate EndSession writes"]
-fn known_bug_timer_fired_always_moves_the_next_deadline_forward() {
-    assert_holds(&[Invariant::TimerProgress, Invariant::BoundedQueue]);
 }
 
 #[test]
@@ -131,20 +130,6 @@ fn known_bug_timer_fired_always_moves_the_next_deadline_forward() {
             losing the SessionEnded notification of a committed EndSession"]
 fn known_bug_actor_stops_only_after_database_work_settles() {
     assert_holds(&[Invariant::StopAfterCommits]);
-}
-
-#[test]
-#[ignore = "bug: a startup refused by the duplicate-download guard reports Cancelled, and a \
-            later attempt starts while the earlier download is still running"]
-fn known_bug_attempts_never_overlap() {
-    assert_holds(&[Invariant::SingleAttempt]);
-}
-
-#[test]
-#[ignore = "bug: attempt-start failures, failed session-start commits and metadata filter \
-            results on an open session re-probe the platform immediately"]
-fn known_bug_failures_and_filter_results_never_reprobe_immediately() {
-    assert_holds(&[Invariant::ProbeRateFloor]);
 }
 
 /// Small deterministic xorshift generator.
@@ -212,7 +197,7 @@ struct Harness {
     ended_notified: HashSet<String>,
 
     /// Instant of the last failure or filter result not yet followed by a
-    /// probe or an external trigger.
+    /// probe, an external trigger or a download end.
     reprobe_floor_from: Option<Instant>,
     stop: Option<(Stop, usize)>,
     stopped: bool,
@@ -292,6 +277,7 @@ impl Harness {
                 | FsmInput::BatchLiveHint
                 | FsmInput::CredentialMaterialChanged
                 | FsmInput::ConfigUpdated { .. }
+                | FsmInput::DownloadEnded { .. }
         ) {
             self.reprobe_floor_from = None;
         }
@@ -312,9 +298,11 @@ impl Harness {
             _ => false,
         };
         let is_timer = matches!(input, FsmInput::TimerFired);
+        let deadline_before = self.fsm.next_deadline(self.clock.now, self.clock.wall);
 
         let effects = self.fsm.step(self.clock.ctx(), input);
-        if arms_floor {
+        if arms_floor && self.fsm.next_deadline(self.clock.now, self.clock.wall) != deadline_before
+        {
             self.reprobe_floor_from = Some(self.clock.now);
         }
 

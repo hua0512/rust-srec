@@ -19,8 +19,8 @@ use crate::recorder::fsm::state::{
     StreamerFsm,
 };
 use crate::recorder::ports::{
-    AttemptStartFailure, DanmuStopKind, DanmuStopResult, DbCommitFailure, DbCommitOp,
-    DbCommitOutcome, ProbeFailure, ProbePurpose, ProbeStatus, SessionStartDisposition,
+    AttemptStartFailure, DanmuStopKind, DanmuStopResult, DbCommitOp, DbCommitOutcome, ProbeFailure,
+    ProbePurpose, ProbeStatus, SessionStartDisposition,
 };
 use crate::session::TerminalCause;
 use srec_core::domain::StreamerState;
@@ -515,11 +515,10 @@ fn live_watchdog_activity_refresh_stall_recommit_filter_hint_and_failure_backoff
         Some(clock.now + STALL_WINDOW)
     );
 
-    // Advance 5 minutes with no activity -> watchdog spawns probe with `is_live_watchdog == true`.
+    // Advance 5 minutes with no activity -> the watchdog spawns a bound probe.
     clock.advance(STALL_WINDOW);
     let effects = fsm.step(clock.ctx(), FsmInput::TimerFired);
     let req = find_probe(&effects).unwrap();
-    assert!(req.is_live_watchdog);
     assert_eq!(req.purpose, ProbePurpose::BoundPoll);
 
     // Watchdog transient failure sets 60s backoff floor without incrementing ErrorTracker or writing DB.
@@ -907,18 +906,19 @@ fn out_of_space_suppression_preserves_cooldown_and_offline_does_not_overwrite() 
 }
 
 #[test]
-#[ignore = "bug: Other and NotLiveAfterQueue attempt-start failures schedule the next probe \
-            for now, so a live streamer loops probe -> start -> failure with no delay"]
-fn known_bug_attempt_start_failures_wait_a_poll_interval_before_reprobing() {
-    for reason in [
-        AttemptStartFailure::Other {
-            message: "Engine ffmpeg is not available".into(),
-        },
-        AttemptStartFailure::NotLiveAfterQueue,
+fn attempt_start_failures_wait_a_poll_interval_before_reprobing() {
+    for (reason, counts_error) in [
+        (
+            AttemptStartFailure::Other {
+                message: "Engine ffmpeg is not available".into(),
+            },
+            true,
+        ),
+        (AttemptStartFailure::NotLiveAfterQueue, false),
     ] {
         let clock = TestClock::new();
         let (mut fsm, attempt_id) = reach_starting_attempt(&clock, base_config());
-        fsm.step(
+        let effects = fsm.step(
             clock.ctx(),
             FsmInput::AttemptStartFailed {
                 attempt_id,
@@ -926,47 +926,28 @@ fn known_bug_attempt_start_failures_wait_a_poll_interval_before_reprobing() {
                 reason: reason.clone(),
             },
         );
+        match find_db_commit(&effects) {
+            Some((op_id, DbCommitOp::RecordTransientError { .. })) if counts_error => {
+                fsm.step(
+                    clock.ctx(),
+                    FsmInput::DbCommitted {
+                        op_id,
+                        result: Ok(DbCommitOutcome::TransientErrorRecorded {
+                            consecutive_error_count: 1,
+                            disabled_until: None,
+                        }),
+                    },
+                );
+            }
+            None if !counts_error => {}
+            other => panic!("{reason:?} committed {other:?}"),
+        }
         assert_waits_a_poll_interval(&fsm, &clock);
     }
 }
 
 #[test]
-#[ignore = "bug: a failed StartOrResumeSession commit re-probes immediately, so a failing \
-            database turns into a probe and commit loop per live streamer"]
-fn known_bug_failed_session_start_commit_waits_a_poll_interval_before_reprobing() {
-    let clock = TestClock::new();
-    let mut fsm = StreamerFsm::new(
-        base_snapshot(StreamerState::NotLive, base_config()),
-        clock.now,
-        clock.wall,
-    );
-    let probe_id = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
-        .unwrap()
-        .probe_id;
-    let effects = fsm.step(
-        clock.ctx(),
-        FsmInput::ProbeCompleted {
-            probe_id,
-            result: Ok(ProbeStatus::Live(live_payload("t"))),
-        },
-    );
-    let (op_id, _) = find_db_commit(&effects).unwrap();
-    fsm.step(
-        clock.ctx(),
-        FsmInput::DbCommitted {
-            op_id,
-            result: Err(DbCommitFailure::Transient {
-                message: "database is locked".into(),
-            }),
-        },
-    );
-    assert_waits_a_poll_interval(&fsm, &clock);
-}
-
-#[test]
-#[ignore = "bug: a title or category filter result on an open session outside LiveWatchdog \
-            returns without rescheduling, so probes run back to back"]
-fn known_bug_metadata_filter_on_an_open_session_waits_a_poll_interval() {
+fn metadata_filter_on_an_open_session_waits_a_poll_interval() {
     let mut clock = TestClock::new();
     let (mut fsm, attempt_id) = open_running_session(&clock, base_config(), "sess-1", None);
     let effects = fsm.step(

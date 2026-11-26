@@ -222,7 +222,6 @@ pub struct ProbeRequest {
     pub purpose: ProbePurpose,
     pub session_id: Option<String>,
     pub credential_binding: Option<CredentialBinding>,
-    pub is_live_watchdog: bool,
 }
 
 /// Extracted live media payload returned by a probe.

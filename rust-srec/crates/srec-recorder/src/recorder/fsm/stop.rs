@@ -8,7 +8,7 @@ use srec_core::domain::StreamerState;
 use super::schedule;
 use super::state::{
     AttemptPhase, FilteredKind, FsmEffect, MonitorPhase, OpenSession, PendingDbKind, SessionSlot,
-    StepContext, StopKind, StoppingState, StreamerFsm,
+    StepContext, StopDanmu, StopDbEnd, StopDownload, StopKind, StoppingState, StreamerFsm,
 };
 use crate::recorder::ports::{ActorStopReason, DanmuStopKind, DbCommitOp};
 
@@ -88,25 +88,30 @@ impl StreamerFsm {
             DanmuStopKind::SessionEnded
         };
 
-        let (stopping_download, stopping_danmu) = match &mut self.session {
-            SessionSlot::Open(open) => {
-                let dl = request_stop_open_attempt(open, stop_cause, effects);
-                let dm = Self::stop_open_danmu(open, danmu_stop_kind, effects);
-                (dl, dm)
-            }
-            SessionSlot::CommittingStart {
+        let (download, danmu) = match &mut self.session {
+            SessionSlot::Open(open)
+            | SessionSlot::CommittingStart {
                 prior_open: Some(open),
                 ..
             } => {
-                let dl = request_stop_open_attempt(open, stop_cause, effects);
-                let dm = Self::stop_open_danmu(open, danmu_stop_kind, effects);
-                (dl, dm)
+                let download = match request_stop_open_attempt(open, stop_cause, effects) {
+                    Some(attempt_id) => StopDownload::Pending { attempt_id },
+                    None => StopDownload::Confirmed,
+                };
+                let danmu = if Self::stop_open_danmu(open, danmu_stop_kind, effects) {
+                    StopDanmu::Pending {
+                        session_id: open.session_id.clone(),
+                    }
+                } else {
+                    StopDanmu::Confirmed
+                };
+                (download, danmu)
             }
             SessionSlot::CommittingStart {
                 prior_open: None, ..
             }
             | SessionSlot::None
-            | SessionSlot::RecentlyEnded { .. } => (false, false),
+            | SessionSlot::RecentlyEnded { .. } => (StopDownload::Confirmed, StopDanmu::Confirmed),
         };
 
         let deadline = match &kind {
@@ -139,13 +144,10 @@ impl StreamerFsm {
         self.monitor = MonitorPhase::Stopping(StoppingState {
             kind,
             deadline,
-            download_confirmed: !stopping_download,
-            danmu_confirmed: !stopping_danmu,
-            danmu_unconfirmed: false,
-            db_end_dispatched: false,
-            db_end_committed: false,
-            db_end_failed: false,
             deadline_expired: false,
+            download,
+            danmu,
+            db_end: StopDbEnd::NotDispatched,
         });
 
         self.advance_stopping(ctx, effects);
@@ -157,20 +159,13 @@ impl StreamerFsm {
         ctx: StepContext,
         effects: &mut Vec<FsmEffect>,
     ) {
-        let should_mark_lingering = match &mut self.monitor {
-            MonitorPhase::Stopping(stopping)
-                if ctx.now >= stopping.deadline && !stopping.deadline_expired =>
-            {
-                stopping.deadline_expired = true;
-                !stopping.physical_confirmed()
-            }
-            _ => return,
+        let MonitorPhase::Stopping(stopping) = &mut self.monitor else {
+            return;
         };
-
-        if should_mark_lingering {
+        stopping.deadline_expired = true;
+        if !stopping.physical_confirmed() {
             self.lingering_physical_lease = true;
         }
-
         self.advance_stopping(ctx, effects);
     }
 
@@ -207,7 +202,7 @@ impl StreamerFsm {
             binding,
         } = &stopping.kind
         {
-            if stopping.danmu_unconfirmed
+            if stopping.danmu == StopDanmu::Unconfirmed
                 || (stopping.deadline_expired && !stopping.physical_confirmed())
             {
                 self.lingering_physical_lease = true;
@@ -224,17 +219,30 @@ impl StreamerFsm {
             if !stopping.physical_confirmed() {
                 return;
             }
-            if !stopping.db_end_dispatched {
+            if stopping.db_end == StopDbEnd::NotDispatched {
                 if self.pending_db.is_some() {
                     return;
                 }
-                let via_hysteresis = matches!(
-                    &self.session,
-                    SessionSlot::Open(open)
-                        if open.session_id == *session_id && open.quiet_period.is_some()
-                );
+                // The captured session already ended another way (an offline
+                // end that was in flight, say), so there is nothing to retire.
+                let Some(via_hysteresis) = (match &self.session {
+                    SessionSlot::Open(open) if open.session_id == *session_id => {
+                        Some(open.quiet_period.is_some())
+                    }
+                    _ => None,
+                }) else {
+                    self.monitor = schedule::schedule_idle(
+                        &self.config,
+                        &self.offline_confirmation,
+                        false,
+                        self.errors.error_count_u32(),
+                        None,
+                        ctx,
+                    );
+                    return;
+                };
                 if let MonitorPhase::Stopping(s) = &mut self.monitor {
-                    s.db_end_dispatched = true;
+                    s.db_end = StopDbEnd::InFlight;
                 }
                 self.enqueue_or_dispatch_db(
                     PendingDbKind::EndForCredentialRetirement {
@@ -250,7 +258,7 @@ impl StreamerFsm {
                     },
                     effects,
                 );
-            } else if stopping.db_end_committed {
+            } else if matches!(stopping.db_end, StopDbEnd::Settled { .. }) {
                 self.monitor = schedule::schedule_idle(
                     &self.config,
                     &self.offline_confirmation,
@@ -285,7 +293,7 @@ impl StreamerFsm {
             return;
         }
 
-        if !stopping.db_end_dispatched {
+        if stopping.db_end == StopDbEnd::NotDispatched {
             if self.pending_db.is_some() {
                 return;
             }
@@ -296,7 +304,7 @@ impl StreamerFsm {
                             let session_id = open.session_id.clone();
                             let via_hysteresis = open.quiet_period.is_some();
                             if let MonitorPhase::Stopping(s) = &mut self.monitor {
-                                s.db_end_dispatched = true;
+                                s.db_end = StopDbEnd::InFlight;
                             }
                             self.enqueue_or_dispatch_db(
                                 PendingDbKind::EndSession {
@@ -332,7 +340,7 @@ impl StreamerFsm {
                         } if ctx.now < *evict_at => {
                             let session_id = session_id.clone();
                             if let MonitorPhase::Stopping(s) = &mut self.monitor {
-                                s.db_end_dispatched = true;
+                                s.db_end = StopDbEnd::InFlight;
                             }
                             self.enqueue_or_dispatch_db(
                                 PendingDbKind::RewriteEndedCause { for_stop: true },
@@ -349,7 +357,7 @@ impl StreamerFsm {
                         {
                             // Cold-start safety: DB may still hold an active session row.
                             if let MonitorPhase::Stopping(s) = &mut self.monitor {
-                                s.db_end_dispatched = true;
+                                s.db_end = StopDbEnd::InFlight;
                             }
                             self.enqueue_or_dispatch_db(
                                 PendingDbKind::EndSession {
@@ -383,8 +391,7 @@ impl StreamerFsm {
                         | SessionSlot::RecentlyEnded { .. }
                         | SessionSlot::CommittingStart { .. } => {
                             if let MonitorPhase::Stopping(s) = &mut self.monitor {
-                                s.db_end_dispatched = true;
-                                s.db_end_committed = true;
+                                s.db_end = StopDbEnd::Settled { failed: false };
                             }
                         }
                     }
@@ -397,7 +404,7 @@ impl StreamerFsm {
                         _ => (None, false),
                     };
                     if let MonitorPhase::Stopping(s) = &mut self.monitor {
-                        s.db_end_dispatched = true;
+                        s.db_end = StopDbEnd::InFlight;
                     }
                     self.enqueue_or_dispatch_db(
                         PendingDbKind::EndSession {
@@ -433,7 +440,7 @@ impl StreamerFsm {
 
         // Finalize once DB step is settled.
         let finalized = match &self.monitor {
-            MonitorPhase::Stopping(s) if s.db_end_committed => s.clone(),
+            MonitorPhase::Stopping(s) if matches!(s.db_end, StopDbEnd::Settled { .. }) => s.clone(),
             _ => return,
         };
 
@@ -456,7 +463,7 @@ impl StreamerFsm {
             }
             StopKind::Retire { .. } => {
                 let quiescent = finalized.physical_confirmed()
-                    && !finalized.db_end_failed
+                    && finalized.db_end == (StopDbEnd::Settled { failed: false })
                     && self.is_physically_quiescent();
                 self.monitor = MonitorPhase::Terminated;
                 effects.push(FsmEffect::ActorStopped {
@@ -468,50 +475,39 @@ impl StreamerFsm {
     }
 }
 
-fn request_stop_open_attempt(
+/// Ask the open session's attempt to stop with `cause`, returning the attempt
+/// the caller now waits for. An attempt already stopping keeps its first
+/// request; a credential diagnosis has no download left to stop.
+pub(super) fn request_stop_open_attempt(
     open: &mut OpenSession,
     cause: DownloadStopCause,
     effects: &mut Vec<FsmEffect>,
-) -> bool {
-    match &open.attempt {
-        AttemptPhase::Starting { attempt_id, .. } => {
-            let id = *attempt_id;
-            open.attempt = AttemptPhase::StoppingAttempt {
-                attempt_id: id,
-                download_id: None,
-            };
-            effects.push(FsmEffect::StopAttempt {
-                attempt_id: id,
-                download_id: None,
-                cause,
-            });
-            true
-        }
+) -> Option<u64> {
+    let (attempt_id, download_id) = match &open.attempt {
+        AttemptPhase::Starting { attempt_id, .. } => (*attempt_id, None),
         AttemptPhase::Running {
             attempt_id,
             download_id,
             ..
-        } => {
-            let id = *attempt_id;
-            let dl = download_id.clone();
-            open.attempt = AttemptPhase::StoppingAttempt {
-                attempt_id: id,
-                download_id: Some(dl.clone()),
-            };
-            effects.push(FsmEffect::StopAttempt {
-                attempt_id: id,
-                download_id: Some(dl),
-                cause,
-            });
-            true
-        }
-        AttemptPhase::StoppingAttempt { .. } => true,
+        } => (*attempt_id, Some(download_id.clone())),
+        AttemptPhase::StoppingAttempt { attempt_id, .. } => return Some(*attempt_id),
         AttemptPhase::DiagnosingCredentials { .. } => {
             open.attempt = AttemptPhase::Idle;
-            false
+            return None;
         }
-        AttemptPhase::Idle | AttemptPhase::WaitingCredentials => false,
-    }
+        AttemptPhase::Idle | AttemptPhase::WaitingCredentials => return None,
+    };
+    open.attempt = AttemptPhase::StoppingAttempt {
+        attempt_id,
+        download_id: download_id.clone(),
+        cause: cause.clone(),
+    };
+    effects.push(FsmEffect::StopAttempt {
+        attempt_id,
+        download_id,
+        cause,
+    });
+    Some(attempt_id)
 }
 
 pub(super) fn stop_cause_for_kind(kind: &StopKind) -> DownloadStopCause {

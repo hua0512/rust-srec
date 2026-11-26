@@ -7,7 +7,7 @@ use crate::downloader::{DownloadStopCause, EngineEndSignal};
 use crate::monitor::FilterReason;
 use crate::recorder::fsm::schedule::STOP_DEADLINE_DURATION;
 use crate::recorder::fsm::state::{
-    AttemptPhase, FsmEffect, FsmInput, MonitorPhase, SessionSlot, StreamerFsm,
+    AttemptPhase, FsmEffect, FsmInput, MonitorPhase, SessionSlot, StopDanmu, StreamerFsm,
 };
 use crate::recorder::ports::{
     ActorStopReason, AttemptStartFailure, DanmuStopKind, DanmuStopResult, DbCommitFailure,
@@ -19,8 +19,8 @@ use srec_core::domain::StreamerState;
 
 use super::{
     TestClock, base_config, base_snapshot, cancelled_event, completed_event, find_db_commit,
-    find_probe, find_start_attempt, live_payload, open_running_session, sample_binding,
-    session_ended_outcome,
+    find_probe, find_start_attempt, live_payload, open_running_session, reach_starting_attempt,
+    sample_binding, session_ended_outcome,
 };
 
 #[test]
@@ -121,19 +121,9 @@ fn out_of_schedule_and_disable_stop_deadline_timeout_sets_lingering_lease() {
     );
     assert!(find_start_attempt(&effects).is_none());
 
-    fsm.step(clock.ctx(), FsmInput::PhysicalLeaseReleased);
+    // The release starts the held-back download right away.
+    let effects = fsm.step(clock.ctx(), FsmInput::PhysicalLeaseReleased);
     assert!(!fsm.lingering_physical_lease);
-    fsm.step(clock.ctx(), FsmInput::CheckNow);
-    let p3 = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
-        .unwrap()
-        .probe_id;
-    let effects = fsm.step(
-        clock.ctx(),
-        FsmInput::ProbeCompleted {
-            probe_id: p3,
-            result: Ok(ProbeStatus::Live(live_payload("Next"))),
-        },
-    );
     let spec = find_start_attempt(&effects).unwrap();
     assert_eq!(spec.session_id, "sess-next");
 
@@ -690,9 +680,7 @@ fn credential_retire_clears_open_session_when_registry_committed_first() {
 }
 
 #[test]
-#[ignore = "bug: next_deadline offers the elapsed quiet-period backstop while Stopping, where \
-            TimerFired ignores it, so the actor loop spins until the stop settles"]
-fn known_bug_disable_after_an_elapsed_quiet_backstop_waits_for_the_stop_deadline() {
+fn disable_after_an_elapsed_quiet_backstop_waits_for_the_stop_deadline() {
     let mut clock = TestClock::new();
     let mut cfg = base_config();
     cfg.record_danmu = true;
@@ -791,9 +779,32 @@ fn known_bug_shutdown_waits_for_an_in_flight_end_session() {
 }
 
 #[test]
-#[ignore = "bug: after a credential retirement times out, the late Cancelled(StreamerDisabled) \
-            terminal parks the monitor with no next check, so the streamer is never checked again"]
-fn known_bug_credential_retire_that_times_out_keeps_monitoring_after_the_late_cancel() {
+fn credential_retirement_matches_the_account_its_startup_switched_to() {
+    let clock = TestClock::new();
+    let mut cfg = base_config();
+    cfg.managed_credentials = true;
+    let (mut fsm, attempt_id) = reach_starting_attempt(&clock, cfg);
+    let switched = sample_binding("p2", 1);
+    fsm.step(
+        clock.ctx(),
+        FsmInput::AttemptBindingCommitted {
+            attempt_id,
+            session_id: "sess-1".into(),
+            binding: switched.clone(),
+        },
+    );
+    fsm.step(
+        clock.ctx(),
+        FsmInput::CredentialRetire {
+            session_id: "sess-1".into(),
+            binding: switched,
+        },
+    );
+    assert!(matches!(fsm.monitor, MonitorPhase::Stopping(_)));
+}
+
+#[test]
+fn credential_retire_that_times_out_keeps_monitoring_after_the_late_cancel() {
     let mut clock = TestClock::new();
     let binding = sample_binding("p1", 1);
     let mut cfg = base_config();
@@ -827,10 +838,7 @@ fn known_bug_credential_retire_that_times_out_keeps_monitoring_after_the_late_ca
 }
 
 #[test]
-#[ignore = "bug: a stop whose download exits after an offline EndSession closed the session \
-            ignores that exit, so the deadline sets lingering_physical_lease after its release \
-            and no later session starts a download"]
-fn known_bug_stop_confirmed_after_the_session_ended_does_not_block_later_downloads() {
+fn stop_confirmed_after_the_session_ended_does_not_block_later_downloads() {
     let mut clock = TestClock::new();
     let binding = sample_binding("p1", 1);
     let mut cfg = base_config();
@@ -910,8 +918,7 @@ fn known_bug_stop_confirmed_after_the_session_ended_does_not_block_later_downloa
 }
 
 #[test]
-#[ignore = "bug: DanmuCollectionStopped from any session confirms the current stop's danmu leg"]
-fn known_bug_danmu_stop_from_another_session_does_not_confirm_the_stop() {
+fn danmu_stop_from_another_session_does_not_confirm_the_stop() {
     let clock = TestClock::new();
     let mut cfg = base_config();
     cfg.record_danmu = true;
@@ -932,7 +939,9 @@ fn known_bug_danmu_stop_from_another_session_does_not_confirm_the_stop() {
         },
     );
     match &fsm.monitor {
-        MonitorPhase::Stopping(stopping) => assert!(!stopping.danmu_confirmed),
+        MonitorPhase::Stopping(stopping) => {
+            assert!(matches!(stopping.danmu, StopDanmu::Pending { .. }));
+        }
         other => panic!("expected Stopping, got {other:?}"),
     }
 }

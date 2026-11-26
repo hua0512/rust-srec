@@ -12,7 +12,7 @@ use super::schedule;
 use super::segment::SessionSegmentGuard;
 use super::state::{
     AttemptPhase, BlockedKind, DanmuSessionState, FsmEffect, MonitorPhase, OpenSession,
-    PendingDbKind, RecoveredMedia, SessionSlot, StepContext, StreamerFsm,
+    PendingDbKind, RecoveredMedia, SessionSlot, StepContext, StopDbEnd, StreamerFsm,
 };
 use crate::recorder::ports::{
     ActorStopReason, DbCommitFailure, DbCommitOutcome, PipelineNotification,
@@ -79,7 +79,7 @@ impl StreamerFsm {
                         && let SessionSlot::Open(open) =
                             std::mem::replace(&mut self.session, SessionSlot::None)
                     {
-                        self.park_segment_guard_if_draining(open.segment_guard);
+                        self.release_open_session(open, effects);
                     }
                     if ended {
                         self.emit_session_ended_pipeline(
@@ -89,7 +89,7 @@ impl StreamerFsm {
                         );
                     }
                     if let MonitorPhase::Stopping(stopping) = &mut self.monitor {
-                        stopping.db_end_committed = true;
+                        stopping.db_end = StopDbEnd::Settled { failed: false };
                     }
                     self.advance_stopping(ctx, effects);
                 } else {
@@ -109,10 +109,7 @@ impl StreamerFsm {
                 let ok = matches!(result, Ok(DbCommitOutcome::EndedCauseRewritten { .. }));
                 if for_stop {
                     if let MonitorPhase::Stopping(stopping) = &mut self.monitor {
-                        stopping.db_end_committed = true;
-                        if !ok {
-                            stopping.db_end_failed = true;
-                        }
+                        stopping.db_end = StopDbEnd::Settled { failed: !ok };
                     }
                     self.advance_stopping(ctx, effects);
                 }
@@ -201,7 +198,7 @@ impl StreamerFsm {
                     if let SessionSlot::Open(open) =
                         std::mem::replace(&mut self.session, SessionSlot::None)
                     {
-                        self.park_segment_guard_if_draining(open.segment_guard);
+                        self.release_open_session(open, effects);
                     }
                     if let Some(sid) = session_ended {
                         self.emit_session_ended_pipeline(
@@ -215,7 +212,14 @@ impl StreamerFsm {
                         reason: ActorStopReason::FatalError { state: new_state },
                     });
                 } else {
-                    self.monitor = schedule::schedule_idle_immediate(ctx.now);
+                    self.monitor = schedule::schedule_idle(
+                        &self.config,
+                        &self.offline_confirmation,
+                        false,
+                        self.errors.error_count_u32(),
+                        None,
+                        ctx,
+                    );
                 }
             }
             PendingDbKind::RecordFilteredState
@@ -273,7 +277,7 @@ impl StreamerFsm {
                     }
                     other => {
                         if let Some(old) = other {
-                            self.park_segment_guard_if_draining(old.segment_guard);
+                            self.release_open_session(old, effects);
                         }
                         Box::new(OpenSession {
                             session_id: session_id.clone(),
@@ -322,8 +326,9 @@ impl StreamerFsm {
                 self.apply_start_suppression(ctx, state, retry_after);
             }
             Err(_) | Ok(_) => {
-                // DB commit failed: roll back session slot and schedule immediate retry
-                // so the actor never gets stuck in `LiveWatchdog` with no session.
+                // DB commit failed: roll back the session slot and poll again at
+                // the normal cadence, so a failing database costs one probe and
+                // one commit per poll interval.
                 self.session = match prior_open {
                     Some(open) => SessionSlot::Open(open),
                     None => SessionSlot::None,
@@ -332,7 +337,14 @@ impl StreamerFsm {
                     self.advance_stopping(ctx, effects);
                     return;
                 }
-                self.monitor = schedule::schedule_idle_immediate(ctx.now);
+                self.monitor = schedule::schedule_idle(
+                    &self.config,
+                    &self.offline_confirmation,
+                    false,
+                    self.errors.error_count_u32(),
+                    None,
+                    ctx,
+                );
             }
         }
     }
@@ -398,7 +410,8 @@ impl StreamerFsm {
                 self.apply_start_suppression(ctx, state, retry_after);
             }
             Err(_) | Ok(_) => {
-                // Restore open session with quiet_period intact and retry immediately.
+                // Restore the open session with its quiet period intact and poll
+                // again at the normal cadence.
                 if let Some(open) = prior_open {
                     self.session = SessionSlot::Open(open);
                 }
@@ -406,7 +419,14 @@ impl StreamerFsm {
                     self.advance_stopping(ctx, effects);
                     return;
                 }
-                self.monitor = schedule::schedule_idle_immediate(ctx.now);
+                self.monitor = schedule::schedule_idle(
+                    &self.config,
+                    &self.offline_confirmation,
+                    false,
+                    self.errors.error_count_u32(),
+                    None,
+                    ctx,
+                );
             }
         }
     }
@@ -467,7 +487,18 @@ impl StreamerFsm {
                     let was_live = self.offline_confirmation.was_live;
                     self.initial_reconcile_pending = false;
                     self.offline_confirmation.reset();
-                    if was_live && matches!(self.monitor, MonitorPhase::Idle { .. }) {
+                    // Only a recurring poll moves to the offline cadence; an
+                    // explicit check, such as the one a live result queues
+                    // while this end commits, keeps its deadline.
+                    if was_live
+                        && matches!(
+                            self.monitor,
+                            MonitorPhase::Idle {
+                                recurring_interval_ms: Some(_),
+                                ..
+                            }
+                        )
+                    {
                         self.monitor = schedule::schedule_idle(
                             &self.config,
                             &self.offline_confirmation,
@@ -508,7 +539,7 @@ impl StreamerFsm {
                         std::mem::replace(&mut self.session, SessionSlot::None)
                 {
                     let sid = open.session_id.clone();
-                    self.park_segment_guard_if_draining(open.segment_guard);
+                    self.release_open_session(open, effects);
                     if hysteresis::is_reattributable_timer_end(&cause, via_hysteresis) {
                         self.session = SessionSlot::RecentlyEnded {
                             session_id: sid,
@@ -527,7 +558,7 @@ impl StreamerFsm {
                     } = std::mem::replace(&mut self.session, SessionSlot::None)
                 {
                     self.queued_db.retain(|op| op.op_id != queued_resume_op_id);
-                    self.park_segment_guard_if_draining(open.segment_guard);
+                    self.release_open_session(open, effects);
                     if transitioned_from_open && let Some(sid) = closed_id.clone() {
                         self.emit_session_ended_pipeline(sid, cause, effects);
                     }
@@ -540,7 +571,7 @@ impl StreamerFsm {
                 }
 
                 if for_stop && let MonitorPhase::Stopping(stopping) = &mut self.monitor {
-                    stopping.db_end_committed = true;
+                    stopping.db_end = StopDbEnd::Settled { failed: false };
                 }
             }
             Err(_) | Ok(_) => {
@@ -562,10 +593,9 @@ impl StreamerFsm {
 
                 if for_stop {
                     // For Disable/OutOfSchedule/Retire, unblock the control plane
-                    // while flagging db_end_failed so Retire reports quiescent = false.
+                    // while marking the end failed so Retire reports quiescent = false.
                     if let MonitorPhase::Stopping(stopping) = &mut self.monitor {
-                        stopping.db_end_committed = true;
-                        stopping.db_end_failed = true;
+                        stopping.db_end = StopDbEnd::Settled { failed: true };
                     }
                 }
             }

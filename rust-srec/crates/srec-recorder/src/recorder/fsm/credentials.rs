@@ -101,24 +101,15 @@ impl StreamerFsm {
         ctx: StepContext,
         effects: &mut Vec<FsmEffect>,
     ) {
-        if self.in_flight_probe.is_some()
-            || matches!(
-                self.monitor,
-                MonitorPhase::Stopping(_) | MonitorPhase::Terminated
-            )
-        {
-            return;
-        }
-
         let Some((session_id, binding, original_cause, original_error)) = (match &mut self.session {
             SessionSlot::Open(open) => match &mut open.attempt {
                 AttemptPhase::DiagnosingCredentials {
                     probe_id: None,
-                    backoff_until: Some(until),
+                    backoff_until: Some(_),
                     original_cause,
                     original_error,
                     ..
-                } if ctx.now >= *until => Some((
+                } => Some((
                     open.session_id.clone(),
                     open.credential_binding.clone(),
                     original_cause.clone(),
@@ -160,7 +151,6 @@ impl StreamerFsm {
         self.in_flight_probe = Some(InFlightProbe {
             probe_id,
             purpose: ProbePurpose::Recovery,
-            is_live_watchdog: false,
         });
         effects.push(FsmEffect::SpawnProbe(ProbeRequest {
             probe_id,
@@ -168,7 +158,6 @@ impl StreamerFsm {
             purpose: ProbePurpose::Recovery,
             session_id: Some(session_id),
             credential_binding: binding,
-            is_live_watchdog: false,
         }));
     }
 

@@ -511,11 +511,24 @@ impl RecorderStore {
         result.map_err(map_commit_error)
     }
 
-    /// Insert a finished video segment and its media output row.
+    /// Insert a finished video segment and its media output row, once: the
+    /// registry persists a segment again when an actor that panicked may
+    /// already have committed it.
     pub async fn persist_video_segment(&self, record: VideoSegmentRecord) -> Result<()> {
         let lease_key = record.streamer_id.clone();
         self.run_serialized_tx(&lease_key, "recorder persist_video_segment", move |tx| {
             Box::pin(async move {
+                let persisted: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM session_segments \
+                     WHERE session_id = ? AND file_path = ?)",
+                )
+                .bind(&record.session_id)
+                .bind(&record.segment_path)
+                .fetch_one(&mut *tx)
+                .await?;
+                if persisted {
+                    return Ok(TxCommitPayload::plain(()));
+                }
                 let size_bytes = i64::try_from(record.size_bytes).unwrap_or(i64::MAX);
                 let output = MediaOutputDbModel::new(
                     &record.session_id,
@@ -546,11 +559,24 @@ impl RecorderStore {
         .await
     }
 
-    /// Insert a finished danmu XML segment's media output row.
+    /// Insert a finished danmu XML segment's media output row, once, like
+    /// [`Self::persist_video_segment`].
     pub async fn persist_danmu_segment(&self, record: DanmuSegmentRecord) -> Result<()> {
         let lease_key = record.streamer_id.clone();
         self.run_serialized_tx(&lease_key, "recorder persist_danmu_segment", move |tx| {
             Box::pin(async move {
+                let persisted: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM media_outputs \
+                     WHERE session_id = ? AND file_type = ? AND file_path = ?)",
+                )
+                .bind(&record.session_id)
+                .bind(MediaFileType::DanmuXml.as_str())
+                .bind(&record.output_path)
+                .fetch_one(&mut *tx)
+                .await?;
+                if persisted {
+                    return Ok(TxCommitPayload::plain(()));
+                }
                 let size_bytes = i64::try_from(record.size_bytes).unwrap_or(i64::MAX);
                 let output = MediaOutputDbModel::new(
                     &record.session_id,

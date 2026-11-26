@@ -322,61 +322,40 @@ impl StreamerFsm {
         }
     }
 
-    pub(super) fn check_quiet_period_timer(
-        &mut self,
-        ctx: StepContext,
-        effects: &mut Vec<FsmEffect>,
-    ) {
-        let Some((session_id, timer_id, cause, retrying_commit, next_retry_at, backstop, grace)) =
-            (match &self.session {
-                SessionSlot::Open(open) => open.quiet_period.as_ref().map(|qp| {
-                    (
-                        open.session_id.clone(),
-                        qp.timer_id,
-                        qp.cause.clone(),
-                        qp.retrying_commit,
-                        qp.next_retry_at,
-                        qp.backstop_deadline,
-                        qp.grace_remaining_checks,
-                    )
-                }),
-                _ => None,
-            })
-        else {
+    /// Handle a due quiet-period timer: retry the failed `EndSession`, or act
+    /// on the elapsed backstop.
+    pub(super) fn on_quiet_period_timer(&mut self, ctx: StepContext, effects: &mut Vec<FsmEffect>) {
+        let SessionSlot::Open(open) = &mut self.session else {
             return;
         };
+        let Some(qp) = &mut open.quiet_period else {
+            return;
+        };
+        let session_id = open.session_id.clone();
+        let (timer_id, cause) = (qp.timer_id, qp.cause.clone());
 
-        if retrying_commit {
-            if next_retry_at.is_some_and(|t| ctx.now >= t) && self.pending_db.is_none() {
-                if let SessionSlot::Open(open) = &mut self.session
-                    && let Some(qp) = &mut open.quiet_period
-                {
-                    qp.next_retry_at = None;
-                }
-                self.dispatch_quiet_period_end(ctx, session_id, timer_id, cause, effects);
-            }
+        if qp.retrying_commit {
+            qp.next_retry_at = None;
+            self.dispatch_quiet_period_end(ctx, session_id, timer_id, cause, effects);
             return;
         }
 
-        if grace.is_none() && ctx.now >= backstop {
-            let monitor_blocked =
-                matches!(self.monitor, super::state::MonitorPhase::Blocked { .. });
-            match evaluate_backstop_expiry(
-                &self.offline_confirmation,
-                self.in_flight_probe.is_some(),
-                monitor_blocked,
-                self.config.offline_check_count,
-            ) {
-                BackstopExpiryAction::FreezeBoundedGrace { remaining_checks } => {
-                    if let SessionSlot::Open(open) = &mut self.session
-                        && let Some(qp) = &mut open.quiet_period
-                    {
-                        qp.grace_remaining_checks = Some(remaining_checks);
-                    }
+        let monitor_blocked = matches!(self.monitor, super::state::MonitorPhase::Blocked { .. });
+        match evaluate_backstop_expiry(
+            &self.offline_confirmation,
+            self.in_flight_probe.is_some(),
+            monitor_blocked,
+            self.config.offline_check_count,
+        ) {
+            BackstopExpiryAction::FreezeBoundedGrace { remaining_checks } => {
+                if let SessionSlot::Open(open) = &mut self.session
+                    && let Some(qp) = &mut open.quiet_period
+                {
+                    qp.grace_remaining_checks = Some(remaining_checks);
                 }
-                BackstopExpiryAction::CommitNow => {
-                    self.dispatch_quiet_period_end(ctx, session_id, timer_id, cause, effects);
-                }
+            }
+            BackstopExpiryAction::CommitNow => {
+                self.dispatch_quiet_period_end(ctx, session_id, timer_id, cause, effects);
             }
         }
     }

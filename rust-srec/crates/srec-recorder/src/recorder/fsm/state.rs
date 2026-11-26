@@ -101,6 +101,10 @@ pub struct StreamerFsm {
     /// Segment discard/dedupe guards for sessions whose DB row already closed
     /// while trailing download segments or danmu `CollectionStopped` still drain.
     pub(super) draining_segment_guards: HashMap<String, SessionSegmentGuard>,
+    /// Attempts whose session ended before they reported their own end, with
+    /// the cause they were asked to stop with. They are stopped as soon as
+    /// their engine exists, and no new attempt starts until they end.
+    pub(super) detached_attempts: HashMap<u64, DownloadStopCause>,
     /// Monotonic sequence counter for `probe_id`, `op_id`, `attempt_id`, and `timer_id`.
     pub next_seq: u64,
 }
@@ -193,21 +197,51 @@ pub enum StopKind {
 pub struct StoppingState {
     pub kind: StopKind,
     pub deadline: Instant,
-    pub download_confirmed: bool,
-    pub danmu_confirmed: bool,
-    pub danmu_unconfirmed: bool,
-    pub db_end_dispatched: bool,
-    pub db_end_committed: bool,
-    pub db_end_failed: bool,
     pub deadline_expired: bool,
+    pub download: StopDownload,
+    pub danmu: StopDanmu,
+    pub db_end: StopDbEnd,
 }
 
 impl StoppingState {
     /// Whether every physical resource that was running when stop started has
     /// confirmed termination without hitting an unconfirmed outcome.
     pub fn physical_confirmed(&self) -> bool {
-        self.download_confirmed && self.danmu_confirmed && !self.danmu_unconfirmed
+        self.download == StopDownload::Confirmed && self.danmu == StopDanmu::Confirmed
     }
+}
+
+/// The download attempt a stop waits for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StopDownload {
+    /// Waiting for this attempt to end, even if its session ends first.
+    Pending {
+        attempt_id: u64,
+    },
+    Confirmed,
+}
+
+/// The danmu collector a stop waits for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StopDanmu {
+    /// Waiting for this session's collector to stop.
+    Pending {
+        session_id: String,
+    },
+    Confirmed,
+    /// The collector could not confirm that it stopped.
+    Unconfirmed,
+}
+
+/// The stop's own database end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StopDbEnd {
+    NotDispatched,
+    InFlight,
+    /// Committed, failed, or settled with nothing to write.
+    Settled {
+        failed: bool,
+    },
 }
 
 /// Independent session ownership slot.
@@ -324,6 +358,9 @@ pub enum AttemptPhase {
     StoppingAttempt {
         attempt_id: u64,
         download_id: Option<String>,
+        /// Reissued with the download id when the engine starts after the
+        /// stop was requested.
+        cause: DownloadStopCause,
     },
 }
 
@@ -359,7 +396,6 @@ pub struct QuietPeriod {
 pub struct InFlightProbe {
     pub probe_id: u64,
     pub purpose: ProbePurpose,
-    pub is_live_watchdog: bool,
 }
 
 /// Metadata tracking the single in-flight database commit.
@@ -473,6 +509,13 @@ pub enum FsmInput {
     AttemptQueued { attempt_id: u64, session_id: String },
     /// Queued download attempt exited the wait queue without starting an engine.
     AttemptDequeued { attempt_id: u64, session_id: String },
+    /// The attempt's startup committed this credential binding to its session
+    /// before starting the engine, possibly switching accounts.
+    AttemptBindingCommitted {
+        attempt_id: u64,
+        session_id: String,
+        binding: CredentialBinding,
+    },
     /// Download engine started capturing bytes.
     AttemptStarted {
         attempt_id: u64,

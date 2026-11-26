@@ -355,6 +355,7 @@ impl HealthProbe for PipelineManagerProbe {
 
 struct SchedulerProbe {
     cancellation_token: CancellationToken,
+    actor_registry: Arc<crate::recorder::ActorRegistry>,
 }
 
 #[async_trait]
@@ -369,9 +370,19 @@ impl HealthProbe for SchedulerProbe {
 
     async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
         if self.cancellation_token.is_cancelled() {
-            ComponentHealth::unhealthy("scheduler", "Scheduler has been cancelled")
-        } else {
+            return ComponentHealth::unhealthy("scheduler", "Scheduler has been cancelled");
+        }
+        let stopped = self.actor_registry.crash_stopped_streamers();
+        if stopped.is_empty() {
             ComponentHealth::healthy("scheduler")
+        } else {
+            ComponentHealth::degraded(
+                "scheduler",
+                format!(
+                    "Monitoring stopped after repeated crashes: {}",
+                    stopped.join(", ")
+                ),
+            )
         }
     }
 }
@@ -912,6 +923,7 @@ impl ServiceContainer {
 
         self.health_checker.register_probe(Arc::new(SchedulerProbe {
             cancellation_token: self.cancellation_token.clone(),
+            actor_registry: self.actor_registry.clone(),
         }));
 
         self.health_checker

@@ -742,9 +742,7 @@ async fn eventually(limit: Duration, mut condition: impl FnMut() -> bool) -> boo
 }
 
 #[tokio::test]
-#[ignore = "bug: a streamer re-enabled while its previous actor is still stopping is left \
-            without an actor, because the exiting generation triggers no reconcile"]
-async fn known_bug_streamer_reenabled_during_its_stop_is_monitored_once_the_stop_ends() {
+async fn streamer_reenabled_during_its_stop_is_monitored_once_the_stop_ends() {
     use crate::streamer::manager::StreamerUpdateParams;
 
     let harness = ActorHarness::new().await;
@@ -780,7 +778,12 @@ async fn known_bug_streamer_reenabled_during_its_stop_is_monitored_once_the_stop
         },
         config_revision: 1,
     };
-    let (mut actor, handle) = harness.registry.build_actor_for_test(1, snapshot);
+    // Outside the range the registry hands out, so the respawned generation
+    // gets its own attempt ids.
+    const OLD_GENERATION: u64 = 1_000;
+    let (mut actor, handle) = harness
+        .registry
+        .build_actor_for_test(OLD_GENERATION, snapshot);
     let ctx = crate::recorder::fsm::StepContext::deterministic(
         std::time::Instant::now(),
         Timestamp::now(),
@@ -837,7 +840,7 @@ async fn known_bug_streamer_reenabled_during_its_stop_is_monitored_once_the_stop
     );
     harness
         .registry
-        .supervise_actor_for_test(&row.id, 1, actor, handle.clone());
+        .supervise_actor_for_test(&row.id, OLD_GENERATION, actor, handle.clone());
     harness.registry.start();
 
     let set_state = |state| StreamerUpdateParams {
@@ -906,9 +909,7 @@ async fn known_bug_streamer_reenabled_during_its_stop_is_monitored_once_the_stop
 }
 
 #[tokio::test]
-#[ignore = "bug: every reconfigure sends CredentialMaterialChanged, so a global settings save \
-            forces an immediate check of every streamer"]
-async fn known_bug_global_settings_save_reconfigures_actors_without_forcing_checks() {
+async fn global_settings_save_reconfigures_actors_without_forcing_checks() {
     use crate::config::ConfigUpdateEvent;
     use crate::recorder::actor::{ActorHandle, ActorMessage};
 
@@ -967,4 +968,87 @@ async fn known_bug_global_settings_save_reconfigures_actors_without_forcing_chec
         )),
         "a settings save must not force a check: {inputs:?}"
     );
+}
+
+#[tokio::test]
+async fn failed_config_lookup_keeps_the_last_good_config_and_retries() {
+    use crate::config::ConfigUpdateEvent;
+    use crate::recorder::actor::{ActorHandle, ActorMessage};
+
+    let harness = ActorHarness::new().await;
+    let row = harness
+        .seed_streamer("s-config-fail", StreamerState::NotLive)
+        .await;
+    let (handle, mut inbox) = ActorHandle::detached_for_test();
+    let _exit = harness
+        .registry
+        .register_actor_handle_for_test(row.id.clone(), 1, handle);
+    harness.registry.start();
+
+    let set_url = async |url: &str| {
+        sqlx::query("UPDATE streamers SET url = ? WHERE id = ?")
+            .bind(url)
+            .bind(&row.id)
+            .execute(&harness.write_pool)
+            .await
+            .expect("update streamer url");
+        harness
+            .container
+            .config_service
+            .invalidate_streamer(&row.id);
+    };
+    // An unparsable URL makes the config lookup fail.
+    set_url("not a url").await;
+    harness
+        .registry
+        .handle_config_event(&ConfigUpdateEvent::StreamerMetadataUpdated {
+            streamer_id: row.id.clone(),
+        });
+    // Queued behind the update, so its arrival means the update was handled.
+    harness
+        .registry
+        .handle_config_event(&ConfigUpdateEvent::StreamerErrorCleared {
+            streamer_id: row.id.clone(),
+        });
+
+    let mut inputs = Vec::new();
+    let mut next_input = async || match inbox.recv().await {
+        Some(ActorMessage::Input(input)) => Some(input),
+        Some(_) => None,
+        None => panic!("actor inbox closed"),
+    };
+    let marker = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(input) = next_input().await {
+                let done = matches!(input, FsmInput::ErrorCleared);
+                inputs.push(input);
+                if done {
+                    return;
+                }
+            }
+        }
+    })
+    .await;
+    let pushed_while_failing = inputs
+        .iter()
+        .any(|input| matches!(input, FsmInput::ConfigUpdated { .. }));
+
+    // Once lookups succeed again, the scheduled retry pushes the config.
+    set_url(&row.url).await;
+    let retried = tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            if let Some(FsmInput::ConfigUpdated { .. }) = next_input().await {
+                return;
+            }
+        }
+    })
+    .await;
+    harness.shutdown().await;
+
+    assert!(marker.is_ok(), "marker arrives: {inputs:?}");
+    assert!(
+        !pushed_while_failing,
+        "a failed lookup must not replace the config: {inputs:?}"
+    );
+    assert!(retried.is_ok(), "the lookup is retried after it recovers");
 }

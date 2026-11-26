@@ -13,7 +13,7 @@ use super::credentials::take_valid_recovered_media;
 use super::schedule;
 use super::state::{
     AttemptPhase, BlockedKind, DanmuSessionState, FilteredKind, FsmEffect, MonitorPhase,
-    PendingDbKind, SessionSlot, StepContext, StreamerFsm,
+    PendingDbKind, SessionSlot, StepContext, StopDownload, StreamerFsm,
 };
 use super::stop::stop_cause_for_kind;
 use crate::recorder::ports::{
@@ -54,6 +54,48 @@ impl StreamerFsm {
         }
     }
 
+    /// Whether the active stop still waits for `attempt_id` to end.
+    fn stop_awaits_attempt(&self, attempt_id: u64) -> bool {
+        matches!(
+            &self.monitor,
+            MonitorPhase::Stopping(stopping)
+                if stopping.download == (StopDownload::Pending { attempt_id })
+        )
+    }
+
+    /// Settle the stop's download leg once its attempt ended, even when an
+    /// earlier end already closed that attempt's session. `idles_open_attempt`
+    /// says whether the ended attempt is the open session's current one.
+    fn settle_stop_download(
+        &mut self,
+        ctx: StepContext,
+        session_id: &str,
+        idles_open_attempt: bool,
+        effects: &mut Vec<FsmEffect>,
+    ) {
+        if idles_open_attempt
+            && let SessionSlot::Open(open) = &mut self.session
+            && open.session_id == session_id
+        {
+            open.attempt = AttemptPhase::Idle;
+        }
+        if let MonitorPhase::Stopping(stopping) = &mut self.monitor {
+            stopping.download = StopDownload::Confirmed;
+        }
+        self.advance_stopping(ctx, effects);
+    }
+
+    /// Start the download of a live open session that an earlier download
+    /// held back, once nothing of that download remains.
+    pub(super) fn resume_held_attempt(&mut self, ctx: StepContext, effects: &mut Vec<FsmEffect>) {
+        if self.detached_attempts.is_empty()
+            && matches!(self.monitor, MonitorPhase::LiveWatchdog { .. })
+            && matches!(&self.session, SessionSlot::Open(open) if open.attempt == AttemptPhase::Idle)
+        {
+            self.start_attempt_for_open_session(ctx, None, false, effects);
+        }
+    }
+
     /// Launch a download attempt for the currently open session if permitted.
     pub(super) fn start_attempt_for_open_session(
         &mut self,
@@ -67,6 +109,14 @@ impl StreamerFsm {
                 self.monitor,
                 MonitorPhase::Stopping(_) | MonitorPhase::Terminated
             )
+        {
+            return;
+        }
+
+        // A session whose end is committing never records again, and one
+        // download at a time records a streamer.
+        if !self.detached_attempts.is_empty()
+            || matches!(&self.session, SessionSlot::Open(open) if self.session_end_pending(&open.session_id))
         {
             return;
         }
@@ -172,6 +222,14 @@ impl StreamerFsm {
             engine_type,
             protocol,
         } = input;
+        if let Some(cause) = self.detached_attempts.get(&attempt_id) {
+            effects.push(FsmEffect::StopAttempt {
+                attempt_id,
+                download_id: Some(download_id),
+                cause: cause.clone(),
+            });
+            return;
+        }
         if let MonitorPhase::Stopping(stopping) = &self.monitor {
             // Stop arrived while the startup task was finishing; immediately
             // request stop on the newly created engine download.
@@ -182,6 +240,7 @@ impl StreamerFsm {
                 open.attempt = AttemptPhase::StoppingAttempt {
                     attempt_id,
                     download_id: Some(download_id.clone()),
+                    cause: cause.clone(),
                 };
             }
             effects.push(FsmEffect::StopAttempt {
@@ -193,6 +252,27 @@ impl StreamerFsm {
         }
 
         if !self.matches_current_attempt(&session_id, attempt_id) {
+            return;
+        }
+
+        // A teardown outside `Stopping` (offline end, fatal probe, danmu stream
+        // closed) asked this attempt to stop before its engine existed, so pass
+        // the stop on to the engine instead of recording.
+        if let SessionSlot::Open(open) = &mut self.session
+            && let AttemptPhase::StoppingAttempt {
+                download_id: stopping_download,
+                cause,
+                ..
+            } = &mut open.attempt
+        {
+            if stopping_download.is_none() {
+                *stopping_download = Some(download_id.clone());
+                effects.push(FsmEffect::StopAttempt {
+                    attempt_id,
+                    download_id: Some(download_id),
+                    cause: cause.clone(),
+                });
+            }
             return;
         }
 
@@ -237,21 +317,23 @@ impl StreamerFsm {
         reason: AttemptStartFailure,
         effects: &mut Vec<FsmEffect>,
     ) {
-        if !self.matches_current_attempt(&session_id, attempt_id) {
+        if self.detached_attempts.remove(&attempt_id).is_some() {
+            self.mark_guard_download_ended(&session_id);
+            self.resume_held_attempt(ctx, effects);
+            return;
+        }
+        let is_current = self.matches_current_attempt(&session_id, attempt_id);
+        if matches!(self.monitor, MonitorPhase::Stopping(_)) {
+            if is_current || self.stop_awaits_attempt(attempt_id) {
+                self.mark_guard_download_ended(&session_id);
+                self.settle_stop_download(ctx, &session_id, is_current, effects);
+            }
+            return;
+        }
+        if !is_current {
             return;
         }
         self.mark_guard_download_ended(&session_id);
-
-        if let MonitorPhase::Stopping(stopping) = &mut self.monitor {
-            if let SessionSlot::Open(open) = &mut self.session
-                && open.session_id == session_id
-            {
-                open.attempt = AttemptPhase::Idle;
-            }
-            stopping.download_confirmed = true;
-            self.advance_stopping(ctx, effects);
-            return;
-        }
 
         match reason {
             AttemptStartFailure::Cancelled | AttemptStartFailure::StaleBinding => {
@@ -291,7 +373,14 @@ impl StreamerFsm {
                 if let SessionSlot::Open(open) = &mut self.session {
                     open.attempt = AttemptPhase::Idle;
                 }
-                self.monitor = schedule::schedule_idle_immediate(ctx.now);
+                self.monitor = schedule::schedule_idle(
+                    &self.config,
+                    &self.offline_confirmation,
+                    false,
+                    self.errors.error_count_u32(),
+                    None,
+                    ctx,
+                );
             }
             AttemptStartFailure::CircuitBreaker {
                 reason,
@@ -343,11 +432,11 @@ impl StreamerFsm {
                     effects,
                 );
             }
-            AttemptStartFailure::Other { .. } => {
+            AttemptStartFailure::Other { message } => {
                 if let SessionSlot::Open(open) = &mut self.session {
                     open.attempt = AttemptPhase::Idle;
                 }
-                self.monitor = schedule::schedule_idle_immediate(ctx.now);
+                self.record_error_and_back_off(ctx, message, effects);
             }
         }
     }
@@ -362,28 +451,32 @@ impl StreamerFsm {
     ) {
         let session_id = event.session_id().to_owned();
         self.mark_guard_download_ended(&session_id);
+        if self.detached_attempts.remove(&attempt_id).is_some() {
+            self.resume_held_attempt(ctx, effects);
+            return;
+        }
 
-        if !self.matches_current_attempt(&session_id, attempt_id) {
-            // Rejected events may arrive with no active Running attempt if
-            // preflight rejected before AttemptStarted, so allow Rejected on
-            // the matching open session.
-            let is_matching_rejected = matches!(event, DownloadTerminalEvent::Rejected { .. })
-                && matches!(&self.session, SessionSlot::Open(open) if open.session_id == session_id);
-            if !is_matching_rejected {
-                return;
+        // Rejected events may arrive with no active Running attempt if
+        // preflight rejected before AttemptStarted, so allow Rejected on the
+        // matching open session.
+        let owns_session_attempt = self.matches_current_attempt(&session_id, attempt_id)
+            || (matches!(event, DownloadTerminalEvent::Rejected { .. })
+                && matches!(&self.session, SessionSlot::Open(open) if open.session_id == session_id));
+
+        if matches!(self.monitor, MonitorPhase::Stopping(_)) {
+            if owns_session_attempt || self.stop_awaits_attempt(attempt_id) {
+                self.settle_stop_download(ctx, &session_id, owns_session_attempt, effects);
             }
+            return;
+        }
+        if !owns_session_attempt {
+            return;
         }
 
         if let SessionSlot::Open(open) = &mut self.session
             && open.session_id == session_id
         {
             open.attempt = AttemptPhase::Idle;
-        }
-
-        if let MonitorPhase::Stopping(stopping) = &mut self.monitor {
-            stopping.download_confirmed = true;
-            self.advance_stopping(ctx, effects);
-            return;
         }
 
         match event {
@@ -506,7 +599,9 @@ impl StreamerFsm {
                     ctx,
                 );
             }
-            DownloadStopCause::Shutdown | DownloadStopCause::StreamerDisabled => {
+            // Shutdown cancels downloads before it stops actors, so parking
+            // keeps this actor from recording again during the drain.
+            DownloadStopCause::Shutdown => {
                 self.monitor = MonitorPhase::Idle {
                     next_check: None,
                     recurring_interval_ms: None,
@@ -526,7 +621,12 @@ impl StreamerFsm {
                 );
                 self.commit_offline_end(ctx, Some(session_id.to_owned()), effects);
             }
-            DownloadStopCause::User | DownloadStopCause::Other(_) => {
+            // A disable's own cancel arrives during its stop. One that arrives
+            // later belongs to a stop that already timed out, such as a
+            // credential retirement, so monitoring carries on.
+            DownloadStopCause::User
+            | DownloadStopCause::StreamerDisabled
+            | DownloadStopCause::Other(_) => {
                 self.monitor = schedule::schedule_idle(
                     &self.config,
                     &self.offline_confirmation,
@@ -723,43 +823,5 @@ impl StreamerFsm {
             },
             effects,
         );
-    }
-
-    /// Extract active attempt identity and move it to `StoppingAttempt` for a
-    /// stop initiated outside `MonitorPhase::Stopping` (e.g. `DanmuStreamClosed`).
-    pub(super) fn take_active_attempt_stop_info(
-        &mut self,
-        session_id: &str,
-    ) -> Option<(u64, Option<String>)> {
-        let SessionSlot::Open(open) = &mut self.session else {
-            return None;
-        };
-        if open.session_id != session_id {
-            return None;
-        }
-        match &open.attempt {
-            AttemptPhase::Starting { attempt_id, .. } => {
-                let id = *attempt_id;
-                open.attempt = AttemptPhase::StoppingAttempt {
-                    attempt_id: id,
-                    download_id: None,
-                };
-                Some((id, None))
-            }
-            AttemptPhase::Running {
-                attempt_id,
-                download_id,
-                ..
-            } => {
-                let id = *attempt_id;
-                let dl = download_id.clone();
-                open.attempt = AttemptPhase::StoppingAttempt {
-                    attempt_id: id,
-                    download_id: Some(dl.clone()),
-                };
-                Some((id, Some(dl)))
-            }
-            _ => None,
-        }
     }
 }

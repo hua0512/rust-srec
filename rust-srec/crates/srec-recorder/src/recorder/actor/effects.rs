@@ -139,7 +139,6 @@ pub(super) fn dispatch_effects(
         let danmu_service = deps.danmu_service.clone();
         let pipeline = deps.pipeline.clone();
         let download_manager = deps.download_manager.clone();
-        let leases = deps.leases.clone();
         effects_tasks.spawn(async move {
             for (session_id, segment_index, video_segment_path, started_at) in deferred_start_danmu
             {
@@ -177,13 +176,8 @@ pub(super) fn dispatch_effects(
                 }
             }
             for notification in deferred_pipeline {
-                deliver_pipeline_notification(
-                    pipeline.as_ref(),
-                    &download_manager,
-                    &leases,
-                    notification,
-                )
-                .await;
+                deliver_pipeline_notification(pipeline.as_ref(), &download_manager, notification)
+                    .await;
             }
         });
     }
@@ -282,7 +276,6 @@ pub(super) fn dispatch_segment_completed_effects(
     let danmu_service = deps.danmu_service.clone();
     let pipeline = deps.pipeline.clone();
     let download_manager = deps.download_manager.clone();
-    let leases = deps.leases.clone();
 
     effects_tasks.spawn(async move {
         for spec in close_danmu {
@@ -309,7 +302,6 @@ pub(super) fn dispatch_segment_completed_effects(
             if let Err(error) = deliver_pipeline_notification_result(
                 pipeline.as_ref(),
                 &download_manager,
-                &leases,
                 notification,
             )
             .await
@@ -361,7 +353,6 @@ pub(super) fn dispatch_danmu_fifo_effects(
     let store = deps.store.clone();
     let pipeline = deps.pipeline.clone();
     let download_manager = deps.download_manager.clone();
-    let leases = deps.leases.clone();
 
     effects_tasks.spawn(async move {
         for (video_path, danmu_path) in deletes {
@@ -377,7 +368,6 @@ pub(super) fn dispatch_danmu_fifo_effects(
             if let Err(error) = deliver_pipeline_notification_result(
                 pipeline.as_ref(),
                 &download_manager,
-                &leases,
                 notification,
             )
             .await
@@ -521,11 +511,10 @@ pub(crate) async fn delete_discarded_files(video_path: Option<&str>, danmu_path:
 pub(crate) async fn deliver_pipeline_notification(
     pipeline: &dyn RecorderPipelinePort,
     download_manager: &DownloadManager,
-    leases: &super::startup_task::StartupLeaseRegistry,
     notification: PipelineNotification,
 ) {
     if let Err(error) =
-        deliver_pipeline_notification_result(pipeline, download_manager, leases, notification).await
+        deliver_pipeline_notification_result(pipeline, download_manager, notification).await
     {
         warn!(%error, "Failed to deliver recorder pipeline notification");
     }
@@ -534,17 +523,10 @@ pub(crate) async fn deliver_pipeline_notification(
 async fn deliver_pipeline_notification_result(
     pipeline: &dyn RecorderPipelinePort,
     download_manager: &DownloadManager,
-    leases: &super::startup_task::StartupLeaseRegistry,
     notification: PipelineNotification,
 ) -> crate::Result<()> {
-    if let PipelineNotification::SessionEnded {
-        ref session_id,
-        ref streamer_id,
-        ..
-    } = notification
-    {
+    if let PipelineNotification::SessionEnded { ref session_id, .. } = notification {
         download_manager.clear_session_segment_index(session_id);
-        leases.clear_session(streamer_id, session_id);
     }
     pipeline.notify(notification).await
 }

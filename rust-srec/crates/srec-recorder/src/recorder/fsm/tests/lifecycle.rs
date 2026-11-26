@@ -2,24 +2,25 @@ use std::time::Duration;
 
 use crate::danmu::DanmuControlEvent;
 use crate::downloader::engine::{DownloadProtocol, EngineType};
-use crate::downloader::{DownloadFailureKind, EngineEndSignal};
+use crate::downloader::{DownloadFailureKind, DownloadStopCause, EngineEndSignal};
 use crate::recorder::fsm::hysteresis::QUIET_PERIOD_COMMIT_RETRY_DELAY;
+use crate::recorder::fsm::schedule::STALL_WINDOW;
 use crate::recorder::fsm::state::{
     AttemptPhase, BlockedKind, FsmEffect, FsmInput, MonitorPhase, SessionSlot, StreamerFsm,
 };
 use crate::recorder::ports::{
-    ActorStopReason, AttemptStartFailure, DanmuStopKind, DbCommitFailure, DbCommitOp,
-    DbCommitOutcome, PipelineNotification, ProbeStatus, SessionStartDisposition,
+    ActorStopReason, DanmuStopKind, DbCommitFailure, DbCommitOp, DbCommitOutcome,
+    PipelineNotification, ProbeStatus, SessionStartDisposition,
 };
 use crate::session::{OfflineSignal, TerminalCause};
 use srec_core::domain::StreamerState;
 use srec_core::domain::streamer::FatalErrorType;
 
 use super::{
-    TestClock, base_config, base_snapshot, completed_event,
-    enter_quiet_period_ready_for_direct_backstop, failed_event, find_db_commit, find_probe,
-    find_start_attempt, live_payload, open_running_session, reach_starting_attempt, sample_binding,
-    session_ended_outcome,
+    TestClock, assert_waits_a_poll_interval, base_config, base_snapshot, cancelled_event,
+    completed_event, enter_quiet_period_ready_for_direct_backstop, failed_event, find_db_commit,
+    find_probe, find_start_attempt, live_payload, open_running_session, reach_starting_attempt,
+    reach_starting_attempt_from, sample_binding, session_ended_outcome,
 };
 
 #[test]
@@ -72,7 +73,7 @@ fn committing_start_gates_attempt_on_authoritative_db_commit_and_uses_db_epoch()
 }
 
 #[test]
-fn committing_start_transient_db_failure_rolls_back_and_retries_immediately() {
+fn committing_start_transient_db_failure_rolls_back_and_waits_a_poll_interval() {
     let clock = TestClock::new();
     let mut fsm = StreamerFsm::new(
         base_snapshot(StreamerState::NotLive, base_config()),
@@ -106,7 +107,7 @@ fn committing_start_transient_db_failure_rolls_back_and_retries_immediately() {
     assert!(matches!(fsm.session, SessionSlot::None));
     assert!(fsm.initial_reconcile_pending);
     assert!(matches!(fsm.monitor, MonitorPhase::Idle { .. }));
-    assert_eq!(fsm.next_deadline(clock.now, clock.wall), Some(clock.now));
+    assert_waits_a_poll_interval(&fsm, &clock);
 }
 
 #[test]
@@ -683,7 +684,7 @@ fn refused_broadcast_suppresses_live_until_offline_reconciles() {
 
 #[test]
 fn fatal_probe_stops_active_session_terminates_and_cold_start_disable_closes_db_row() {
-    let clock = TestClock::new();
+    let mut clock = TestClock::new();
     let mut cfg = base_config();
     cfg.record_danmu = true;
     let (mut fsm, attempt_id) = open_running_session(&clock, cfg, "sess-fatal", None);
@@ -729,7 +730,8 @@ fn fatal_probe_stops_active_session_terminates_and_cold_start_disable_closes_db_
         } if sid == "sess-fatal"
     ));
 
-    // Transient DB failure on RecordFatalError schedules immediate retry rather than terminating prematurely.
+    // A transient DB failure on RecordFatalError retries at the poll cadence
+    // rather than terminating prematurely.
     let effects = fsm.step(
         clock.ctx(),
         FsmInput::DbCommitted {
@@ -746,9 +748,11 @@ fn fatal_probe_stops_active_session_terminates_and_cold_start_disable_closes_db_
                 .iter()
                 .any(|e| matches!(e, FsmEffect::ActorStopped { .. }))
     );
-    assert_eq!(fsm.next_deadline(clock.now, clock.wall), Some(clock.now));
+    assert_waits_a_poll_interval(&fsm, &clock);
 
     // Retry succeeds -> emits SessionEnded + ActorStopped(FatalError { NotFound }).
+    let retry_at = fsm.next_deadline(clock.now, clock.wall).unwrap();
+    clock.advance(retry_at - clock.now);
     let p2 = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
         .unwrap()
         .probe_id;
@@ -870,12 +874,55 @@ fn runtime_view_reports_attempt_started_at_only_while_running() {
 }
 
 #[test]
-#[ignore = "bug: attempt ids restart at the same sequence in every actor generation, so a \
-            restarted generation adopts the previous generation's download as its own"]
-fn known_bug_restarted_generation_does_not_adopt_the_previous_generations_attempt() {
+fn live_result_while_the_session_end_commits_rechecks_once_the_end_lands() {
+    let mut clock = TestClock::new();
+    let (mut fsm, attempt_id) = open_running_session(&clock, base_config(), "sess-1", None);
+    clock.advance(STALL_WINDOW);
+    let probe_id = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
+        .expect("watchdog probe")
+        .probe_id;
+    let effects = fsm.step(
+        clock.ctx(),
+        FsmInput::DownloadEnded {
+            attempt_id,
+            event: cancelled_event("sess-1", DownloadStopCause::StreamerOffline),
+        },
+    );
+    let (end_op, _) = find_db_commit(&effects).expect("offline end");
+
+    // The watchdog probe still in flight finds the stream live again.
+    let effects = fsm.step(
+        clock.ctx(),
+        FsmInput::ProbeCompleted {
+            probe_id,
+            result: Ok(ProbeStatus::Live(live_payload("Back"))),
+        },
+    );
+    assert!(find_start_attempt(&effects).is_none());
+
+    fsm.step(
+        clock.ctx(),
+        FsmInput::DbCommitted {
+            op_id: end_op,
+            result: Ok(session_ended_outcome(Some("sess-1"), clock.wall, true)),
+        },
+    );
+    assert_eq!(fsm.next_deadline(clock.now, clock.wall), Some(clock.now));
+}
+
+#[test]
+fn restarted_generation_does_not_adopt_the_previous_generations_attempt() {
     let clock = TestClock::new();
-    let (_previous, previous_attempt) = reach_starting_attempt(&clock, base_config());
-    let (mut current, current_attempt) = reach_starting_attempt(&clock, base_config());
+    let generation = |generation| {
+        StreamerFsm::new(
+            base_snapshot(StreamerState::NotLive, base_config()),
+            clock.now,
+            clock.wall,
+        )
+        .for_generation(generation)
+    };
+    let (_previous, previous_attempt) = reach_starting_attempt_from(generation(1), &clock);
+    let (mut current, current_attempt) = reach_starting_attempt_from(generation(2), &clock);
     assert_ne!(previous_attempt, current_attempt);
 
     // The previous generation's surviving startup task starts its download.
@@ -899,9 +946,7 @@ fn known_bug_restarted_generation_does_not_adopt_the_previous_generations_attemp
 }
 
 #[test]
-#[ignore = "bug: an attempt that starts after a teardown outside Stopping (danmu StreamClosed, \
-            offline end, fatal probe) is promoted to Running and never stopped"]
-fn known_bug_attempt_started_after_a_teardown_is_stopped() {
+fn attempt_started_after_a_teardown_is_stopped() {
     let clock = TestClock::new();
     let (mut fsm, attempt_id) = reach_starting_attempt(&clock, base_config());
     let effects = fsm.step(
@@ -940,22 +985,4 @@ fn known_bug_attempt_started_after_a_teardown_is_stopped() {
     if let SessionSlot::Open(open) = &fsm.session {
         assert!(!matches!(open.attempt, AttemptPhase::Running { .. }));
     }
-}
-
-#[test]
-#[ignore = "bug: a startup refused because the previous download is still active reports \
-            Cancelled and waits for the 5-minute stall probe instead of the lease release"]
-fn known_bug_startup_refused_by_an_active_download_retries_once_it_is_released() {
-    let clock = TestClock::new();
-    let (mut fsm, attempt_id) = reach_starting_attempt(&clock, base_config());
-    fsm.step(
-        clock.ctx(),
-        FsmInput::AttemptStartFailed {
-            attempt_id,
-            session_id: "sess-1".into(),
-            reason: AttemptStartFailure::Cancelled,
-        },
-    );
-    let effects = fsm.step(clock.ctx(), FsmInput::PhysicalLeaseReleased);
-    assert!(find_start_attempt(&effects).is_some());
 }

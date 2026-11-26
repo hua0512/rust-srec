@@ -27,7 +27,8 @@ pub use self::segment::SessionSegmentGuard;
 pub use self::state::{
     AttemptPhase, BlockedKind, DanmuSessionState, FilteredKind, FsmEffect, FsmInput, InFlightProbe,
     MonitorPhase, OpenSession, PendingDbKind, PendingDbOp, QuietPeriod, RecoveredMedia,
-    SessionSlot, StepContext, StopKind, StoppingState, StreamerFsm,
+    SessionSlot, StepContext, StopDanmu, StopDbEnd, StopDownload, StopKind, StoppingState,
+    StreamerFsm,
 };
 
 use self::attempt::AttemptStartedInput;
@@ -37,6 +38,31 @@ use crate::recorder::ports::{
     DbCommitOp, InitialStreamerSnapshot, ResolvedActorConfig, StreamerRuntimeView,
     should_spawn_actor,
 };
+
+/// Timers the state machine arms, in the order one `TimerFired` handles them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Timer {
+    /// End of the `RecentlyEnded` reattribution window.
+    RecentlyEndedEviction,
+    /// Stop confirmation deadline in `Stopping`.
+    StopDeadline,
+    /// Backoff before a credential recovery probe.
+    CredentialDiagnostic,
+    /// Quiet-period backstop, or the retry of its failed `EndSession`.
+    QuietPeriod,
+    /// The monitor phase's next status probe.
+    MonitorCheck,
+}
+
+impl Timer {
+    const ALL: [Self; 5] = [
+        Self::RecentlyEndedEviction,
+        Self::StopDeadline,
+        Self::CredentialDiagnostic,
+        Self::QuietPeriod,
+        Self::MonitorCheck,
+    ];
+}
 
 impl StreamerFsm {
     /// Construct a new [`StreamerFsm`] from a persisted streamer snapshot.
@@ -91,8 +117,18 @@ impl StreamerFsm {
             lingering_physical_lease: false,
             batch_live_hint_armed: false,
             draining_segment_guards: HashMap::new(),
+            detached_attempts: HashMap::new(),
             next_seq: 1,
         }
+    }
+
+    /// Give actor generation `generation` its own id range. Probe, commit and
+    /// attempt ids then never repeat across a streamer's generations, so the
+    /// download events of an earlier generation's attempts match no attempt
+    /// of this one.
+    pub fn for_generation(mut self, generation: u64) -> Self {
+        self.next_seq = (generation << 32) + 1;
+        self
     }
 
     /// Process one [`FsmInput`] synchronously and return every side effect to perform.
@@ -122,6 +158,17 @@ impl StreamerFsm {
                 attempt_id,
                 session_id,
             } => self.on_attempt_queued(attempt_id, &session_id),
+            FsmInput::AttemptBindingCommitted {
+                attempt_id,
+                session_id,
+                binding,
+            } => {
+                if self.matches_current_attempt(&session_id, attempt_id)
+                    && let SessionSlot::Open(open) = &mut self.session
+                {
+                    open.credential_binding = Some(binding);
+                }
+            }
             FsmInput::AttemptDequeued {
                 attempt_id,
                 session_id,
@@ -247,7 +294,18 @@ impl StreamerFsm {
                 self.on_danmu_collection_stopped(ctx, session_id, total_count, result, &mut effects)
             }
             FsmInput::PhysicalLeaseReleased => {
+                // The registry reports this only once no download, startup or
+                // danmu collector of the streamer remains: detached attempts
+                // have ended, and a stop's physical legs are settled.
                 self.lingering_physical_lease = false;
+                self.detached_attempts.clear();
+                if let MonitorPhase::Stopping(stopping) = &mut self.monitor {
+                    stopping.download = StopDownload::Confirmed;
+                    stopping.danmu = StopDanmu::Confirmed;
+                    self.advance_stopping(ctx, &mut effects);
+                } else {
+                    self.resume_held_attempt(ctx, &mut effects);
+                }
             }
             FsmInput::Disable => self.initiate_stop(ctx, StopKind::Disable, &mut effects),
             FsmInput::CredentialRetire {
@@ -277,98 +335,95 @@ impl StreamerFsm {
     /// Earliest monotonic instant at which the caller must invoke
     /// `step(ctx, FsmInput::TimerFired)`, or `None` when parked / terminated.
     pub fn next_deadline(&self, now: Instant, wall_now: Timestamp) -> Option<Instant> {
-        let mut earliest: Option<Instant> = None;
-        let mut consider = |candidate: Instant| {
-            earliest = Some(match earliest {
-                Some(current) => current.min(candidate),
-                None => candidate,
-            });
-        };
+        Timer::ALL
+            .into_iter()
+            .filter_map(|timer| self.timer_deadline(timer, now, wall_now))
+            .min()
+    }
 
-        // Monitor phase timers.
-        match &self.monitor {
-            MonitorPhase::Stopping(stopping) => {
-                if !stopping.deadline_expired {
-                    consider(stopping.deadline);
+    /// When `timer` is due, or `None` while it is not armed.
+    ///
+    /// [`Self::next_deadline`] and [`Self::on_timer_fired`] both read this
+    /// table, so a timer is offered only while its handler can act on it.
+    /// Every handler either disarms its timer or moves it into the future.
+    fn timer_deadline(&self, timer: Timer, now: Instant, wall_now: Timestamp) -> Option<Instant> {
+        let monitoring = !matches!(
+            self.monitor,
+            MonitorPhase::Stopping(_) | MonitorPhase::Terminated
+        );
+        match timer {
+            Timer::RecentlyEndedEviction => match &self.session {
+                SessionSlot::RecentlyEnded { evict_at, .. } => Some(*evict_at),
+                _ => None,
+            },
+            Timer::StopDeadline => match &self.monitor {
+                MonitorPhase::Stopping(stopping) if !stopping.deadline_expired => {
+                    Some(stopping.deadline)
                 }
-            }
-            MonitorPhase::Terminated => {}
-            MonitorPhase::Idle {
-                next_check: Some(t),
-                ..
-            } => {
-                if self.in_flight_probe.is_none() && self.pending_db.is_none() {
-                    consider(*t);
+                _ => None,
+            },
+            Timer::CredentialDiagnostic => match &self.session {
+                SessionSlot::Open(open) if monitoring && self.in_flight_probe.is_none() => {
+                    match open.attempt {
+                        AttemptPhase::DiagnosingCredentials {
+                            probe_id: None,
+                            backoff_until,
+                            ..
+                        } => backoff_until,
+                        _ => None,
+                    }
                 }
-            }
-            MonitorPhase::Idle {
-                next_check: None, ..
-            } => {}
-            MonitorPhase::Filtered { next_check, .. }
-            | MonitorPhase::RefusedBroadcast { next_check, .. } => {
-                if self.in_flight_probe.is_none() && self.pending_db.is_none() {
-                    consider(*next_check);
+                _ => None,
+            },
+            // The backstop and its commit retry dispatch `EndSession`, so they
+            // wait for any in-flight commit. A stop ends the session itself.
+            Timer::QuietPeriod => match &self.session {
+                SessionSlot::Open(open) if monitoring && self.pending_db.is_none() => {
+                    let quiet_period = open.quiet_period.as_ref()?;
+                    if quiet_period.retrying_commit {
+                        quiet_period.next_retry_at
+                    } else if quiet_period.grace_remaining_checks.is_none() {
+                        Some(quiet_period.backstop_deadline)
+                    } else {
+                        None
+                    }
                 }
-            }
-            MonitorPhase::Blocked { retry_at, .. } => {
-                if self.in_flight_probe.is_none() && self.pending_db.is_none() {
-                    consider(*retry_at);
+                _ => None,
+            },
+            Timer::MonitorCheck => {
+                if self.in_flight_probe.is_some() || self.pending_db.is_some() {
+                    return None;
                 }
-            }
-            MonitorPhase::LiveWatchdog {
-                last_activity_at,
-                next_filter_hint,
-                watchdog_backoff_until,
-            } => {
-                let diagnostic_busy = matches!(
-                    &self.session,
-                    SessionSlot::Open(open)
-                        if matches!(open.attempt, AttemptPhase::DiagnosingCredentials { .. })
-                );
-                if self.in_flight_probe.is_none() && self.pending_db.is_none() && !diagnostic_busy {
-                    consider(schedule::live_watchdog_deadline(
+                match &self.monitor {
+                    MonitorPhase::Idle { next_check, .. } => *next_check,
+                    MonitorPhase::Filtered { next_check, .. }
+                    | MonitorPhase::RefusedBroadcast { next_check, .. } => Some(*next_check),
+                    MonitorPhase::Blocked { retry_at, .. } => Some(*retry_at),
+                    MonitorPhase::LiveWatchdog { .. }
+                        if matches!(
+                            &self.session,
+                            SessionSlot::Open(open)
+                                if matches!(open.attempt, AttemptPhase::DiagnosingCredentials { .. })
+                        ) =>
+                    {
+                        None
+                    }
+                    MonitorPhase::LiveWatchdog {
+                        last_activity_at,
+                        next_filter_hint,
+                        watchdog_backoff_until,
+                    } => Some(schedule::live_watchdog_deadline(
                         *last_activity_at,
                         *next_filter_hint,
                         *watchdog_backoff_until,
                         self.config.check_interval_ms,
                         now,
                         wall_now,
-                    ));
+                    )),
+                    MonitorPhase::Stopping(_) | MonitorPhase::Terminated => None,
                 }
             }
         }
-
-        // Session orthogonal timers (quiet period, diagnostic backoff, 60s eviction).
-        match &self.session {
-            SessionSlot::Open(open) => {
-                if let Some(qp) = &open.quiet_period {
-                    if qp.retrying_commit {
-                        if let Some(retry_at) = qp.next_retry_at
-                            && self.pending_db.is_none()
-                        {
-                            consider(retry_at);
-                        }
-                    } else if qp.grace_remaining_checks.is_none() {
-                        consider(qp.backstop_deadline);
-                    }
-                }
-                if let AttemptPhase::DiagnosingCredentials {
-                    probe_id: None,
-                    backoff_until: Some(until),
-                    ..
-                } = &open.attempt
-                    && self.in_flight_probe.is_none()
-                {
-                    consider(*until);
-                }
-            }
-            SessionSlot::RecentlyEnded { evict_at, .. } => {
-                consider(*evict_at);
-            }
-            SessionSlot::None | SessionSlot::CommittingStart { .. } => {}
-        }
-
-        earliest
     }
 
     /// Whether every physical resource (probe, DB commit, download attempt,
@@ -382,6 +437,7 @@ impl StreamerFsm {
             || self.pending_db.is_some()
             || !self.queued_db.is_empty()
             || !self.draining_segment_guards.is_empty()
+            || !self.detached_attempts.is_empty()
         {
             return false;
         }
@@ -489,6 +545,27 @@ impl StreamerFsm {
         op_id
     }
 
+    /// Whether a commit that ends `session_id` is in flight or queued.
+    pub(super) fn session_end_pending(&self, session_id: &str) -> bool {
+        let ends_session = |kind: &PendingDbKind| match kind {
+            PendingDbKind::EndSession {
+                session_id: Some(ending),
+                ..
+            }
+            | PendingDbKind::EndForCredentialRetirement { session_id: ending } => {
+                ending == session_id
+            }
+            _ => false,
+        };
+        self.pending_db
+            .as_ref()
+            .is_some_and(|pending| ends_session(&pending.kind))
+            || self
+                .queued_db
+                .iter()
+                .any(|queued| ends_session(&queued.kind))
+    }
+
     pub(super) fn flush_queued_db(&mut self, effects: &mut Vec<FsmEffect>) {
         if self.pending_db.is_some() {
             return;
@@ -506,82 +583,42 @@ impl StreamerFsm {
     }
 
     fn on_timer_fired(&mut self, ctx: StepContext, effects: &mut Vec<FsmEffect>) {
-        // 1. Evict expired 60s `RecentlyEnded` window.
-        if let SessionSlot::RecentlyEnded { evict_at, .. } = &self.session
-            && ctx.now >= *evict_at
-        {
-            self.session = SessionSlot::None;
-        }
-
-        // 2. Stopping deadline check takes precedence over regular polling.
-        if matches!(self.monitor, MonitorPhase::Stopping(_)) {
-            self.on_stop_deadline_fired(ctx, effects);
-            return;
-        }
-
-        if matches!(self.monitor, MonitorPhase::Terminated) {
-            return;
-        }
-
-        // 3. Credential diagnostic backoff timer.
-        self.on_credential_diagnostic_timer(ctx, effects);
-
-        // 4. Orthogonal QuietPeriod backstop or 1s failed-commit retry timer.
-        self.check_quiet_period_timer(ctx, effects);
-
-        // 5. Monitor schedule timer -> spawn status probe.
-        if self.in_flight_probe.is_some() || self.pending_db.is_some() {
-            return;
-        }
-        let (due, is_live_watchdog) = match &self.monitor {
-            MonitorPhase::Idle {
-                next_check: Some(t),
-                ..
-            } => (ctx.now >= *t, false),
-            MonitorPhase::Idle {
-                next_check: None, ..
-            } => (false, false),
-            MonitorPhase::Filtered { next_check, .. }
-            | MonitorPhase::RefusedBroadcast { next_check, .. } => (ctx.now >= *next_check, false),
-            MonitorPhase::Blocked { retry_at, .. } => (ctx.now >= *retry_at, false),
-            MonitorPhase::LiveWatchdog {
-                last_activity_at,
-                next_filter_hint,
-                watchdog_backoff_until,
-            } => {
-                let deadline = schedule::live_watchdog_deadline(
-                    *last_activity_at,
-                    *next_filter_hint,
-                    *watchdog_backoff_until,
-                    self.config.check_interval_ms,
-                    ctx.now,
-                    ctx.wall_now,
-                );
-                (ctx.now >= deadline, true)
+        // Each handler can disarm timers later in the order (a stop deadline
+        // that ends the stop, a recovery probe that occupies the probe slot),
+        // so the table is read again before every handler.
+        for timer in Timer::ALL {
+            let due = self
+                .timer_deadline(timer, ctx.now, ctx.wall_now)
+                .is_some_and(|deadline| deadline <= ctx.now);
+            if !due {
+                continue;
             }
-            MonitorPhase::Stopping(_) | MonitorPhase::Terminated => (false, false),
-        };
-
-        if !due {
-            return;
-        }
-
-        // Respect persisted `disabled_until` backoff before firing network probes.
-        if !is_live_watchdog && self.errors.is_disabled(ctx.wall_now) {
-            if let Some(remaining) = self.errors.remaining_backoff(ctx.wall_now) {
-                let kind = match &self.monitor {
-                    MonitorPhase::Blocked { kind, .. } => *kind,
-                    _ => BlockedKind::TemporalDisabled,
-                };
-                self.monitor = MonitorPhase::Blocked {
-                    kind,
-                    retry_at: ctx.now.checked_add(remaining).unwrap_or(ctx.now),
-                };
+            match timer {
+                Timer::RecentlyEndedEviction => self.session = SessionSlot::None,
+                Timer::StopDeadline => self.on_stop_deadline_fired(ctx, effects),
+                Timer::CredentialDiagnostic => self.on_credential_diagnostic_timer(ctx, effects),
+                Timer::QuietPeriod => self.on_quiet_period_timer(ctx, effects),
+                Timer::MonitorCheck => self.on_monitor_check_due(ctx, effects),
             }
+        }
+    }
+
+    /// Start the monitor phase's status probe, or wait out a persisted
+    /// `disabled_until` backoff first (a live session's watchdog ignores it).
+    fn on_monitor_check_due(&mut self, ctx: StepContext, effects: &mut Vec<FsmEffect>) {
+        let is_live_watchdog = matches!(self.monitor, MonitorPhase::LiveWatchdog { .. });
+        if !is_live_watchdog && let Some(remaining) = self.errors.remaining_backoff(ctx.wall_now) {
+            let kind = match &self.monitor {
+                MonitorPhase::Blocked { kind, .. } => *kind,
+                _ => BlockedKind::TemporalDisabled,
+            };
+            self.monitor = MonitorPhase::Blocked {
+                kind,
+                retry_at: ctx.now.checked_add(remaining).unwrap_or(ctx.now),
+            };
             return;
         }
-
-        self.spawn_status_probe(is_live_watchdog, effects);
+        self.spawn_status_probe(effects);
     }
 
     fn on_check_now(&mut self, ctx: StepContext) {

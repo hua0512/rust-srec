@@ -1207,37 +1207,39 @@ async fn segments_credential_bindings_and_retirement_contracts() {
             store.next_session_segment_index(&session_id).await.unwrap(),
             0
         );
-        store
-            .persist_video_segment(VideoSegmentRecord {
-                session_id: session_id.clone(),
-                streamer_id: "s1".into(),
-                segment_index: 0,
-                segment_path: "/rec/seg0.flv".into(),
-                started_at: Some(t0),
-                completed_at: Timestamp::from_millisecond(1_735_020_010_000).unwrap(),
-                duration_secs: 10.0,
-                size_bytes: 1_000,
-                split_reason_code: None,
-                split_reason_details_json: None,
-            })
-            .await
-            .unwrap();
+        let video_segment = || VideoSegmentRecord {
+            session_id: session_id.clone(),
+            streamer_id: "s1".into(),
+            segment_index: 0,
+            segment_path: "/rec/seg0.flv".into(),
+            started_at: Some(t0),
+            completed_at: Timestamp::from_millisecond(1_735_020_010_000).unwrap(),
+            duration_secs: 10.0,
+            size_bytes: 1_000,
+            split_reason_code: None,
+            split_reason_details_json: None,
+        };
+        let danmu_segment = || DanmuSegmentRecord {
+            session_id: session_id.clone(),
+            streamer_id: "s1".into(),
+            segment_index: 0,
+            output_path: "/rec/seg0.xml".into(),
+            size_bytes: 250,
+            message_count: 12,
+        };
+        // Each segment is persisted twice, as the registry does when an actor
+        // panicked after its own insert; the second write changes nothing.
+        for _ in 0..2 {
+            store.persist_video_segment(video_segment()).await.unwrap();
+        }
         assert_eq!(
             store.next_session_segment_index(&session_id).await.unwrap(),
             1
         );
 
-        store
-            .persist_danmu_segment(DanmuSegmentRecord {
-                session_id: session_id.clone(),
-                streamer_id: "s1".into(),
-                segment_index: 0,
-                output_path: "/rec/seg0.xml".into(),
-                size_bytes: 250,
-                message_count: 12,
-            })
-            .await
-            .unwrap();
+        for _ in 0..2 {
+            store.persist_danmu_segment(danmu_segment()).await.unwrap();
+        }
         let total_with_danmu: i64 =
             sqlx::query_scalar("SELECT total_size_bytes FROM live_sessions WHERE id = ?")
                 .bind(&session_id)

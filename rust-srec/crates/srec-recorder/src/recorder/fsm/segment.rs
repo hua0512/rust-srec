@@ -15,9 +15,10 @@ use srec_core::domain::StreamerState;
 
 use super::schedule;
 use super::state::{
-    DanmuSessionState, FsmEffect, MonitorPhase, PendingDbKind, SessionSlot, StepContext,
-    StreamerFsm,
+    AttemptPhase, DanmuSessionState, FsmEffect, MonitorPhase, PendingDbKind, SessionSlot,
+    StepContext, StopDanmu, StreamerFsm,
 };
+use super::stop::request_stop_open_attempt;
 use crate::recorder::ports::{
     DanmuCloseSegmentSpec, DanmuSegmentRecord, DanmuStopKind, DanmuStopResult, DbCommitOp,
     PipelineNotification, VideoSegmentRecord,
@@ -470,22 +471,18 @@ impl StreamerFsm {
                 }
                 // A delayed `StreamClosed` from an older session must never
                 // tear down a successor session.
-                let (was_in_hysteresis, active_attempt) = match &mut self.session {
+                let was_in_hysteresis = match &mut self.session {
                     SessionSlot::Open(open) if open.session_id == session_id => {
                         let was_hysteresis = open.quiet_period.take().is_some();
-                        let attempt = self.take_active_attempt_stop_info(&session_id);
-                        (was_hysteresis, attempt)
+                        request_stop_open_attempt(
+                            open,
+                            DownloadStopCause::DanmuStreamClosed,
+                            effects,
+                        );
+                        was_hysteresis
                     }
                     _ => return,
                 };
-
-                if let Some((attempt_id, download_id)) = active_attempt {
-                    effects.push(FsmEffect::StopAttempt {
-                        attempt_id,
-                        download_id,
-                        cause: DownloadStopCause::DanmuStreamClosed,
-                    });
-                }
 
                 self.offline_confirmation.reset();
                 self.monitor = schedule::schedule_idle(
@@ -565,6 +562,12 @@ impl StreamerFsm {
         effects: &mut Vec<FsmEffect>,
     ) {
         let unconfirmed = matches!(result, DanmuStopResult::Unconfirmed { .. });
+        // Only the collector this stop waits for settles its danmu leg.
+        let settles_stop = matches!(
+            &self.monitor,
+            MonitorPhase::Stopping(stopping)
+                if matches!(&stopping.danmu, StopDanmu::Pending { session_id: awaited } if *awaited == session_id)
+        );
         if let SessionSlot::Open(open) = &mut self.session
             && open.session_id == session_id
         {
@@ -590,15 +593,58 @@ impl StreamerFsm {
             ));
         }
 
-        if let MonitorPhase::Stopping(stopping) = &mut self.monitor {
+        if settles_stop && let MonitorPhase::Stopping(stopping) = &mut self.monitor {
             if unconfirmed {
-                stopping.danmu_unconfirmed = true;
+                stopping.danmu = StopDanmu::Unconfirmed;
                 self.lingering_physical_lease = true;
             } else {
-                stopping.danmu_confirmed = true;
+                stopping.danmu = StopDanmu::Confirmed;
             }
             self.advance_stopping(ctx, effects);
         }
+    }
+
+    /// Let go of an open session that left `self.session`: park its segment
+    /// guard while trailing segments drain, and detach an attempt that has not
+    /// reported its end yet, asking it to stop if nothing has.
+    pub(super) fn release_open_session(
+        &mut self,
+        open: Box<super::state::OpenSession>,
+        effects: &mut Vec<FsmEffect>,
+    ) {
+        let open = *open;
+        let ended_session = DownloadStopCause::Other("session ended".to_owned());
+        match open.attempt {
+            AttemptPhase::Starting { attempt_id, .. } => {
+                effects.push(FsmEffect::StopAttempt {
+                    attempt_id,
+                    download_id: None,
+                    cause: ended_session.clone(),
+                });
+                self.detached_attempts.insert(attempt_id, ended_session);
+            }
+            AttemptPhase::Running {
+                attempt_id,
+                download_id,
+                ..
+            } => {
+                effects.push(FsmEffect::StopAttempt {
+                    attempt_id,
+                    download_id: Some(download_id),
+                    cause: ended_session.clone(),
+                });
+                self.detached_attempts.insert(attempt_id, ended_session);
+            }
+            AttemptPhase::StoppingAttempt {
+                attempt_id, cause, ..
+            } => {
+                self.detached_attempts.insert(attempt_id, cause);
+            }
+            AttemptPhase::Idle
+            | AttemptPhase::WaitingCredentials
+            | AttemptPhase::DiagnosingCredentials { .. } => {}
+        }
+        self.park_segment_guard_if_draining(open.segment_guard);
     }
 
     /// Park an open session's segment guard into `draining_segment_guards` if

@@ -15,7 +15,7 @@ use jiff::Timestamp;
 use parking_lot::Mutex;
 use tokio::sync::{Semaphore, broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::config::{ConfigService, ConfigUpdateEvent};
 use crate::credentials::CredentialOwner;
@@ -60,10 +60,22 @@ const HEARTBEAT_MIN_INTERVAL: Duration = Duration::from_secs(5);
 const MAX_GLOBAL_FEEDBACK_PERMITS: usize = 1024;
 const MAX_STREAMER_FEEDBACK_PERMITS: usize = 32;
 
-/// Maximum automatic crash-restart attempts within the backoff window.
+/// Maximum automatic restarts after consecutive actor crashes.
 const MAX_CRASH_RESTARTS: u32 = 5;
+/// A crash after this much uptime starts a fresh restart budget.
+const CRASH_BUDGET_RESET_UPTIME: Duration = Duration::from_secs(10 * 60);
 const CRASH_RESTART_BASE_BACKOFF: Duration = Duration::from_secs(2);
 const CRASH_RESTART_MAX_BACKOFF: Duration = Duration::from_secs(60);
+
+/// First retry after a failed config lookup; doubles per failure up to the cap.
+const CONFIG_RETRY_BASE: Duration = Duration::from_secs(5);
+const CONFIG_RETRY_MAX: Duration = Duration::from_secs(5 * 60);
+
+/// `base` for the first failure, doubled for each further one, capped at `max`.
+fn doubling_backoff(base: Duration, failures: u32, max: Duration) -> Duration {
+    let doublings = failures.saturating_sub(1).min(16);
+    base.saturating_mul(1 << doublings).min(max)
+}
 
 /// Grace period for credential retirement physical stop confirmation.
 const CREDENTIAL_RETIREMENT_STOP_TIMEOUT: Duration = Duration::from_secs(20);
@@ -75,6 +87,14 @@ struct ActorEntry {
     generation: u64,
     handle: ActorHandle,
     exit_rx: watch::Receiver<bool>,
+}
+
+/// Backoff for a streamer whose config lookups keep failing.
+struct ConfigRetry {
+    failures: u32,
+    /// Cancels the scheduled retry. Each streamer has at most one, so a
+    /// failure that schedules a newer retry cancels the older one.
+    pending: CancellationToken,
 }
 
 enum ReconcileCommand {
@@ -91,8 +111,6 @@ enum ReconcileCommand {
     CredentialMaterial(CredentialOwner),
     ErrorCleared(String),
     FiltersUpdated(String),
-    CheckNow(String),
-    RetryAdmission(String),
 }
 
 struct RecorderFeedbackState {
@@ -216,6 +234,7 @@ pub struct ActorRegistry {
     generation_counter: AtomicU64,
     config_revisions: DashMap<String, Arc<AtomicU64>>,
     crash_counts: DashMap<String, u32>,
+    config_retries: DashMap<String, ConfigRetry>,
     runtime_views: Arc<DashMap<String, StreamerRuntimeView>>,
     /// Tracks `session_id -> streamer_id` for danmu events (like `Reconnecting` /
     /// `CollectionStopped`) whose payload does not carry `streamer_id`.
@@ -255,6 +274,7 @@ impl ActorRegistry {
             generation_counter: AtomicU64::new(1),
             config_revisions: DashMap::new(),
             crash_counts: DashMap::new(),
+            config_retries: DashMap::new(),
             runtime_views,
             danmu_session_streamers: DashMap::new(),
             deps: actor_deps,
@@ -366,18 +386,19 @@ impl ActorRegistry {
         });
     }
 
-    /// Request an immediate status check for `streamer_id`.
+    /// Request an immediate status check for `streamer_id`. Sent straight to
+    /// its actor, so it never waits behind config work in the reconciler.
     pub fn check_now(&self, streamer_id: &str) {
-        let _ = self
-            .reconcile_tx
-            .send(ReconcileCommand::CheckNow(streamer_id.to_owned()));
+        if let Some(entry) = self.actors.get(streamer_id) {
+            let _ = entry.handle.send_input(FsmInput::CheckNow);
+        }
     }
 
     /// Notify `streamer_id` that lifecycle admission capacity recovered.
     pub fn request_retry_admission(&self, streamer_id: &str) {
-        let _ = self
-            .reconcile_tx
-            .send(ReconcileCommand::RetryAdmission(streamer_id.to_owned()));
+        if let Some(entry) = self.actors.get(streamer_id) {
+            let _ = entry.handle.send_input(FsmInput::RetryAdmission);
+        }
     }
 
     /// Route a [`ConfigUpdateEvent`] into the asynchronous reconciler.
@@ -583,10 +604,7 @@ impl ActorRegistry {
                 .deps
                 .download_manager
                 .has_any_active_download_for_streamer(streamer_id);
-        let danmu_busy = self
-            .deps
-            .danmu_service
-            .has_active_collection_for_streamer(streamer_id);
+        let danmu_busy = self.has_danmu_owner(streamer_id);
 
         if !download_busy
             && !danmu_busy
@@ -619,12 +637,12 @@ impl ActorRegistry {
                     deliver_pipeline_notification(
                         self.deps.pipeline.as_ref(),
                         &self.deps.download_manager,
-                        &self.deps.leases,
                         PipelineNotification::SessionEnded {
                             session_id: sid,
                             streamer_id: streamer_id.to_owned(),
                             cause: TerminalCause::UserDisabled,
-                            should_run_session_complete: false,
+                            should_run_session_complete: TerminalCause::UserDisabled
+                                .should_run_session_complete_pipeline(),
                         },
                     )
                     .await;
@@ -704,6 +722,8 @@ impl ActorRegistry {
         let reaped = self.deps.streamer_manager.reap_deleted(streamer_id).await?;
         if reaped {
             self.config_revisions.remove(streamer_id);
+            self.crash_counts.remove(streamer_id);
+            self.clear_config_retry(streamer_id);
         }
         Ok(reaped)
     }
@@ -891,12 +911,12 @@ impl ActorRegistry {
                 deliver_pipeline_notification(
                     self.deps.pipeline.as_ref(),
                     &self.deps.download_manager,
-                    &self.deps.leases,
                     PipelineNotification::SessionEnded {
                         session_id,
                         streamer_id: streamer_id.to_owned(),
                         cause: TerminalCause::UserDisabled,
-                        should_run_session_complete: false,
+                        should_run_session_complete: TerminalCause::UserDisabled
+                            .should_run_session_complete_pipeline(),
                     },
                 )
                 .await;
@@ -992,11 +1012,7 @@ impl ActorRegistry {
         {
             outstanding.push("active download".to_string());
         }
-        if self
-            .deps
-            .danmu_service
-            .has_active_collection_for_streamer(streamer_id)
-        {
+        if self.has_danmu_owner(streamer_id) {
             outstanding.push("danmu collection".to_string());
         }
         match self
@@ -1145,6 +1161,9 @@ impl ActorRegistry {
                 let affected = self.streamers_for_credential_owner(&owner);
                 for streamer_id in affected {
                     self.reconcile_streamer(&streamer_id, true).await;
+                    if let Some(entry) = self.actors.get(&streamer_id) {
+                        let _ = entry.handle.send_input(FsmInput::CredentialMaterialChanged);
+                    }
                 }
             }
             ReconcileCommand::ErrorCleared(streamer_id) => {
@@ -1157,16 +1176,6 @@ impl ActorRegistry {
                 self.reconcile_streamer(&streamer_id, true).await;
                 if let Some(entry) = self.actors.get(&streamer_id) {
                     let _ = entry.handle.send_input(FsmInput::CheckNow);
-                }
-            }
-            ReconcileCommand::CheckNow(streamer_id) => {
-                if let Some(entry) = self.actors.get(&streamer_id) {
-                    let _ = entry.handle.send_input(FsmInput::CheckNow);
-                }
-            }
-            ReconcileCommand::RetryAdmission(streamer_id) => {
-                if let Some(entry) = self.actors.get(&streamer_id) {
-                    let _ = entry.handle.send_input(FsmInput::RetryAdmission);
                 }
             }
         }
@@ -1187,6 +1196,7 @@ impl ActorRegistry {
                 let _ = entry.handle.send_input(FsmInput::Disable);
             } else {
                 self.config_revisions.remove(streamer_id);
+                self.clear_config_retry(streamer_id);
             }
             return;
         };
@@ -1204,7 +1214,6 @@ impl ActorRegistry {
                     drop(entry);
                     self.push_resolved_config(streamer_id, &metadata, &handle)
                         .await;
-                    let _ = handle.send_input(FsmInput::CredentialMaterialChanged);
                 }
                 return;
             }
@@ -1242,15 +1251,70 @@ impl ActorRegistry {
         self.deps.prober.credential_blocks().clear(streamer_id);
         if let Some(entry) = self.actors.get(streamer_id) {
             let _ = entry.handle.send_input(FsmInput::Disable);
+        } else {
+            // A crashed generation can leave media running with no actor.
+            self.stop_unowned_media(streamer_id, DownloadStopCause::StreamerDisabled);
         }
+    }
+
+    /// Ask whatever still runs for `streamer_id` with no actor to own it
+    /// (startups, downloads, a danmu collector) to stop, without waiting.
+    fn stop_unowned_media(&self, streamer_id: &str, cause: DownloadStopCause) {
+        self.deps.leases.cancel_streamer(streamer_id);
+        for (download_id, _) in self
+            .deps
+            .download_manager
+            .active_download_ids_for_streamer(streamer_id)
+        {
+            if let Err(error) = self
+                .deps
+                .download_manager
+                .request_stop_download(&download_id, cause.clone())
+                && !matches!(error, crate::Error::NotFound { .. })
+            {
+                warn!(%streamer_id, %download_id, %error, "Failed to stop a download left without an actor");
+            }
+        }
+        if let Some(session_id) = self.deps.danmu_service.get_session_by_streamer(streamer_id) {
+            let danmu_service = self.deps.danmu_service.clone();
+            self.reconcile_tasks
+                .spawn("recorder unowned danmu stop", async move {
+                    let _ = danmu_service
+                        .stop_collection_with_outcome(
+                            &session_id,
+                            CollectionStopReason::SessionEnded,
+                        )
+                        .await;
+                });
+        }
+    }
+
+    /// Names of streamers whose actor crashed past its restart budget and
+    /// that are therefore no longer monitored.
+    pub fn crash_stopped_streamers(&self) -> Vec<String> {
+        self.crash_counts
+            .iter()
+            .filter(|entry| {
+                *entry.value() > MAX_CRASH_RESTARTS && !self.actors.contains_key(entry.key())
+            })
+            .map(|entry| {
+                self.deps
+                    .streamer_manager
+                    .get_streamer_snapshot(entry.key())
+                    .map_or_else(|| entry.key().clone(), |metadata| metadata.name.clone())
+            })
+            .collect()
     }
 
     async fn spawn_actor(self: &Arc<Self>, metadata: Arc<StreamerMetadata>) {
         let streamer_id = metadata.id.clone();
         let revision = self.next_config_revision(&streamer_id);
-        let config = self
+        let Some(config) = self
             .resolve_actor_config(&streamer_id, revision, &metadata)
-            .await;
+            .await
+        else {
+            return;
+        };
 
         // Re-validate liveness, shutdown, and deletion markers after awaiting
         // async config resolution so a concurrent shutdown, deletion, or
@@ -1299,8 +1363,15 @@ impl ActorRegistry {
         let spawned = self
             .actor_tasks
             .spawn("recorder streamer actor", async move {
+                let started = Instant::now();
                 let outcome = AssertUnwindSafe(actor.run()).catch_unwind().await;
-                registry.on_actor_exit(&task_streamer_id, generation, outcome, task_exit_tx);
+                registry.on_actor_exit(
+                    &task_streamer_id,
+                    generation,
+                    started.elapsed(),
+                    outcome,
+                    task_exit_tx,
+                );
             });
         if !spawned {
             self.actors
@@ -1317,6 +1388,7 @@ impl ActorRegistry {
         self: &Arc<Self>,
         streamer_id: &str,
         generation: u64,
+        uptime: Duration,
         outcome: std::result::Result<ActorStopReason, Box<dyn std::any::Any + Send>>,
         exit_tx: watch::Sender<bool>,
     ) {
@@ -1342,6 +1414,15 @@ impl ActorRegistry {
                 ) {
                     self.deps.prober.credential_blocks().clear(streamer_id);
                 }
+                // A reconcile that ran while this generation was stopping (a
+                // re-enable during a disable, say) found it still installed and
+                // spawned nothing, so let the current state decide again.
+                if removed && !matches!(reason, ActorStopReason::Shutdown) {
+                    let _ = self.reconcile_tx.send(ReconcileCommand::Streamer {
+                        streamer_id: streamer_id.to_owned(),
+                        reconfigured: false,
+                    });
+                }
             }
             Err(_) => {
                 warn!(
@@ -1352,40 +1433,41 @@ impl ActorRegistry {
                 if self.shutting_down.load(Ordering::Acquire) {
                     return;
                 }
+                // The crashed generation's startups, downloads and danmu
+                // collector would keep running with nothing to track them.
+                if removed {
+                    self.stop_unowned_media(
+                        streamer_id,
+                        DownloadStopCause::Other("streamer actor crashed".to_owned()),
+                    );
+                }
                 let attempts = {
                     let mut count = self.crash_counts.entry(streamer_id.to_owned()).or_insert(0);
+                    if uptime >= CRASH_BUDGET_RESET_UPTIME {
+                        *count = 0;
+                    }
                     *count = count.saturating_add(1);
                     *count
                 };
                 if attempts > MAX_CRASH_RESTARTS {
-                    warn!(
+                    error!(
                         %streamer_id,
                         attempts,
-                        "StreamerActor exceeded crash restart budget"
+                        "StreamerActor exceeded its crash restart budget; the streamer is no longer monitored"
                     );
                     return;
                 }
-                let backoff = CRASH_RESTART_BASE_BACKOFF
-                    .saturating_mul(
-                        1u32.checked_shl(attempts.saturating_sub(1))
-                            .unwrap_or(u32::MAX),
-                    )
-                    .min(CRASH_RESTART_MAX_BACKOFF);
-                let tx = self.reconcile_tx.clone();
-                let cancel = self.root_cancel.child_token();
-                let id = streamer_id.to_owned();
-                self.reconcile_tasks
-                    .spawn("recorder crash restart", async move {
-                        tokio::select! {
-                            _ = cancel.cancelled() => {}
-                            _ = tokio::time::sleep(backoff) => {
-                                let _ = tx.send(ReconcileCommand::Streamer {
-                                    streamer_id: id,
-                                    reconfigured: false,
-                                });
-                            }
-                        }
-                    });
+                self.reconcile_later(
+                    "recorder crash restart",
+                    streamer_id,
+                    false,
+                    doubling_backoff(
+                        CRASH_RESTART_BASE_BACKOFF,
+                        attempts,
+                        CRASH_RESTART_MAX_BACKOFF,
+                    ),
+                    self.root_cancel.child_token(),
+                );
             }
         }
     }
@@ -1399,12 +1481,16 @@ impl ActorRegistry {
         counter.fetch_add(1, Ordering::AcqRel).saturating_add(1)
     }
 
+    /// Resolve `streamer_id`'s actor config, or `None` when the lookup fails.
+    /// A failed lookup is retried with backoff; meanwhile a running actor keeps
+    /// its last good config and no actor starts, because defaults would switch
+    /// off danmu, segment discarding, managed credentials and batch detection.
     async fn resolve_actor_config(
         &self,
         streamer_id: &str,
         revision: u64,
         metadata: &StreamerMetadata,
-    ) -> ResolvedActorConfig {
+    ) -> Option<ResolvedActorConfig> {
         let check_interval_ms = self.check_interval_ms.load(Ordering::Acquire);
         match self
             .deps
@@ -1413,32 +1499,80 @@ impl ActorRegistry {
             .await
         {
             Ok(merged) => {
+                self.clear_config_retry(streamer_id);
                 self.deps.streamer_manager.apply_resolved_config_versioned(
                     streamer_id,
                     revision,
                     &merged,
                 );
-                ResolvedActorConfig::from_metadata_and_merged(metadata, &merged, check_interval_ms)
+                Some(ResolvedActorConfig::from_metadata_and_merged(
+                    metadata,
+                    &merged,
+                    check_interval_ms,
+                ))
             }
             Err(error) => {
+                let retry_in = self.schedule_config_retry(streamer_id);
                 warn!(
                     %streamer_id,
                     %error,
-                    "Failed to resolve merged config for actor; using metadata defaults"
+                    retry_in_secs = retry_in.as_secs(),
+                    "Failed to resolve actor config; keeping the last good config"
                 );
-                ResolvedActorConfig {
-                    streamer_name: metadata.name.clone(),
-                    streamer_url: metadata.url.clone(),
-                    platform: metadata.platform().to_owned(),
-                    avatar_url: metadata.avatar_url.clone(),
-                    check_interval_ms,
-                    offline_check_interval_ms: metadata.offline_check_delay_ms,
-                    offline_check_count: metadata.offline_check_count,
-                    priority: metadata.priority,
-                    ..ResolvedActorConfig::default()
-                }
+                None
             }
         }
+    }
+
+    /// Reconfigure `streamer_id` again after a failed config lookup, waiting
+    /// longer after each consecutive failure.
+    fn schedule_config_retry(&self, streamer_id: &str) -> Duration {
+        let cancel = self.root_cancel.child_token();
+        let failures = {
+            let mut retry = self
+                .config_retries
+                .entry(streamer_id.to_owned())
+                .or_insert_with(|| ConfigRetry {
+                    failures: 0,
+                    pending: CancellationToken::new(),
+                });
+            retry.failures = retry.failures.saturating_add(1);
+            std::mem::replace(&mut retry.pending, cancel.clone()).cancel();
+            retry.failures
+        };
+        let delay = doubling_backoff(CONFIG_RETRY_BASE, failures, CONFIG_RETRY_MAX);
+        self.reconcile_later("recorder config retry", streamer_id, true, delay, cancel);
+        delay
+    }
+
+    fn clear_config_retry(&self, streamer_id: &str) {
+        if let Some((_, retry)) = self.config_retries.remove(streamer_id) {
+            retry.pending.cancel();
+        }
+    }
+
+    /// Reconcile `streamer_id` after `delay`, unless `cancel` fires first.
+    fn reconcile_later(
+        &self,
+        task: &'static str,
+        streamer_id: &str,
+        reconfigured: bool,
+        delay: Duration,
+        cancel: CancellationToken,
+    ) {
+        let tx = self.reconcile_tx.clone();
+        let streamer_id = streamer_id.to_owned();
+        self.reconcile_tasks.spawn(task, async move {
+            tokio::select! {
+                _ = cancel.cancelled() => {}
+                _ = tokio::time::sleep(delay) => {
+                    let _ = tx.send(ReconcileCommand::Streamer {
+                        streamer_id,
+                        reconfigured,
+                    });
+                }
+            }
+        });
     }
 
     async fn push_resolved_config(
@@ -1450,13 +1584,15 @@ impl ActorRegistry {
         // Allocate revision strictly BEFORE awaiting async config resolution so
         // an older slow resolution cannot overwrite a newer revision in the FSM.
         let revision = self.next_config_revision(streamer_id);
-        let config = self
+        if let Some(config) = self
             .resolve_actor_config(streamer_id, revision, metadata)
-            .await;
-        let _ = handle.send_input(FsmInput::ConfigUpdated {
-            revision,
-            config: Box::new(config),
-        });
+            .await
+        {
+            let _ = handle.send_input(FsmInput::ConfigUpdated {
+                revision,
+                config: Box::new(config),
+            });
+        }
     }
 
     fn streamers_for_credential_owner(&self, owner: &CredentialOwner) -> Vec<String> {
@@ -1501,18 +1637,14 @@ impl ActorRegistry {
                 engine_type,
                 ..
             }) => {
+                // The startup task binds every download to its attempt before
+                // `DownloadStarted` is published. Id 0 matches no attempt, so an
+                // unbound download never reaches the installed actor's state.
                 let (attempt_id, protocol) = self
                     .deps
                     .leases
                     .attempt_and_protocol_for_download(download_id)
-                    .unwrap_or_else(|| {
-                        let id = self
-                            .deps
-                            .leases
-                            .attempt_for_session(streamer_id, session_id)
-                            .unwrap_or(0);
-                        (id, crate::downloader::DownloadProtocol::Unknown)
-                    });
+                    .unwrap_or((0, crate::downloader::DownloadProtocol::Unknown));
                 let input = FsmInput::AttemptStarted {
                     attempt_id,
                     session_id: session_id.clone(),
@@ -1556,10 +1688,21 @@ impl ActorRegistry {
                 .deps
                 .download_manager
                 .has_any_active_download_for_streamer(streamer_id)
+            || self.has_danmu_owner(streamer_id)
+    }
+
+    /// Whether a danmu collection of `streamer_id` still runs, or has stopped
+    /// but its `CollectionStopped` (and the segment events queued before it)
+    /// has not reached this registry yet: the service forgets a collection
+    /// before publishing that event.
+    fn has_danmu_owner(&self, streamer_id: &str) -> bool {
+        self.deps
+            .danmu_service
+            .has_active_collection_for_streamer(streamer_id)
             || self
-                .deps
-                .danmu_service
-                .has_active_collection_for_streamer(streamer_id)
+                .danmu_session_streamers
+                .iter()
+                .any(|entry| entry.value() == streamer_id)
     }
 
     async fn run_download_observer(
@@ -1698,11 +1841,6 @@ impl ActorRegistry {
                     .deps
                     .leases
                     .attempt_for_download(&download_id)
-                    .or_else(|| {
-                        self.deps
-                            .leases
-                            .attempt_for_session(&streamer_id, &session_id)
-                    })
                     .unwrap_or(0);
                 if let Some(handle) = self.actors.get(&streamer_id).map(|e| e.handle.clone()) {
                     let (ack_tx, ack_rx) = oneshot::channel();
@@ -1753,11 +1891,6 @@ impl ActorRegistry {
                     .deps
                     .leases
                     .attempt_for_download(&download_id)
-                    .or_else(|| {
-                        self.deps
-                            .leases
-                            .attempt_for_session(&streamer_id, &session_id)
-                    })
                     .unwrap_or(0);
 
                 if let Some(handle) = self.actors.get(&streamer_id).map(|e| e.handle.clone()) {
@@ -1811,14 +1944,11 @@ impl ActorRegistry {
                 // non-blocking (the ack resolves as soon as the synchronous FSM
                 // step and non-blocking effect dispatch finish).
                 let streamer_id = terminal.streamer_id();
+                // A preflight `Rejected` has no download yet; the state machine
+                // matches it to the open session instead of an attempt.
                 let attempt_id = terminal
                     .download_id()
                     .and_then(|download_id| self.deps.leases.take_attempt_for_download(download_id))
-                    .or_else(|| {
-                        self.deps
-                            .leases
-                            .attempt_for_session(streamer_id, terminal.session_id())
-                    })
                     .unwrap_or(0);
                 if let Some(handle) = self.actors.get(streamer_id).map(|e| e.handle.clone()) {
                     let (ack_tx, ack_rx) = oneshot::channel();
@@ -2253,8 +2383,15 @@ impl ActorRegistry {
         let spawned = self
             .actor_tasks
             .spawn("recorder test streamer actor", async move {
+                let started = Instant::now();
                 let outcome = AssertUnwindSafe(actor.run()).catch_unwind().await;
-                registry.on_actor_exit(&task_streamer_id, generation, outcome, task_exit_tx);
+                registry.on_actor_exit(
+                    &task_streamer_id,
+                    generation,
+                    started.elapsed(),
+                    outcome,
+                    task_exit_tx,
+                );
             });
         if !spawned {
             self.actors
@@ -2346,7 +2483,6 @@ impl ActorRegistry {
         deliver_pipeline_notification(
             self.deps.pipeline.as_ref(),
             &self.deps.download_manager,
-            &self.deps.leases,
             notification,
         )
         .await;

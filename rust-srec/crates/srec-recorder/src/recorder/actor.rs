@@ -15,11 +15,13 @@ pub mod effects;
 pub mod startup_task;
 
 use std::future::Future;
+use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Instant;
 
 use dashmap::DashMap;
+use futures::FutureExt;
 use jiff::Timestamp;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinSet;
@@ -36,6 +38,7 @@ use crate::recorder::ports::{
 use crate::recorder::prober::RecorderProber;
 use crate::recorder::store::RecorderStore;
 use crate::streamer::StreamerManager;
+use srec_core::utils::task_supervisor::panic_payload_message;
 use srec_sqlite::repositories::config::SqlxConfigRepository;
 use srec_sqlite::repositories::streamer::SqlxStreamerRepository;
 
@@ -148,7 +151,7 @@ impl StreamerActor {
         let now = Instant::now();
         let wall_now = Timestamp::now();
         let streamer_id = snapshot.streamer_id.clone();
-        let fsm = StreamerFsm::new(snapshot, now, wall_now);
+        let fsm = StreamerFsm::new(snapshot, now, wall_now).for_generation(generation);
         let (tx, rx) = mpsc::unbounded_channel();
         let handle = ActorHandle { tx: tx.clone() };
         let actor = Self {
@@ -391,7 +394,19 @@ impl StreamerActor {
             let prober = self.deps.prober.clone();
             self.in_flight_probe = Some((
                 probe_id,
-                Box::pin(async move { prober.probe_with_hint(req).await }),
+                Box::pin(async move {
+                    // A panic while probing (an extractor meeting a malformed
+                    // response, say) fails this check instead of the actor.
+                    AssertUnwindSafe(prober.probe_with_hint(req))
+                        .catch_unwind()
+                        .await
+                        .unwrap_or_else(|panic| {
+                            Err(crate::Error::Other(format!(
+                                "status probe panicked: {}",
+                                panic_payload_message(panic.as_ref()).unwrap_or("no message")
+                            )))
+                        })
+                }),
             ));
         }
         if let Some((op_id, op)) = signals.commit_db {

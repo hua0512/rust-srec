@@ -280,11 +280,16 @@ fn open_running_session_with_snapshot(
 /// Probe live and commit a new session, stopping at the `StartAttempt` the
 /// commit emits.
 fn reach_starting_attempt(clock: &TestClock, config: ResolvedActorConfig) -> (StreamerFsm, u64) {
-    let mut fsm = StreamerFsm::new(
+    let fsm = StreamerFsm::new(
         base_snapshot(StreamerState::NotLive, config),
         clock.now,
         clock.wall,
     );
+    reach_starting_attempt_from(fsm, clock)
+}
+
+/// [`reach_starting_attempt`] for an already constructed `fsm`.
+fn reach_starting_attempt_from(mut fsm: StreamerFsm, clock: &TestClock) -> (StreamerFsm, u64) {
     let probe_id = find_probe(&fsm.step(clock.ctx(), FsmInput::TimerFired))
         .unwrap()
         .probe_id;

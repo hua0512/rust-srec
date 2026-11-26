@@ -53,7 +53,6 @@ struct ActiveStartupLease {
 pub struct StartupLeaseRegistry {
     leases: DashMap<String, Vec<Arc<ActiveStartupLease>>>,
     attempt_by_download: DashMap<String, (u64, DownloadProtocol)>,
-    session_attempts: DashMap<(String, String), u64>,
     lease_cleared: Notify,
     tasks: TaskSupervisor,
     root_cancel: CancellationToken,
@@ -65,7 +64,6 @@ impl StartupLeaseRegistry {
         Self {
             leases: DashMap::new(),
             attempt_by_download: DashMap::new(),
-            session_attempts: DashMap::new(),
             lease_cleared: Notify::new(),
             tasks: TaskSupervisor::with_cancellation(root_cancel.clone()),
             root_cancel,
@@ -91,8 +89,6 @@ impl StartupLeaseRegistry {
             .entry(streamer_id.clone())
             .or_default()
             .push(entry.clone());
-        self.session_attempts
-            .insert((streamer_id.clone(), session_id.clone()), attempt_id);
         StreamerResourceLease {
             streamer_id,
             session_id,
@@ -109,44 +105,30 @@ impl StartupLeaseRegistry {
     /// abandoning the startup before engine start guarantees an `AttemptDequeued`
     /// signal on lease drop.
     pub(crate) fn mark_queued(&self, streamer_id: &str, session_id: &str) -> Option<u64> {
-        self.leases
-            .get(streamer_id)
-            .and_then(|entries| {
-                entries
-                    .iter()
-                    .rev()
-                    .find(|entry| entry.session_id == session_id)
-                    .map(|entry| {
-                        entry.queued_emitted.store(true, Ordering::Release);
-                        entry.attempt_id
-                    })
-            })
-            .or_else(|| {
-                self.session_attempts
-                    .get(&(streamer_id.to_owned(), session_id.to_owned()))
-                    .map(|entry| *entry)
-            })
+        self.leases.get(streamer_id).and_then(|entries| {
+            entries
+                .iter()
+                .rev()
+                .find(|entry| entry.session_id == session_id)
+                .map(|entry| {
+                    entry.queued_emitted.store(true, Ordering::Release);
+                    entry.attempt_id
+                })
+        })
     }
 
     /// Clear the queued flag once `DownloadDequeued` has already been delivered.
     pub(crate) fn mark_dequeued(&self, streamer_id: &str, session_id: &str) -> Option<u64> {
-        self.leases
-            .get(streamer_id)
-            .and_then(|entries| {
-                entries
-                    .iter()
-                    .rev()
-                    .find(|entry| entry.session_id == session_id)
-                    .map(|entry| {
-                        entry.queued_emitted.store(false, Ordering::Release);
-                        entry.attempt_id
-                    })
-            })
-            .or_else(|| {
-                self.session_attempts
-                    .get(&(streamer_id.to_owned(), session_id.to_owned()))
-                    .map(|entry| *entry)
-            })
+        self.leases.get(streamer_id).and_then(|entries| {
+            entries
+                .iter()
+                .rev()
+                .find(|entry| entry.session_id == session_id)
+                .map(|entry| {
+                    entry.queued_emitted.store(false, Ordering::Release);
+                    entry.attempt_id
+                })
+        })
     }
 
     /// Bind `download_id -> (attempt_id, protocol)` synchronously during `DownloadManager` admission.
@@ -182,19 +164,6 @@ impl StartupLeaseRegistry {
         self.attempt_by_download
             .remove(download_id)
             .map(|(_, (attempt_id, _))| attempt_id)
-    }
-
-    /// Look up the latest `attempt_id` registered for `(streamer_id, session_id)`.
-    pub(crate) fn attempt_for_session(&self, streamer_id: &str, session_id: &str) -> Option<u64> {
-        self.session_attempts
-            .get(&(streamer_id.to_owned(), session_id.to_owned()))
-            .map(|entry| *entry)
-    }
-
-    /// Clear `(streamer_id, session_id)` once a session ends.
-    pub(crate) fn clear_session(&self, streamer_id: &str, session_id: &str) {
-        self.session_attempts
-            .remove(&(streamer_id.to_owned(), session_id.to_owned()));
     }
 
     /// Cancel every startup lease belonging to `streamer_id`.
@@ -380,6 +349,9 @@ pub fn spawn_startup_task(
     }
 }
 
+/// How often a startup checks whether the streamer's previous download ended.
+const PREVIOUS_DOWNLOAD_POLL_INTERVAL: Duration = Duration::from_millis(500);
+
 fn send_start_failed(
     actor_tx: &mpsc::UnboundedSender<ActorMessage>,
     attempt_id: u64,
@@ -423,15 +395,26 @@ async fn run_startup_task(
         return;
     }
 
+    // The streamer's previous download is still running: a stop that is slow
+    // to finish, or the leftover of an earlier actor generation. Wait for it
+    // to end instead of failing, so two downloads never record one streamer
+    // and recording resumes as soon as it is gone.
     if deps.download_manager.has_active_download(&streamer_id) {
-        debug!(%streamer_id, %session_id, "Download already active; skipping duplicate startup");
-        send_start_failed(
-            &actor_tx,
-            attempt_id,
-            session_id,
-            AttemptStartFailure::Cancelled,
-        );
-        return;
+        debug!(%streamer_id, %session_id, "Waiting for the previous download to end");
+        while deps.download_manager.has_active_download(&streamer_id) {
+            tokio::select! {
+                () = cancel.cancelled() => {
+                    send_start_failed(
+                        &actor_tx,
+                        attempt_id,
+                        session_id,
+                        AttemptStartFailure::Cancelled,
+                    );
+                    return;
+                }
+                () = tokio::time::sleep(PREVIOUS_DOWNLOAD_POLL_INTERVAL) => {}
+            }
+        }
     }
 
     let streamer_metadata = deps.streamer_manager.get_streamer(&streamer_id);
@@ -727,7 +710,6 @@ async fn run_startup_task(
             purpose: ProbePurpose::QueueStart,
             session_id: Some(session_id.clone()),
             credential_binding: credential_binding.clone(),
-            is_live_watchdog: false,
         };
         let fresh = tokio::select! {
             biased;
@@ -902,6 +884,14 @@ async fn run_startup_task(
         };
         match commit_result {
             Ok(DbCommitOutcome::CredentialBindingCommitted { binding, .. }) => {
+                // The session may now be bound to another account; the actor
+                // must restart and retire against this binding, not the one
+                // it started the attempt with.
+                let _ = actor_tx.send(ActorMessage::Input(FsmInput::AttemptBindingCommitted {
+                    attempt_id,
+                    session_id: session_id.clone(),
+                    binding: binding.clone(),
+                }));
                 committed_binding = Some(binding);
             }
             Ok(other) => {

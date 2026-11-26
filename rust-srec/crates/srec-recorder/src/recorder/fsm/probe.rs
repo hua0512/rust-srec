@@ -15,17 +15,14 @@ use super::state::{
     AttemptPhase, BlockedKind, FilteredKind, FsmEffect, InFlightProbe, MonitorPhase, OpenSession,
     PendingDbKind, SessionSlot, StepContext, StopKind, StreamerFsm,
 };
+use super::stop::request_stop_open_attempt;
 use crate::recorder::ports::{
     DanmuStopKind, DbCommitOp, LiveProbePayload, ProbeFailure, ProbePurpose, ProbeRequest,
     ProbeStatus,
 };
 
 impl StreamerFsm {
-    pub(super) fn spawn_status_probe(
-        &mut self,
-        is_live_watchdog: bool,
-        effects: &mut Vec<FsmEffect>,
-    ) {
+    pub(super) fn spawn_status_probe(&mut self, effects: &mut Vec<FsmEffect>) {
         self.batch_live_hint_armed = false;
         let (session_id, credential_binding, purpose) = match &self.session {
             SessionSlot::Open(open) => (
@@ -36,18 +33,13 @@ impl StreamerFsm {
             _ => (None, None, ProbePurpose::Discovery),
         };
         let probe_id = self.next_id();
-        self.in_flight_probe = Some(InFlightProbe {
-            probe_id,
-            purpose,
-            is_live_watchdog,
-        });
+        self.in_flight_probe = Some(InFlightProbe { probe_id, purpose });
         effects.push(FsmEffect::SpawnProbe(ProbeRequest {
             probe_id,
             streamer_id: self.streamer_id.clone(),
             purpose,
             session_id,
             credential_binding,
-            is_live_watchdog,
         }));
     }
 
@@ -98,7 +90,7 @@ impl StreamerFsm {
                 self.handle_probe_status(ctx, status, saved_routine, effects);
             }
             Err(failure) => {
-                self.handle_probe_failure(ctx, probe.is_live_watchdog, failure, effects);
+                self.handle_probe_failure(ctx, failure, effects);
             }
         }
     }
@@ -176,6 +168,14 @@ impl StreamerFsm {
         }
 
         // Case 2: Open session already recording (not in quiet period).
+        if let SessionSlot::Open(open) = &self.session
+            && self.session_end_pending(&open.session_id)
+        {
+            // The session is ending, so it must not record again. Check once
+            // more as soon as the end lands, to open the next session.
+            self.monitor = schedule::schedule_idle_immediate(ctx.now);
+            return;
+        }
         if matches!(&self.session, SessionSlot::Open(_)) {
             let stalled = matches!(
                 &self.monitor,
@@ -347,20 +347,17 @@ impl StreamerFsm {
         effects: &mut Vec<FsmEffect>,
     ) {
         let mut via_hysteresis = false;
-        if let Some(sid) = session_id.as_deref() {
-            if let Some((attempt_id, download_id)) = self.take_active_attempt_stop_info(sid) {
-                effects.push(FsmEffect::StopAttempt {
-                    attempt_id,
-                    download_id,
-                    cause: crate::downloader::DownloadStopCause::StreamerOffline,
-                });
-            }
-            if let SessionSlot::Open(open) = &mut self.session
-                && open.session_id == sid
-            {
-                Self::stop_open_danmu(open, DanmuStopKind::SessionEnded, effects);
-                via_hysteresis = open.quiet_period.take().is_some();
-            }
+        if let Some(sid) = session_id.as_deref()
+            && let SessionSlot::Open(open) = &mut self.session
+            && open.session_id == sid
+        {
+            request_stop_open_attempt(
+                open,
+                crate::downloader::DownloadStopCause::StreamerOffline,
+                effects,
+            );
+            Self::stop_open_danmu(open, DanmuStopKind::SessionEnded, effects);
+            via_hysteresis = open.quiet_period.take().is_some();
         }
 
         let clear_errors = self.errors.has_errors();
@@ -470,12 +467,26 @@ impl StreamerFsm {
                 if matches!(self.session, SessionSlot::Open(_)) {
                     if let MonitorPhase::LiveWatchdog {
                         last_activity_at,
+                        next_filter_hint,
                         watchdog_backoff_until,
-                        ..
                     } = &mut self.monitor
                     {
                         *last_activity_at = ctx.now;
                         *watchdog_backoff_until = None;
+                        // This probe served a boundary or check-now hint that has
+                        // passed; keeping it would make every later probe due at once.
+                        if next_filter_hint.is_some_and(|hint| hint <= ctx.wall_now) {
+                            *next_filter_hint = None;
+                        }
+                    } else {
+                        self.monitor = schedule::schedule_idle(
+                            &self.config,
+                            &self.offline_confirmation,
+                            false,
+                            self.errors.error_count_u32(),
+                            None,
+                            ctx,
+                        );
                     }
                     return;
                 }
@@ -542,13 +553,14 @@ impl StreamerFsm {
             _ => None,
         };
         if let Some(sid) = session_id.as_deref()
-            && let Some((attempt_id, download_id)) = self.take_active_attempt_stop_info(sid)
+            && let SessionSlot::Open(open) = &mut self.session
+            && open.session_id == sid
         {
-            effects.push(FsmEffect::StopAttempt {
-                attempt_id,
-                download_id,
-                cause: crate::downloader::DownloadStopCause::StreamerOffline,
-            });
+            request_stop_open_attempt(
+                open,
+                crate::downloader::DownloadStopCause::StreamerOffline,
+                effects,
+            );
         }
 
         self.enqueue_or_dispatch_db(
@@ -569,7 +581,6 @@ impl StreamerFsm {
     fn handle_probe_failure(
         &mut self,
         ctx: StepContext,
-        is_live_watchdog: bool,
         failure: ProbeFailure,
         effects: &mut Vec<FsmEffect>,
     ) {
@@ -610,50 +621,55 @@ impl StreamerFsm {
                 }
             }
             ProbeFailure::Transient { message } | ProbeFailure::Permanent { message } => {
-                if is_live_watchdog {
-                    // Live watchdog failures stay side-effect free: no error count increment,
-                    // no disabled_until, only a 60s re-check floor.
-                    if let MonitorPhase::LiveWatchdog {
-                        watchdog_backoff_until,
-                        ..
-                    } = &mut self.monitor
-                    {
-                        *watchdog_backoff_until = ctx
-                            .now
-                            .checked_add(schedule::WATCHDOG_ERROR_BACKOFF)
-                            .or(Some(ctx.now));
-                    }
+                // Live watchdog failures stay side-effect free: no error count increment,
+                // no disabled_until, only a 60s re-check floor. A watchdog probe whose
+                // download ended while it was in flight counts like any other check.
+                if let MonitorPhase::LiveWatchdog {
+                    watchdog_backoff_until,
+                    ..
+                } = &mut self.monitor
+                {
+                    *watchdog_backoff_until = ctx
+                        .now
+                        .checked_add(schedule::WATCHDOG_ERROR_BACKOFF)
+                        .or(Some(ctx.now));
                     return;
                 }
 
-                let transition = self.errors.record_local_error(
-                    message.clone(),
-                    self.config.offline_check_count,
-                    ctx.wall_now,
-                );
-                if let Some(until) = transition.disabled_until {
-                    let remaining = self
-                        .errors
-                        .remaining_backoff(ctx.wall_now)
-                        .unwrap_or(std::time::Duration::ZERO);
-                    let _ = until;
-                    self.monitor = MonitorPhase::Blocked {
-                        kind: BlockedKind::TemporalDisabled,
-                        retry_at: ctx.now.checked_add(remaining).unwrap_or(ctx.now),
-                    };
-                } else {
-                    self.monitor = schedule::schedule_idle(
-                        &self.config,
-                        &self.offline_confirmation,
-                        true,
-                        self.errors.error_count_u32(),
-                        None,
-                        ctx,
-                    );
-                }
-                self.record_transient_error_db_only(ctx, message, effects);
+                self.record_error_and_back_off(ctx, message, effects);
             }
         }
+    }
+
+    /// Count a failure, persist it, and wait out the resulting backoff:
+    /// `Blocked` while `disabled_until` is ahead, otherwise the error-state
+    /// poll cadence.
+    pub(super) fn record_error_and_back_off(
+        &mut self,
+        ctx: StepContext,
+        message: String,
+        effects: &mut Vec<FsmEffect>,
+    ) {
+        self.errors.record_local_error(
+            message.clone(),
+            self.config.offline_check_count,
+            ctx.wall_now,
+        );
+        self.monitor = match self.errors.remaining_backoff(ctx.wall_now) {
+            Some(remaining) => MonitorPhase::Blocked {
+                kind: BlockedKind::TemporalDisabled,
+                retry_at: ctx.now.checked_add(remaining).unwrap_or(ctx.now),
+            },
+            None => schedule::schedule_idle(
+                &self.config,
+                &self.offline_confirmation,
+                true,
+                self.errors.error_count_u32(),
+                None,
+                ctx,
+            ),
+        };
+        self.record_transient_error_db_only(ctx, message, effects);
     }
 
     pub(super) fn record_transient_error(
