@@ -841,3 +841,16 @@ pub struct ImportStats {
     pub users_updated: u32,
     pub users_deleted: u32,
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_schema_version_at_least() {
+        let is_at_least = super::schema_version_at_least;
+        assert!(is_at_least("0.1.3", (0, 1, 3)));
+        assert!(is_at_least("0.1.10", (0, 1, 3)));
+        assert!(!is_at_least("0.1.2", (0, 1, 3)));
+        assert!(is_at_least("0.1.3-alpha.1", (0, 1, 3)));
+        assert!(!is_at_least("invalid", (0, 1, 3)));
+    }
+}
