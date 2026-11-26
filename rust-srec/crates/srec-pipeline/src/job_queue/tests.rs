@@ -79,10 +79,20 @@ async fn terminal_cursor_cleanup_does_not_split_log_write_lock() {
         .enqueue(Job::new("remux", vec![], vec![], "streamer", "session"))
         .await
         .unwrap();
-    let old: Vec<_> = (0..MAX_PERSISTED_LOG_ROWS_PER_JOB - 1)
-        .map(|i| JobLogEntry::info(format!("old-{i}")))
-        .collect();
-    queue.append_log_entry(&job_id, &old).await.unwrap();
+    // One row short of the cap, all older than the late batches, so the second of
+    // them has to trim. Seeded directly: the queue keeps no cursor for a job it never
+    // dequeued, so its next write counts the stored rows as after this seed.
+    sqlx::query(
+        "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?) \
+         INSERT INTO job_execution_logs (id, job_id, entry, created_at, level, message) \
+         SELECT 'old-' || i, ?, '{}', i, 'INFO', 'old-' || i FROM n",
+    )
+    .bind(MAX_PERSISTED_LOG_ROWS_PER_JOB as i64 - 1)
+    .bind(&job_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(!queue.persisted_log_cursor.contains_key(&job_id));
 
     // Hold the same permit as an in-flight insert. Polling each writer once proves
     // both remain blocked, even though terminal cleanup evicts the count between them.
