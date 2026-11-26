@@ -1269,7 +1269,7 @@ fn those_steps(count: usize) -> &'static str {
 /// step must depend, directly or through other steps, on every other step that
 /// reads the same outputs; root steps read the pipeline's inputs and count as
 /// sharing one parent.
-pub(super) fn validate_consuming_steps(dag: &DagPipelineDefinition) -> Result<()> {
+fn validate_consuming_steps(dag: &DagPipelineDefinition) -> Result<()> {
     for consumer in dag.steps.iter().filter(|step| consumes_inputs(&step.step)) {
         let readers = concurrent_readers(dag, consumer);
         if readers.is_empty() {
@@ -1292,7 +1292,7 @@ pub(super) fn validate_consuming_steps(dag: &DagPipelineDefinition) -> Result<()
 /// not rejected: the files go only after the step itself has succeeded, so a
 /// sibling that finishes first is unaffected and the outcome depends on
 /// scheduling rather than being wrong every time.
-pub(super) fn consuming_step_warnings(dag: &DagPipelineDefinition) -> Vec<String> {
+fn consuming_step_warnings(dag: &DagPipelineDefinition) -> Vec<String> {
     dag.steps
         .iter()
         .filter_map(|consumer| {

@@ -776,10 +776,6 @@ impl Processor for RemuxProcessor {
         "RemuxProcessor"
     }
 
-    fn supports_batch_input(&self) -> bool {
-        true
-    }
-
     async fn process(
         &self,
         input: &ProcessorInput,

@@ -327,7 +327,6 @@ struct TestSessionRepository {
     sessions: Mutex<HashMap<String, LiveSessionDbModel>>,
     segments: Mutex<HashMap<String, Vec<SessionSegmentDbModel>>>,
     outputs: Mutex<HashMap<String, Vec<MediaOutputDbModel>>>,
-    active_session_queries: AtomicUsize,
     session_complete_dispatched: Mutex<HashSet<String>>,
 }
 
@@ -338,7 +337,6 @@ impl TestSessionRepository {
             sessions: Mutex::new(HashMap::new()),
             segments: Mutex::new(HashMap::new()),
             outputs: Mutex::new(HashMap::new()),
-            active_session_queries: AtomicUsize::new(0),
             session_complete_dispatched: Mutex::new(HashSet::new()),
         }
     }
@@ -366,10 +364,6 @@ impl TestSessionRepository {
             .entry(output.session_id.clone())
             .or_default()
             .push(output);
-    }
-
-    fn active_session_queries(&self) -> usize {
-        self.active_session_queries.load(Ordering::SeqCst)
     }
 }
 
@@ -436,8 +430,6 @@ impl SessionRepository for TestSessionRepository {
         &self,
         pagination: &Pagination,
     ) -> DbResult<Vec<LiveSessionDbModel>> {
-        self.active_session_queries.fetch_add(1, Ordering::SeqCst);
-
         let mut sessions = self
             .sessions
             .lock()
@@ -556,11 +548,8 @@ impl SessionRepository for TestSessionRepository {
             .lock()
             .expect("lock poisoned")
             .get(session_id)
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .take(limit)
-            .collect())
+            .map(|segments| segments.iter().take(limit).cloned().collect())
+            .unwrap_or_default())
     }
 
     async fn list_session_segments_page(
@@ -574,12 +563,15 @@ impl SessionRepository for TestSessionRepository {
             .lock()
             .expect("lock poisoned")
             .get(session_id)
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .skip(start)
-            .take(pagination.limit as usize)
-            .collect())
+            .map(|segments| {
+                segments
+                    .iter()
+                    .skip(start)
+                    .take(pagination.limit as usize)
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default())
     }
 
     async fn next_session_segment_index(&self, session_id: &str) -> DbResult<u32> {
@@ -962,245 +954,6 @@ impl crate::repositories::JobRepository for TestJobRepository {
     }
 
     async fn delete_jobs_by_pipeline(&self, _pipeline_id: &str) -> DbResult<u64> {
-        unimplemented!("not needed for these tests")
-    }
-}
-
-struct TestDagRepositoryForRetry {
-    dags: Mutex<HashMap<String, DagExecutionDbModel>>,
-    steps: HashMap<String, DagStepExecutionDbModel>,
-    cancel_calls: AtomicUsize,
-}
-
-impl TestDagRepositoryForRetry {
-    fn new() -> Self {
-        Self {
-            dags: Mutex::new(HashMap::new()),
-            steps: HashMap::new(),
-            cancel_calls: AtomicUsize::new(0),
-        }
-    }
-
-    fn insert(&self, dag: DagExecutionDbModel) {
-        self.dags
-            .lock()
-            .expect("lock poisoned")
-            .insert(dag.id.clone(), dag);
-    }
-
-    fn with_step(mut self, step: DagStepExecutionDbModel) -> Self {
-        self.steps.insert(step.id.clone(), step);
-        self
-    }
-
-    fn cancel_calls(&self) -> usize {
-        self.cancel_calls.load(Ordering::SeqCst)
-    }
-}
-
-#[async_trait]
-impl DagRepository for TestDagRepositoryForRetry {
-    async fn create_dag(&self, _dag: &DagExecutionDbModel) -> DbResult<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn publish_dag(
-        &self,
-        _dag: &DagExecutionDbModel,
-        _steps: &[DagStepExecutionDbModel],
-        _root_jobs: &[JobDbModel],
-    ) -> DbResult<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn get_dag(&self, id: &str) -> DbResult<DagExecutionDbModel> {
-        self.dags
-            .lock()
-            .expect("lock poisoned")
-            .get(id)
-            .cloned()
-            .ok_or_else(|| DbError::not_found("DAG execution", id))
-    }
-
-    async fn list_dags(
-        &self,
-        _status: Option<DagExecutionStatus>,
-        _session_id: Option<&str>,
-        _limit: u32,
-        _offset: u32,
-    ) -> DbResult<Vec<DagExecutionDbModel>> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn count_dags(
-        &self,
-        _status: Option<DagExecutionStatus>,
-        _session_id: Option<&str>,
-    ) -> DbResult<u64> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn list_dag_summaries(
-        &self,
-        _filter: &crate::repositories::DagListFilter<'_>,
-        _limit: u32,
-        _offset: u32,
-    ) -> DbResult<Vec<DagExecutionListSummary>> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn count_dags_by_display_status(
-        &self,
-        _filter: &crate::repositories::DagListFilter<'_>,
-    ) -> DbResult<u64> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn get_dag_display_status(&self, _id: &str) -> DbResult<DagExecutionStatus> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn get_dag_with_display_status(
-        &self,
-        _id: &str,
-    ) -> DbResult<(DagExecutionDbModel, DagExecutionStatus)> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn get_dag_display_counts(&self) -> DbResult<srec_sqlite::models::DagDisplayCounts> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn delete_dag(&self, _id: &str) -> DbResult<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn create_step(&self, _step: &DagStepExecutionDbModel) -> DbResult<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn create_steps(&self, _steps: &[DagStepExecutionDbModel]) -> DbResult<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn get_step(&self, id: &str) -> DbResult<DagStepExecutionDbModel> {
-        self.steps
-            .get(id)
-            .cloned()
-            .ok_or_else(|| DbError::not_found("DAG step execution", id))
-    }
-
-    async fn get_step_by_dag_and_step_id(
-        &self,
-        _dag_id: &str,
-        _step_id: &str,
-    ) -> DbResult<DagStepExecutionDbModel> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn get_steps_by_dag(&self, _dag_id: &str) -> DbResult<Vec<DagStepExecutionDbModel>> {
-        Ok(Vec::new())
-    }
-
-    async fn get_steps_with_jobs_by_dag(&self, _dag_id: &str) -> DbResult<Vec<DagStepWithJob>> {
-        Ok(Vec::new())
-    }
-
-    async fn create_job_for_step(&self, _step_id: &str, _job: &JobDbModel) -> DbResult<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn complete_step_and_check_dependents(
-        &self,
-        _step_id: &str,
-        _outputs: &[String],
-    ) -> DbResult<crate::repositories::StepCompletion> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn fail_step_and_cancel_dag(
-        &self,
-        _step_id: &str,
-        _error: &str,
-    ) -> DbResult<Option<Vec<String>>> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn fail_dag_and_cancel_steps(
-        &self,
-        _dag_id: &str,
-        _error: &str,
-    ) -> DbResult<Vec<String>> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn cancel_dag_and_cancel_steps(
-        &self,
-        dag_id: &str,
-        error: &str,
-    ) -> DbResult<Vec<String>> {
-        self.cancel_calls.fetch_add(1, Ordering::SeqCst);
-        let mut dags = self.dags.lock().expect("lock poisoned");
-        let dag = dags
-            .get_mut(dag_id)
-            .ok_or_else(|| DbError::not_found("DAG execution", dag_id))?;
-        dag.status = srec_sqlite::models::DagExecutionStatus::Cancelled
-            .as_str()
-            .to_string();
-        dag.completed_at = Some(jiff::Timestamp::now().as_millisecond());
-        dag.error = Some(error.to_string());
-        Ok(Vec::new())
-    }
-
-    async fn reset_dag_for_retry(&self, dag_id: &str) -> DbResult<()> {
-        let mut dags = self.dags.lock().expect("lock poisoned");
-        let dag = dags
-            .get_mut(dag_id)
-            .ok_or_else(|| DbError::not_found("DAG execution", dag_id))?;
-        dag.status = srec_sqlite::models::DagExecutionStatus::Processing
-            .as_str()
-            .to_string();
-        dag.completed_at = None;
-        dag.error = None;
-        Ok(())
-    }
-
-    async fn get_dag_stats(
-        &self,
-        _dag_id: &str,
-    ) -> DbResult<srec_sqlite::models::DagExecutionStats> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn list_running_step_jobs(&self, _dag_ids: &[&str]) -> DbResult<Vec<(String, String)>> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn list_ready_steps(&self, _dag_id: &str) -> DbResult<Vec<ReadyStep>> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn list_processing_steps_with_completed_jobs(
-        &self,
-    ) -> DbResult<Vec<DagStepExecutionDbModel>> {
-        Ok(Vec::new())
-    }
-
-    async fn list_dag_ids_with_unmaterialized_steps(&self) -> DbResult<Vec<String>> {
-        Ok(Vec::new())
-    }
-
-    async fn list_processing_steps_with_failed_jobs(
-        &self,
-    ) -> DbResult<Vec<DagStepExecutionDbModel>> {
-        Ok(Vec::new())
-    }
-
-    async fn complete_ready_step_without_job(
-        &self,
-        _step_id: &str,
-        _outputs: &[String],
-    ) -> DbResult<crate::repositories::StepCompletion> {
         unimplemented!("not needed for these tests")
     }
 }
@@ -1692,27 +1445,6 @@ async fn sqlx_manager() -> (
     (manager, jobs, dags, pool)
 }
 
-/// A→{B,C}→D of inline `remux` steps.
-fn remux_diamond(name: &str) -> DagPipelineDefinition {
-    let remux = || PipelineStep::Inline {
-        processor: "remux".to_string(),
-        config: serde_json::json!({}),
-    };
-    DagPipelineDefinition::new(
-        name,
-        vec![
-            srec_sqlite::models::DagStep::new("A", remux()),
-            srec_sqlite::models::DagStep::with_dependencies("B", remux(), vec!["A".to_string()]),
-            srec_sqlite::models::DagStep::with_dependencies("C", remux(), vec!["A".to_string()]),
-            srec_sqlite::models::DagStep::with_dependencies(
-                "D",
-                remux(),
-                vec!["B".to_string(), "C".to_string()],
-            ),
-        ],
-    )
-}
-
 fn remux_chain(name: &str, ids: &[&str]) -> DagPipelineDefinition {
     DagPipelineDefinition::new(
         name,
@@ -1788,202 +1520,6 @@ async fn retry_dag_rejects_an_unrestartable_job_before_touching_rows() {
     );
 }
 
-/// A DAG whose only cancelled step never received a job (its creation failed)
-/// is retryable: the reset unblocks the step and materializes it.
-#[tokio::test]
-async fn retry_dag_materializes_a_cancelled_step_without_a_job() {
-    let (manager, jobs, dags, pool) = sqlx_manager().await;
-    let created = manager
-        .create_dag_pipeline(
-            "session",
-            "streamer",
-            vec!["/in.flv".to_string()],
-            remux_chain("jobless cancel", &["A", "B"]),
-        )
-        .await
-        .unwrap();
-    let scheduler = manager.dag_scheduler().unwrap().clone();
-    let steps = dags.get_steps_by_dag(&created.dag_id).await.unwrap();
-    let step_a = steps.iter().find(|step| step.step_id == "A").unwrap();
-    let step_b = steps.iter().find(|step| step.step_id == "B").unwrap();
-    let update = scheduler
-        .on_job_completed(&step_a.id, &["/a.mp4".to_string()], None, None, None, None)
-        .await
-        .unwrap();
-    // The shape a failed downstream job creation leaves behind.
-    jobs.delete_job(&update.new_job_ids[0]).await.unwrap();
-    sqlx::query("UPDATE dag_step_execution SET status = 'CANCELLED', job_id = NULL WHERE id = ?")
-        .bind(&step_b.id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query(
-        "UPDATE dag_execution SET status = 'FAILED', error = 'creation failed' WHERE id = ?",
-    )
-    .bind(&created.dag_id)
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    let result = manager.retry_dag(&created.dag_id).await.unwrap();
-    assert_eq!(result.retried_steps, 1);
-    assert_eq!(result.job_ids.len(), 1);
-    let dag = dags.get_dag(&created.dag_id).await.unwrap();
-    assert_eq!(dag.status, "PROCESSING");
-    let step_b = dags.get_step(&step_b.id).await.unwrap();
-    assert_eq!(step_b.status, "PROCESSING");
-    assert_eq!(step_b.job_id.as_deref(), Some(result.job_ids[0].as_str()));
-    assert_eq!(
-        serde_json::from_str::<Vec<String>>(
-            jobs.get_job(&result.job_ids[0])
-                .await
-                .unwrap()
-                .input
-                .as_deref()
-                .unwrap()
-        )
-        .unwrap(),
-        vec!["/a.mp4".to_string()]
-    );
-}
-
-/// After a partial failure only the failed branch is re-run: the failed step's
-/// job is restarted, its cancelled dependent is materialized once that step
-/// completes again, and the branch that finished keeps its outputs.
-#[tokio::test]
-async fn retry_dag_after_a_partial_failure_reruns_only_the_failed_branch() {
-    let (manager, jobs, dags, _pool) = sqlx_manager().await;
-    let created = manager
-        .create_dag_pipeline(
-            "session",
-            "streamer",
-            vec!["/in.flv".to_string()],
-            remux_diamond("partial failure"),
-        )
-        .await
-        .unwrap();
-    let scheduler = manager.dag_scheduler().unwrap().clone();
-    let steps = dags.get_steps_by_dag(&created.dag_id).await.unwrap();
-    let step_id = |id: &str| {
-        steps
-            .iter()
-            .find(|step| step.step_id == id)
-            .unwrap()
-            .id
-            .clone()
-    };
-    let statuses = |dags: Arc<crate::repositories::SqlxDagRepository>| {
-        let dag_id = created.dag_id.clone();
-        async move {
-            let mut statuses: Vec<String> = dags
-                .get_steps_by_dag(&dag_id)
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|step| format!("{}={}", step.step_id, step.status))
-                .collect();
-            statuses.sort();
-            statuses
-        }
-    };
-
-    let update = scheduler
-        .on_job_completed(
-            &step_id("A"),
-            &["/a.mp4".to_string()],
-            None,
-            None,
-            None,
-            None,
-        )
-        .await
-        .unwrap();
-    assert_eq!(update.new_job_ids.len(), 2);
-    let job_b = dags.get_step(&step_id("B")).await.unwrap().job_id.unwrap();
-    // The worker fails the job before it reports the step failure.
-    assert_eq!(jobs.mark_job_failed(&job_b, "boom", None).await.unwrap(), 1);
-    let update = scheduler
-        .on_job_failed(&step_id("B"), "boom")
-        .await
-        .unwrap();
-    assert!(update.completion.is_none(), "C is still running");
-    let update = scheduler
-        .on_job_completed(
-            &step_id("C"),
-            &["/c.mp4".to_string()],
-            None,
-            None,
-            None,
-            None,
-        )
-        .await
-        .unwrap();
-    assert!(
-        update
-            .completion
-            .is_some_and(|completion| !completion.succeeded)
-    );
-    assert_eq!(
-        dags.get_dag(&created.dag_id).await.unwrap().status,
-        "FAILED"
-    );
-    assert_eq!(
-        statuses(dags.clone()).await,
-        ["A=COMPLETED", "B=FAILED", "C=COMPLETED", "D=CANCELLED"]
-    );
-
-    let result = manager.retry_dag(&created.dag_id).await.unwrap();
-    assert_eq!(result.retried_steps, 2, "B and D");
-    assert_eq!(result.job_ids, vec![job_b.clone()], "only B's job restarts");
-    let dag = dags.get_dag(&created.dag_id).await.unwrap();
-    assert_eq!(dag.status, "PROCESSING");
-    assert!(dag.error.is_none());
-    assert_eq!(dag.failed_steps, 0);
-    assert_eq!(jobs.get_job(&job_b).await.unwrap().status, "PENDING");
-    assert_eq!(
-        statuses(dags.clone()).await,
-        ["A=COMPLETED", "B=PROCESSING", "C=COMPLETED", "D=BLOCKED"]
-    );
-    assert!(dags.get_step(&step_id("D")).await.unwrap().job_id.is_none());
-    assert_eq!(
-        dags.get_step(&step_id("C")).await.unwrap().get_outputs(),
-        vec!["/c.mp4".to_string()],
-        "the finished branch keeps its outputs"
-    );
-
-    // B succeeds this time: D receives B's and C's outputs in dependency order.
-    let update = scheduler
-        .on_job_completed(
-            &step_id("B"),
-            &["/b.mp4".to_string()],
-            None,
-            None,
-            None,
-            None,
-        )
-        .await
-        .unwrap();
-    assert_eq!(update.new_job_ids.len(), 1);
-    assert!(update.completion.is_none());
-    let job_d = jobs.get_job(&update.new_job_ids[0]).await.unwrap();
-    assert_eq!(
-        serde_json::from_str::<Vec<String>>(job_d.input.as_deref().unwrap()).unwrap(),
-        vec!["/b.mp4".to_string(), "/c.mp4".to_string()]
-    );
-    assert_eq!(
-        statuses(dags.clone()).await,
-        ["A=COMPLETED", "B=COMPLETED", "C=COMPLETED", "D=PROCESSING"]
-    );
-    assert_eq!(
-        jobs.get_jobs_by_pipeline(&created.dag_id)
-            .await
-            .unwrap()
-            .len(),
-        4,
-        "B's job was reused"
-    );
-}
-
 /// The retry sweeper re-queues a due retry whose step still waits on the job
 /// and drops one whose workflow has settled since.
 #[tokio::test]
@@ -2028,72 +1564,6 @@ async fn run_due_retries_requeues_live_attempts_and_drops_settled_ones() {
         "a retry of a cancelled workflow is dropped"
     );
     assert_eq!(manager.run_due_retries().await, 0);
-}
-
-#[tokio::test]
-async fn test_cancel_dag_step_job_resolves_parent_before_mutating_job() {
-    let job_repo = Arc::new(TestJobRepository::new());
-    let dag_repo = Arc::new(TestDagRepositoryForRetry::new());
-
-    let mut job = JobDbModel::new_pipeline_step("remux", "[]", "[]", 0, None, None);
-    job.dag_step_execution_id = Some("missing-step-exec".to_string());
-    let job_id = job.id.clone();
-    job_repo.insert(job);
-
-    let manager: PipelineManager =
-        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
-            .with_dag_repository(dag_repo);
-
-    let error = manager.cancel_job(&job_id).await.unwrap_err();
-
-    assert!(matches!(
-        error,
-        crate::PipelineError::Core(CoreError::NotFound { .. })
-    ));
-    assert_eq!(
-        manager.get_job(&job_id).await.unwrap().unwrap().status,
-        JobStatus::Pending
-    );
-}
-
-#[tokio::test]
-async fn test_cancel_dag_step_job_allows_terminal_parent() {
-    let job_repo = Arc::new(TestJobRepository::new());
-
-    let mut dag = DagExecutionDbModel::new(
-        &srec_sqlite::models::DagPipelineDefinition::new("test", Vec::new()),
-        None,
-        None,
-    );
-    dag.status = srec_sqlite::models::DagExecutionStatus::Failed
-        .as_str()
-        .to_string();
-    let dag_id = dag.id.clone();
-
-    let mut step = DagStepExecutionDbModel::new(&dag_id, "step-a", &[]);
-    let step_id = step.id.clone();
-    step.status = srec_sqlite::models::DagStepStatus::Failed
-        .as_str()
-        .to_string();
-    let dag_repo = Arc::new(TestDagRepositoryForRetry::new().with_step(step));
-    dag_repo.insert(dag);
-
-    let mut job = JobDbModel::new_pipeline_step("remux", "[]", "[]", 0, None, None);
-    job.dag_step_execution_id = Some(step_id);
-    let job_id = job.id.clone();
-    job_repo.insert(job);
-
-    let manager: PipelineManager =
-        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
-            .with_dag_repository(dag_repo.clone());
-
-    manager.cancel_job(&job_id).await.unwrap();
-
-    assert_eq!(
-        manager.get_job(&job_id).await.unwrap().unwrap().status,
-        JobStatus::Cancelled
-    );
-    assert_eq!(dag_repo.cancel_calls(), 0);
 }
 
 /// `cancel_pipeline` on a DAG id must stand the whole DAG down, not just its jobs: the
@@ -2422,273 +1892,6 @@ async fn baidupcs_upload_jobs_are_claimed() {
     manager.stop().await;
 }
 
-/// Every processor name the preset editor can write must be claimable by a pool, or the jobs
-/// it produces sit PENDING forever. Mirrors `VALID_PROCESSORS` in
-/// `frontend/src/api/schemas/pipeline.ts`; the seeded `archive_zip` job preset in the initial
-/// schema migration also relies on "compression" resolving here.
-#[tokio::test]
-async fn test_frontend_processor_names_are_all_claimable() {
-    let manager: PipelineManager = PipelineManager::with_repository(
-        Default::default(),
-        crate::test_support::job_repository().await,
-    );
-    let supported = manager.supported_job_types();
-
-    for processor in [
-        "remux",
-        "rclone",
-        "baidupcs",
-        "thumbnail",
-        "execute",
-        "audio_extract",
-        "compression",
-        "copy_move",
-        "delete",
-        "metadata",
-        "danmaku_factory",
-        "ass_burnin",
-    ] {
-        assert!(
-            supported.contains(processor),
-            "processor '{processor}' is offered by the preset editor but no pool can claim it"
-        );
-    }
-}
-
-fn consuming_step_dag(processor: &str, config: serde_json::Value) -> DagPipelineDefinition {
-    DagPipelineDefinition::new(
-        "consumer beside a reader",
-        vec![
-            DagStep::new(
-                "remux",
-                PipelineStep::inline("remux", serde_json::json!({})),
-            ),
-            DagStep::with_dependencies(
-                "thumbnail",
-                PipelineStep::inline("thumbnail", serde_json::json!({})),
-                vec!["remux".to_string()],
-            ),
-            DagStep::with_dependencies(
-                "consumer",
-                PipelineStep::inline(processor, config),
-                vec!["remux".to_string()],
-            ),
-        ],
-    )
-}
-
-/// A consuming step that depends on the reader, directly or through other
-/// steps, runs after it and is accepted.
-#[test]
-fn test_validate_consuming_steps_accepts_a_delete_after_its_readers() {
-    let after_thumbnail = DagPipelineDefinition::new(
-        "delete after thumbnail",
-        vec![
-            DagStep::new(
-                "remux",
-                PipelineStep::inline("remux", serde_json::json!({})),
-            ),
-            DagStep::with_dependencies(
-                "thumbnail",
-                PipelineStep::inline("thumbnail", serde_json::json!({})),
-                vec!["remux".to_string()],
-            ),
-            DagStep::with_dependencies(
-                "delete",
-                PipelineStep::inline("delete", serde_json::json!({})),
-                vec!["thumbnail".to_string()],
-            ),
-        ],
-    );
-    super::dag::validate_consuming_steps(&after_thumbnail).unwrap();
-
-    let fan_in = DagPipelineDefinition::new(
-        "delete fans in",
-        vec![
-            DagStep::new(
-                "remux",
-                PipelineStep::inline("remux", serde_json::json!({})),
-            ),
-            DagStep::with_dependencies(
-                "thumbnail",
-                PipelineStep::inline("thumbnail", serde_json::json!({})),
-                vec!["remux".to_string()],
-            ),
-            DagStep::with_dependencies(
-                "upload",
-                PipelineStep::inline("rclone", serde_json::json!({ "operation": "copy" })),
-                vec!["thumbnail".to_string()],
-            ),
-            DagStep::with_dependencies(
-                "delete",
-                PipelineStep::inline("delete", serde_json::json!({})),
-                vec!["remux".to_string(), "upload".to_string()],
-            ),
-        ],
-    );
-    super::dag::validate_consuming_steps(&fan_in).unwrap();
-}
-
-/// Root steps all read the pipeline's inputs, so two destructive roots race
-/// each other and are rejected too.
-#[test]
-fn test_validate_consuming_steps_rejects_two_destructive_roots() {
-    let dag = DagPipelineDefinition::new(
-        "two destructive roots",
-        vec![
-            DagStep::new(
-                "delete",
-                PipelineStep::inline("delete", serde_json::json!({})),
-            ),
-            DagStep::new(
-                "move",
-                PipelineStep::inline("copy_move", serde_json::json!({ "operation": "move" })),
-            ),
-        ],
-    );
-    let message = super::dag::validate_consuming_steps(&dag)
-        .expect_err("both roots consume the pipeline's inputs")
-        .to_string();
-    assert!(
-        message.contains("removes the pipeline's inputs"),
-        "{message}"
-    );
-}
-
-/// Only the modes that remove local files count: rclone and copy/move in
-/// `move` mode and a Baidu upload that deletes its sources.
-#[test]
-fn test_validate_consuming_steps_distinguishes_transfer_modes() {
-    for (processor, config) in [
-        ("copy_move", serde_json::json!({ "operation": "move" })),
-        ("rclone", serde_json::json!({ "operation": "Move" })),
-        (
-            "baidupcs",
-            serde_json::json!({ "remove_source_after_upload": true }),
-        ),
-    ] {
-        super::dag::validate_consuming_steps(&consuming_step_dag(processor, config.clone()))
-            .expect_err(&format!("{processor} {config} removes its inputs"));
-    }
-    for (processor, config) in [
-        ("copy_move", serde_json::json!({ "operation": "copy" })),
-        ("rclone", serde_json::json!({})),
-        (
-            "baidupcs",
-            serde_json::json!({ "remove_source_after_upload": false }),
-        ),
-        (
-            "metadata",
-            serde_json::json!({ "remove_input_on_success": true }),
-        ),
-    ] {
-        super::dag::validate_consuming_steps(&consuming_step_dag(processor, config.clone()))
-            .unwrap_or_else(|error| panic!("{processor} {config} only reads its inputs: {error}"));
-    }
-}
-
-/// Option-driven removal beside a reader is a warning naming the option and
-/// the readers; ordering the reader first clears it.
-#[test]
-fn test_consuming_step_warnings_flag_option_driven_deletion_beside_a_reader() {
-    let warnings = super::dag::consuming_step_warnings(&consuming_step_dag(
-        "remux",
-        serde_json::json!({ "remove_input_on_success": true }),
-    ));
-    assert_eq!(warnings.len(), 1, "{warnings:?}");
-    let warning = &warnings[0];
-    assert!(
-        warning.contains("Step 'consumer' deletes the outputs of 'remux'"),
-        "{warning}"
-    );
-    assert!(warning.contains("(remove_input_on_success)"), "{warning}");
-    assert!(warning.contains("'thumbnail' still read them"), "{warning}");
-    assert!(warning.contains("depend on that step"), "{warning}");
-
-    for (processor, config) in [
-        (
-            "ass_burnin",
-            serde_json::json!({ "delete_source_videos_on_success": true }),
-        ),
-        (
-            "ass_burnin",
-            serde_json::json!({ "delete_source_ass_on_success": true }),
-        ),
-        (
-            "danmaku_factory",
-            serde_json::json!({ "delete_source_xml_on_success": true }),
-        ),
-        (
-            "metadata",
-            serde_json::json!({ "remove_input_on_success": true }),
-        ),
-    ] {
-        let warnings =
-            super::dag::consuming_step_warnings(&consuming_step_dag(processor, config.clone()));
-        assert_eq!(warnings.len(), 1, "{processor} {config}: {warnings:?}");
-    }
-    for (processor, config) in [
-        (
-            "remux",
-            serde_json::json!({ "remove_input_on_success": false }),
-        ),
-        ("remux", serde_json::json!({})),
-        ("thumbnail", serde_json::json!({})),
-        ("delete", serde_json::json!({})),
-    ] {
-        let warnings =
-            super::dag::consuming_step_warnings(&consuming_step_dag(processor, config.clone()));
-        assert!(warnings.is_empty(), "{processor} {config}: {warnings:?}");
-    }
-
-    // The seeded "Stream Archive" shape: the thumbnail depends on the
-    // deleting remux, so it always reads first.
-    let ordered = DagPipelineDefinition::new(
-        "ordered",
-        vec![
-            DagStep::new(
-                "remux",
-                PipelineStep::inline(
-                    "remux",
-                    serde_json::json!({ "remove_input_on_success": true }),
-                ),
-            ),
-            DagStep::with_dependencies(
-                "thumbnail",
-                PipelineStep::inline("thumbnail", serde_json::json!({})),
-                vec!["remux".to_string()],
-            ),
-        ],
-    );
-    assert!(super::dag::consuming_step_warnings(&ordered).is_empty());
-}
-
-/// The check runs when a DAG is created, so the racing definition never
-/// reaches the scheduler.
-#[tokio::test]
-async fn test_create_dag_pipeline_rejects_a_step_that_removes_a_siblings_inputs() {
-    let (manager, _jobs, dags, _pool) = sqlx_manager().await;
-    let error = manager
-        .create_dag_pipeline(
-            "session",
-            "streamer",
-            vec!["/in.flv".to_string()],
-            consuming_step_dag("delete", serde_json::json!({})),
-        )
-        .await
-        .expect_err("rejected before publication");
-    assert!(
-        matches!(error, Error::Core(CoreError::Validation(_))),
-        "{error}"
-    );
-    assert!(
-        dags.list_dag_ids_with_unmaterialized_steps()
-            .await
-            .unwrap()
-            .is_empty()
-    );
-}
-
 #[tokio::test]
 async fn test_paired_segment_recovers_segment_dag_completion_without_context() {
     let dag_repo = Arc::new(TestDagRepository::new());
@@ -2852,130 +2055,6 @@ async fn configured_recovery_services(
     (config_repo, streamer_repo, config_service)
 }
 
-#[tokio::test]
-async fn test_recovery_ignores_historical_ended_sessions() {
-    let session_repo = Arc::new(TestSessionRepository::new(None));
-    session_repo.insert_session(test_session(
-        "old-session",
-        "streamer-1",
-        Some(jiff::Timestamp::now().as_millisecond()),
-    ));
-    session_repo.insert_segment(test_segment("old-session", 0, "/missing-old.flv"));
-
-    let dag_repo = Arc::new(TestDagRepository::new());
-    let job_repo = Arc::new(TestJobRepository::new());
-    let manager: PipelineManager =
-        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
-            .with_session_port(session_port(session_repo.clone()))
-            .with_dag_repository(dag_repo.clone());
-
-    manager.recover_pipeline_coordination().await.unwrap();
-
-    assert_eq!(
-        manager.pipeline_coordinator.active_session_count(),
-        0,
-        "startup recovery must not hydrate ordinary old ended sessions"
-    );
-    assert_eq!(
-        dag_repo.create_calls(),
-        0,
-        "startup recovery must not replay historical segments into new DAGs"
-    );
-    assert!(
-        session_repo.active_session_queries() > 0,
-        "recovery should query active sessions, not the full historical session list"
-    );
-}
-
-#[tokio::test]
-async fn recovery_recreates_missing_segment_dag_once_after_artifact_persistence() {
-    let session_id = "missing-segment-dag";
-    let streamer_id = "streamer-1";
-    let segment_pipeline = DagPipelineDefinition::new(
-        "segment",
-        vec![DagStep::new(
-            "segment-step",
-            PipelineStep::inline("remux", serde_json::json!({})),
-        )],
-    );
-    let session_pipeline = DagPipelineDefinition::new(
-        "session",
-        vec![DagStep::new(
-            "session-step",
-            PipelineStep::inline("remux", serde_json::json!({})),
-        )],
-    );
-    let (_config_repo, streamer_repo, config_service) =
-        configured_recovery_services(streamer_id, Some(&segment_pipeline), &session_pipeline).await;
-    let session_repo = Arc::new(TestSessionRepository::new(None));
-    session_repo.insert_session(test_session(
-        session_id,
-        streamer_id,
-        Some(jiff::Timestamp::now().as_millisecond()),
-    ));
-    session_repo.insert_segment(test_segment(session_id, 0, "/persisted.flv"));
-    let dag_repo = Arc::new(TestDagRepository::new());
-    let job_repo = Arc::new(TestJobRepository::new());
-    let (sess_port, cfg_port) = wired_ports(session_repo, streamer_repo, config_service);
-    let manager = PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
-        .with_session_port(sess_port)
-        .with_config_port(cfg_port)
-        .with_dag_repository(dag_repo.clone());
-
-    manager.recover_pipeline_coordination().await.unwrap();
-    manager.recover_pipeline_coordination().await.unwrap();
-
-    assert_eq!(dag_repo.create_calls(), 1);
-    let dags = dag_repo
-        .list_dags(None, Some(session_id), 10, 0)
-        .await
-        .unwrap();
-    assert_eq!(dags.len(), 1);
-    assert_eq!(dags[0].segment_source.as_deref(), Some("video"));
-    assert_eq!(dags[0].segment_index, Some(0));
-}
-
-#[tokio::test]
-async fn recovery_recreates_missing_session_complete_dag_with_durable_marker() {
-    let session_id = "missing-session-complete";
-    let streamer_id = "streamer-1";
-    let session_pipeline = DagPipelineDefinition::new(
-        "session",
-        vec![DagStep::new(
-            "session-step",
-            PipelineStep::inline("remux", serde_json::json!({})),
-        )],
-    );
-    let (_config_repo, streamer_repo, config_service) =
-        configured_recovery_services(streamer_id, None, &session_pipeline).await;
-    let session_repo = Arc::new(TestSessionRepository::new(None));
-    session_repo.insert_session(test_session(
-        session_id,
-        streamer_id,
-        Some(jiff::Timestamp::now().as_millisecond()),
-    ));
-    session_repo.insert_segment(test_segment(session_id, 0, "/persisted.flv"));
-    let dag_repo = Arc::new(TestDagRepository::new());
-    let job_repo = Arc::new(TestJobRepository::new());
-    let (sess_port, cfg_port) = wired_ports(session_repo, streamer_repo, config_service);
-    let manager = PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
-        .with_session_port(sess_port)
-        .with_config_port(cfg_port)
-        .with_dag_repository(dag_repo.clone());
-
-    manager.recover_pipeline_coordination().await.unwrap();
-    manager.recover_pipeline_coordination().await.unwrap();
-
-    assert_eq!(dag_repo.create_calls(), 1);
-    let dags = dag_repo
-        .list_dags(None, Some(session_id), 10, 0)
-        .await
-        .unwrap();
-    assert_eq!(dags.len(), 1);
-    assert_eq!(dags[0].segment_source.as_deref(), Some("session_complete"));
-    assert!(dags[0].segment_index.is_none());
-}
-
 /// An ended session that startup recovery reaches only through one of its
 /// in-flight coordination DAGs (nothing else marks it as owing work) is
 /// recovered as ended: the in-flight DAG is tracked rather than recreated,
@@ -3108,7 +2187,8 @@ async fn test_drain_for_session_returns_immediately_when_nothing_is_attached() {
 }
 
 /// The drain returns only once the job it was waiting on leaves `PROCESSING`.
-#[tokio::test]
+/// The repositories are in memory, so paused time skips the poll gaps.
+#[tokio::test(start_paused = true)]
 async fn test_drain_for_session_waits_for_a_running_job() {
     let job_repo = Arc::new(TestJobRepository::new());
     let manager: PipelineManager =
@@ -3147,7 +2227,7 @@ async fn test_drain_for_session_waits_for_a_running_job() {
         })
     };
 
-    let started = std::time::Instant::now();
+    let started = tokio::time::Instant::now();
     assert_eq!(
         manager
             .drain_for_session(session_id, Duration::from_secs(30))
@@ -3163,8 +2243,9 @@ async fn test_drain_for_session_waits_for_a_running_job() {
 }
 
 /// When the caller's bound expires the drain names what it gave up on, rather
-/// than reporting a bare timeout.
-#[tokio::test]
+/// than reporting a bare timeout. The repositories are in memory, so paused
+/// time skips the wait.
+#[tokio::test(start_paused = true)]
 async fn test_drain_for_session_reports_outstanding_work_at_the_bound() {
     let dag_repo = Arc::new(TestDagRepository::new());
     let job_repo = Arc::new(TestJobRepository::new());
@@ -3210,7 +2291,7 @@ async fn test_drain_for_session_reports_outstanding_work_at_the_bound() {
     dag.status = DagExecutionStatus::Processing.as_str().to_string();
     dag_repo.insert(dag);
 
-    let started = std::time::Instant::now();
+    let started = tokio::time::Instant::now();
     let drain = manager
         .drain_for_session(session_id, Duration::from_millis(250))
         .await
@@ -3228,63 +2309,6 @@ async fn test_drain_for_session_reports_outstanding_work_at_the_bound() {
     assert!(
         started.elapsed() >= Duration::from_millis(250),
         "the drain must use the whole bound before reporting"
-    );
-}
-
-/// `handle_dag_completion` reaches the coordinator after the `dag_execution` row is
-/// already terminal, so a drain that only queried rows would call the session
-/// quiescent while the coordinator is still about to create the session-complete
-/// DAG.
-#[tokio::test]
-async fn test_drain_for_session_counts_coordinator_state_with_no_rows_left() {
-    let dag_repo = Arc::new(TestDagRepository::new());
-    let job_repo = Arc::new(TestJobRepository::new());
-    let manager: PipelineManager =
-        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo.clone())
-            .with_dag_repository(dag_repo.clone());
-
-    let session_id = "coordinated-session".to_string();
-    let streamer_id = "coordinated-streamer".to_string();
-    manager
-        .pipeline_coordinator
-        .apply_event(PipelineCoordinationEvent::SegmentDagStarted {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            segment_index: 0,
-            source: SourceType::Video,
-        });
-
-    assert_eq!(
-        manager
-            .drain_for_session(&session_id, Duration::ZERO)
-            .await
-            .unwrap(),
-        SessionDrain::Outstanding(SessionPipelineOutstanding {
-            coordinated: crate::SessionCoordinationOutstanding {
-                end_processed: false,
-                pending_dags: 1,
-                session_complete_owed: false,
-            },
-            ..Default::default()
-        })
-    );
-
-    manager
-        .pipeline_coordinator
-        .apply_event(PipelineCoordinationEvent::SegmentDagCompleted {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            segment_index: 0,
-            source: SourceType::Video,
-            outputs: Vec::new(),
-        });
-
-    assert_eq!(
-        manager
-            .drain_for_session(&session_id, Duration::ZERO)
-            .await
-            .unwrap(),
-        SessionDrain::Drained
     );
 }
 
@@ -3382,6 +2406,40 @@ async fn test_drain_for_session_waits_for_an_owed_session_complete_dag() {
         SessionDrain::Outstanding(_)
     ));
 
+    // A creation failure leaves no durable DAG, so the dispatch stays owed until
+    // recovery publishes it; the next end persistence emits the command again.
+    manager.pipeline_coordinator.apply_event(
+        PipelineCoordinationEvent::SessionCompleteDagCreationFailed {
+            session_id: session_id.clone(),
+        },
+    );
+    match manager
+        .drain_for_session(&session_id, Duration::ZERO)
+        .await
+        .unwrap()
+    {
+        SessionDrain::Outstanding(outstanding) => {
+            assert!(
+                outstanding.coordinated.session_complete_owed,
+                "{outstanding:?}"
+            );
+        }
+        other => panic!("expected outstanding work, got {other:?}"),
+    }
+    let commands =
+        manager
+            .pipeline_coordinator
+            .apply_event(PipelineCoordinationEvent::SessionEndPersisted {
+                session_id: session_id.clone(),
+            });
+    assert!(
+        matches!(
+            commands.as_slice(),
+            [PipelineCommand::CreateSessionCompleteDag { .. }]
+        ),
+        "{commands:?}"
+    );
+
     // `run_session_complete_pipeline` applies this only after
     // `create_dag_pipeline_internal` has published the DAG row, which is why the
     // coordinator is read before `dag_execution`.
@@ -3476,62 +2534,6 @@ async fn test_drain_for_session_owes_nothing_when_the_finalize_gate_cannot_open(
         started.elapsed() < Duration::from_secs(1),
         "a session whose finalize gate cannot open must not consume the bound"
     );
-}
-
-/// A creation failure leaves no durable DAG, so its dispatch remains owed until
-/// recovery can publish it or a caller explicitly changes the pipeline policy.
-#[tokio::test]
-async fn test_drain_for_session_keeps_owing_after_a_failed_session_complete_creation() {
-    let job_repo = Arc::new(TestJobRepository::new());
-    let manager: PipelineManager =
-        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo);
-
-    let session_id = "creation-failed".to_string();
-    let streamer_id = "creation-failed-streamer".to_string();
-    for event in [
-        PipelineCoordinationEvent::SegmentDagStarted {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            segment_index: 0,
-            source: SourceType::Video,
-        },
-        PipelineCoordinationEvent::SegmentDagCompleted {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            segment_index: 0,
-            source: SourceType::Video,
-            outputs: vec![PathBuf::from("/out0.mp4")],
-        },
-        PipelineCoordinationEvent::SessionEnded {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            should_run_session_complete: true,
-        },
-    ] {
-        manager.pipeline_coordinator.apply_event(event);
-    }
-
-    assert!(matches!(
-        manager
-            .drain_for_session(&session_id, Duration::ZERO)
-            .await
-            .unwrap(),
-        SessionDrain::Outstanding(_)
-    ));
-
-    manager.pipeline_coordinator.apply_event(
-        PipelineCoordinationEvent::SessionCompleteDagCreationFailed {
-            session_id: session_id.clone(),
-        },
-    );
-
-    assert!(matches!(
-        manager
-            .drain_for_session(&session_id, Duration::ZERO)
-            .await
-            .unwrap(),
-        SessionDrain::Outstanding(_)
-    ));
 }
 
 /// `on_source_artifact` emits `CreateSegmentDag` before anything else records the

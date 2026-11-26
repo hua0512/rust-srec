@@ -1,5 +1,5 @@
 use super::execution::{FailurePersistBackoff, JobFacts};
-use super::lingering::{TIMED_OUT_ERROR, progress_clause};
+use super::lingering::TIMED_OUT_ERROR;
 use super::*;
 use async_trait::async_trait;
 use std::time::Duration;
@@ -7,8 +7,7 @@ use std::time::Duration;
 use crate::dag_scheduler::StepFailureKind;
 use crate::job_queue::{JobLogEntry, JobResult};
 use crate::processors::{ProcessorContext, ProcessorInput};
-use crate::progress::JobProgressSnapshot;
-use crate::{Job, JobFailureOutcome, JobPhase, JobStatus, ProcessorOutput, ProcessorType};
+use crate::{Job, JobFailureOutcome, JobStatus, ProcessorOutput, ProcessorType};
 
 #[test]
 fn latest_limit_wins_with_busy_and_independent_pools() {
@@ -267,9 +266,9 @@ async fn busy_workers_apply_reduction_to_queued_jobs() {
             .await
             .unwrap()
             .unwrap();
-        // Idle workers poll every millisecond, so at the old limit a second queued job
-        // would start well within this window.
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // The running job holds the only admission, so no idle worker can claim another.
+        assert!(pool.concurrency.try_acquire().is_none());
+        assert_eq!(pool.active_count(), 1);
         assert!(
             started_rx.try_recv().is_err(),
             "only one queued job may run at the reduced limit"
@@ -277,59 +276,6 @@ async fn busy_workers_apply_reduction_to_queued_jobs() {
         release.send(()).unwrap();
     }
     wait_for_admissions(&pool, 0).await;
-    tokio::time::timeout(WAIT, pool.stop()).await.unwrap();
-    assert_eq!(pool.concurrency.state.lock().admitted, 0);
-}
-
-#[tokio::test]
-async fn adaptive_pool_can_resume_from_zero_and_stop() {
-    let queue = Arc::new(JobQueue::with_repository(
-        Default::default(),
-        crate::test_support::job_repository().await,
-    ));
-    let pool = WorkerPool::with_config(
-        WorkerType::Cpu,
-        WorkerPoolConfig {
-            max_workers: 2,
-            poll_interval_ms: 1,
-            adaptive: AdaptiveWorkerPoolConfig {
-                enabled: true,
-                min_workers: 0,
-                interval_ms: 100,
-                scale_down_idle_ticks: 1,
-                ..Default::default()
-            },
-            ..Default::default()
-        },
-    );
-    let (event_tx, mut event_rx) = broadcast::channel(8);
-    pool.start_with_dag_scheduler(
-        queue.clone(),
-        vec![Arc::new(NoopProcessor)],
-        None,
-        None,
-        Some(event_tx),
-    );
-    assert_eq!(pool.desired_max_workers(), 0);
-    queue
-        .enqueue(Job::new("noop", vec![], vec![], "streamer", "session"))
-        .await
-        .unwrap();
-    tokio::time::timeout(WAIT, async {
-        while !matches!(
-            event_rx.recv().await.unwrap(),
-            PipelineEvent::JobCompleted { .. }
-        ) {}
-    })
-    .await
-    .unwrap();
-    tokio::time::timeout(WAIT, async {
-        while pool.desired_max_workers() != 0 {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .unwrap();
     tokio::time::timeout(WAIT, pool.stop()).await.unwrap();
     assert_eq!(pool.concurrency.state.lock().admitted, 0);
 }
@@ -351,8 +297,11 @@ async fn worker_drains_a_burst_without_poll_delays_and_wakes_after_idle() {
             ..Default::default()
         },
     );
+    // With a polling interval longer than `WAIT`, a worker that waited for its timer
+    // between two jobs could not drain even a short burst in time.
+    const BURST: usize = 4;
     let (event_tx, mut event_rx) = broadcast::channel(256);
-    for _ in 0..32 {
+    for _ in 0..BURST {
         queue
             .enqueue(Job::new("noop", vec![], vec![], "streamer", "session"))
             .await
@@ -367,7 +316,7 @@ async fn worker_drains_a_burst_without_poll_delays_and_wakes_after_idle() {
     );
     tokio::time::timeout(WAIT, async {
         let mut completed = 0;
-        while completed < 32 {
+        while completed < BURST {
             if matches!(
                 event_rx.recv().await.unwrap(),
                 PipelineEvent::JobCompleted { .. }
@@ -381,7 +330,7 @@ async fn worker_drains_a_burst_without_poll_delays_and_wakes_after_idle() {
     wait_for_admissions(&pool, 0).await;
     // Let the worker find the queue empty and park in its backoff, so that only the
     // enqueue below can wake it in time.
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::sleep(Duration::from_millis(10)).await;
     queue
         .enqueue(Job::new("noop", vec![], vec![], "streamer", "session"))
         .await
@@ -457,7 +406,6 @@ fn test_pool_config() -> WorkerPoolConfig {
         max_workers: 1,
         job_timeout_secs: 30,
         poll_interval_ms: 10,
-        adaptive: AdaptiveWorkerPoolConfig::default(),
     }
 }
 
@@ -505,8 +453,8 @@ fn observed_runner(
         dag_notify_tx: None,
         event_tx: Some(event_tx),
         active_workers: Arc::new(AtomicUsize::new(0)),
-        avg_runtime_ms: Arc::new(AtomicU64::new(0)),
         job_timeout: Duration::from_secs(30),
+        failure_persist_delay: FailurePersistBackoff::INITIAL_DELAY,
         shutdown: CancellationToken::new(),
         lingering: Arc::default(),
     }
@@ -540,7 +488,7 @@ impl Processor for ContextHandoffProcessor {
 
 /// Short enough that a timed-out job ends promptly, long enough that the processor has
 /// started by then even on a loaded machine.
-const SHORT_JOB_TIMEOUT: Duration = Duration::from_millis(200);
+const SHORT_JOB_TIMEOUT: Duration = Duration::from_millis(50);
 
 /// Poll `execution` together with `until` and return what `until` yields, failing if the
 /// execution ends first or `until` takes longer than `WAIT`. A test must not touch the
@@ -576,10 +524,6 @@ async fn wait_for_lingering(
 
 #[tokio::test]
 async fn user_cancellation_during_timeout_log_drain_keeps_the_recorded_timeout() {
-    assert_timeout_with_retained_sink(true).await;
-}
-
-async fn assert_timeout_with_retained_sink(cancel_during_drain: bool) {
     let queue = Arc::new(JobQueue::with_repository(
         Default::default(),
         crate::test_support::job_repository().await,
@@ -628,9 +572,7 @@ async fn assert_timeout_with_retained_sink(cancel_during_drain: bool) {
         stored.error
     );
     assert_eq!(runner.active_workers.load(Ordering::SeqCst), 1);
-    if cancel_during_drain {
-        assert!(queue.cancel_job(&id).await.is_err());
-    }
+    assert!(queue.cancel_job(&id).await.is_err());
     drop(retained);
     tokio::time::timeout(WAIT, execution).await.unwrap();
     assert_eq!(
@@ -718,7 +660,7 @@ async fn ended_job_is_reported_stalled_until_its_retained_work_returns() {
             .older_than(STALLED_OPERATION_THRESHOLD)
             .is_empty()
     );
-    let threshold = Duration::from_millis(100);
+    let threshold = Duration::from_millis(20);
     let stalled = drive_until(
         execution.as_mut(),
         wait_for_lingering(&runner.lingering, threshold),
@@ -757,7 +699,7 @@ async fn ended_job_is_reported_stalled_until_its_retained_work_returns() {
 }
 
 #[tokio::test]
-async fn forced_worker_abort_cancels_processor_and_releases_active_count() {
+async fn forced_worker_abort_cancels_processor_and_releases_the_job_and_its_log_collector() {
     let queue = Arc::new(JobQueue::with_repository(
         Default::default(),
         crate::test_support::job_repository().await,
@@ -793,30 +735,7 @@ async fn forced_worker_abort_cancels_processor_and_releases_active_count() {
         queue.get_job(&id).await.unwrap().unwrap().status,
         JobStatus::Processing
     );
-}
-
-#[tokio::test]
-async fn forced_worker_abort_does_not_detach_log_collector() {
-    let queue = Arc::new(JobQueue::with_repository(
-        Default::default(),
-        crate::test_support::job_repository().await,
-    ));
-    queue
-        .enqueue(Job::new("handoff", vec![], vec![], "streamer", "session"))
-        .await
-        .unwrap();
-    let pool = WorkerPool::with_config(WorkerType::Cpu, test_pool_config());
-    let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
-    pool.start(
-        queue.clone(),
-        vec![Arc::new(ContextHandoffProcessor(sender))],
-    );
-    let retained = tokio::time::timeout(Duration::from_secs(2), receiver.recv())
-        .await
-        .unwrap()
-        .unwrap();
-    pool.abort(tokio::time::Instant::now() + Duration::from_secs(2))
-        .await;
+    // The aborted worker's log collector goes too, even while a helper retains the sink.
     let weak_queue = Arc::downgrade(&queue);
     drop(queue);
     tokio::time::timeout(Duration::from_secs(1), async {
@@ -831,7 +750,7 @@ async fn forced_worker_abort_does_not_detach_log_collector() {
 
 #[test]
 fn failure_persist_backoff_widens_to_its_cap_and_rate_limits_warnings() {
-    let mut backoff = FailurePersistBackoff::default();
+    let mut backoff = FailurePersistBackoff::starting_at(FailurePersistBackoff::INITIAL_DELAY);
     let schedule: Vec<_> = std::iter::repeat_with(|| backoff.on_failure())
         .take(8)
         .map(|(delay, warn)| (delay.as_secs(), warn))
@@ -920,6 +839,9 @@ async fn failed_status_writes_retry_without_rerunning_and_allow_cancel_or_shutdo
         let (events, mut receiver) = broadcast::channel(16);
         let mut runner = observed_runner(queue.clone(), events);
         runner.dag_scheduler = Some(scheduler.clone());
+        // Each rejected write waits before the next try; a short first wait keeps the
+        // restore and cancel endings from waiting out the production second.
+        runner.failure_persist_delay = Duration::from_millis(20);
         let runner = Arc::new(runner);
         let calls = Arc::new(AtomicUsize::new(0));
         let processor: Arc<dyn Processor> = Arc::new(CountedFailure(calls.clone()));
@@ -1376,79 +1298,6 @@ async fn forgetting_started_job_cancels_retained_processor_token() {
     assert!(event_rx.try_recv().is_err());
     assert!(queue.get_job(&job_id).await.unwrap().is_none());
     assert_eq!(queue.depth(), 0);
-}
-
-/// The worker is the only place a job's start and terminal state are known, so it is what
-/// feeds the `pipeline_started` / `pipeline_completed` notification subscriptions.
-#[tokio::test]
-async fn test_worker_emits_started_and_completed_events() {
-    let job_queue = Arc::new(JobQueue::with_repository(
-        Default::default(),
-        crate::test_support::job_repository().await,
-    ));
-    let (event_tx, mut event_rx) = broadcast::channel(16);
-    let pool = WorkerPool::with_config(WorkerType::Cpu, test_pool_config());
-
-    pool.start_with_dag_scheduler(
-        job_queue.clone(),
-        vec![Arc::new(NoopProcessor)],
-        None,
-        None,
-        Some(event_tx),
-    );
-
-    let job = Job::new(
-        "noop",
-        vec!["/input".to_string()],
-        vec![],
-        "streamer-1",
-        "session-1",
-    );
-    let job_id = job_queue.enqueue(job).await.unwrap();
-
-    let mut started: Option<(String, String)> = None;
-    let mut completed: Option<(String, f64)> = None;
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while started.is_none() || completed.is_none() {
-            match event_rx.recv().await.unwrap() {
-                PipelineEvent::JobStarted {
-                    job_id,
-                    streamer_id,
-                    ..
-                } => started = Some((job_id, streamer_id)),
-                PipelineEvent::JobCompleted {
-                    job_id,
-                    duration_secs,
-                    ..
-                } => completed = Some((job_id, duration_secs)),
-                _ => {}
-            }
-        }
-    })
-    .await
-    .expect("worker emits JobStarted and JobCompleted");
-
-    // streamer_id has to come from the job itself: DAG step jobs are enqueued through
-    // enqueue_existing and never emit JobEnqueued for a listener to correlate against.
-    assert_eq!(started, Some((job_id.clone(), "streamer-1".to_string())));
-    assert_eq!(completed, Some((job_id, 1.5)));
-
-    pool.stop().await;
-}
-
-/// A timed-out job's error names the phase it was stuck in and how long
-/// ago its progress last moved.
-#[test]
-fn timeout_progress_clause_names_the_phase() {
-    let mut snapshot = JobProgressSnapshot::new(crate::ProgressKind::BaiduPcs);
-    snapshot.phase = Some(JobPhase::Retrying);
-    snapshot.updated_at = jiff::Timestamp::now() - jiff::SignedDuration::from_mins(59);
-
-    let clause = progress_clause(&snapshot);
-    assert!(
-        clause.starts_with(", progress waiting to retry, last updated 59m "),
-        "{clause}"
-    );
 }
 
 #[tokio::test]

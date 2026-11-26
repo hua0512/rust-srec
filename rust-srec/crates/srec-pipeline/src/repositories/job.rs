@@ -879,30 +879,22 @@ impl JobRepository for SqlxJobRepository {
 }
 
 #[cfg(test)]
-mod stress_tests {
+mod tests {
     use super::*;
-    use tempfile::TempDir;
 
-    async fn temp_repo(name: &str) -> (TempDir, SqlxJobRepository) {
-        let dir = TempDir::new().unwrap();
-        let db_path = dir.path().join(name);
-        let db_url = format!(
-            "sqlite:{}?mode=rwc",
-            db_path.to_string_lossy().replace('\\', "/")
-        );
-
-        let pool = srec_sqlite::init_pool(&db_url).await.unwrap();
+    async fn repository() -> SqlxJobRepository {
+        let pool = srec_sqlite::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
         srec_sqlite::run_migrations(&pool).await.unwrap();
-
-        let repo = SqlxJobRepository::new(pool.clone(), pool);
-        (dir, repo)
+        SqlxJobRepository::new(pool.clone(), pool)
     }
 
     /// A planned retry is recorded by the write that fails the job, is listed
     /// once due, and is cleared when the job is reset for the retry or dropped.
     #[tokio::test]
     async fn scheduled_retries_are_recorded_listed_when_due_and_cleared() {
-        let (_dir, repo) = temp_repo("scheduled_retry.db").await;
+        let repo = repository().await;
         let job = JobDbModel::new_with_input(
             "remux",
             "input",

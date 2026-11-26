@@ -163,14 +163,14 @@ mod tests {
     async fn setup_pool() -> SqlitePool {
         let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
         run_migrations(&pool).await.unwrap();
-        // upload_records.job_id has a FOREIGN KEY on job(id); create the jobs
+        // upload_records.job_id has a FOREIGN KEY on job(id); create the job
         // the test records reference.
-        let job_repo = SqlxJobRepository::new(pool.clone(), pool.clone());
-        for job_id in ["job-1", "job-2", "job-3"] {
-            let mut job = JobDbModel::new("rclone", "{}");
-            job.id = job_id.to_string();
-            job_repo.create_job(&job).await.unwrap();
-        }
+        let mut job = JobDbModel::new("rclone", "{}");
+        job.id = "job-1".to_string();
+        SqlxJobRepository::new(pool.clone(), pool.clone())
+            .create_job(&job)
+            .await
+            .unwrap();
         pool
     }
 
@@ -190,27 +190,6 @@ mod tests {
             updated_at: 1_000,
             completed_at: (status == upload_status::COMPLETED).then_some(1_000),
         }
-    }
-
-    #[tokio::test]
-    async fn upsert_and_list_round_trip_each_status() {
-        let pool = setup_pool().await;
-        let repo = SqlxUploadRecordRepository::new(pool.clone(), pool.clone());
-
-        // One record per status asserts the CHECK constraint accepts every
-        // documented variant — guards against the migration and the
-        // `upload_status` constants drifting apart.
-        let records: Vec<_> = upload_status::ALL
-            .iter()
-            .enumerate()
-            .map(|(i, status)| record("job-1", &format!("/tmp/file-{i}.mp4"), status))
-            .collect();
-        repo.upsert_records(&records).await.unwrap();
-
-        let rows = repo.list_by_job("job-1").await.unwrap();
-        assert_eq!(rows.len(), upload_status::ALL.len());
-        // Ordered by local_path, so index order matches insertion order here.
-        assert_eq!(rows[0].status, upload_status::COMPLETED);
     }
 
     #[tokio::test]

@@ -136,10 +136,6 @@ pub enum StepFailureKind {
     ProcessorError,
     /// The attempt outlived its timeout.
     Timeout,
-    /// The job's inputs cannot be handled by its processor at all: a
-    /// multi-input job routed to a processor without batch support. The same
-    /// inputs would be rejected again.
-    NonBatchInput,
     /// The attempt's start could not be persisted, so the processor never ran.
     /// The fault lies with the database that refused the write, not with the
     /// job, so the failure is applied at once.

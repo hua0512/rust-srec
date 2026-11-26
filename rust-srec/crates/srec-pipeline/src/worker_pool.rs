@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
@@ -13,13 +13,11 @@ use super::job_queue::JobQueue;
 use super::manager::PipelineEvent;
 use super::processors::Processor;
 
-mod autoscaling;
 mod execution;
 mod lingering;
 #[cfg(test)]
 mod tests;
 
-use autoscaling::spawn_adaptive_autoscaler;
 use execution::JobRunner;
 use lingering::LingeringAttempts;
 pub(crate) use lingering::STALLED_OPERATION_THRESHOLD;
@@ -77,45 +75,6 @@ impl std::fmt::Display for WorkerType {
     }
 }
 
-/// Adaptive worker scaling configuration.
-///
-/// When enabled, the pool dynamically adjusts its effective concurrency between
-/// `min_workers` and `max_workers` based on backlog and observed runtimes.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AdaptiveWorkerPoolConfig {
-    /// Enable adaptive scaling.
-    pub enabled: bool,
-    /// Minimum workers to keep available.
-    pub min_workers: usize,
-    /// Controller interval in milliseconds.
-    pub interval_ms: u64,
-    /// Target time to drain backlog (seconds).
-    pub target_drain_secs: u64,
-    /// Maximum workers to add per interval.
-    pub max_step_up: usize,
-    /// Maximum workers to remove per interval.
-    pub max_step_down: usize,
-    /// Only scale down after this many consecutive idle intervals.
-    pub scale_down_idle_ticks: u32,
-    /// Fallback runtime (milliseconds) until we have observations.
-    pub default_avg_runtime_ms: u64,
-}
-
-impl Default for AdaptiveWorkerPoolConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            min_workers: 1,
-            interval_ms: 1000,
-            target_drain_secs: 30,
-            max_step_up: 2,
-            max_step_down: 1,
-            scale_down_idle_ticks: 5,
-            default_avg_runtime_ms: 1000,
-        }
-    }
-}
-
 /// Configuration for a worker pool.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkerPoolConfig {
@@ -128,9 +87,6 @@ pub struct WorkerPoolConfig {
     pub job_timeout_secs: u64,
     /// Poll interval in milliseconds.
     pub poll_interval_ms: u64,
-    /// Adaptive worker scaling configuration.
-    #[serde(default)]
-    pub adaptive: AdaptiveWorkerPoolConfig,
 }
 
 impl Default for WorkerPoolConfig {
@@ -139,7 +95,6 @@ impl Default for WorkerPoolConfig {
             max_workers: 4,
             job_timeout_secs: 3600, // 1 hour
             poll_interval_ms: 100,
-            adaptive: AdaptiveWorkerPoolConfig::default(),
         }
     }
 }
@@ -154,8 +109,6 @@ pub struct WorkerPool {
     pub(super) concurrency: Arc<WorkerConcurrency>,
     /// Active worker count.
     pub(super) active_workers: Arc<AtomicUsize>,
-    /// EWMA of observed runtime (milliseconds) for this pool.
-    pub(super) avg_runtime_ms: Arc<AtomicU64>,
     /// Cancellation token.
     pub(super) cancellation_token: CancellationToken,
     /// Task set for workers.
@@ -299,7 +252,6 @@ impl WorkerPool {
             concurrency: Arc::new(WorkerConcurrency::new(max_workers)),
             config,
             active_workers: Arc::new(AtomicUsize::new(0)),
-            avg_runtime_ms: Arc::new(AtomicU64::new(0)),
             cancellation_token: CancellationToken::new(),
             tasks: parking_lot::Mutex::new(Some(JoinSet::new())),
             lingering: Arc::default(),
@@ -356,7 +308,6 @@ impl WorkerPool {
         );
         let job_timeout = std::time::Duration::from_secs(self.config.job_timeout_secs);
         let active_workers = self.active_workers.clone();
-        let avg_runtime_ms = self.avg_runtime_ms.clone();
         let lingering = self.lingering.clone();
 
         info!(
@@ -393,21 +344,6 @@ impl WorkerPool {
         );
         let one_at_a_time = Arc::new(OneAtATime::default());
 
-        if self.config.adaptive.enabled {
-            let initial = self
-                .config
-                .adaptive
-                .min_workers
-                .min(self.config.max_workers);
-            self.set_desired_max_workers(initial);
-            info!(
-                "Adaptive scaling enabled for {} pool: desired_workers={}/{}",
-                worker_type,
-                self.desired_max_workers(),
-                self.config.max_workers
-            );
-        }
-
         // Spawn worker tasks
         let mut tasks = self.tasks.lock();
         if let Some(ref mut join_set) = *tasks {
@@ -422,7 +358,6 @@ impl WorkerPool {
                 let other_job_types = other_job_types.clone();
                 let one_at_a_time = one_at_a_time.clone();
                 let active_workers = active_workers.clone();
-                let avg_runtime_ms = avg_runtime_ms.clone();
                 let dag_scheduler = dag_scheduler.clone();
                 let dag_notify_tx = dag_notify_tx.clone();
                 let event_tx = event_tx.clone();
@@ -435,8 +370,8 @@ impl WorkerPool {
                     dag_notify_tx,
                     event_tx,
                     active_workers,
-                    avg_runtime_ms,
                     job_timeout,
+                    failure_persist_delay: execution::FailurePersistBackoff::INITIAL_DELAY,
                     shutdown: cancellation_token.clone(),
                     lingering: lingering.clone(),
                 };
@@ -522,21 +457,6 @@ impl WorkerPool {
                         }
                     }
                 });
-            }
-
-            if self.config.adaptive.enabled {
-                spawn_adaptive_autoscaler(
-                    join_set,
-                    worker_type,
-                    self.config.adaptive.clone(),
-                    self.config.max_workers,
-                    self.concurrency.clone(),
-                    job_queue.clone(),
-                    supported_job_types.clone(),
-                    self.cancellation_token.clone(),
-                    self.active_workers.clone(),
-                    self.avg_runtime_ms.clone(),
-                );
             }
         }
     }

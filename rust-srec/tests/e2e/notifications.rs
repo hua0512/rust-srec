@@ -1450,6 +1450,11 @@ async fn a_recording_notifies_each_start_its_parts_and_workflow_and_one_offline_
         completed[0]["data"]["PipelineCompleted"]["job_id"],
         jobs[0]["id"]
     );
+    assert!(jobs[0]["duration_secs"].is_f64(), "{jobs:?}");
+    assert_eq!(
+        completed[0]["data"]["PipelineCompleted"]["duration_secs"],
+        jobs[0]["duration_secs"]
+    );
     assert_eq!(app.dead_end().attempts(), []);
 
     app.shutdown().await;

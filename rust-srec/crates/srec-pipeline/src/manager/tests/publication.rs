@@ -89,15 +89,11 @@ async fn assert_context_publication_boundary(paired: bool, fail: bool) {
 }
 
 #[tokio::test]
-async fn segment_context_rolls_back_only_on_failed_publication() {
-    assert_context_publication_boundary(false, true).await;
-    assert_context_publication_boundary(false, false).await;
-}
-
-#[tokio::test]
-async fn paired_context_rolls_back_only_on_failed_publication() {
-    assert_context_publication_boundary(true, true).await;
-    assert_context_publication_boundary(true, false).await;
+async fn segment_and_paired_contexts_roll_back_only_on_failed_publication() {
+    for paired in [false, true] {
+        assert_context_publication_boundary(paired, true).await;
+        assert_context_publication_boundary(paired, false).await;
+    }
 }
 
 #[tokio::test]

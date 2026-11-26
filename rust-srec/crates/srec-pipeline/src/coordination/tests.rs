@@ -81,108 +81,84 @@ fn persisted_event(session_id: &str) -> PipelineCoordinationEvent {
     }
 }
 
+/// Session-complete fires once, on whichever of the video artifact, the danmu stop and the
+/// end persistence comes last, in either order of danmu stop and video artifact.
 #[test]
-fn pipeline_coordinator_waits_when_danmu_finishes_before_video() {
-    let coord = PipelineCoordinator::new();
+fn pipeline_coordinator_waits_for_video_and_danmu_stop_in_either_order() {
     let session_id = "session1";
     let streamer_id = "streamer1";
-
-    assert!(
-        coord
-            .apply_event(configure_event(
-                session_id,
-                streamer_id,
-                true,
-                None,
-                None,
-                Some(empty_session_pipeline()),
-            ))
-            .is_empty()
-    );
-    assert!(
-        coord
-            .apply_event(PipelineCoordinationEvent::DanmuCollectionStarted {
-                session_id: session_id.to_string(),
-                streamer_id: streamer_id.to_string(),
-            })
-            .is_empty()
-    );
-    assert!(
-        coord
-            .apply_event(PipelineCoordinationEvent::DanmuSegmentCompleted {
-                session_id: session_id.to_string(),
-                streamer_id: streamer_id.to_string(),
-                segment_index: 0,
-                path: PathBuf::from("/seg0.xml"),
-            })
-            .is_empty()
-    );
-    assert!(
-        coord
-            .apply_event(PipelineCoordinationEvent::DanmuCollectionStopped {
-                session_id: session_id.to_string(),
-            })
-            .is_empty()
-    );
-    assert!(
-        coord
-            .apply_event(end_event(session_id, streamer_id))
-            .is_empty()
-    );
-    assert!(coord.apply_event(persisted_event(session_id)).is_empty());
-
-    let commands = coord.apply_event(PipelineCoordinationEvent::VideoSegmentCompleted {
+    let danmu_started = || PipelineCoordinationEvent::DanmuCollectionStarted {
+        session_id: session_id.to_string(),
+        streamer_id: streamer_id.to_string(),
+    };
+    let danmu_segment = || PipelineCoordinationEvent::DanmuSegmentCompleted {
+        session_id: session_id.to_string(),
+        streamer_id: streamer_id.to_string(),
+        segment_index: 0,
+        path: PathBuf::from("/seg0.xml"),
+    };
+    let danmu_stopped = || PipelineCoordinationEvent::DanmuCollectionStopped {
+        session_id: session_id.to_string(),
+    };
+    let video_segment = || PipelineCoordinationEvent::VideoSegmentCompleted {
         session_id: session_id.to_string(),
         streamer_id: streamer_id.to_string(),
         segment_index: 0,
         path: PathBuf::from("/seg0.flv"),
-    });
+    };
 
-    assert_eq!(commands.len(), 1);
-    match &commands[0] {
-        PipelineCommand::CreateSessionCompleteDag { outputs, .. } => {
-            assert_eq!(outputs.video_outputs.len(), 1);
-            assert_eq!(outputs.danmu_outputs.len(), 1);
+    let orderings = [
+        (
+            "danmu stops before the video artifact",
+            vec![
+                danmu_started(),
+                danmu_segment(),
+                danmu_stopped(),
+                end_event(session_id, streamer_id),
+                persisted_event(session_id),
+                video_segment(),
+            ],
+            1,
+        ),
+        (
+            "danmu stops after the video artifact",
+            vec![
+                danmu_started(),
+                video_segment(),
+                end_event(session_id, streamer_id),
+                persisted_event(session_id),
+                danmu_stopped(),
+            ],
+            0,
+        ),
+    ];
+    for (case, events, danmu_outputs) in orderings {
+        let coord = PipelineCoordinator::new();
+        assert!(
+            coord
+                .apply_event(configure_event(
+                    session_id,
+                    streamer_id,
+                    true,
+                    None,
+                    None,
+                    Some(empty_session_pipeline()),
+                ))
+                .is_empty(),
+            "{case}"
+        );
+        let (last, earlier) = events.split_last().unwrap();
+        for event in earlier {
+            assert!(coord.apply_event(event.clone()).is_empty(), "{case}");
         }
-        other => panic!("unexpected command: {other:?}"),
+        match coord.apply_event(last.clone()).as_slice() {
+            [PipelineCommand::CreateSessionCompleteDag { outputs, .. }] => {
+                assert_eq!(outputs.video_outputs.len(), 1, "{case}");
+                assert_eq!(outputs.danmu_outputs.len(), danmu_outputs, "{case}");
+            }
+            other => panic!("{case}: unexpected commands: {other:?}"),
+        }
     }
-}
-
-#[test]
-fn pipeline_coordinator_waits_for_danmu_stop_after_video() {
-    let coord = PipelineCoordinator::new();
-    let session_id = "session1";
-    let streamer_id = "streamer1";
-
-    coord.apply_event(configure_event(
-        session_id,
-        streamer_id,
-        true,
-        None,
-        None,
-        Some(empty_session_pipeline()),
-    ));
-    coord.apply_event(PipelineCoordinationEvent::DanmuCollectionStarted {
-        session_id: session_id.to_string(),
-        streamer_id: streamer_id.to_string(),
-    });
-    coord.apply_event(PipelineCoordinationEvent::VideoSegmentCompleted {
-        session_id: session_id.to_string(),
-        streamer_id: streamer_id.to_string(),
-        segment_index: 0,
-        path: PathBuf::from("/seg0.flv"),
-    });
-    coord.apply_event(end_event(session_id, streamer_id));
-    assert!(coord.apply_event(persisted_event(session_id)).is_empty());
-
-    let commands = coord.apply_event(PipelineCoordinationEvent::DanmuCollectionStopped {
-        session_id: session_id.to_string(),
-    });
-
-    assert!(matches!(
-        commands.as_slice(),
-        [PipelineCommand::CreateSessionCompleteDag { .. }]
-    ));
 }
 
 #[test]

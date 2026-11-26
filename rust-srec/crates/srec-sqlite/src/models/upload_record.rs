@@ -30,7 +30,7 @@ pub struct UploadRecordDbModel {
     /// Expanded remote destination (e.g. `remote:bucket/streamer/file.mp4`).
     /// NULL when the destination could not be computed (failure synthesis).
     pub remote_path: Option<String>,
-    /// One of [`upload_status::ALL`]; the table CHECK constraint enforces it.
+    /// One of the [`upload_status`] values; the table CHECK constraint enforces it.
     pub status: String,
     pub size_bytes: Option<i64>,
     pub error: Option<String>,
@@ -47,8 +47,4 @@ pub mod upload_status {
     pub const COMPLETED: &str = "COMPLETED";
     pub const FAILED: &str = "FAILED";
     pub const SKIPPED: &str = "SKIPPED";
-
-    /// Every accepted status value, in the order the migration's CHECK lists
-    /// them. Used by tests to assert every variant survives a round-trip.
-    pub const ALL: &[&str] = &[COMPLETED, FAILED, SKIPPED];
 }

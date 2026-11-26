@@ -1627,11 +1627,6 @@ impl Processor for RcloneProcessor {
         "RcloneProcessor"
     }
 
-    /// Indicates this processor supports batch input for efficiency.
-    fn supports_batch_input(&self) -> bool {
-        true
-    }
-
     async fn process(
         &self,
         input: &ProcessorInput,

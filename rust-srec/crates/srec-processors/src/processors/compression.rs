@@ -631,11 +631,6 @@ impl Processor for CompressionProcessor {
         "CompressionProcessor"
     }
 
-    /// Indicates this processor supports multiple inputs (batch processing).
-    fn supports_batch_input(&self) -> bool {
-        true
-    }
-
     async fn process(
         &self,
         input: &ProcessorInput,

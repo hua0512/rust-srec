@@ -100,20 +100,31 @@ async fn coordinator_recovery_pages_all_session_statuses_in_one_scan() {
             PipelineStep::inline("remux", serde_json::json!({})),
         )],
     );
-    let statuses = ["PENDING", "PROCESSING", "COMPLETED", "FAILED", "CANCELLED"];
+    let template = DagExecutionDbModel::new(
+        &definition,
+        Some(streamer.id.clone()),
+        Some(session.id.clone()),
+    );
     // Cross the 500-row page boundary with every state represented on both pages.
-    for index in 0..505 {
-        let mut dag = DagExecutionDbModel::new(
-            &definition,
-            Some(streamer.id.clone()),
-            Some(session.id.clone()),
-        );
-        dag.status = statuses[index % statuses.len()].to_owned();
-        dag.segment_source = Some("paired".to_owned());
-        dag.segment_index = Some(index as i64);
-        dag.created_at = index as i64;
-        dags.create_dag(&dag).await.unwrap();
-    }
+    sqlx::query(
+        "WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 504) \
+         INSERT INTO dag_execution (id, dag_definition, status, streamer_id, session_id, \
+             created_at, updated_at, total_steps, completed_steps, failed_steps, \
+             segment_source, segment_index) \
+         SELECT 'paired-' || i, ?, \
+             CASE i % 5 WHEN 0 THEN 'PENDING' WHEN 1 THEN 'PROCESSING' \
+                 WHEN 2 THEN 'COMPLETED' WHEN 3 THEN 'FAILED' ELSE 'CANCELLED' END, \
+             ?, ?, i, i, ?, 0, 0, 'paired', i \
+         FROM n",
+    )
+    .bind(&template.dag_definition)
+    .bind(&template.streamer_id)
+    .bind(&template.session_id)
+    .bind(template.total_steps)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(dags.count_dags(None, Some(&session.id)).await.unwrap(), 505);
     let manager = PipelineManager::with_repository(
         PipelineManagerConfig::default(),
         Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone())),

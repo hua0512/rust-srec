@@ -8,10 +8,7 @@ use srec_sqlite::models::{DagExecutionStatus, DagStepStatus, JobDbModel};
 async fn completion_reuses_atomic_snapshots_and_keeps_guarded_downstream_publication() {
     use crate::repositories::{SqlxDagRepository, SqlxJobRepository};
     use srec_sqlite::test_support::SqlTrace;
-    let pool = srec_sqlite::init_pool_with_size("sqlite::memory:", 1)
-        .await
-        .unwrap();
-    srec_sqlite::run_migrations(&pool).await.unwrap();
+    let pool = setup_test_pool().await;
     let dags = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
     let jobs = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
     let queue = Arc::new(JobQueue::with_repository(Default::default(), jobs.clone()));
@@ -100,8 +97,54 @@ async fn completion_reuses_atomic_snapshots_and_keeps_guarded_downstream_publica
     pool.close().await;
 }
 
+use crate::JobQueue;
+use crate::repositories::dag::DagRepository;
+use crate::repositories::job::JobRepository;
+use srec_sqlite::models::dag::DagStepExecutionDbModel;
+use srec_sqlite::models::{DagPipelineDefinition, DagStep, JobStatus, PipelineStep};
+use std::sync::Arc;
+
+/// A migrated in-memory database on one connection, which `run_migrations` restores
+/// from srec-sqlite's migration template instead of replaying every migration.
+async fn setup_test_pool() -> sqlx::SqlitePool {
+    let pool = srec_sqlite::init_pool_with_size("sqlite::memory:", 1)
+        .await
+        .unwrap();
+    srec_sqlite::run_migrations(&pool).await.unwrap();
+    pool
+}
+
+/// Leaf outputs come in definition order whatever the row order, each path once; a
+/// missing or unreadable leaf marks the collection incomplete without losing the
+/// valid outputs.
 #[test]
-fn shared_leaf_collection_reports_incomplete_data_without_losing_valid_outputs() {
+fn leaf_collection_is_ordered_deduped_and_reports_incomplete_data() {
+    // Graph: A -> B, A -> C (leaves are B, C), rows given C then B.
+    let def = DagPipelineDefinition::new(
+        "test",
+        vec![
+            DagStep::new("A", PipelineStep::inline("noop", serde_json::json!({}))),
+            DagStep::with_dependencies(
+                "B",
+                PipelineStep::inline("noop", serde_json::json!({})),
+                vec!["A".to_string()],
+            ),
+            DagStep::with_dependencies(
+                "C",
+                PipelineStep::inline("noop", serde_json::json!({})),
+                vec!["A".to_string()],
+            ),
+        ],
+    );
+    let mut exec_b = DagStepExecutionDbModel::new("dag1", "B", &["A".to_string()]);
+    exec_b.set_outputs(&["x".to_string(), "y".to_string()]);
+    let mut exec_c = DagStepExecutionDbModel::new("dag1", "C", &["A".to_string()]);
+    exec_c.set_outputs(&["y".to_string(), "z".to_string()]);
+    let collected =
+        DagScheduler::collect_leaf_outputs_from_step_executions(&def, &[exec_c, exec_b]);
+    assert!(collected.complete);
+    assert_eq!(collected.paths, vec!["x", "y", "z"]);
+
     let definition = DagPipelineDefinition::new(
         "leaves",
         vec![
@@ -136,348 +179,6 @@ fn shared_leaf_collection_reports_incomplete_data_without_losing_valid_outputs()
         } else {
             vec!["A.mp4", "a.mp4", "last.mp4"]
         }
-    );
-}
-use crate::JobQueue;
-use crate::repositories::dag::DagRepository;
-use crate::repositories::job::JobRepository;
-use srec_sqlite::models::dag::DagStepExecutionDbModel;
-use srec_sqlite::models::{DagPipelineDefinition, DagStep, JobStatus, PipelineStep};
-use std::sync::Arc;
-use tempfile::TempDir;
-
-async fn setup_test_pool() -> sqlx::SqlitePool {
-    let dir = TempDir::new().unwrap();
-    let db_path = dir.path().join("dag_scheduler_test.db");
-    let db_url = format!("sqlite:{}?mode=rwc", db_path.to_string_lossy());
-    let pool = srec_sqlite::init_pool(&db_url).await.unwrap();
-    srec_sqlite::run_migrations(&pool).await.unwrap();
-    std::mem::forget(dir);
-    pool
-}
-
-struct NoopJobRepository;
-
-#[async_trait::async_trait]
-impl JobRepository for NoopJobRepository {
-    async fn list_unclaimable_pending_jobs(
-        &self,
-        _supported_types: &[&str],
-        _after_id: Option<&str>,
-        _limit: u32,
-    ) -> srec_sqlite::DbResult<Vec<crate::repositories::UnclaimableJob>> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn create_job(
-        &self,
-        _job: &srec_sqlite::models::JobDbModel,
-    ) -> srec_sqlite::DbResult<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn get_job(&self, _id: &str) -> srec_sqlite::DbResult<srec_sqlite::models::JobDbModel> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn list_jobs_by_status(
-        &self,
-        _status: JobStatus,
-    ) -> srec_sqlite::DbResult<Vec<srec_sqlite::models::JobDbModel>> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn update_job_status(&self, _id: &str, _status: JobStatus) -> srec_sqlite::DbResult<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn mark_job_failed(
-        &self,
-        _id: &str,
-        _error: &str,
-        _retry_after: Option<i64>,
-    ) -> srec_sqlite::DbResult<u64> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn mark_job_cancelled(&self, _id: &str) -> srec_sqlite::DbResult<u64> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn reset_job_for_retry(&self, _id: &str) -> srec_sqlite::DbResult<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn count_pending_jobs(
-        &self,
-        _job_types: Option<&[String]>,
-    ) -> srec_sqlite::DbResult<u64> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn count_pending_jobs_by_type(&self) -> srec_sqlite::DbResult<Vec<(String, u64)>> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn claim_next_pending_job(
-        &self,
-        _job_types: Option<&[String]>,
-    ) -> srec_sqlite::DbResult<Option<srec_sqlite::models::JobDbModel>> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn get_job_execution_info(&self, _id: &str) -> srec_sqlite::DbResult<Option<String>> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn update_job_execution_info(
-        &self,
-        _id: &str,
-        _execution_info: &str,
-    ) -> srec_sqlite::DbResult<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn update_job_state(&self, _id: &str, _state: &str) -> srec_sqlite::DbResult<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn update_job(
-        &self,
-        _job: &srec_sqlite::models::JobDbModel,
-    ) -> srec_sqlite::DbResult<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn update_job_if_status(
-        &self,
-        _job: &srec_sqlite::models::JobDbModel,
-        _expected_status: JobStatus,
-    ) -> srec_sqlite::DbResult<u64> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn reset_processing_jobs(&self) -> srec_sqlite::DbResult<i32> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn delete_job(&self, _id: &str) -> srec_sqlite::DbResult<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn add_execution_log(
-        &self,
-        _log: &srec_sqlite::models::JobExecutionLogDbModel,
-    ) -> srec_sqlite::DbResult<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn add_execution_logs(
-        &self,
-        _logs: &[srec_sqlite::models::JobExecutionLogDbModel],
-    ) -> srec_sqlite::DbResult<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn list_execution_logs(
-        &self,
-        _job_id: &str,
-        _pagination: &srec_sqlite::models::Pagination,
-    ) -> srec_sqlite::DbResult<(Vec<srec_sqlite::models::JobExecutionLogDbModel>, u64)> {
-        Ok((Vec::new(), 0))
-    }
-
-    async fn delete_execution_logs_for_job(&self, _job_id: &str) -> srec_sqlite::DbResult<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn list_pending_jobs(
-        &self,
-        _limit: u32,
-    ) -> srec_sqlite::DbResult<(Vec<srec_sqlite::models::JobDbModel>, u64)> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn count_jobs_by_status(
-        &self,
-        _status: srec_sqlite::models::JobStatus,
-    ) -> srec_sqlite::DbResult<u64> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn count_unfinished_jobs_for_streamer(
-        &self,
-        _streamer_id: &str,
-    ) -> srec_sqlite::DbResult<u64> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn count_unfinished_jobs_for_session(
-        &self,
-        _session_id: &str,
-    ) -> srec_sqlite::DbResult<u64> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn get_job_counts_by_status(
-        &self,
-    ) -> srec_sqlite::DbResult<srec_sqlite::models::JobCounts> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn get_avg_processing_time(&self) -> srec_sqlite::DbResult<Option<f64>> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn cancel_jobs_by_pipeline(&self, _pipeline_id: &str) -> srec_sqlite::DbResult<u64> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn get_jobs_by_pipeline(
-        &self,
-        _pipeline_id: &str,
-    ) -> srec_sqlite::DbResult<Vec<srec_sqlite::models::JobDbModel>> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn delete_jobs_by_pipeline(&self, _pipeline_id: &str) -> srec_sqlite::DbResult<u64> {
-        unimplemented!("not needed for these tests")
-    }
-}
-
-#[test]
-fn test_collect_leaf_outputs_is_deterministic_and_deduped() {
-    // Graph: A -> B, A -> C (leaves are B, C)
-    // Definition order is A, B, C so outputs should be B then C, regardless of DB row order.
-    let def = DagPipelineDefinition::new(
-        "test",
-        vec![
-            DagStep {
-                id: "A".to_string(),
-                step: PipelineStep::inline("noop", serde_json::json!({})),
-                depends_on: vec![],
-                retry: None,
-                timeout_secs: None,
-            },
-            DagStep {
-                id: "B".to_string(),
-                step: PipelineStep::inline("noop", serde_json::json!({})),
-                depends_on: vec!["A".to_string()],
-                retry: None,
-                timeout_secs: None,
-            },
-            DagStep {
-                id: "C".to_string(),
-                step: PipelineStep::inline("noop", serde_json::json!({})),
-                depends_on: vec!["A".to_string()],
-                retry: None,
-                timeout_secs: None,
-            },
-        ],
-    );
-
-    let mut exec_b = DagStepExecutionDbModel::new("dag1", "B", &["A".to_string()]);
-    exec_b.set_outputs(&["x".to_string(), "y".to_string()]);
-    let mut exec_c = DagStepExecutionDbModel::new("dag1", "C", &["A".to_string()]);
-    exec_c.set_outputs(&["y".to_string(), "z".to_string()]);
-
-    // Simulate non-deterministic row order from DB (C then B).
-    let step_execs = vec![exec_c, exec_b];
-
-    let collected = DagScheduler::collect_leaf_outputs_from_step_executions(&def, &step_execs);
-    assert!(collected.complete);
-    let out = collected.paths;
-    assert_eq!(out, vec!["x".to_string(), "y".to_string(), "z".to_string()]);
-}
-
-#[tokio::test]
-async fn test_dag_jobs_persist_session_start() {
-    let pool = setup_test_pool().await;
-    let dag_repo = Arc::new(crate::repositories::dag::SqlxDagRepository::new(
-        pool.clone(),
-        pool.clone(),
-    ));
-    let job_repo = Arc::new(crate::repositories::job::SqlxJobRepository::new(
-        pool.clone(),
-        pool,
-    ));
-    let scheduler = DagScheduler::new(
-        Arc::new(JobQueue::with_repository(
-            Default::default(),
-            job_repo.clone(),
-        )),
-        dag_repo,
-        job_repo.clone(),
-    );
-    let session_start = jiff::fmt::temporal::DateTimeParser::new()
-        .parse_timestamp("2024-01-01T23:30:00Z")
-        .unwrap();
-    let dag_def = DagPipelineDefinition::new(
-        "session start propagation",
-        vec![
-            DagStep {
-                id: "A".to_string(),
-                step: PipelineStep::inline("noop", serde_json::json!({})),
-                depends_on: vec![],
-                retry: None,
-                timeout_secs: None,
-            },
-            DagStep {
-                id: "B".to_string(),
-                step: PipelineStep::inline("noop", serde_json::json!({})),
-                depends_on: vec!["A".to_string()],
-                retry: None,
-                timeout_secs: None,
-            },
-        ],
-    );
-
-    let created = scheduler
-        .create_dag_pipeline(
-            dag_def,
-            &["/input.flv".to_string()],
-            DagRunContext {
-                streamer_id: Some("streamer-1".to_string()),
-                session_id: Some("session-1".to_string()),
-                streamer_name: Some("Streamer".to_string()),
-                session_title: Some("Title".to_string()),
-                platform: Some("Platform".to_string()),
-                session_start: Some(session_start),
-                manifest: None,
-            },
-        )
-        .await
-        .unwrap();
-
-    let root_job = job_repo.get_job(&created.root_job_ids[0]).await.unwrap();
-    let root_state: serde_json::Value = serde_json::from_str(&root_job.state).unwrap();
-    assert_eq!(
-        root_state
-            .get("session_start_ms")
-            .and_then(|value| value.as_i64()),
-        Some(session_start.as_millisecond())
-    );
-
-    let update = scheduler
-        .on_job_completed(
-            root_job.dag_step_execution_id.as_deref().unwrap(),
-            &["/tmp/a.mp4".to_string()],
-            Some("Streamer"),
-            Some("Title"),
-            Some("Platform"),
-            Some(session_start),
-        )
-        .await
-        .unwrap();
-    assert_eq!(update.new_job_ids.len(), 1);
-
-    let downstream_job = job_repo.get_job(&update.new_job_ids[0]).await.unwrap();
-    let downstream_state: serde_json::Value = serde_json::from_str(&downstream_job.state).unwrap();
-    assert_eq!(
-        downstream_state
-            .get("session_start_ms")
-            .and_then(|value| value.as_i64()),
-        Some(session_start.as_millisecond())
     );
 }
 
@@ -554,105 +255,13 @@ async fn test_delete_dag_stands_down_active_jobs() {
     assert!(job_repo.get_job(&claimed.id).await.is_err());
 }
 
-/// The retry fan-out path (reset_dag_for_retry -> enqueue_now_ready_steps)
-/// has no session context of its own; jobs it creates must recover the
-/// placeholder metadata from a sibling step's persisted job state.
-#[tokio::test]
-async fn test_retry_fanout_recovers_metadata_from_sibling_job() {
-    let pool = setup_test_pool().await;
-    let dag_repo = Arc::new(crate::repositories::dag::SqlxDagRepository::new(
-        pool.clone(),
-        pool.clone(),
-    ));
-    let job_repo = Arc::new(crate::repositories::job::SqlxJobRepository::new(
-        pool.clone(),
-        pool.clone(),
-    ));
-    let scheduler = DagScheduler::new(
-        Arc::new(JobQueue::with_repository(
-            Default::default(),
-            job_repo.clone(),
-        )),
-        dag_repo,
-        job_repo.clone(),
-    );
-    let session_start = jiff::fmt::temporal::DateTimeParser::new()
-        .parse_timestamp("2024-01-01T23:30:00Z")
-        .unwrap();
-    let dag_def = DagPipelineDefinition::new(
-        "retry fanout metadata recovery",
-        vec![
-            DagStep {
-                id: "A".to_string(),
-                step: PipelineStep::inline("noop", serde_json::json!({})),
-                depends_on: vec![],
-                retry: None,
-                timeout_secs: None,
-            },
-            DagStep {
-                id: "B".to_string(),
-                step: PipelineStep::inline("noop", serde_json::json!({})),
-                depends_on: vec!["A".to_string()],
-                retry: None,
-                timeout_secs: None,
-            },
-        ],
-    );
-
-    let created = scheduler
-        .create_dag_pipeline(
-            dag_def,
-            &["/input.flv".to_string()],
-            DagRunContext {
-                streamer_id: Some("streamer-1".to_string()),
-                session_id: Some("session-1".to_string()),
-                streamer_name: Some("Streamer".to_string()),
-                session_title: Some("Title".to_string()),
-                platform: Some("Platform".to_string()),
-                session_start: Some(session_start),
-                manifest: None,
-            },
-        )
-        .await
-        .unwrap();
-
-    // Put the DAG in the shape reset_dag_for_retry produces for a
-    // fail-fast cancelled parallel branch: dependency completed with
-    // outputs, dependent step BLOCKED with no job row attached.
-    let steps = scheduler.get_dag_steps(&created.dag_id).await.unwrap();
-    let step_a = steps.iter().find(|s| s.step_id == "A").unwrap();
-    sqlx::query("UPDATE dag_step_execution SET status = ?, outputs = ? WHERE id = ?")
-        .bind(DagStepStatus::Completed.as_str())
-        .bind(r#"["/tmp/a.mp4"]"#)
-        .bind(&step_a.id)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-    let new_job_ids = scheduler
-        .enqueue_now_ready_steps(&created.dag_id)
-        .await
-        .unwrap()
-        .new_job_ids;
-    assert_eq!(new_job_ids.len(), 1);
-
-    let recovered_job = job_repo.get_job(&new_job_ids[0]).await.unwrap();
-    let state: serde_json::Value = serde_json::from_str(&recovered_job.state).unwrap();
-    assert_eq!(
-        state.get("session_start_ms").and_then(|v| v.as_i64()),
-        Some(session_start.as_millisecond())
-    );
-    assert_eq!(
-        state.get("streamer_name").and_then(|v| v.as_str()),
-        Some("Streamer")
-    );
-}
-
 /// Every path that materializes a step job — publication, completion of a
 /// dependency, retry fan-out and startup recovery — must copy the DAG row's
-/// manifest into the job so the processor can pair videos with danmu.
+/// manifest into the job so the processor can pair videos with danmu, and
+/// give it the session's placeholder metadata. Retry fan-out has no session
+/// context of its own, so it recovers the metadata from a sibling's job.
 #[tokio::test]
-async fn manifest_reaches_jobs_created_by_every_materialization_path() {
+async fn job_metadata_and_manifest_reach_jobs_created_by_every_materialization_path() {
     use crate::manifest::{ManifestScope, ManifestSegment, PipelineInputManifest};
     let pool = setup_test_pool().await;
     let dag_repo = Arc::new(crate::repositories::dag::SqlxDagRepository::new(
@@ -686,6 +295,13 @@ async fn manifest_reaches_jobs_created_by_every_materialization_path() {
         let state: serde_json::Value = serde_json::from_str(&job.state).unwrap();
         state["manifest"].clone()
     };
+    let session_start = jiff::fmt::temporal::DateTimeParser::new()
+        .parse_timestamp("2024-01-01T23:30:00Z")
+        .unwrap();
+    let session_start_ms = |job: &JobDbModel| -> Option<i64> {
+        let state: serde_json::Value = serde_json::from_str(&job.state).unwrap();
+        state["session_start_ms"].as_i64()
+    };
 
     let created = scheduler
         .create_dag_pipeline_with_hook(
@@ -695,6 +311,7 @@ async fn manifest_reaches_jobs_created_by_every_materialization_path() {
                 streamer_id: Some("streamer-1".to_string()),
                 session_id: Some("session-1".to_string()),
                 streamer_name: Some("Streamer".to_string()),
+                session_start: Some(session_start),
                 ..DagRunContext::default()
             },
             Some(DagExecutionMetadata {
@@ -718,6 +335,10 @@ async fn manifest_reaches_jobs_created_by_every_materialization_path() {
     let parsed = parse_job_state(&root.state);
     assert_eq!(parsed.manifest.as_deref(), Some(&manifest));
     assert_eq!(parsed.streamer_name.as_deref(), Some("Streamer"));
+    assert_eq!(
+        session_start_ms(&root),
+        Some(session_start.as_millisecond())
+    );
 
     // Completion of A creates B from the DAG row, not from A's job state.
     let update = scheduler
@@ -727,13 +348,18 @@ async fn manifest_reaches_jobs_created_by_every_materialization_path() {
             None,
             None,
             None,
-            None,
+            Some(session_start),
         )
         .await
         .unwrap();
     assert_eq!(update.new_job_ids.len(), 1);
     let downstream = job_repo.get_job(&update.new_job_ids[0]).await.unwrap();
     assert_eq!(state_manifest(&downstream), manifest_value, "completion");
+    assert_eq!(
+        session_start_ms(&downstream),
+        Some(session_start.as_millisecond()),
+        "completion"
+    );
 
     // Retry fan-out: B is BLOCKED again without a job row.
     let step_b = dag_repo
@@ -755,6 +381,16 @@ async fn manifest_reaches_jobs_created_by_every_materialization_path() {
     assert_eq!(
         state_manifest(&retried_job),
         manifest_value,
+        "retry fan-out"
+    );
+    assert_eq!(
+        parse_job_state(&retried_job.state).streamer_name.as_deref(),
+        Some("Streamer"),
+        "retry fan-out"
+    );
+    assert_eq!(
+        session_start_ms(&retried_job),
+        Some(session_start.as_millisecond()),
         "retry fan-out"
     );
 
@@ -790,101 +426,6 @@ async fn manifest_reaches_jobs_created_by_every_materialization_path() {
     let plain_root = job_repo.get_job(&plain.root_job_ids[0]).await.unwrap();
     assert!(parse_job_state(&plain_root.state).manifest.is_none());
     assert!(input_manifest(&dag_repo.get_dag(&plain.dag_id).await.unwrap()).is_none());
-}
-
-/// Failing a DAG that is already terminal changes nothing and yields no
-/// completion, so a retry that could not even reset the rows does not replay
-/// the earlier outcome to the coordinator.
-#[tokio::test]
-async fn fail_dag_leaves_a_terminal_dag_alone() {
-    let pool = setup_test_pool().await;
-    let dag_repo = Arc::new(crate::repositories::dag::SqlxDagRepository::new(
-        pool.clone(),
-        pool.clone(),
-    ));
-    let job_repo = Arc::new(crate::repositories::job::SqlxJobRepository::new(
-        pool.clone(),
-        pool.clone(),
-    ));
-    let scheduler = DagScheduler::new(
-        Arc::new(JobQueue::with_repository(
-            Default::default(),
-            job_repo.clone(),
-        )),
-        dag_repo.clone(),
-        job_repo,
-    );
-    let created = scheduler
-        .create_dag_pipeline(
-            two_step_pipeline("terminal fail"),
-            &["/input.flv".to_string()],
-            DagRunContext::default(),
-        )
-        .await
-        .unwrap();
-    let first = scheduler
-        .fail_dag(&created.dag_id, "first failure")
-        .await
-        .unwrap();
-    assert!(first.is_some_and(|completion| !completion.succeeded));
-
-    let second = scheduler
-        .fail_dag(&created.dag_id, "retry failed")
-        .await
-        .unwrap();
-    assert!(second.is_none());
-    let dag = dag_repo.get_dag(&created.dag_id).await.unwrap();
-    assert_eq!(dag.get_status(), Some(DagExecutionStatus::Failed));
-    assert_eq!(dag.error.as_deref(), Some("first failure"));
-}
-
-/// A PROCESSING step whose job row is gone can never be reported on; startup
-/// reconciliation fails it like a step whose job failed.
-#[tokio::test]
-async fn startup_reconciliation_fails_a_processing_step_without_a_job_row() {
-    let pool = setup_test_pool().await;
-    let dag_repo = Arc::new(crate::repositories::dag::SqlxDagRepository::new(
-        pool.clone(),
-        pool.clone(),
-    ));
-    let job_repo = Arc::new(crate::repositories::job::SqlxJobRepository::new(
-        pool.clone(),
-        pool.clone(),
-    ));
-    let scheduler = DagScheduler::new(
-        Arc::new(JobQueue::with_repository(
-            Default::default(),
-            job_repo.clone(),
-        )),
-        dag_repo.clone(),
-        job_repo.clone(),
-    );
-    let created = scheduler
-        .create_dag_pipeline(
-            two_step_pipeline("jobless processing step"),
-            &["/input.flv".to_string()],
-            DagRunContext::default(),
-        )
-        .await
-        .unwrap();
-    // Deleting the job row nulls the step's job_id through the foreign key.
-    job_repo.delete_job(&created.root_job_ids[0]).await.unwrap();
-    let steps = dag_repo.get_steps_by_dag(&created.dag_id).await.unwrap();
-    let step_a = steps.iter().find(|step| step.step_id == "A").unwrap();
-    assert_eq!(step_a.get_status(), Some(DagStepStatus::Processing));
-    assert!(step_a.job_id.is_none());
-
-    assert_eq!(scheduler.recover_dag_jobs().await.unwrap(), 0);
-    let dag = dag_repo.get_dag(&created.dag_id).await.unwrap();
-    assert_eq!(dag.get_status(), Some(DagExecutionStatus::Failed));
-    assert!(
-        dag.error
-            .as_deref()
-            .unwrap()
-            .contains("job row no longer exists"),
-        "{:?}",
-        dag.error
-    );
 }
 
 /// Retry fan-out and startup recovery decide readiness from rows a live
@@ -945,67 +486,6 @@ async fn already_materialized_step_does_not_fail_the_dag() {
     assert_eq!(
         dag_repo.get_step(&step_b.id).await.unwrap().job_id,
         Some(elsewhere.id)
-    );
-}
-
-/// A worker that persisted its job's failure but never reported it leaves the
-/// step PROCESSING; startup reconciliation fails the DAG so it can be retried.
-#[tokio::test]
-async fn startup_reconciliation_fails_a_step_whose_job_already_failed() {
-    let pool = setup_test_pool().await;
-    let dag_repo = Arc::new(crate::repositories::dag::SqlxDagRepository::new(
-        pool.clone(),
-        pool.clone(),
-    ));
-    let job_repo = Arc::new(crate::repositories::job::SqlxJobRepository::new(
-        pool.clone(),
-        pool.clone(),
-    ));
-    let scheduler = DagScheduler::new(
-        Arc::new(JobQueue::with_repository(
-            Default::default(),
-            job_repo.clone(),
-        )),
-        dag_repo.clone(),
-        job_repo.clone(),
-    );
-    let created = scheduler
-        .create_dag_pipeline(
-            two_step_pipeline("stranded failure"),
-            &["/input.flv".to_string()],
-            DagRunContext::default(),
-        )
-        .await
-        .unwrap();
-    job_repo
-        .mark_job_failed(&created.root_job_ids[0], "disk full", None)
-        .await
-        .unwrap();
-
-    assert_eq!(scheduler.recover_dag_jobs().await.unwrap(), 0);
-    let dag = dag_repo.get_dag(&created.dag_id).await.unwrap();
-    assert_eq!(dag.get_status(), Some(DagExecutionStatus::Failed));
-    assert!(
-        dag.error.as_deref().unwrap().contains("disk full"),
-        "{:?}",
-        dag.error
-    );
-    let mut steps = dag_repo.get_steps_by_dag(&created.dag_id).await.unwrap();
-    steps.sort_by(|left, right| left.step_id.cmp(&right.step_id));
-    assert_eq!(
-        steps
-            .iter()
-            .map(|step| (step.step_id.as_str(), step.status.as_str()))
-            .collect::<Vec<_>>(),
-        vec![("A", "FAILED"), ("B", "CANCELLED")]
-    );
-    assert_eq!(scheduler.recover_dag_jobs().await.unwrap(), 0);
-    assert!(
-        dag_repo
-            .list_processing_steps_with_failed_jobs()
-            .await
-            .unwrap()
-            .is_empty()
     );
 }
 
@@ -1076,8 +556,14 @@ async fn complete(
         .unwrap()
 }
 
+/// Startup recovery reconciles each crash point of a completion exactly once:
+/// a jobless PENDING step gets its job with the upstream outputs as input, a
+/// COMPLETED job linked only from the job side is adopted instead of
+/// duplicated, and a PROCESSING step whose job completed advances with the
+/// job's durable outputs and materializes its dependent. A second pass does
+/// nothing.
 #[tokio::test]
-async fn startup_recovery_materializes_pending_jobless_step_once() {
+async fn startup_recovery_reconciles_each_interrupted_completion_once() {
     let pool = setup_test_pool().await;
     let dag_repo = Arc::new(crate::repositories::dag::SqlxDagRepository::new(
         pool.clone(),
@@ -1085,7 +571,7 @@ async fn startup_recovery_materializes_pending_jobless_step_once() {
     ));
     let job_repo = Arc::new(crate::repositories::job::SqlxJobRepository::new(
         pool.clone(),
-        pool,
+        pool.clone(),
     ));
     let scheduler = DagScheduler::new(
         Arc::new(JobQueue::with_repository(
@@ -1095,7 +581,16 @@ async fn startup_recovery_materializes_pending_jobless_step_once() {
         dag_repo.clone(),
         job_repo.clone(),
     );
-    let created = scheduler
+    let step_of = |steps: &[DagStepExecutionDbModel], id: &str| {
+        steps
+            .iter()
+            .find(|step| step.step_id == id)
+            .unwrap()
+            .clone()
+    };
+
+    // The completion of A was persisted, but B's job was never created.
+    let pending_intent = scheduler
         .create_dag_pipeline(
             two_step_pipeline("recover pending intent"),
             &["/input.flv".to_string()],
@@ -1107,12 +602,13 @@ async fn startup_recovery_materializes_pending_jobless_step_once() {
         )
         .await
         .unwrap();
-    let steps = scheduler.get_dag_steps(&created.dag_id).await.unwrap();
-    let step_a = steps.iter().find(|step| step.step_id == "A").unwrap();
-
+    let steps = scheduler
+        .get_dag_steps(&pending_intent.dag_id)
+        .await
+        .unwrap();
     let ready = dag_repo
         .complete_step_and_check_dependents(
-            &step_a.id,
+            &step_of(&steps, "A").id,
             &["/a.mp4".to_string(), "/shared.xml".to_string()],
         )
         .await
@@ -1123,8 +619,67 @@ async fn startup_recovery_materializes_pending_jobless_step_once() {
     assert_eq!(pending.get_status(), Some(DagStepStatus::Pending));
     assert!(pending.job_id.is_none());
 
-    assert_eq!(scheduler.recover_dag_jobs().await.unwrap(), 1);
+    // B's job was created and completed, but the step never learned of it.
+    let reverse_definition = two_step_pipeline("recover reverse link");
+    let reverse_link = scheduler
+        .create_dag_pipeline(
+            reverse_definition.clone(),
+            &["/input.flv".to_string()],
+            DagRunContext::default(),
+        )
+        .await
+        .unwrap();
+    let steps = scheduler.get_dag_steps(&reverse_link.dag_id).await.unwrap();
+    let reverse_b = step_of(&steps, "B");
+    dag_repo
+        .complete_step_and_check_dependents(&step_of(&steps, "A").id, &["/a.mp4".to_string()])
+        .await
+        .unwrap();
+    let (mut orphan, _) = DagScheduler::build_step_job(
+        &reverse_link.dag_id,
+        &reverse_b.id,
+        reverse_definition.get_step("B").unwrap(),
+        vec!["/a.mp4".to_string()],
+        &DagRunContext::default(),
+    )
+    .unwrap();
+    orphan.status = JobStatus::Completed.as_str().to_string();
+    orphan.set_outputs(&["/b.mp4".to_string()]);
+    orphan.completed_at = Some(srec_sqlite::time::now_ms());
+    job_repo.create_job(&orphan).await.unwrap();
+
+    // A's job completed, but its step is still PROCESSING.
+    let completed_job = scheduler
+        .create_dag_pipeline(
+            two_step_pipeline("recover completed job"),
+            &["/input.flv".to_string()],
+            DagRunContext::default(),
+        )
+        .await
+        .unwrap();
+    sqlx::query("UPDATE job SET status = 'COMPLETED', outputs = ?, completed_at = ? WHERE id = ?")
+        .bind(r#"["/durable.mp4"]"#)
+        .bind(srec_sqlite::time::now_ms())
+        .bind(&completed_job.root_job_ids[0])
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // One job each for the pending intent and the completed job's dependent.
+    assert_eq!(scheduler.recover_dag_jobs().await.unwrap(), 2);
     assert_eq!(scheduler.recover_dag_jobs().await.unwrap(), 0);
+    for created in [&pending_intent, &reverse_link, &completed_job] {
+        assert_eq!(
+            job_repo
+                .get_jobs_by_pipeline(&created.dag_id)
+                .await
+                .unwrap()
+                .len(),
+            2,
+            "{}",
+            created.dag_id
+        );
+    }
 
     let recovered = dag_repo.get_step(&pending.id).await.unwrap();
     assert_eq!(recovered.get_status(), Some(DagStepStatus::Processing));
@@ -1141,138 +696,25 @@ async fn startup_recovery_materializes_pending_jobless_step_once() {
         state.get("streamer_name").and_then(|value| value.as_str()),
         Some("Streamer")
     );
+
     assert_eq!(
-        job_repo
-            .get_jobs_by_pipeline(&created.dag_id)
-            .await
-            .unwrap()
-            .len(),
-        2
-    );
-}
-
-#[tokio::test]
-async fn startup_recovery_advances_reverse_linked_completed_job_without_duplicate() {
-    let pool = setup_test_pool().await;
-    let dag_repo = Arc::new(crate::repositories::dag::SqlxDagRepository::new(
-        pool.clone(),
-        pool.clone(),
-    ));
-    let job_repo = Arc::new(crate::repositories::job::SqlxJobRepository::new(
-        pool.clone(),
-        pool,
-    ));
-    let scheduler = DagScheduler::new(
-        Arc::new(JobQueue::with_repository(
-            Default::default(),
-            job_repo.clone(),
-        )),
-        dag_repo.clone(),
-        job_repo.clone(),
-    );
-    let definition = two_step_pipeline("recover reverse link");
-    let created = scheduler
-        .create_dag_pipeline(
-            definition.clone(),
-            &["/input.flv".to_string()],
-            DagRunContext::default(),
-        )
-        .await
-        .unwrap();
-    let steps = scheduler.get_dag_steps(&created.dag_id).await.unwrap();
-    let step_a = steps.iter().find(|step| step.step_id == "A").unwrap();
-    let step_b = steps.iter().find(|step| step.step_id == "B").unwrap();
-    dag_repo
-        .complete_step_and_check_dependents(step_a.id.as_str(), &["/a.mp4".to_string()])
-        .await
-        .unwrap();
-
-    let (mut orphan, _) = DagScheduler::build_step_job(
-        &created.dag_id,
-        &step_b.id,
-        definition.get_step("B").unwrap(),
-        vec!["/a.mp4".to_string()],
-        &DagRunContext::default(),
-    )
-    .unwrap();
-    orphan.status = JobStatus::Completed.as_str().to_string();
-    orphan.set_outputs(&["/b.mp4".to_string()]);
-    orphan.completed_at = Some(srec_sqlite::time::now_ms());
-    job_repo.create_job(&orphan).await.unwrap();
-
-    assert_eq!(scheduler.recover_dag_jobs().await.unwrap(), 0);
-    assert_eq!(scheduler.recover_dag_jobs().await.unwrap(), 0);
-    assert_eq!(
-        dag_repo.get_step(&step_b.id).await.unwrap().get_status(),
+        dag_repo.get_step(&reverse_b.id).await.unwrap().get_status(),
         Some(DagStepStatus::Completed)
     );
-    assert_eq!(
-        job_repo
-            .get_jobs_by_pipeline(&created.dag_id)
-            .await
-            .unwrap()
-            .len(),
-        2
-    );
-}
 
-#[tokio::test]
-async fn startup_recovery_advances_processing_step_from_completed_job_once() {
-    let pool = setup_test_pool().await;
-    let dag_repo = Arc::new(crate::repositories::dag::SqlxDagRepository::new(
-        pool.clone(),
-        pool.clone(),
-    ));
-    let job_repo = Arc::new(crate::repositories::job::SqlxJobRepository::new(
-        pool.clone(),
-        pool.clone(),
-    ));
-    let scheduler = DagScheduler::new(
-        Arc::new(JobQueue::with_repository(
-            Default::default(),
-            job_repo.clone(),
-        )),
-        dag_repo.clone(),
-        job_repo.clone(),
-    );
-    let created = scheduler
-        .create_dag_pipeline(
-            two_step_pipeline("recover completed job"),
-            &["/input.flv".to_string()],
-            DagRunContext::default(),
-        )
+    let steps = scheduler
+        .get_dag_steps(&completed_job.dag_id)
         .await
         .unwrap();
-    let root_job_id = &created.root_job_ids[0];
-    sqlx::query("UPDATE job SET status = 'COMPLETED', outputs = ?, completed_at = ? WHERE id = ?")
-        .bind(r#"["/durable.mp4"]"#)
-        .bind(srec_sqlite::time::now_ms())
-        .bind(root_job_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-    assert_eq!(scheduler.recover_dag_jobs().await.unwrap(), 1);
-    assert_eq!(scheduler.recover_dag_jobs().await.unwrap(), 0);
-
-    let steps = scheduler.get_dag_steps(&created.dag_id).await.unwrap();
-    let step_a = steps.iter().find(|step| step.step_id == "A").unwrap();
-    let step_b = steps.iter().find(|step| step.step_id == "B").unwrap();
+    let step_a = step_of(&steps, "A");
+    let step_b = step_of(&steps, "B");
     assert_eq!(step_a.get_status(), Some(DagStepStatus::Completed));
     assert_eq!(step_a.get_outputs(), vec!["/durable.mp4".to_string()]);
     assert_eq!(step_b.get_status(), Some(DagStepStatus::Processing));
     assert!(step_b.job_id.is_some());
-    let dag = dag_repo.get_dag(&created.dag_id).await.unwrap();
+    let dag = dag_repo.get_dag(&completed_job.dag_id).await.unwrap();
     assert_eq!(dag.completed_steps, 1);
     assert_eq!(dag.failed_steps, 0);
-    assert_eq!(
-        job_repo
-            .get_jobs_by_pipeline(&created.dag_id)
-            .await
-            .unwrap()
-            .len(),
-        2
-    );
 }
 
 #[tokio::test]
@@ -1461,77 +903,6 @@ async fn failed_step_cancels_only_its_dependents_and_the_dag_settles_after_sibli
 /// A→B→C where the root fails: nothing else is active, so B and C are
 /// cancelled and the DAG fails in the same call. A repeated failure report
 /// for the settled step is ignored.
-#[tokio::test]
-async fn failed_root_cancels_its_chain_and_fails_the_dag_at_once() {
-    let pool = setup_test_pool().await;
-    let dag_repo = Arc::new(crate::repositories::dag::SqlxDagRepository::new(
-        pool.clone(),
-        pool.clone(),
-    ));
-    let job_repo = Arc::new(crate::repositories::job::SqlxJobRepository::new(
-        pool.clone(),
-        pool,
-    ));
-    let scheduler = DagScheduler::new(
-        Arc::new(JobQueue::with_repository(
-            Default::default(),
-            job_repo.clone(),
-        )),
-        dag_repo.clone(),
-        job_repo.clone(),
-    );
-    let created = scheduler
-        .create_dag_pipeline(
-            noop_pipeline("chain", &[("A", &[]), ("B", &["A"]), ("C", &["B"])]),
-            &["/input.flv".to_string()],
-            DagRunContext::default(),
-        )
-        .await
-        .unwrap();
-    let root = scheduler
-        .get_dag_steps(&created.dag_id)
-        .await
-        .unwrap()
-        .into_iter()
-        .find(|step| step.step_id == "A")
-        .unwrap();
-
-    let update = scheduler.on_job_failed(&root.id, "boom").await.unwrap();
-    assert_eq!(update.cancelled_count, 0, "the chain had no jobs yet");
-    let completion = update.completion.expect("no other step is active");
-    assert!(!completion.succeeded);
-    let dag = dag_repo.get_dag(&created.dag_id).await.unwrap();
-    assert_eq!(dag.get_status(), Some(DagExecutionStatus::Failed));
-    assert!(dag.completed_at.is_some());
-    assert_eq!(dag.completed_steps, 0);
-    assert_eq!(dag.failed_steps, 1);
-    assert_eq!(dag.error.as_deref(), Some("Step 'A' failed: boom"));
-    assert_eq!(
-        step_statuses(&dag_repo, &created.dag_id).await,
-        ["A=FAILED", "B=CANCELLED", "C=CANCELLED"]
-    );
-    for step in dag_repo.get_steps_by_dag(&created.dag_id).await.unwrap() {
-        if step.step_id != "A" {
-            assert!(step.job_id.is_none(), "{} never got a job", step.step_id);
-        }
-    }
-
-    let update = scheduler.on_job_failed(&root.id, "again").await.unwrap();
-    assert_eq!(update.cancelled_count, 0);
-    assert!(update.completion.is_none());
-    assert_eq!(
-        dag_repo
-            .get_dag(&created.dag_id)
-            .await
-            .unwrap()
-            .failed_steps,
-        1
-    );
-}
-
-/// The plan follows the step's policy, doubling the wait per retry and
-/// stopping when the budget is spent, and the budget is reported for the
-/// job page; the step's timeout reaches its job.
 #[tokio::test]
 async fn plan_step_retry_follows_the_step_policy_and_stops_when_spent() {
     use srec_sqlite::models::StepRetryPolicy;
@@ -1858,7 +1229,7 @@ async fn job_attempt_failure_is_retried_or_applied_by_kind_budget_and_persistenc
     let outcome = scheduler
         .on_job_attempt_failed(
             &step_id("B"),
-            attempt(&job_b, 0, StepFailureKind::NonBatchInput),
+            attempt(&job_b, 0, StepFailureKind::NonRetryable),
             record(job_b.clone()),
         )
         .await
@@ -1956,10 +1327,7 @@ async fn recovery_settles_active_jobs_of_terminal_workflows_before_claiming() {
             ("PROCESSING", "FAILED", JobStatus::Failed),
             ("PROCESSING", "CANCELLED", JobStatus::Cancelled),
         ] {
-            let pool = srec_sqlite::init_pool_with_size("sqlite::memory:", 1)
-                .await
-                .unwrap();
-            srec_sqlite::run_migrations(&pool).await.unwrap();
+            let pool = setup_test_pool().await;
             let jobs = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
             let dags = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
             let queue = Arc::new(JobQueue::with_repository(Default::default(), jobs.clone()));
@@ -2036,10 +1404,7 @@ async fn cancelled_attempt_does_not_schedule_retry_or_apply_step_failure() {
     use srec_sqlite::models::StepRetryPolicy;
     use srec_sqlite::test_support::SqlTrace;
 
-    let pool = srec_sqlite::init_pool_with_size("sqlite::memory:", 1)
-        .await
-        .unwrap();
-    srec_sqlite::run_migrations(&pool).await.unwrap();
+    let pool = setup_test_pool().await;
     let dags = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
     let jobs = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
     let queue = Arc::new(JobQueue::with_repository(Default::default(), jobs.clone()));
@@ -2336,8 +1701,13 @@ async fn retry_dag_runs_the_reset_hook_between_reset_and_restart() {
             )
             .await
             .unwrap();
+            // Nothing else is active, so the failure settles the DAG in the same call.
             let update = scheduler.on_job_failed(&root.id, "boom").await.unwrap();
-            assert!(update.completion.is_some());
+            assert!(
+                update
+                    .completion
+                    .is_some_and(|completion| !completion.succeeded)
+            );
             created
         }
     };
@@ -2444,6 +1814,18 @@ async fn retry_dag_runs_the_reset_hook_between_reset_and_restart() {
         ["A=CANCELLED", "B=CANCELLED"],
         "no step is left PROCESSING"
     );
+    // Failing a DAG that is already terminal changes nothing and yields no
+    // completion, so the earlier outcome is not replayed to the coordinator.
+    assert!(
+        scheduler
+            .fail_dag(&created.dag_id, "again")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let refailed = dag_repo.get_dag(&created.dag_id).await.unwrap();
+    assert_eq!(refailed.get_status(), Some(DagExecutionStatus::Failed));
+    assert_eq!(refailed.error, dag.error);
     assert_eq!(
         job_repo
             .get_job(&created.root_job_ids[0])
@@ -2494,71 +1876,5 @@ async fn dag_publication_rolls_back_all_rows_when_root_attachment_fails() {
             .await
             .unwrap()
             == 0
-    );
-}
-
-/// Cancelling a DAG counts the running steps it stopped: a step whose job
-/// waits for its automatic retry counts, although that FAILED job cannot
-/// be cancelled itself, and a step that has no job yet does not.
-#[tokio::test]
-async fn test_cancel_dag_marks_parent_cancelled() {
-    let pool = setup_test_pool().await;
-    let dag_repo = Arc::new(crate::repositories::dag::SqlxDagRepository::new(
-        pool.clone(),
-        pool.clone(),
-    ));
-    let queue = Arc::new(JobQueue::with_repository(
-        Default::default(),
-        Arc::new(crate::repositories::job::SqlxJobRepository::new(
-            pool.clone(),
-            pool,
-        )),
-    ));
-    let scheduler = DagScheduler::new(queue.clone(), dag_repo.clone(), Arc::new(NoopJobRepository));
-
-    let created = scheduler
-        .create_dag_pipeline(
-            DagPipelineDefinition::new(
-                "test",
-                vec![
-                    DagStep::new("A", PipelineStep::inline("noop", serde_json::json!({}))),
-                    DagStep::with_dependencies(
-                        "B",
-                        PipelineStep::inline("noop", serde_json::json!({})),
-                        vec!["A".to_string()],
-                    ),
-                ],
-            ),
-            &["/input.flv".to_string()],
-            DagRunContext::default(),
-        )
-        .await
-        .unwrap();
-    // A's job failed and waits for its automatic retry.
-    queue
-        .fail_with_step_info(
-            &created.root_job_ids[0],
-            "boom",
-            Some(Timestamp::now() + jiff::SignedDuration::from_secs(30)),
-            Some("noop"),
-            &[],
-        )
-        .await
-        .unwrap();
-
-    let result = scheduler
-        .cancel_dag_with_completion(&created.dag_id)
-        .await
-        .unwrap();
-    assert_eq!(result.cancelled_count, 1);
-    assert_eq!(
-        step_statuses(&dag_repo, &created.dag_id).await,
-        ["A=CANCELLED", "B=CANCELLED"]
-    );
-
-    let dag = dag_repo.get_dag(&created.dag_id).await.unwrap();
-    assert_eq!(
-        dag.status,
-        srec_sqlite::models::DagExecutionStatus::Cancelled.as_str()
     );
 }

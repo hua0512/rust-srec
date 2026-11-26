@@ -39,11 +39,10 @@ fn job_state_round_trips_the_manifest() {
         db_model_to_job(&job_to_db_model(&job)).manifest,
         job.manifest
     );
-    let named = job
-        .clone()
-        .with_streamer_name("StreamerName")
-        .with_session_title("SessionTitle")
-        .with_platform("Twitch");
+    let mut named = job.clone();
+    named.streamer_name = Some("StreamerName".to_string());
+    named.session_title = Some("SessionTitle".to_string());
+    named.platform = Some("Twitch".to_string());
     let restored = db_model_to_job(&job_to_db_model(&named));
     assert_eq!(restored.manifest, job.manifest);
     assert_eq!(restored.platform.as_deref(), Some("Twitch"));
@@ -65,129 +64,6 @@ fn job_state_round_trips_the_manifest() {
     assert_eq!(job_state_json(&job), "{}");
 }
 
-/// Per-file results an upload processor reported for a partially failed
-/// batch are kept as reported; only inputs without a result are failed with
-/// the job's error.
-#[tokio::test]
-async fn failed_upload_job_keeps_reported_per_file_results() {
-    let queue = JobQueue::with_repository(
-        Default::default(),
-        crate::test_support::job_repository().await,
-    );
-    let broadcaster = UploadStatusBroadcaster::new(std::sync::Arc::new(|_: &UploadStatusEvent| {
-        bytes::Bytes::new()
-    }));
-    queue.set_upload_broadcaster(broadcaster.clone());
-    let mut rx = broadcaster.subscribe();
-    let job_id = queue
-        .enqueue(Job::new(
-            "rclone",
-            vec![
-                "/rec/a.mp4".to_string(),
-                "/rec/b.mp4".to_string(),
-                "/rec/c.mp4".to_string(),
-            ],
-            vec![],
-            "streamer",
-            "session",
-        ))
-        .await
-        .unwrap();
-    queue.dequeue(None).await.unwrap().unwrap();
-
-    queue
-        .fail_with_step_info(
-            &job_id,
-            "1 of 3 inputs failed: /rec/c.mp4: boom",
-            None,
-            Some("rclone"),
-            &[
-                UploadResultItem {
-                    local_path: "/rec/a.mp4".to_string(),
-                    remote_path: Some("remote:/a.mp4".to_string()),
-                    size_bytes: Some(1),
-                    status: UploadItemStatus::Completed,
-                    error: None,
-                },
-                UploadResultItem {
-                    local_path: "/rec/b.mp4".to_string(),
-                    remote_path: Some("remote:/b.mp4".to_string()),
-                    size_bytes: Some(1),
-                    status: UploadItemStatus::Skipped,
-                    error: Some("exists".to_string()),
-                },
-            ],
-        )
-        .await
-        .unwrap();
-
-    let terminal = tokio::time::timeout(std::time::Duration::from_secs(3), async {
-        loop {
-            let envelope = rx.recv().await.expect("broadcast channel stays open");
-            if let UploadStatusEvent::Terminal {
-                files_succeeded,
-                files_failed,
-                files_skipped,
-                status,
-                ..
-            } = envelope.event.as_ref()
-            {
-                break (*files_succeeded, *files_failed, *files_skipped, *status);
-            }
-        }
-    })
-    .await
-    .expect("a terminal upload event is emitted");
-    assert_eq!(terminal, (1, 1, 1, UploadTerminalStatus::Failed));
-}
-
-#[tokio::test]
-async fn baidupcs_progress_reports_are_broadcast_as_upload_progress() {
-    let queue = JobQueue::with_repository(
-        Default::default(),
-        crate::test_support::job_repository().await,
-    );
-    let broadcaster = UploadStatusBroadcaster::new(std::sync::Arc::new(|_: &UploadStatusEvent| {
-        bytes::Bytes::new()
-    }));
-    queue.set_upload_broadcaster(broadcaster.clone());
-    let mut rx = broadcaster.subscribe();
-
-    // The aggregator publishes only for live jobs; a processing job owns
-    // a cancellation token (created on dequeue), which is all the
-    // liveness check reads.
-    queue
-        .cancellation_tokens
-        .insert("job-1".to_string(), AttemptToken::default());
-
-    let mut snapshot = JobProgressSnapshot::new(ProgressKind::BaiduPcs);
-    snapshot.percent = Some(42.0);
-    snapshot.bytes_done = Some(4200);
-    queue.progress_reporter("job-1").report(snapshot);
-
-    // The queued-uploads count is published independently of progress.
-    let envelope = tokio::time::timeout(std::time::Duration::from_secs(3), async {
-        loop {
-            let envelope = rx.recv().await.expect("broadcast channel stays open");
-            if !matches!(envelope.event.as_ref(), UploadStatusEvent::Queue { .. }) {
-                break envelope;
-            }
-        }
-    })
-    .await
-    .expect("aggregator publishes within one flush interval");
-    match envelope.event.as_ref() {
-        UploadStatusEvent::Progress {
-            job_id, snapshot, ..
-        } => {
-            assert_eq!(job_id, "job-1");
-            assert_eq!(snapshot.percent, Some(42.0));
-            assert_eq!(snapshot.bytes_done, Some(4200));
-        }
-        other => panic!("expected Progress event, got {other:?}"),
-    }
-}
-
 #[tokio::test]
 async fn terminal_cursor_cleanup_does_not_split_log_write_lock() {
     let pool = srec_sqlite::init_pool_with_size("sqlite::memory:", 1)
@@ -203,10 +79,20 @@ async fn terminal_cursor_cleanup_does_not_split_log_write_lock() {
         .enqueue(Job::new("remux", vec![], vec![], "streamer", "session"))
         .await
         .unwrap();
-    let old: Vec<_> = (0..MAX_PERSISTED_LOG_ROWS_PER_JOB - 1)
-        .map(|i| JobLogEntry::info(format!("old-{i}")))
-        .collect();
-    queue.append_log_entry(&job_id, &old).await.unwrap();
+    // One row short of the cap, all older than the late batches, so the second of
+    // them has to trim. Seeded directly: the queue keeps no cursor for a job it never
+    // dequeued, so its next write counts the stored rows as after this seed.
+    sqlx::query(
+        "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?) \
+         INSERT INTO job_execution_logs (id, job_id, entry, created_at, level, message) \
+         SELECT 'old-' || i, ?, '{}', i, 'INFO', 'old-' || i FROM n",
+    )
+    .bind(MAX_PERSISTED_LOG_ROWS_PER_JOB as i64 - 1)
+    .bind(&job_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(!queue.persisted_log_cursor.contains_key(&job_id));
 
     // Hold the same permit as an in-flight insert. Polling each writer once proves
     // both remain blocked, even though terminal cleanup evicts the count between them.
@@ -264,10 +150,9 @@ async fn terminal_cursor_cleanup_does_not_split_log_write_lock() {
 /// row still existing.
 #[tokio::test]
 async fn test_resolve_job_metadata_persists_backfilled_state() {
-    let dir = tempfile::TempDir::new().unwrap();
-    let db_path = dir.path().join("job_queue_test.db");
-    let db_url = format!("sqlite:{}?mode=rwc", db_path.to_string_lossy());
-    let pool = srec_sqlite::init_pool(&db_url).await.unwrap();
+    let pool = srec_sqlite::init_pool_with_size("sqlite::memory:", 1)
+        .await
+        .unwrap();
     srec_sqlite::run_migrations(&pool).await.unwrap();
 
     // Satisfy the live_sessions -> streamers -> platform_config FK chain.
@@ -421,67 +306,6 @@ async fn test_resolve_job_metadata_persists_backfilled_state() {
     );
 }
 
-/// A failed parent finalization must not leave runnable split jobs:
-/// split_job_for_single_input rolls back already-created jobs through
-/// cancel_job when marking the original job completed fails.
-#[tokio::test]
-async fn split_rollback_cancels_created_jobs_when_parent_finalization_fails() {
-    let dir = tempfile::TempDir::new().unwrap();
-    let db_path = dir.path().join("job_queue_split_rollback.db");
-    let db_url = format!("sqlite:{}?mode=rwc", db_path.to_string_lossy());
-    let pool = srec_sqlite::init_pool(&db_url).await.unwrap();
-    srec_sqlite::run_migrations(&pool).await.unwrap();
-
-    // Satisfy the live_sessions -> streamers -> platform_config FK chain.
-    sqlx::query("INSERT INTO platform_config (id, platform_name) VALUES ('p1', 'test')")
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query(
-        "INSERT INTO streamers (id, name, url, platform_config_id, state) \
-         VALUES ('streamer-1', 'Streamer', 'https://example.com/s1', 'p1', 'NOT_LIVE')",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        "INSERT INTO live_sessions (id, streamer_id, start_time) \
-         VALUES ('session-1', 'streamer-1', 1704152700000)",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    let job_repo: Arc<dyn JobRepository> = Arc::new(
-        crate::repositories::job::SqlxJobRepository::new(pool.clone(), pool.clone()),
-    );
-    let queue = JobQueue::with_repository(JobQueueConfig::default(), job_repo.clone());
-
-    // The parent is never enqueued, so repo.get_job(&job.id) in the
-    // finalization step fails after both split jobs were created.
-    let job = Job::new(
-        "remux",
-        vec!["/input-a.flv".to_string(), "/input-b.flv".to_string()],
-        vec![],
-        "streamer-1",
-        "session-1",
-    );
-
-    let result = queue.split_job_for_single_input(&job).await;
-    assert!(result.is_err());
-
-    let pending = job_repo
-        .list_jobs_by_status(JobStatus::Pending)
-        .await
-        .unwrap();
-    assert!(pending.is_empty(), "split jobs must not stay runnable");
-    let cancelled = job_repo
-        .list_jobs_by_status(JobStatus::Cancelled)
-        .await
-        .unwrap();
-    assert_eq!(cancelled.len(), 2);
-}
-
 #[test]
 fn test_upload_kind_for_job_type() {
     // Bare processor names and their "<type>_<preset>" DAG-step variants.
@@ -580,8 +404,11 @@ async fn test_complete_persists_upload_records_for_upload_jobs() {
     assert!(upload_repo.list_by_job(&remux_id).await.unwrap().is_empty());
 }
 
+/// A failed upload keeps the per-file results its processor reported and fails only the
+/// inputs without one, with the job's error, and announces the outcome as retrying or
+/// failed. A cancellation that wins the terminal transition leaves no failed rows.
 #[tokio::test]
-async fn test_failed_upload_records_follow_winning_terminal_transition() {
+async fn failed_upload_records_and_terminal_events_follow_the_winning_failure() {
     let pool = srec_sqlite::init_pool_with_size("sqlite::memory:", 1)
         .await
         .unwrap();
@@ -598,15 +425,47 @@ async fn test_failed_upload_records_follow_winning_terminal_transition() {
     );
     let queue = JobQueue::with_repository(JobQueueConfig::default(), job_repo);
     queue.set_upload_repo(upload_repo.clone());
+    let broadcaster =
+        UploadStatusBroadcaster::new(Arc::new(|_: &UploadStatusEvent| bytes::Bytes::new()));
+    queue.set_upload_broadcaster(broadcaster.clone());
+    let mut rx = broadcaster.subscribe();
+    let mut terminal_of = async |job_id: &str| {
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                let envelope = rx.recv().await.expect("broadcast channel stays open");
+                if let UploadStatusEvent::Terminal {
+                    job_id: terminal_job,
+                    files_succeeded,
+                    files_failed,
+                    files_skipped,
+                    status,
+                    error,
+                    ..
+                } = envelope.event.as_ref()
+                    && terminal_job == job_id
+                {
+                    break (
+                        (*files_succeeded, *files_failed, *files_skipped),
+                        *status,
+                        error.clone(),
+                    );
+                }
+            }
+        })
+        .await
+        .expect("a terminal upload event is emitted")
+    };
 
-    let failed_job = Job::new(
-        "rclone",
-        vec!["/videos/failed.mp4".to_string()],
-        vec![],
-        "streamer-1",
-        "session-1",
-    );
-    let failed_id = queue.enqueue(failed_job).await.unwrap();
+    let failed_id = queue
+        .enqueue(Job::new(
+            "rclone",
+            vec!["/videos/failed.mp4".to_string()],
+            vec![],
+            "streamer-1",
+            "session-1",
+        ))
+        .await
+        .unwrap();
     queue.dequeue(None).await.unwrap().unwrap();
     queue.fail(&failed_id, "connection reset").await.unwrap();
 
@@ -615,14 +474,126 @@ async fn test_failed_upload_records_follow_winning_terminal_transition() {
     assert_eq!(rows[0].status, "FAILED");
     assert_eq!(rows[0].error.as_deref(), Some("connection reset"));
 
-    let cancelled_job = Job::new(
-        "rclone",
-        vec!["/videos/cancelled.mp4".to_string()],
-        vec![],
-        "streamer-1",
-        "session-1",
+    let batch_id = queue
+        .enqueue(Job::new(
+            "rclone",
+            vec![
+                "/rec/a.mp4".to_string(),
+                "/rec/b.mp4".to_string(),
+                "/rec/c.mp4".to_string(),
+            ],
+            vec![],
+            "streamer",
+            "session",
+        ))
+        .await
+        .unwrap();
+    queue.dequeue(None).await.unwrap().unwrap();
+    let batch_error = "1 of 3 inputs failed: /rec/c.mp4: boom";
+    queue
+        .fail_with_step_info(
+            &batch_id,
+            batch_error,
+            None,
+            Some("rclone"),
+            &[
+                UploadResultItem {
+                    local_path: "/rec/a.mp4".to_string(),
+                    remote_path: Some("remote:/a.mp4".to_string()),
+                    size_bytes: Some(1),
+                    status: UploadItemStatus::Completed,
+                    error: None,
+                },
+                UploadResultItem {
+                    local_path: "/rec/b.mp4".to_string(),
+                    remote_path: Some("remote:/b.mp4".to_string()),
+                    size_bytes: Some(1),
+                    status: UploadItemStatus::Skipped,
+                    error: Some("exists".to_string()),
+                },
+            ],
+        )
+        .await
+        .unwrap();
+    let rows: Vec<_> = upload_repo
+        .list_by_job(&batch_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| (row.local_path, row.status, row.remote_path, row.error))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            (
+                "/rec/a.mp4".to_string(),
+                "COMPLETED".to_string(),
+                Some("remote:/a.mp4".to_string()),
+                None
+            ),
+            (
+                "/rec/b.mp4".to_string(),
+                "SKIPPED".to_string(),
+                Some("remote:/b.mp4".to_string()),
+                Some("exists".to_string())
+            ),
+            (
+                "/rec/c.mp4".to_string(),
+                "FAILED".to_string(),
+                None,
+                Some(batch_error.to_string())
+            ),
+        ]
     );
-    let cancelled_id = queue.enqueue(cancelled_job).await.unwrap();
+    assert_eq!(
+        terminal_of(&batch_id).await,
+        (
+            (1, 1, 1),
+            UploadTerminalStatus::Failed,
+            Some(batch_error.to_string())
+        )
+    );
+
+    // A failure with a scheduled retry is announced as retrying, the final one as failed.
+    let retried_id = queue
+        .enqueue(Job::new("rclone", vec!["/a.mp4".into()], vec![], "s1", ""))
+        .await
+        .unwrap();
+    queue.dequeue(None).await.unwrap().unwrap();
+    queue
+        .fail_with_step_info(
+            &retried_id,
+            "rate limited",
+            Some(Timestamp::now()),
+            Some("rclone"),
+            &[],
+        )
+        .await
+        .unwrap();
+    let (_, status, error) = terminal_of(&retried_id).await;
+    assert_eq!((status, error), (UploadTerminalStatus::Retrying, None));
+    queue.retry_job(&retried_id).await.unwrap();
+    queue.dequeue(None).await.unwrap().unwrap();
+    queue
+        .fail_with_step_info(&retried_id, "exhausted", None, Some("rclone"), &[])
+        .await
+        .unwrap();
+    let (_, status, error) = terminal_of(&retried_id).await;
+    assert_eq!(
+        (status, error),
+        (UploadTerminalStatus::Failed, Some("exhausted".to_string()))
+    );
+
+    let cancelled_id = queue
+        .enqueue(Job::new(
+            "rclone",
+            vec!["/videos/cancelled.mp4".to_string()],
+            vec![],
+            "streamer-1",
+            "session-1",
+        ))
+        .await
+        .unwrap();
     queue.dequeue(None).await.unwrap().unwrap();
     queue.cancel_job(&cancelled_id).await.unwrap();
     queue
@@ -638,6 +609,7 @@ async fn test_failed_upload_records_follow_winning_terminal_transition() {
             .is_empty(),
         "a cancellation that wins the transition must not leave failed upload rows"
     );
+    queue.stop_progress_aggregator().await;
 }
 
 /// A snapshot only means anything while its job runs: it is dropped when
@@ -929,12 +901,15 @@ async fn due_retry_waits_for_the_failed_attempt_cleanup() {
         () = uploads.entered.notified() => {}
     }
 
+    // The paused failure holds the lease a retry has to take exclusively.
+    assert!(queue.attempt_gate.try_write().is_err());
     let mut successor = std::pin::pin!(async {
         queue.retry_job(&job_id).await.unwrap();
         queue.dequeue(None).await.unwrap().unwrap().1
     });
+    // A retry that skipped the lease would claim within a few milliseconds here.
     assert!(
-        tokio::time::timeout(Duration::from_millis(200), &mut successor)
+        tokio::time::timeout(Duration::from_millis(20), &mut successor)
             .await
             .is_err(),
         "the retry started while the failed attempt was still cleaning up"
@@ -956,58 +931,6 @@ async fn due_retry_waits_for_the_failed_attempt_cleanup() {
         queue.attempt_token(&job_id).map(|token| token.id()),
         Some(successor.id())
     );
-}
-
-// ========================================================================
-// Fan-out and Multi-input Support Tests
-// ========================================================================
-
-/// Test that split jobs preserve pipeline context.
-#[tokio::test]
-async fn test_split_job_preserves_pipeline_context() {
-    let queue = JobQueue::with_repository(
-        Default::default(),
-        crate::test_support::job_repository().await,
-    );
-
-    let job = Job::new(
-        "remux",
-        vec![
-            "/input1.flv".to_string(),
-            "/input2.flv".to_string(),
-            "/input3.flv".to_string(),
-        ],
-        vec![],
-        "streamer-1",
-        "session-1",
-    )
-    .with_pipeline_id("pipeline-1".to_string())
-    .with_streamer_name("StreamerName".to_string())
-    .with_session_title("SessionTitle".to_string())
-    .with_platform("Twitch".to_string());
-
-    let original_id = job.id.clone();
-    queue.enqueue(job.clone()).await.unwrap();
-
-    let split_ids = queue.split_job_for_single_input(&job).await.unwrap();
-
-    // Should create 3 new jobs
-    assert_eq!(split_ids.len(), 3);
-
-    // Original job should be marked as completed
-    let original = queue.get_job(&original_id).await.unwrap().unwrap();
-    assert_eq!(original.status, JobStatus::Completed);
-
-    // Verify each split job has single input and preserves pipeline context
-    for split_id in split_ids.iter() {
-        let split_job = queue.get_job(split_id).await.unwrap().unwrap();
-        assert_eq!(split_job.inputs.len(), 1);
-        assert_eq!(split_job.job_type, "remux");
-        assert_eq!(split_job.pipeline_id, Some("pipeline-1".to_string()));
-        assert_eq!(split_job.streamer_name.as_deref(), Some("StreamerName"));
-        assert_eq!(split_job.session_title.as_deref(), Some("SessionTitle"));
-        assert_eq!(split_job.platform.as_deref(), Some("Twitch"));
-    }
 }
 
 // ========================================================================
@@ -1055,6 +978,7 @@ async fn recovery_lists_files_staged_by_unfinished_attempts_only() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].job_id, "job-crashed");
     assert_eq!(listed[0].path, "/out/b.tmp-2.mp4");
+    assert_eq!(listed[0].output_path, "/out/b.mp4");
 }
 
 /// Silent uploads and long jobs are kept alive by repeating what the
@@ -1124,8 +1048,10 @@ async fn heartbeat_reannounces_live_uploads_and_long_jobs() {
 /// listed in the connect snapshot. Shorter jobs stay off it entirely.
 #[tokio::test]
 async fn long_jobs_reach_the_socket_after_the_long_job_delay() {
-    // Far longer than the few database calls a short job makes here.
-    const LONG_JOB_AFTER: std::time::Duration = std::time::Duration::from_millis(500);
+    // Far longer than the few database calls a short job makes here, and a few
+    // flush ticks long.
+    const LONG_JOB_AFTER: std::time::Duration = std::time::Duration::from_millis(200);
+    const FLUSH_EVERY: std::time::Duration = std::time::Duration::from_millis(20);
     async fn next_event(
         rx: &mut tokio::sync::broadcast::Receiver<crate::UploadBroadcastEnvelope>,
     ) -> Arc<UploadStatusEvent> {
@@ -1147,6 +1073,7 @@ async fn long_jobs_reach_the_socket_after_the_long_job_delay() {
     let queue = JobQueue::with_repository(
         JobQueueConfig {
             long_job_after: LONG_JOB_AFTER,
+            progress_flush_interval: FLUSH_EVERY,
             ..Default::default()
         },
         crate::test_support::job_repository().await,
@@ -1220,45 +1147,9 @@ async fn long_jobs_reach_the_socket_after_the_long_job_delay() {
     }
 }
 
-/// The pending count applies the upload job-type rule (including preset
-/// prefixes) to rows SQL grouped by exact type.
-#[tokio::test]
-async fn pending_upload_count_matches_upload_job_types() {
-    let pool = srec_sqlite::init_pool_with_size("sqlite::memory:", 1)
-        .await
-        .unwrap();
-    srec_sqlite::run_migrations(&pool).await.unwrap();
-    let repo = Arc::new(crate::repositories::SqlxJobRepository::new(
-        pool.clone(),
-        pool.clone(),
-    ));
-    let queue = JobQueue::with_repository(JobQueueConfig::default(), repo);
-    // Highest priority, so it is the one dequeued below.
-    queue
-        .enqueue(Job::new("rclone", vec![], vec![], "s", "").with_priority(10))
-        .await
-        .unwrap();
-    for job_type in [
-        "rclone",
-        "rclone_offsite",
-        "upload",
-        "baidupcs_main",
-        "remux",
-        "thumbnail",
-    ] {
-        queue
-            .enqueue(Job::new(job_type, vec![], vec![], "s", ""))
-            .await
-            .unwrap();
-    }
-    let (dequeued, _) = queue.dequeue(None).await.unwrap().unwrap();
-    assert_eq!(dequeued.priority, 10);
-
-    assert_eq!(queue.count_pending_uploads().await.unwrap(), 4);
-}
-
-/// Live progress is published while the queued-uploads count waits for a
-/// database connection, and the count follows once one is free.
+/// Live upload progress, rclone's and BaiduPCS's, is published while the
+/// queued-uploads count waits for a database connection, and the count
+/// follows once one is free.
 #[tokio::test]
 async fn progress_flows_while_the_queued_upload_count_waits_for_the_database() {
     use std::time::Duration;
@@ -1281,23 +1172,43 @@ async fn progress_flows_while_the_queued_upload_count_waits_for_the_database() {
         UploadStatusBroadcaster::new(Arc::new(|_: &UploadStatusEvent| bytes::Bytes::new()));
     queue.set_upload_broadcaster(broadcaster.clone());
     let mut rx = broadcaster.subscribe();
-    queue
-        .cancellation_tokens
-        .insert("job-1".to_string(), AttemptToken::default());
-    let mut snapshot = JobProgressSnapshot::new(ProgressKind::Rclone);
-    snapshot.percent = Some(42.0);
-    queue.progress_reporter("job-1").report(snapshot);
-
-    let envelope = tokio::time::timeout(Duration::from_secs(3), rx.recv())
-        .await
-        .expect("progress is published while the count waits")
-        .expect("broadcast channel stays open");
-    match envelope.event.as_ref() {
-        UploadStatusEvent::Progress {
-            job_id, snapshot, ..
-        } => assert_eq!((job_id.as_str(), snapshot.percent), ("job-1", Some(42.0))),
-        other => panic!("expected Progress, got {other:?}"),
+    // The aggregator publishes only for live jobs; a processing job owns a
+    // cancellation token (created on dequeue), which is all the liveness check reads.
+    for (job_id, kind) in [
+        ("job-1", ProgressKind::Rclone),
+        ("job-2", ProgressKind::BaiduPcs),
+    ] {
+        queue
+            .cancellation_tokens
+            .insert(job_id.to_string(), AttemptToken::default());
+        let mut snapshot = JobProgressSnapshot::new(kind);
+        snapshot.percent = Some(42.0);
+        snapshot.bytes_done = Some(4200);
+        queue.progress_reporter(job_id).report(snapshot);
     }
+
+    // One flush publishes both, in either order.
+    let mut published = Vec::new();
+    for _ in 0..2 {
+        let envelope = tokio::time::timeout(Duration::from_secs(3), rx.recv())
+            .await
+            .expect("progress is published while the count waits")
+            .expect("broadcast channel stays open");
+        match envelope.event.as_ref() {
+            UploadStatusEvent::Progress {
+                job_id, snapshot, ..
+            } => published.push((job_id.clone(), snapshot.percent, snapshot.bytes_done)),
+            other => panic!("expected Progress, got {other:?}"),
+        }
+    }
+    published.sort_by(|left, right| left.0.cmp(&right.0));
+    assert_eq!(
+        published,
+        [
+            ("job-1".to_string(), Some(42.0), Some(4200)),
+            ("job-2".to_string(), Some(42.0), Some(4200)),
+        ]
+    );
 
     drop(connection);
     let envelope = tokio::time::timeout(Duration::from_secs(3), rx.recv())
@@ -1308,29 +1219,6 @@ async fn progress_flows_while_the_queued_upload_count_waits_for_the_database() {
         envelope.event.as_ref(),
         UploadStatusEvent::Queue { pending: 0 }
     ));
-}
-
-/// DAG list and detail payloads show each running step's progress; the
-/// raw ffmpeg/rclone JSON is too large to repeat for every step.
-#[tokio::test]
-async fn cached_progress_copies_the_snapshot_without_raw() {
-    let queue = JobQueue::with_repository(
-        Default::default(),
-        crate::test_support::job_repository().await,
-    );
-    let mut snapshot = JobProgressSnapshot::new(ProgressKind::Ffmpeg);
-    snapshot.percent = Some(42.5);
-    snapshot.current_file = Some("seg.flv".to_string());
-    snapshot.raw = serde_json::json!({"path": "/abs/file"});
-    queue.progress_cache.insert("job-1".to_string(), snapshot);
-
-    let cached = queue.cached_progress("job-1").unwrap();
-    assert_eq!(
-        (cached.percent, cached.current_file.as_deref()),
-        (Some(42.5), Some("seg.flv"))
-    );
-    assert_eq!(cached.raw, serde_json::Value::Null);
-    assert!(queue.cached_progress("unknown").is_none());
 }
 
 #[tokio::test]
@@ -1470,61 +1358,6 @@ async fn cancel_job_and_cancel_pipeline_serialize_with_in_flight_dequeue() {
         );
         queue.stop_progress_aggregator().await;
     }
-}
-
-#[tokio::test]
-async fn upload_fail_broadcasts_retrying_when_scheduled_and_failed_when_terminal() {
-    let queue = JobQueue::with_repository(
-        JobQueueConfig::default(),
-        crate::test_support::job_repository().await,
-    );
-    let broadcaster =
-        UploadStatusBroadcaster::new(Arc::new(|_: &UploadStatusEvent| bytes::Bytes::new()));
-    queue.set_upload_broadcaster(broadcaster.clone());
-    let mut rx = broadcaster.subscribe();
-
-    let job_id = queue
-        .enqueue(Job::new("rclone", vec!["/a.mp4".into()], vec![], "s1", ""))
-        .await
-        .unwrap();
-    queue.dequeue(None).await.unwrap().unwrap();
-    queue
-        .fail_with_step_info(
-            &job_id,
-            "rate limited",
-            Some(Timestamp::now()),
-            Some("rclone"),
-            &[],
-        )
-        .await
-        .unwrap();
-
-    let retrying = std::iter::from_fn(|| rx.try_recv().ok())
-        .find_map(|env| match &*env.event {
-            UploadStatusEvent::Terminal { status, error, .. } => Some((*status, error.clone())),
-            _ => None,
-        })
-        .expect("retrying terminal event");
-    assert_eq!(retrying, (UploadTerminalStatus::Retrying, None));
-
-    queue.retry_job(&job_id).await.unwrap();
-    queue.dequeue(None).await.unwrap().unwrap();
-    queue
-        .fail_with_step_info(&job_id, "exhausted", None, Some("rclone"), &[])
-        .await
-        .unwrap();
-
-    let failed = std::iter::from_fn(|| rx.try_recv().ok())
-        .find_map(|env| match &*env.event {
-            UploadStatusEvent::Terminal { status, error, .. } => Some((*status, error.clone())),
-            _ => None,
-        })
-        .expect("failed terminal event");
-    assert_eq!(
-        failed,
-        (UploadTerminalStatus::Failed, Some("exhausted".to_string()))
-    );
-    queue.stop_progress_aggregator().await;
 }
 
 #[tokio::test]

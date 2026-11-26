@@ -3,7 +3,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use srec_core::CoreError;
 use srec_sqlite::DbError;
@@ -12,7 +12,6 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
 use tracing::{debug, error, info, warn};
 
-use super::autoscaling::update_avg_runtime_ms;
 use super::lingering::{
     LingeringAttempts, LingeringGuard, STALLED_OPERATION_THRESHOLD, StalledOperation, timeout_error,
 };
@@ -45,8 +44,10 @@ pub(super) struct JobRunner {
     pub(super) dag_notify_tx: Option<tokio::sync::mpsc::Sender<DagCompletionInfo>>,
     pub(super) event_tx: Option<broadcast::Sender<PipelineEvent>>,
     pub(super) active_workers: Arc<AtomicUsize>,
-    pub(super) avg_runtime_ms: Arc<AtomicU64>,
     pub(super) job_timeout: std::time::Duration,
+    /// First wait of [`FailurePersistBackoff`]; [`FailurePersistBackoff::INITIAL_DELAY`]
+    /// outside tests.
+    pub(super) failure_persist_delay: std::time::Duration,
     /// The pool's shutdown token. Distinct from the per-job token that reaches the processor
     /// through `ProcessorContext`; see [`JobRunner::execute`].
     pub(super) shutdown: CancellationToken,
@@ -93,7 +94,7 @@ impl JobRunner {
         F: FnMut() -> Fut,
         Fut: Future<Output = crate::PipelineResult<JobFailureOutcome>>,
     {
-        let mut backoff = FailurePersistBackoff::default();
+        let mut backoff = FailurePersistBackoff::starting_at(self.failure_persist_delay);
         loop {
             match persist().await {
                 Ok(outcome) => {
@@ -162,84 +163,7 @@ impl JobRunner {
             return;
         };
 
-        if self.settle_multi_input(&job, &processor, &attempt).await {
-            return;
-        }
-
         self.execute_job(job, &processor, attempt).await;
-    }
-
-    /// Handle a multi-input job routed to a processor that takes one input at a time.
-    ///
-    /// Returns `true` when the job has been dealt with here and must not be executed: either
-    /// it was split into single-input jobs, or — for a DAG step, where splitting would let one
-    /// step complete several times — it was failed and its DAG failed with it.
-    async fn settle_multi_input(
-        &self,
-        job: &Job,
-        processor: &Arc<dyn Processor>,
-        attempt: &AttemptToken,
-    ) -> bool {
-        if job.inputs.len() <= 1 || processor.supports_batch_input() {
-            return false;
-        }
-
-        if let Some(dag_step_id) = job.dag_step_execution_id.as_deref() {
-            let reason = format!(
-                "DAG step job has {} inputs but processor '{}' does not support batch inputs",
-                job.inputs.len(),
-                processor.name()
-            );
-            error!(job_id = %job.id, dag_step_execution_id = %dag_step_id, "{}", reason);
-
-            let facts = JobFacts {
-                id: job.id.clone(),
-                job_type: job.job_type.clone(),
-                processor_name: processor.name(),
-                dag_step_execution_id: Some(dag_step_id.to_string()),
-                retry_count: job.retry_count,
-                attempt: attempt.clone(),
-            };
-            self.finish_failed(&facts, &reason, StepFailureKind::NonBatchInput, &[], None)
-                .await;
-
-            return true;
-        }
-
-        info!(
-            "Splitting job {} with {} inputs for single-input processor {}",
-            job.id,
-            job.inputs.len(),
-            processor.name()
-        );
-        match self.job_queue.split_job_for_single_input(job).await {
-            Ok(split_ids) => {
-                info!(
-                    "Split job {} into {} jobs: {:?}",
-                    job.id,
-                    split_ids.len(),
-                    split_ids
-                );
-            }
-            Err(e) => {
-                error!("Failed to split job {}: {}", job.id, e);
-                let reason = format!("Failed to split job: {e}");
-                if let Err(fail_error) = self
-                    .persist_failure_with_retry(&job.id, || {
-                        self.job_queue.fail_attempt(&job.id, attempt, &reason)
-                    })
-                    .await
-                {
-                    error!(
-                        job_id = %job.id,
-                        error = %fail_error,
-                        "Failed to persist job split failure"
-                    );
-                }
-            }
-        }
-
-        true
     }
 
     /// Run one job through its processor and record the terminal state it reached.
@@ -324,7 +248,6 @@ impl JobRunner {
 
         self.active_workers.fetch_add(1, Ordering::SeqCst);
         let _active_worker = ActiveWorkerGuard(&self.active_workers);
-        let started = std::time::Instant::now();
 
         // True when this job has been attempted before, which is what makes a processor's
         // resume path legitimate (see CopyMoveProcessor's absent-source handling).
@@ -507,8 +430,6 @@ impl JobRunner {
         if processor_token.is_cancelled() {
             self.job_queue.finalize_attempt(&facts.id, &job_token).await;
         }
-
-        update_avg_runtime_ms(&self.avg_runtime_ms, started.elapsed().as_millis() as u64);
     }
 
     /// Wait for the log collector, which finishes once the last log sender is gone, including
@@ -843,7 +764,6 @@ impl JobRunner {
                         dag_step_id, cancelled_count
                     ),
                     StepFailureKind::ProcessorError
-                    | StepFailureKind::NonBatchInput
                     | StepFailureKind::ExecutionStart
                     | StepFailureKind::NonRetryable => info!(
                         "DAG step {} failed, cancelled {} jobs (fail-fast)",
@@ -1003,8 +923,8 @@ impl LogFlushBackoff {
 /// failure is durable or the pool shuts down. A lasting database error (typically a full disk)
 /// is retried with a widening gap and warned about on the first failure, then once per capped
 /// interval.
-#[derive(Default)]
 pub(super) struct FailurePersistBackoff {
+    initial: std::time::Duration,
     pub(super) delay: std::time::Duration,
     pub(super) failures: u32,
 }
@@ -1013,11 +933,20 @@ impl FailurePersistBackoff {
     pub(super) const INITIAL_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
     pub(super) const MAX_DELAY: std::time::Duration = std::time::Duration::from_secs(30);
 
+    /// A backoff whose first wait is `initial`, doubling up to [`Self::MAX_DELAY`].
+    pub(super) fn starting_at(initial: std::time::Duration) -> Self {
+        Self {
+            initial,
+            delay: std::time::Duration::ZERO,
+            failures: 0,
+        }
+    }
+
     /// Record a failed attempt: how long to wait before the next one, and whether to warn.
     pub(super) fn on_failure(&mut self) -> (std::time::Duration, bool) {
         self.failures = self.failures.saturating_add(1);
         self.delay = if self.delay.is_zero() {
-            Self::INITIAL_DELAY
+            self.initial
         } else {
             (self.delay * 2).min(Self::MAX_DELAY)
         };

@@ -70,33 +70,40 @@ async fn recovery_report_does_not_hide_per_job_persistence_failure() {
     pool.close().await;
 }
 
+/// The sweep for jobs no processor claims filters by type in SQL and pages by id, so an
+/// unsupported job is found however many supported jobs are queued ahead of it.
 #[tokio::test]
-async fn recovery_fails_unsupported_job_behind_large_pending_backlog() {
+async fn recovery_fails_unsupported_jobs_found_by_a_typed_query() {
+    use srec_sqlite::test_support::SqlTrace;
+
     let pool = pool().await;
     let jobs = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
-    sqlx::query(
-        "WITH RECURSIVE backlog(n) AS (
-             VALUES (1) UNION ALL SELECT n + 1 FROM backlog WHERE n < 10000
-         )
-         INSERT INTO job (id, job_type, status, config, state, created_at, updated_at)
-         SELECT 'supported-' || n, 'remux', 'PENDING', '{}', '{}', n, n FROM backlog",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
+    let supported = JobDbModel::new("remux", "{}");
+    jobs.create_job(&supported).await.unwrap();
     let mut unsupported = JobDbModel::new("missing-processor", "{}");
     unsupported.created_at = 0;
     jobs.create_job(&unsupported).await.unwrap();
     let manager: PipelineManager =
         PipelineManager::with_repository(PipelineManagerConfig::default(), jobs.clone());
 
+    let trace = SqlTrace::install(&pool).await;
     let report = manager.recover_jobs_with_status().await.unwrap();
     assert!(report.complete);
     assert_eq!(
         jobs.get_job(&unsupported.id).await.unwrap().status,
         JobStatus::Failed.as_str()
     );
-    assert_eq!(jobs.count_pending_jobs(None).await.unwrap(), 10_000);
+    assert_eq!(
+        jobs.get_job(&supported.id).await.unwrap().status,
+        JobStatus::Pending.as_str()
+    );
+    let statements = trace.statements();
+    assert!(
+        statements.iter().any(|sql| sql.starts_with(
+            "SELECT id, job_type, dag_step_execution_id FROM job WHERE status = 'PENDING' AND job_type NOT IN ("
+        ) && sql.contains(" ORDER BY id LIMIT ")),
+        "{statements:#?}"
+    );
 }
 
 #[tokio::test]
