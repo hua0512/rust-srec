@@ -183,6 +183,8 @@ SQLite 行是权威数据。`StreamerManager` 为 actor 检查提供不可变的
 进入静默期时保留 SQLite 会话开启（`end_time IS NULL`）并 best-effort 写入滞后审计记录；窗口内再次探测到开播会提交 `ResumeHysteresis` 并复用同一会话重启录制，窗口到期或确认下播则提交 `EndSession`。
 若静默期到期提交遇到临时 SQLite 错误，FSM 会保留打开的会话并在 1 秒后重试。优雅关闭会排空在途提交与 Actor；强制关闭遵守硬期限，同时不中止已封存的 `COMMIT`。
 
+由于 `step` 是纯函数，只要拿到引发问题的输入，就能在单元测试中重放现场。因此每个 Actor 都保留一份输入轨迹（`srec-recorder/src/recorder/trace.rs`）：状态机启动时的快照，以及最近 64 条输入及其单调时钟偏移、墙上时间和抖动系数。输入以 `Debug` 文本保存，不含签名流地址、请求头和凭据内容；连续的下载心跳会合并为一条。每一步之后，Actor 都会检查：定时器步骤之后没有已到期的截止时间，一分钟内启动的探测不超过 20 次，排队等待的数据库写入不超过 8 个。每项检查首次失败时以及 Actor panic 时，都会以 `warn` 级别记录这份轨迹；Actor 运行期间也可通过 `GET /api/streamers/{id}/trace` 读取。
+
 ### `DownloadManager`（下载调度 + 引擎抽象） {#downloadmanager-下载调度-引擎抽象}
 
 DownloadManager 负责：

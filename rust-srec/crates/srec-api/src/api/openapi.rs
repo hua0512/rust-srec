@@ -130,6 +130,7 @@ pub struct MessageResponse {
         crate::api::routes::streamers::update_priority,
         crate::api::routes::streamers::extract_metadata,
         crate::api::routes::streamers::get_check_history,
+        crate::api::routes::streamers::get_input_trace,
         // Config endpoints
         crate::api::routes::config::get_global_config,
         crate::api::routes::config::update_global_config,
@@ -304,6 +305,8 @@ pub struct MessageResponse {
             ExtractMetadataResponse,
             crate::api::models::StreamerCheckHistoryEntry,
             crate::api::models::StreamerCheckHistoryResponse,
+            crate::api::schemas::InputTraceDump,
+            crate::api::schemas::InputTraceEntry,
             // Config schemas
             GlobalConfigResponse,
             UpdateGlobalConfigRequest,

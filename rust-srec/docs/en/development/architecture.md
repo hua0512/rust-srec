@@ -224,6 +224,15 @@ quiet-period expiry commit fails transiently, the FSM retains the open session a
 1-second timer. Graceful shutdown drains in-flight commits and actors; forced shutdown respects the
 hard deadline without aborting a sealed `COMMIT`.
 
+Because `step` is pure, an incident can be replayed in a unit test from the inputs that caused it.
+Each actor therefore keeps a trace (`srec-recorder/src/recorder/trace.rs`): the snapshot it started
+from and its last 64 inputs, each with its monotonic offset, wall time and jitter, as `Debug` text
+that leaves out signed stream URLs, request headers and credential material. Consecutive download
+heartbeats fold into one entry. After every step the actor checks that a timer step leaves no
+deadline already due, that no more than 20 probes start within a minute, and that no more than 8
+database writes wait in the queue. The first failure of each check, and an actor panic, logs the
+trace at `warn`; `GET /api/streamers/{id}/trace` returns it while the actor runs.
+
 ### `DownloadManager` (downloads + engine abstraction) {#downloadmanager-downloads-engine-abstraction}
 
 The download manager owns:

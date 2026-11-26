@@ -332,6 +332,11 @@ impl StreamerFsm {
         effects
     }
 
+    /// Database writes waiting behind the one in flight.
+    pub fn queued_db_len(&self) -> usize {
+        self.queued_db.len()
+    }
+
     /// Earliest monotonic instant at which the caller must invoke
     /// `step(ctx, FsmInput::TimerFired)`, or `None` when parked / terminated.
     pub fn next_deadline(&self, now: Instant, wall_now: Timestamp) -> Option<Instant> {

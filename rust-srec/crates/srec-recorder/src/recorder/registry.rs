@@ -43,6 +43,7 @@ use crate::recorder::ports::{
 };
 use crate::recorder::prober::RecorderProber;
 use crate::recorder::store::{PostPublicationChangeSet, PostPublicationListener, RecorderStore};
+use crate::recorder::trace::{InputTrace, InputTraceDump};
 use crate::session::TerminalCause;
 use crate::streamer::{StreamerManager, StreamerMetadata};
 use srec_core::CoreError;
@@ -88,6 +89,7 @@ struct ActorEntry {
     generation: u64,
     handle: ActorHandle,
     exit_rx: watch::Receiver<bool>,
+    trace: Arc<Mutex<InputTrace>>,
 }
 
 /// Backoff for a streamer whose config lookups keep failing.
@@ -1334,6 +1336,12 @@ impl ActorRegistry {
         }
     }
 
+    /// The recent state machine inputs of `streamer_id`'s running actor.
+    pub fn input_trace(&self, streamer_id: &str) -> Option<InputTraceDump> {
+        let trace = self.actors.get(streamer_id)?.trace.clone();
+        Some(trace.lock().dump())
+    }
+
     /// Names of streamers whose actor crashed past its restart budget and
     /// that are therefore no longer monitored.
     pub fn crash_stopped_streamers(&self) -> Vec<String> {
@@ -1392,6 +1400,7 @@ impl ActorRegistry {
         let (actor, handle) = StreamerActor::new(generation, snapshot, self.deps.clone());
         let (exit_tx, exit_rx) = watch::channel(false);
         let shutdown_handle = handle.clone();
+        let trace = actor.trace();
 
         self.actors.insert(
             streamer_id.clone(),
@@ -1399,6 +1408,7 @@ impl ActorRegistry {
                 generation,
                 handle,
                 exit_rx,
+                trace: trace.clone(),
             },
         );
 
@@ -1416,6 +1426,7 @@ impl ActorRegistry {
                     started.elapsed(),
                     outcome,
                     task_exit_tx,
+                    &trace,
                 );
             });
         if !spawned {
@@ -1436,6 +1447,7 @@ impl ActorRegistry {
         uptime: Duration,
         outcome: std::result::Result<ActorStopReason, Box<dyn std::any::Any + Send>>,
         exit_tx: watch::Sender<bool>,
+        trace: &Mutex<InputTrace>,
     ) {
         // Anti-ghost fence: only remove the registry entry and runtime view if
         // this exiting generation is still the installed one.
@@ -1473,7 +1485,8 @@ impl ActorRegistry {
                 warn!(
                     %streamer_id,
                     generation,
-                    "StreamerActor panicked; scheduling supervised restart if still active"
+                    trace = %trace.lock().dump(),
+                    "StreamerActor panicked; scheduling supervised restart if still active. Its recent inputs follow"
                 );
                 if self.shutting_down.load(Ordering::Acquire) {
                     return;
@@ -2414,12 +2427,14 @@ impl ActorRegistry {
         handle: ActorHandle,
     ) {
         let (exit_tx, exit_rx) = watch::channel(false);
+        let trace = actor.trace();
         self.actors.insert(
             streamer_id.to_owned(),
             ActorEntry {
                 generation,
                 handle,
                 exit_rx,
+                trace: trace.clone(),
             },
         );
         let registry = self.clone();
@@ -2436,6 +2451,7 @@ impl ActorRegistry {
                     started.elapsed(),
                     outcome,
                     task_exit_tx,
+                    &trace,
                 );
             });
         if !spawned {
@@ -2490,6 +2506,7 @@ impl ActorRegistry {
                 generation,
                 handle,
                 exit_rx,
+                trace: Arc::new(Mutex::new(InputTrace::empty(generation))),
             },
         );
         exit_tx

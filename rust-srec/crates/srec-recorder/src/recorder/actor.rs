@@ -23,6 +23,7 @@ use std::time::Instant;
 use dashmap::DashMap;
 use futures::FutureExt;
 use jiff::Timestamp;
+use parking_lot::Mutex;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinSet;
 use tracing::{debug, trace, warn};
@@ -30,13 +31,14 @@ use tracing::{debug, trace, warn};
 use crate::config::ConfigService;
 use crate::danmu::DanmuService;
 use crate::downloader::{DownloadManager, RecorderFeedbackPermit};
-use crate::recorder::fsm::{FsmInput, StepContext, StreamerFsm};
+use crate::recorder::fsm::{FsmEffect, FsmInput, StepContext, StreamerFsm};
 use crate::recorder::ports::{
     ActorStopReason, DbCommitFailure, DbCommitOutcome, InitialStreamerSnapshot, ProbeFailure,
     ProbeStatus, RecorderPipelinePort, StreamerRuntimeView,
 };
 use crate::recorder::prober::RecorderProber;
 use crate::recorder::store::RecorderStore;
+use crate::recorder::trace::{self, InputTrace, StepResult};
 use crate::streamer::StreamerManager;
 use srec_core::utils::task_supervisor::panic_payload_message;
 use srec_sqlite::repositories::config::SqlxConfigRepository;
@@ -139,6 +141,7 @@ pub struct StreamerActor {
     in_flight_probe: Option<(u64, BoxedProbeFuture)>,
     batch_live_rx: Option<watch::Receiver<bool>>,
     effects_tasks: JoinSet<()>,
+    trace: Arc<Mutex<InputTrace>>,
 }
 
 impl StreamerActor {
@@ -151,6 +154,11 @@ impl StreamerActor {
         let now = Instant::now();
         let wall_now = Timestamp::now();
         let streamer_id = snapshot.streamer_id.clone();
+        let trace = InputTrace::new(
+            generation,
+            StepContext::deterministic(now, wall_now),
+            &snapshot,
+        );
         let fsm = StreamerFsm::new(snapshot, now, wall_now).for_generation(generation);
         let (tx, rx) = mpsc::unbounded_channel();
         let handle = ActorHandle { tx: tx.clone() };
@@ -165,8 +173,14 @@ impl StreamerActor {
             in_flight_probe: None,
             batch_live_rx: None,
             effects_tasks: JoinSet::new(),
+            trace: Arc::new(Mutex::new(trace)),
         };
         (actor, handle)
+    }
+
+    /// The actor's input trace, which outlives the actor's task.
+    pub(crate) fn trace(&self) -> Arc<Mutex<InputTrace>> {
+        self.trace.clone()
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -326,8 +340,7 @@ impl StreamerActor {
                 stopped
             }
             ActorMessage::SegmentStarted { input, ack } => {
-                let ctx = self.step_ctx();
-                let effects = self.fsm.step(ctx, input);
+                let effects = self.step(input);
                 let signals = dispatch_segment_started_effects(
                     &self.streamer_id,
                     effects,
@@ -339,8 +352,7 @@ impl StreamerActor {
                 self.apply_loop_signals(signals)
             }
             ActorMessage::SegmentCompleted { input, ack } => {
-                let ctx = self.step_ctx();
-                let effects = self.fsm.step(ctx, input);
+                let effects = self.step(input);
                 let signals = dispatch_segment_completed_effects(
                     &self.streamer_id,
                     effects,
@@ -352,8 +364,7 @@ impl StreamerActor {
                 self.apply_loop_signals(signals)
             }
             ActorMessage::DanmuFifo { input, done } => {
-                let ctx = self.step_ctx();
-                let effects = self.fsm.step(ctx, input);
+                let effects = self.step(input);
                 let signals = dispatch_danmu_fifo_effects(
                     &self.streamer_id,
                     effects,
@@ -367,9 +378,37 @@ impl StreamerActor {
         }
     }
 
-    fn step_and_dispatch(&mut self, input: FsmInput) -> Option<ActorStopReason> {
+    /// Step the state machine, keeping `input` in the trace and checking
+    /// the step's result.
+    fn step(&mut self, input: FsmInput) -> Vec<FsmEffect> {
         let ctx = self.step_ctx();
+        let described = trace::describe(&input);
+        let after_timer = matches!(input, FsmInput::TimerFired);
         let effects = self.fsm.step(ctx, input);
+        let result = StepResult {
+            after_timer,
+            next_deadline: self.fsm.next_deadline(ctx.now, ctx.wall_now),
+            probes_started: effects
+                .iter()
+                .filter(|effect| matches!(effect, FsmEffect::SpawnProbe(_)))
+                .count(),
+            queued_writes: self.fsm.queued_db_len(),
+        };
+        let mut trace = self.trace.lock();
+        for check in trace.observe(ctx, described, &result) {
+            warn!(
+                streamer_id = %self.streamer_id,
+                generation = self.generation,
+                ?check,
+                trace = %trace.dump(),
+                "Recorder state machine check failed; its recent inputs follow"
+            );
+        }
+        effects
+    }
+
+    fn step_and_dispatch(&mut self, input: FsmInput) -> Option<ActorStopReason> {
+        let effects = self.step(input);
         let signals = dispatch_effects(
             &self.streamer_id,
             effects,

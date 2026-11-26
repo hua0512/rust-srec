@@ -2,7 +2,8 @@
 //!
 //! This module contains the pure synchronous [`StreamerFsm`] state machine,
 //! serialized SQLite [`RecorderStore`], [`PlatformExtractorRunner`] /
-//! [`RecorderProber`], non-blocking `StreamerActor`, and [`ActorRegistry`].
+//! [`RecorderProber`], non-blocking `StreamerActor`, [`ActorRegistry`], and
+//! the per-actor input trace.
 
 pub mod actor;
 pub mod fsm;
@@ -10,6 +11,7 @@ pub mod ports;
 pub mod prober;
 pub mod registry;
 pub mod store;
+pub mod trace;
 
 pub use actor::startup_task::StartupLeaseRegistry;
 pub use fsm::{
@@ -30,3 +32,4 @@ pub use ports::{
 pub use prober::{PlatformExtractorRunner, RecorderProber, RecorderProberDependencies};
 pub use registry::{ActorRegistry, ActorRegistryDependencies};
 pub use store::{PostPublicationChangeSet, PostPublicationListener, RecorderStore};
+pub use trace::{InputTraceDump, InputTraceEntry};

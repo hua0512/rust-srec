@@ -76,6 +76,36 @@ pub enum StreamerState {
     Disabled,
 }
 
+/// A copy of an actor's input trace, oldest input first.
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+pub struct InputTraceDump {
+    /// The actor generation that recorded the trace.
+    pub generation: u64,
+    /// When the actor started.
+    pub started_at: Timestamp,
+    /// The snapshot the state machine started from.
+    pub initial: String,
+    /// The latest inputs, oldest first.
+    pub entries: Vec<InputTraceEntry>,
+}
+
+/// One input as the state machine received it.
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+pub struct InputTraceEntry {
+    /// Position among all inputs of this actor, counting from 0.
+    pub seq: u64,
+    /// Time since the actor started, on the monotonic clock, in milliseconds.
+    pub offset_ms: u64,
+    /// Wall-clock time of the step.
+    pub at: Timestamp,
+    /// The step's jitter factor in basis points.
+    pub jitter_bps: u16,
+    /// The input's `Debug` text.
+    pub input: String,
+    /// Further download heartbeats folded into this entry; it shows the last.
+    pub repeats: u32,
+}
+
 // ============================================================================
 // Sessions
 // ============================================================================

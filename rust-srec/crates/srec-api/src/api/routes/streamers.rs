@@ -89,6 +89,7 @@ pub fn router() -> Router<AppState> {
         .route("/{id}/clear-error", post(clear_error))
         .route("/{id}/priority", patch(update_priority))
         .route("/{id}/check-history", get(get_check_history))
+        .route("/{id}/trace", get(get_input_trace))
         .route("/extract-metadata", post(extract_metadata))
 }
 
@@ -1138,6 +1139,32 @@ pub async fn get_check_history(
     items.shrink_to_fit();
 
     Ok(Json(StreamerCheckHistoryResponse { items }))
+}
+
+/// The recent inputs of the streamer's state machine, for diagnosing
+/// monitoring and recording problems. Inputs leave out signed stream URLs,
+/// request headers and credential material.
+#[utoipa::path(
+    get,
+    path = "/api/streamers/{id}/trace",
+    tag = "streamers",
+    params(("id" = String, Path, description = "Streamer ID")),
+    responses(
+        (status = 200, description = "Recent state machine inputs, oldest first", body = crate::api::schemas::InputTraceDump),
+        (status = 404, description = "Streamer not found or not monitored", body = crate::api::error::ApiErrorResponse),
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_input_trace(
+    State(state): State<StreamerRouteState>,
+    ApiPath(id): ApiPath<String>,
+) -> ApiResult<Json<crate::recorder::InputTraceDump>> {
+    live_streamer(&state.streamer_manager, &id)?;
+    state
+        .actor_registry
+        .input_trace(&id)
+        .map(Json)
+        .ok_or_else(|| ApiError::not_found(format!("Streamer '{id}' is not being monitored")))
 }
 
 /// Map one DB row to the wire format. A row with malformed JSON in
