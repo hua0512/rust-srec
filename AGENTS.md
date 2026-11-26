@@ -15,7 +15,7 @@ Use the map below to locate the task. Read supporting docs, examples, and skills
 | Desktop wrapper | `rust-srec/src-tauri/`; [desktop rules](rust-srec/src-tauri/AGENTS.md) |
 | Documentation site | `rust-srec/docs/`; [docs rules](rust-srec/docs/AGENTS.md) |
 | Application release planning, preparation, or publishing | Read the [release skill](.claude/skills/release-rust-srec/SKILL.md) only for a `rust-srec` release/version task; it is the canonical procedure even if the tool does not discover `.claude/skills` automatically |
-| Auditing new or existing tests before a PR | Read the [test review skill](.claude/skills/review-tests/SKILL.md) when reviewing test additions before a PR or auditing existing suites; it is the canonical procedure even if the tool does not discover `.claude/skills` automatically |
+| Auditing new or existing tests before a PR, or pruning a test suite | Read the [test review skill](.claude/skills/review-tests/SKILL.md) when reviewing test additions before a PR, auditing existing suites, or cutting a suite's size; it is the canonical procedure even if the tool does not discover `.claude/skills` automatically |
 
 ## Toolchain and command reference
 

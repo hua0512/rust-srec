@@ -44,14 +44,21 @@ Pin each behavior at the highest layer that can reach it without the public netw
 2. **Database integration, `tests/integration/`**: repository and migration contracts on real SQLite, one module per suite in a single test binary.
 3. **Unit tests beside the module**: only for logic the E2E suite cannot reach offline: engine and extractor behavior, external-tool argument building and output parsing, state machines, time math, concurrency, cancellation and fault injection. Keep one focused test per behavior.
 
+Before adding a test:
+- Extend an existing test when it already sets up the scenario: a table row or a few assertions cost milliseconds, while a new E2E test starts its own app (about 0.3 s) and a new unit test adds to its crate's test-build compile time.
+- Pin a route's status codes, error `code`s and JSON in E2E, not in a unit test that calls the handler or router in-process. Unit tests stay for what E2E cannot reach: modes and settings `TestApp` does not start (desktop mode, environment parsing), fault injection, races, cancellation and time math.
+- Check that the test fails when the behavior it pins is broken: run it against a temporary mutation of the production code, or against the code before the fix.
+- Don't wait on real timers set in seconds. Configure the delay in milliseconds, or give the component a test-only setting, so the test finishes in well under a second.
+- Reuse the existing fixtures before writing a new one: `TestApp` and its `Seed`s for E2E, and the migration template in `srec-sqlite` (`test_migration_template`) for unit tests that need a migrated database.
+
 Rules:
-- Remove a test only when its behavior stays pinned by an E2E test or by a kept unit test. Never weaken or delete E2E tests to make a change pass.
+- Remove a test only when its behavior stays pinned by an E2E test or by a kept unit test, and the covering test asserts the same behavior, not just the same flow or endpoint. Never weaken or delete E2E tests to make a change pass.
 - E2E reliability:
   - Never reach the public network: create streamers with `enabled: false`; use `LocalHttpServer` or `ClosedPort` for outbound targets; use IP literals, not DNS names.
   - Monitoring and recording scenarios enable streamers only in an app started with `TestApp::start_with(Seed::live())`, which routes every platform but the offline `support::FakePlatform` to a proxy that refuses everything. They use `#[tokio::test(flavor = "multi_thread", worker_threads = 2)]` and shut the app down before the fake platform drops.
   - Never sleep for a fixed time: use `eventually` with `WAIT`.
   - Each test starts its own `TestApp` and ends with `shutdown()`.
-  - Don't mutate the process environment. The suite relies on nextest's process-per-test model.
+  - Don't mutate the process environment. The suite relies on nextest's process-per-test model. A scenario that relies on an environment variable's default adds it to `DEFAULT_ONLY_ENV` in `tests/e2e/support.rs`, so an exported value fails the run with a clear message instead of a confusing assertion.
 - A confirmed bug found while writing a test becomes a `known_bug_*` test with `#[ignore = "bug: …"]` that asserts the correct behavior. CI's tool-gated tests exclude `known_bug_` tests. The fix removes the ignore and renames the test.
 - Commands: `cargo nextest run --locked -p rust-srec --test e2e`; one area: `-E 'test(/^auth::/)'`.
 
