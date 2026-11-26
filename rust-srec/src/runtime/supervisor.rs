@@ -67,9 +67,9 @@ pub(crate) struct WorkerShutdownWatchdog(HardDeadlineWatchdog);
 
 impl WorkerShutdownWatchdog {
     pub(crate) fn disarm(self) -> Result<()> {
-        self.0.disarm().map_err(|_| {
-            Error::Other("contained worker hard-deadline watchdog thread panicked".to_string())
-        })
+        self.0
+            .disarm()
+            .map_err(|_| Error::other("contained worker hard-deadline watchdog thread panicked"))
     }
 }
 
@@ -92,7 +92,7 @@ impl WorkerShutdownSchedule {
         })
         .map(WorkerShutdownWatchdog)
         .map_err(|error| {
-            Error::Other(format!(
+            Error::other(format!(
                 "failed to arm contained worker hard-deadline watchdog: {error}"
             ))
         })
@@ -229,7 +229,7 @@ impl ShutdownMonitor {
         F: Future<Output = WorkerShutdownReason> + Send + 'static,
     {
         let runtime = tokio::runtime::Handle::try_current().map_err(|error| {
-            Error::Other(format!(
+            Error::other(format!(
                 "shutdown monitor requires an active Tokio runtime: {error}"
             ))
         })?;
@@ -317,15 +317,15 @@ impl ShutdownMonitor {
     }
 
     fn install_terminator(&self, terminator: TreeTerminator) -> Result<()> {
-        self.terminator.set(terminator).map_err(|_| {
-            Error::Other("runtime terminator was installed more than once".to_string())
-        })
+        self.terminator
+            .set(terminator)
+            .map_err(|_| Error::other("runtime terminator was installed more than once"))
     }
 
     async fn wait_for_shutdown(&mut self) -> Result<ShutdownRequest> {
         (&mut self.request_rx)
             .await
-            .map_err(|_| Error::Other("shutdown signal monitor stopped unexpectedly".to_string()))
+            .map_err(|_| Error::other("shutdown signal monitor stopped unexpectedly"))
     }
 }
 
@@ -436,11 +436,11 @@ async fn supervise_command_with_monitor(
             .env(PREVIOUS_DIRTY_COUNT_ENV, previous_dirty_count.to_string());
     }
     let mut child = ContainedChild::spawn(&mut command)
-        .map_err(|error| Error::Other(format!("failed to launch contained runtime: {error}")))?;
+        .map_err(|error| Error::other(format!("failed to launch contained runtime: {error}")))?;
     shutdown_monitor.install_terminator(child.tree_terminator())?;
-    let mut control = child.take_stdin().ok_or_else(|| {
-        Error::Other("contained runtime did not expose its control pipe".to_string())
-    })?;
+    let mut control = child
+        .take_stdin()
+        .ok_or_else(|| Error::other("contained runtime did not expose its control pipe"))?;
 
     // The worker waits for START before opening SQLite or output files. Install
     // the durable dirty marker only after OS containment is confirmed, then
@@ -456,7 +456,7 @@ async fn supervise_command_with_monitor(
         }
     })
     .await
-    .map_err(|error| Error::Other(format!("runtime marker admission task failed: {error}")))
+    .map_err(|error| Error::other(format!("runtime marker admission task failed: {error}")))
     .and_then(|result| result);
     let marker = match marker_result {
         Ok(marker) => marker,
@@ -477,7 +477,7 @@ async fn supervise_command_with_monitor(
     tokio::select! {
         status = child.wait() => {
             let status = status.map_err(|error| {
-                Error::Other(format!("failed waiting for contained runtime: {error}"))
+                Error::other(format!("failed waiting for contained runtime: {error}"))
             })?;
             classify_settled_exit_async(marker, status, Duration::ZERO, false).await
         }
@@ -585,7 +585,7 @@ async fn classify_settled_exit_async(
 ) -> Result<RuntimeExitReport> {
     tokio::task::spawn_blocking(move || classify_settled_exit(marker, status, elapsed, forced))
         .await
-        .map_err(|error| Error::Other(format!("runtime marker settlement task failed: {error}")))?
+        .map_err(|error| Error::other(format!("runtime marker settlement task failed: {error}")))?
 }
 
 fn classify_settled_exit(
@@ -777,7 +777,7 @@ async fn acknowledge_recovery_at(
         DirtyGenerationMarker::acknowledge_recovery(&path, generation)
     })
     .await
-    .map_err(|error| Error::Other(format!("recovery acknowledgement task failed: {error}")))??;
+    .map_err(|error| Error::other(format!("recovery acknowledgement task failed: {error}")))??;
     Ok(true)
 }
 
@@ -787,9 +787,10 @@ pub(crate) async fn wait_for_worker_start() -> Result<WorkerControl> {
         optional_environment::<RuntimeGeneration>(PREVIOUS_DIRTY_GENERATION_ENV)?;
     let unresolved_generations = previous_unresolved_generations(previous_dirty_generation)?;
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
-    let line = lines.next_line().await?.ok_or_else(|| {
-        Error::Other("runtime supervisor disconnected before worker admission".to_string())
-    })?;
+    let line = lines
+        .next_line()
+        .await?
+        .ok_or_else(|| Error::other("runtime supervisor disconnected before worker admission"))?;
     let admitted_generation = parse_start_command(&line)?;
     if admitted_generation != generation {
         return Err(Error::validation(format!(

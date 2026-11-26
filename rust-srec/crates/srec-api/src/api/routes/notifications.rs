@@ -5,6 +5,7 @@ use axum::{
     routing::{get, post},
 };
 use base64::Engine as _;
+use srec_core::CoreError;
 
 use crate::api::auth_service::AuthPrincipal;
 use crate::api::error::ApiError;
@@ -290,7 +291,9 @@ pub async fn subscribe_web_push(
         .validate_endpoint(endpoint)
         .await
         .map_err(|error| match error {
-            crate::notification::NotifyError::Validation(msg) => ApiError::bad_request(msg),
+            crate::notification::NotifyError::Core(CoreError::Validation(msg)) => {
+                ApiError::bad_request(msg)
+            }
             other => ApiError::from(other),
         })?;
 

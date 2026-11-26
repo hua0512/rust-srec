@@ -71,7 +71,7 @@ impl MaintenanceScheduler {
                 return Ok(false);
             }
             unexpected => {
-                return Err(Error::Database(format!(
+                return Err(Error::database(format!(
                     "unexpected PRAGMA auto_vacuum value {unexpected}"
                 )));
             }
@@ -112,23 +112,23 @@ impl MaintenanceScheduler {
             tokio::task::spawn_blocking(move || available_space_for_path(&probe_path))
                 .await
                 .map_err(|error| {
-                    Error::Database(format!("Available-space probe task failed: {error}"))
+                    Error::database(format!("Available-space probe task failed: {error}"))
                 })?
                 .map_err(|error| {
-                    Error::Database(format!(
+                    Error::database(format!(
                         "could not list disks to check available space for '{}': {error}",
                         path.display()
                     ))
                 })?
                 .ok_or_else(|| {
-                    Error::Database(format!(
+                    Error::database(format!(
                         "could not determine available space for '{}'",
                         path.display()
                     ))
                 })?;
 
         if available_space < required_space {
-            return Err(Error::Database(format!(
+            return Err(Error::database(format!(
                 "insufficient space to convert '{}' to incremental auto-vacuum: \
                  need {required_space} bytes, have {available_space} bytes",
                 path.display()
@@ -159,9 +159,7 @@ impl MaintenanceScheduler {
             .find_map(|(_, name, path)| {
                 (name == "main" && !path.is_empty()).then(|| PathBuf::from(path))
             })
-            .ok_or_else(|| {
-                Error::Database("SQLite main database has no filesystem path".to_string())
-            })
+            .ok_or_else(|| Error::database("SQLite main database has no filesystem path"))
     }
 
     async fn get_freeable_space(&self) -> Result<i64> {

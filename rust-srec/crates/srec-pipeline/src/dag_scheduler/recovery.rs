@@ -35,9 +35,7 @@ impl DagScheduler {
             dag.get_status(),
             Some(DagExecutionStatus::Failed | DagExecutionStatus::Cancelled)
         ) {
-            return Err(
-                Error::Validation("DAG is not in FAILED or CANCELLED status".to_string()).into(),
-            );
+            return Err(Error::validation("DAG is not in FAILED or CANCELLED status").into());
         }
 
         let steps = self.dag_repository.get_steps_by_dag(dag_id).await?;
@@ -51,10 +49,7 @@ impl DagScheduler {
             })
             .collect();
         if retryable_steps.is_empty() {
-            return Err(Error::Validation(
-                "No failed or cancelled steps found to retry".to_string(),
-            )
-            .into());
+            return Err(Error::validation("No failed or cancelled steps found to retry").into());
         }
 
         let mut actions = Vec::with_capacity(retryable_steps.len());
@@ -63,7 +58,7 @@ impl DagScheduler {
                 continue;
             };
             let job = self.job_queue.get_job(job_id).await?.ok_or_else(|| {
-                Error::Validation(format!(
+                Error::validation(format!(
                     "Job {} of step '{}' no longer exists; the workflow cannot be retried",
                     job_id, step.step_id
                 ))
@@ -72,7 +67,7 @@ impl DagScheduler {
                 JobStatus::Failed | JobStatus::Cancelled => RetryAction::Restart(job),
                 JobStatus::Completed => RetryAction::Replay(job),
                 JobStatus::Pending | JobStatus::Processing => {
-                    return Err(Error::Validation(format!(
+                    return Err(Error::validation(format!(
                         "Job {} of step '{}' is {} and cannot be retried",
                         job_id,
                         step.step_id,
@@ -372,7 +367,7 @@ impl DagScheduler {
         let dag = self.dag_repository.get_dag(dag_id).await?;
         let dag_def = dag
             .get_dag_definition()
-            .ok_or_else(|| Error::Validation("Failed to parse DAG definition".into()))?;
+            .ok_or_else(|| Error::validation("Failed to parse DAG definition"))?;
         let ready = self.dag_repository.list_ready_steps(dag_id).await?;
 
         // The retry entry point only knows the dag_id, so the placeholder

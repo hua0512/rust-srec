@@ -134,7 +134,7 @@ fn push_dag_execution_filters(
 
 fn parse_display_status(dag_id: &str, status: &str) -> Result<DagExecutionStatus> {
     DagExecutionStatus::parse(status)
-        .ok_or_else(|| Error::Database(format!("DAG {dag_id} has unknown status {status}")))
+        .ok_or_else(|| Error::database(format!("DAG {dag_id} has unknown status {status}")))
 }
 
 #[derive(sqlx::FromRow)]

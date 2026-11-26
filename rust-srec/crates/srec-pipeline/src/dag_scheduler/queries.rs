@@ -6,6 +6,7 @@ use super::DagScheduler;
 use crate::JobProgressSnapshot;
 use crate::repositories::DagListFilter;
 use crate::{PipelineError as Error, PipelineResult as Result};
+use srec_core::CoreError;
 use srec_sqlite::models::{
     DagExecutionDbModel, DagExecutionListSummary, DagExecutionStatus, DagStepExecutionDbModel,
     DagStepWithJob,
@@ -144,7 +145,9 @@ impl DagScheduler {
             if let Err(e) = self.job_queue.cancel_job(job_id).await
                 && !matches!(
                     e,
-                    Error::InvalidStateTransition { .. } | Error::NotFound { .. }
+                    Error::Core(
+                        CoreError::InvalidStateTransition { .. } | CoreError::NotFound { .. }
+                    )
                 )
             {
                 warn!(

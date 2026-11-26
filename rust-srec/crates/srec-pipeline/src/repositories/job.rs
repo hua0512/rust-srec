@@ -4,6 +4,7 @@ pub(super) mod writes;
 
 use async_trait::async_trait;
 use sqlx::{QueryBuilder, SqlitePool};
+use srec_core::CoreError;
 use srec_sqlite::begin_immediate;
 use srec_sqlite::models::{JobCounts, JobDbModel, JobExecutionLogDbModel, JobStatus, Pagination};
 use srec_sqlite::retry::retry_on_sqlite_busy;
@@ -284,10 +285,10 @@ impl JobRepository for SqlxJobRepository {
 
                 return match status {
                     None => Err(Error::not_found("Job", id)),
-                    Some(status) => Err(Error::InvalidStateTransition {
+                    Some(status) => Err(Error::Core(CoreError::InvalidStateTransition {
                         from: status.to_ascii_uppercase(),
                         to: JobStatus::Pending.as_str().to_string(),
-                    }),
+                    })),
                 };
             }
             Ok(())

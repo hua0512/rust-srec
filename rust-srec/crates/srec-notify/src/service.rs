@@ -486,20 +486,16 @@ impl NotificationService {
         let _ = self.event_tx.send(event.clone());
 
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        let target_channels =
-            {
-                let registry = self.registry.read();
-                keys.iter()
-                    .map(|key| {
-                        registry.by_key.get(key).cloned().ok_or_else(|| {
-                            crate::NotifyError::NotFound {
-                                entity_type: "NotificationChannelInstance".to_owned(),
-                                id: key.clone(),
-                            }
-                        })
+        let target_channels = {
+            let registry = self.registry.read();
+            keys.iter()
+                .map(|key| {
+                    registry.by_key.get(key).cloned().ok_or_else(|| {
+                        crate::NotifyError::not_found("NotificationChannelInstance", key.clone())
                     })
-                    .collect::<Result<Vec<_>>>()?
-            };
+                })
+                .collect::<Result<Vec<_>>>()?
+        };
 
         if target_channels.is_empty() {
             return Ok(());
@@ -971,7 +967,7 @@ mod tests {
         async fn send(&self, _event: &NotificationEvent) -> Result<()> {
             let attempt = self.attempts.fetch_add(1, Ordering::SeqCst) + 1;
             if attempt <= self.fail_for_attempts {
-                Err(crate::NotifyError::Other(format!(
+                Err(crate::NotifyError::other(format!(
                     "forced failure {}",
                     attempt
                 )))
@@ -1130,8 +1126,8 @@ mod tests {
             _channel_id: &str,
         ) -> srec_sqlite::DbResult<Vec<String>> {
             if self.fail_subscriptions_for.lock().as_deref() == Some(_channel_id) {
-                return Err(srec_sqlite::DbError::Other(
-                    "injected subscription read failure".to_owned(),
+                return Err(srec_sqlite::DbError::other(
+                    "injected subscription read failure",
                 ));
             }
             Ok(self
@@ -1149,8 +1145,8 @@ mod tests {
             _event_name: &str,
         ) -> srec_sqlite::DbResult<()> {
             if self.fail_subscribe.load(Ordering::SeqCst) {
-                return Err(srec_sqlite::DbError::Other(
-                    "injected subscription write failure".to_owned(),
+                return Err(srec_sqlite::DbError::other(
+                    "injected subscription write failure",
                 ));
             }
             self.subscribe_calls
@@ -1188,8 +1184,8 @@ mod tests {
             entry: &NotificationDeadLetterDbModel,
         ) -> srec_sqlite::DbResult<()> {
             if self.fail_dead_letter_insert {
-                return Err(srec_sqlite::DbError::Other(
-                    "forced dead letter insert failure".into(),
+                return Err(srec_sqlite::DbError::other(
+                    "forced dead letter insert failure",
                 ));
             }
             if let Some(gate) = &self.dead_letter_gate {

@@ -226,7 +226,7 @@ async fn convert_database(
             .route
             .into_backup(|endpoint| namer.entry_for(endpoint).name.clone())
             .to_route(&ids)
-            .map_err(|_| crate::Error::Other("converted proxy has no ID".into()))?;
+            .map_err(|_| crate::Error::other("converted proxy has no ID"))?;
         if route.is_inherit() {
             continue;
         }

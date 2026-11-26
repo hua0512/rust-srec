@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use sqlx::SqlitePool;
+use srec_core::CoreError;
+use srec_sqlite::DbError;
 
 mod global_platforms;
 mod notifications_users;
@@ -57,7 +59,7 @@ pub(crate) struct ConfigurationImportOutcome {
 impl From<crate::Error> for ConfigurationImportError {
     fn from(error: crate::Error) -> Self {
         match error {
-            crate::Error::DatabaseSqlx(error) => Self::Database(error),
+            crate::Error::Db(DbError::DatabaseSqlx(error)) => Self::Database(error),
             error => Self::Database(sqlx::Error::Protocol(error.to_string())),
         }
     }
@@ -173,8 +175,8 @@ impl ConfigurationImportService {
         }
 
         let state = self.streamer_manager.committed_state().ok_or_else(|| {
-            ConfigurationImportError::from(crate::Error::Configuration(
-                "Import requires the committed streamer state owner".to_owned(),
+            ConfigurationImportError::from(crate::Error::config(
+                "Import requires the committed streamer state owner",
             ))
         })?;
         state.writer.require_serialized()?;
@@ -185,7 +187,7 @@ impl ConfigurationImportService {
             .acquire_owned()
             .await
             .map_err(|error| {
-                ConfigurationImportError::from(crate::Error::Other(error.to_string()))
+                ConfigurationImportError::from(crate::Error::other(error.to_string()))
             })?;
         let cache = state.cache.clone();
         let config_service = self.config_service.clone();
@@ -361,8 +363,8 @@ fn validation_error(message: impl Into<String>) -> ConfigurationImportError {
 /// Database failures stay database errors; anything else rejects the bundle.
 fn write_error(error: impl Into<crate::Error>) -> ConfigurationImportError {
     match error.into() {
-        crate::Error::DatabaseSqlx(error) => ConfigurationImportError::Database(error),
-        crate::Error::Proxy(error @ crate::proxies::ProxyError::Missing(_)) => {
+        crate::Error::Db(DbError::DatabaseSqlx(error)) => ConfigurationImportError::Database(error),
+        crate::Error::Core(CoreError::Proxy(error @ crate::proxies::ProxyError::Missing(_))) => {
             ConfigurationImportError::MissingProxy(error)
         }
         error => validation_error(error.to_string()),

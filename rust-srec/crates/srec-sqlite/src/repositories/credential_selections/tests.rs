@@ -8,6 +8,7 @@ use crate::repositories::{
     ConfigRepository, CredentialProfileRepository, SqlxConfigRepository, SqlxStreamerRepository,
     StreamerRepository,
 };
+use srec_core::CoreError;
 use srec_core::domain::credential::CredentialMaterial;
 
 struct Fixture {
@@ -277,7 +278,7 @@ async fn a_streamer_that_moves_platform_inherits_there() {
         );
         let error = f.streamers.update_streamer(&streamer).await.unwrap_err();
         assert!(
-            matches!(&error, Error::CredentialProfile(ProfileError::InaccessibleReferences(references)) if references == &vec![format!("streamer:{}", streamer.id)]),
+            matches!(&error, Error::Core(CoreError::CredentialProfile(ProfileError::InaccessibleReferences(references))) if references == &vec![format!("streamer:{}", streamer.id)]),
             "{error}"
         );
         streamer.streamer_specific_config = Some(
@@ -425,7 +426,7 @@ async fn streamlink_accounts_are_chosen_per_streamer_one_at_a_time() {
                 .await
                 .unwrap_err();
             assert!(
-                matches!(&error, Error::CredentialProfile(ProfileError::PerStreamerOnly(_))),
+                matches!(&error, Error::Core(CoreError::CredentialProfile(ProfileError::PerStreamerOnly(_)))),
                 "{error}"
             );
         }
@@ -438,7 +439,7 @@ async fn streamlink_accounts_are_chosen_per_streamer_one_at_a_time() {
         );
         let error = f.config.update_template_config(&overrides).await.unwrap_err();
         assert!(
-            matches!(&error, Error::CredentialProfile(ProfileError::PerStreamerOnly(_))),
+            matches!(&error, Error::Core(CoreError::CredentialProfile(ProfileError::PerStreamerOnly(_)))),
             "{error}"
         );
         // Inherit stores nothing and is always allowed.
@@ -618,7 +619,7 @@ async fn a_streamlink_streamer_without_an_account_uses_the_account_of_its_site()
         assert!(
             matches!(
                 &error,
-                Error::CredentialProfile(ProfileError::SiteTaken { site, profile_id, .. })
+                Error::Core(CoreError::CredentialProfile(ProfileError::SiteTaken { site, profile_id, .. }))
                     if site == "youtube.com" && profile_id == &youtube
             ),
             "{error}"
@@ -666,7 +667,7 @@ async fn only_streamlink_accounts_name_sites() {
     assert!(
         matches!(
             &error,
-            Error::CredentialProfile(ProfileError::InvalidSite(_))
+            Error::Core(CoreError::CredentialProfile(ProfileError::InvalidSite(_)))
         ),
         "{error}"
     );
@@ -685,7 +686,7 @@ async fn only_streamlink_accounts_name_sites() {
     assert!(
         matches!(
             &error,
-            Error::CredentialProfile(ProfileError::InvalidSite(_))
+            Error::Core(CoreError::CredentialProfile(ProfileError::InvalidSite(_)))
         ),
         "{error}"
     );

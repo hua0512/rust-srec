@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use sqlx::SqliteConnection;
 
 use crate::{DbError as Error, DbResult as Result};
+use srec_core::CoreError;
 use srec_core::domain::proxy::{
     AccountReference, NamedReference, ProxyEndpoint, ProxyEntry, ProxyError, ProxyReferences,
     ProxyRoute, ResolvedRoute, RouteSource, SystemProxy, TemplateReference, canonical, resolve,
@@ -700,7 +701,7 @@ pub async fn resolve_streamer(
     // A streamer being created has no row yet and inherits.
     let streamer = match route_of(connection, &RouteOwner::Streamer(streamer_id.to_owned())).await {
         Ok(route) => route,
-        Err(Error::NotFound { .. }) => ProxyRoute::Inherit,
+        Err(Error::Core(CoreError::NotFound { .. })) => ProxyRoute::Inherit,
         Err(error) => return Err(error),
     };
     layers.push((RouteSource::Streamer, streamer));

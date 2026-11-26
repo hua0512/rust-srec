@@ -32,7 +32,7 @@ Each crate depends only on crates in lower layers, except `srec-sqlite`, which d
 ## CONVENTIONS
 - **State**: Use `Arc<ServiceContainer>` for shared ownership across services.
 - **API State**: `AppState` (`crates/srec-api/src/api/server.rs`) is the shared context for Axum routes.
-- **Errors**: Propagate domain/crate errors to each crate's error type (and `crate::error::Error` in root `rust-srec`); handle HTTP-specific errors in `crates/srec-api/src/api/error.rs`.
+- **Errors**: Each crate's error type holds the failures that originate in that crate, `Core(CoreError)` for the shared kinds (not found, validation, conflict, ...) and one wrapper per lower crate error it propagates, such as `Db(DbError)`. Add a variant to the crate that raises the failure. The `From` impls move a wrapped `CoreError` up to `Core` and a wrapped `DbError` up to `Db`, so match a shared kind as `Error::Core(CoreError::NotFound { .. })` at any layer. Root `rust-srec`'s `crate::error::Error` is `srec_api::ServerError`. Map errors to HTTP statuses and codes in `crates/srec-api/src/api/error.rs`.
 - **Migrations**: New schema changes go in new files in `migrations/`; never edit a shipped one — sqlx checksums applied migrations and any change breaks startup on existing installs, so correct it with another new file.
 - **Table rebuilds**: Follow the [table rebuild procedure](../CONTRIBUTING.md#sqlite-table-rebuilds) for any migration that rebuilds a table. Rebuilding `streamers`, `template_config`, `platform_config` or `credential_profiles` always needs its `-- no-transaction` / `PRAGMA foreign_keys=OFF` form; inside SQLx's default transaction the rebuild deletes or fails on the account selections that reference those tables.
 

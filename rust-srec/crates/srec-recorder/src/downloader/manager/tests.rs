@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use pipeline_common::SplitReason;
+use srec_core::CoreError;
 
 use crate::downloader::SegmentInfo;
 use crate::downloader::engine::{EngineStartError, IoErrorKindSer, SegmentEvent};
@@ -176,7 +177,7 @@ async fn manual_cut_completes_after_both_segment_events_in_either_order() {
         assert_eq!(first, manager.request_manual_split(&id).unwrap());
         assert!(matches!(
             manager.request_manual_split("stale-attempt"),
-            Err(crate::Error::NotFound { .. })
+            Err(crate::Error::Core(CoreError::NotFound { .. }))
         ));
         assert_eq!(handle.manual_split.begin(), Some(1));
         release.notify_one();

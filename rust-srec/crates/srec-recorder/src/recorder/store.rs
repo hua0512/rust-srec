@@ -28,6 +28,7 @@ use crate::recorder::ports::{
 use crate::streamer::CommittedStreamerState;
 use crate::streamer::state_store::{StateChange, StatePublication};
 use crate::{Error, Result};
+use srec_core::CoreError;
 use srec_core::utils::task_supervisor::TaskSupervisor;
 use srec_sqlite::committed_writer::{CommittedWriter, own_operation};
 use srec_sqlite::models::{
@@ -278,7 +279,7 @@ impl RecorderStore {
             return Ok(None);
         };
         serde_json::from_str(&raw).map(Some).map_err(|error| {
-            Error::Database(format!("invalid session credential_binding: {error}"))
+            Error::database(format!("invalid session credential_binding: {error}"))
         })
     }
 
@@ -301,7 +302,7 @@ impl RecorderStore {
         let binding = raw
             .map(|raw| {
                 serde_json::from_str(&raw).map_err(|error| {
-                    Error::Database(format!("invalid session credential_binding: {error}"))
+                    Error::database(format!("invalid session credential_binding: {error}"))
                 })
             })
             .transpose()?;
@@ -330,7 +331,7 @@ impl RecorderStore {
             return Ok(None);
         };
         let binding = serde_json::from_str(&raw).map_err(|error| {
-            Error::Database(format!("invalid session credential_binding: {error}"))
+            Error::database(format!("invalid session credential_binding: {error}"))
         })?;
         Ok(Some((session_id, binding)))
     }
@@ -636,7 +637,7 @@ impl RecorderStore {
         .await?;
 
         u32::try_from(next).map_err(|_| {
-            Error::Database(format!(
+            Error::database(format!(
                 "next session segment index {next} for session {session_id} is outside u32 range"
             ))
         })
@@ -645,7 +646,7 @@ impl RecorderStore {
 
 fn map_commit_error(error: Error) -> DbCommitFailure {
     match error {
-        Error::CredentialProfile(_) | Error::NotFound { .. } => {
+        Error::Core(CoreError::CredentialProfile(_) | CoreError::NotFound { .. }) => {
             DbCommitFailure::CredentialBindingConflict {
                 message: error.to_string(),
             }

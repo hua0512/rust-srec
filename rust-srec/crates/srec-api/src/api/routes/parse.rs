@@ -9,6 +9,7 @@ use axum::{
 };
 use platforms_parser::extractor::error::ExtractorError;
 use platforms_parser::extractor::factory::{ExtractorFactory, ExtractorSelection};
+use srec_core::CoreError;
 use tracing::{debug, warn};
 
 use crate::api::auth_service::AuthPrincipal;
@@ -635,11 +636,13 @@ fn playback_resolution_error(error: ApiError) -> ApiError {
 
 fn playback_profile_error(error: impl Into<crate::Error>) -> ApiError {
     match error.into() {
-        crate::Error::NotFound { .. }
-        | crate::Error::CredentialProfile(
-            crate::credentials::ProfileError::InvalidOwner
-            | crate::credentials::ProfileError::SourceChanged
-            | crate::credentials::ProfileError::StaleVersion,
+        crate::Error::Core(
+            CoreError::NotFound { .. }
+            | CoreError::CredentialProfile(
+                crate::credentials::ProfileError::InvalidOwner
+                | crate::credentials::ProfileError::SourceChanged
+                | crate::credentials::ProfileError::StaleVersion,
+            ),
         ) => crate::api::playback_context::PlaybackError::RenewalRequired.into(),
         error => ApiError::from(error),
     }
@@ -1104,12 +1107,9 @@ mod tests {
             assert_eq!(error.status, status);
             assert_eq!(error.code, "INFRASTRUCTURE_FAILURE");
         }
-        let retired = playback_profile_error(crate::Error::CredentialProfile(
-            crate::credentials::ProfileError::InvalidOwner,
-        ));
+        let retired = playback_profile_error(crate::credentials::ProfileError::InvalidOwner);
         assert_eq!(retired.code, "PLAYBACK_RENEWAL_REQUIRED");
-        let database =
-            playback_profile_error(crate::Error::Database("database unavailable".into()));
+        let database = playback_profile_error(crate::Error::database("database unavailable"));
         assert_eq!(database.status, StatusCode::INTERNAL_SERVER_ERROR);
     }
 
@@ -1123,7 +1123,7 @@ mod tests {
         ] {
             assert_eq!(danmu_refusal(&error.into()), live::Refusal::UnknownHandle);
         }
-        let database = ApiError::from(crate::Error::Database("database unavailable".into()));
+        let database = ApiError::from(crate::Error::database("database unavailable"));
         assert_eq!(danmu_refusal(&database), live::Refusal::ServerError);
     }
 

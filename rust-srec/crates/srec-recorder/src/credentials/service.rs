@@ -186,7 +186,7 @@ mod tests {
             platform_id: "platform-soop".into(),
             platform_name: "soop".into(),
         };
-        let error = crate::Error::DatabaseSqlx(sqlx::Error::PoolTimedOut);
+        let error = crate::Error::from(sqlx::Error::PoolTimedOut);
         let mut next = async || {
             tokio::time::timeout(std::time::Duration::from_secs(5), received.recv())
                 .await

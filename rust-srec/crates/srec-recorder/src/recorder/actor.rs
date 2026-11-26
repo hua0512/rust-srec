@@ -401,7 +401,7 @@ impl StreamerActor {
                         .catch_unwind()
                         .await
                         .unwrap_or_else(|panic| {
-                            Err(crate::Error::Other(format!(
+                            Err(crate::Error::other(format!(
                                 "status probe panicked: {}",
                                 panic_payload_message(panic.as_ref()).unwrap_or("no message")
                             )))

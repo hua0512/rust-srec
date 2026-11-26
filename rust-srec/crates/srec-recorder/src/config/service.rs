@@ -623,7 +623,7 @@ where
                         );
                         continue;
                     }
-                    Err(message) => return Err(crate::Error::Configuration(message)),
+                    Err(message) => return Err(crate::Error::config(message)),
                 }
             }
 
@@ -672,12 +672,12 @@ where
                     );
                     self.cache
                         .fail_in_flight(streamer_id, &cell, message.clone());
-                    Err(crate::Error::Configuration(message))
+                    Err(crate::Error::config(message))
                 }
             };
         }
 
-        Err(crate::Error::Configuration(format!(
+        Err(crate::Error::config(format!(
             "Failed to resolve config for streamer {streamer_id} after retry"
         )))
     }

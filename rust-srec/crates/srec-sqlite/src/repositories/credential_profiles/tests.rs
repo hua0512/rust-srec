@@ -1,5 +1,6 @@
 use super::*;
 use crate::repositories::SessionTxOps;
+use srec_core::CoreError;
 use srec_core::domain::credential::{
     CredentialBinding, CredentialIdentity, ResolvedCredentialPolicy,
 };
@@ -347,7 +348,7 @@ async fn an_account_route_is_kept_replaced_or_removed_and_starts_a_new_revision(
                 Some(&pinned("missing")),
             )
             .await,
-        Err(Error::Proxy(ProxyError::Missing(_)))
+        Err(Error::Core(CoreError::Proxy(ProxyError::Missing(_))))
     ));
     assert_eq!(
         profiles.get(&profile.id).await.unwrap().route().unwrap(),

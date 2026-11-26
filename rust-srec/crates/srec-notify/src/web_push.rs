@@ -490,15 +490,15 @@ impl WebPushService {
             WebPushPayload::from_event(event, event_log_id).into_bytes_capped(MAX_PAYLOAD_BYTES)?;
 
         let client_pub_raw = decode_b64url(&sub.p256dh)
-            .map_err(|e| Error::Other(format!("Invalid p256dh key: {}", e)))?;
+            .map_err(|e| Error::other(format!("Invalid p256dh key: {}", e)))?;
         let client_auth = decode_b64url(&sub.auth)
-            .map_err(|e| Error::Other(format!("Invalid auth key: {}", e)))?;
+            .map_err(|e| Error::other(format!("Invalid auth key: {}", e)))?;
         let client_pub_raw: [u8; PUBLIC_KEY_LEN] = client_pub_raw
             .try_into()
-            .map_err(|_| Error::Other("Invalid p256dh key length".to_string()))?;
+            .map_err(|_| Error::other("Invalid p256dh key length"))?;
         let client_auth: [u8; AUTH_SECRET_LEN] = client_auth
             .try_into()
-            .map_err(|_| Error::Other("Invalid auth secret length".to_string()))?;
+            .map_err(|_| Error::other("Invalid auth secret length"))?;
 
         let body = encrypt_aes128gcm(&payload_bytes, &client_pub_raw, &client_auth)?;
 
@@ -524,10 +524,10 @@ impl WebPushService {
         let send = |request: &reqwest::RequestBuilder| {
             let request = request
                 .try_clone()
-                .ok_or_else(|| Error::Other("Web push request cannot be retried".to_owned()));
+                .ok_or_else(|| Error::other("Web push request cannot be retried"));
             async move {
                 request?.send().await.map_err(|e| {
-                    Error::Other(format!("Web push request failed: {}", e.without_url()))
+                    Error::other(format!("Web push request failed: {}", e.without_url()))
                 })
             }
         };
@@ -594,7 +594,7 @@ impl WebPushService {
 
         // The body is not reported: a push service or proxy may echo the
         // request's headers, VAPID token and proxy login included.
-        Err(Error::Other(format!(
+        Err(Error::other(format!(
             "Web push failed: HTTP {}",
             status.as_u16()
         )))
@@ -691,7 +691,7 @@ impl WebPushPayload {
         self.body = srec_core::utils::text::truncate_chars(&self.body, 600);
 
         let bytes = serde_json::to_vec(&self)
-            .map_err(|e| Error::Other(format!("Failed to serialize web push payload: {}", e)))?;
+            .map_err(|e| Error::other(format!("Failed to serialize web push payload: {}", e)))?;
         if bytes.len() <= max_bytes {
             return Ok(bytes);
         }
@@ -707,10 +707,10 @@ impl WebPushPayload {
         };
 
         let bytes = serde_json::to_vec(&minimal)
-            .map_err(|e| Error::Other(format!("Failed to serialize web push payload: {}", e)))?;
+            .map_err(|e| Error::other(format!("Failed to serialize web push payload: {}", e)))?;
         if bytes.len() > max_bytes {
-            return Err(Error::Other(
-                "Web push metadata exceeds the payload size limit".to_string(),
+            return Err(Error::other(
+                "Web push metadata exceeds the payload size limit",
             ));
         }
         Ok(bytes)
@@ -719,10 +719,10 @@ impl WebPushPayload {
 
 fn push_service_audience(endpoint: &str) -> Result<String> {
     let url = Url::parse(endpoint)
-        .map_err(|e| Error::Other(format!("Invalid push endpoint URL: {}", e)))?;
+        .map_err(|e| Error::other(format!("Invalid push endpoint URL: {}", e)))?;
     let host = url
         .host()
-        .ok_or_else(|| Error::Other("Push endpoint missing host".to_string()))?;
+        .ok_or_else(|| Error::other("Push endpoint missing host"))?;
 
     let host = match host {
         url::Host::Domain(d) => d.to_string(),
@@ -761,7 +761,7 @@ fn hkdf_sha256(salt: &[u8], ikm: &[u8], info: &[u8], len: usize) -> Result<Vec<u
     let hk = Hkdf::<Sha256>::new(Some(salt), ikm);
     let mut okm = vec![0u8; len];
     hk.expand(info, &mut okm)
-        .map_err(|_| Error::Other("HKDF expand failed".to_string()))?;
+        .map_err(|_| Error::other("HKDF expand failed"))?;
     Ok(okm)
 }
 
@@ -780,7 +780,7 @@ fn encrypt_aes128gcm(
     auth_secret: &[u8; AUTH_SECRET_LEN],
 ) -> Result<Vec<u8>> {
     if plaintext.is_empty() {
-        return Err(Error::Other("Web push payload cannot be empty".to_string()));
+        return Err(Error::other("Web push payload cannot be empty"));
     }
 
     // Generate salt + local keypair.
@@ -789,7 +789,7 @@ fn encrypt_aes128gcm(
     rng.fill_bytes(&mut salt);
 
     let remote_pub = p256::PublicKey::from_sec1_bytes(remote_public_key_raw)
-        .map_err(|_| Error::Other("Invalid remote public key".to_string()))?;
+        .map_err(|_| Error::other("Invalid remote public key"))?;
 
     let local_secret = EphemeralSecret::generate_from_rng(&mut rng);
     let local_pub = p256::PublicKey::from(&local_secret);
@@ -797,7 +797,7 @@ fn encrypt_aes128gcm(
     let local_pub_raw = local_pub_raw.as_bytes();
     let local_pub_raw: [u8; PUBLIC_KEY_LEN] = local_pub_raw
         .try_into()
-        .map_err(|_| Error::Other("Invalid local public key length".to_string()))?;
+        .map_err(|_| Error::other("Invalid local public key length"))?;
 
     let shared_secret = local_secret.diffie_hellman(&remote_pub);
     let shared_secret = shared_secret.raw_secret_bytes();
@@ -814,8 +814,7 @@ fn encrypt_aes128gcm(
     let cek = hkdf_sha256(&salt, &ikm, KEY_INFO.as_bytes(), 16)?;
     let nonce = hkdf_sha256(&salt, &ikm, NONCE_INFO.as_bytes(), 12)?;
 
-    let cek = Aes128Gcm::new_from_slice(&cek)
-        .map_err(|_| Error::Other("Invalid CEK length".to_string()))?;
+    let cek = Aes128Gcm::new_from_slice(&cek).map_err(|_| Error::other("Invalid CEK length"))?;
     let iv = generate_iv_for_record(&nonce, 0);
 
     // Minimal padding: ensure at least one padding byte (delimiter).
@@ -825,7 +824,7 @@ fn encrypt_aes128gcm(
 
     let ciphertext = cek
         .encrypt((&iv).into(), padded.as_slice())
-        .map_err(|_| Error::Other("AES-GCM encryption failed".to_string()))?;
+        .map_err(|_| Error::other("AES-GCM encryption failed"))?;
 
     // Build the aes128gcm header + ciphertext (RFC8291).
     let mut body = Vec::with_capacity(SALT_LEN + 4 + 1 + PUBLIC_KEY_LEN + ciphertext.len());
@@ -861,19 +860,19 @@ fn build_vapid_jwt_with_exp(
 
     let header_b64 = encode_b64url(
         serde_json::to_string(&header)
-            .map_err(|e| Error::Other(format!("JWT header serialization failed: {}", e)))?
+            .map_err(|e| Error::other(format!("JWT header serialization failed: {}", e)))?
             .as_bytes(),
     );
     let claims_b64 = encode_b64url(
         serde_json::to_string(&claims)
-            .map_err(|e| Error::Other(format!("JWT claims serialization failed: {}", e)))?
+            .map_err(|e| Error::other(format!("JWT claims serialization failed: {}", e)))?
             .as_bytes(),
     );
 
     let signing_input = format!("{}.{}", header_b64, claims_b64);
 
     let signing_key = SigningKey::from_bytes(private_key_raw.into())
-        .map_err(|_| Error::Other("Invalid VAPID private key".to_string()))?;
+        .map_err(|_| Error::other("Invalid VAPID private key"))?;
     let sig: p256::ecdsa::Signature = signing_key.sign(signing_input.as_bytes());
     let sig_b64 = encode_b64url(&sig.to_bytes());
 

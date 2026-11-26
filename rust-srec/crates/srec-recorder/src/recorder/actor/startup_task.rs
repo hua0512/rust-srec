@@ -36,6 +36,7 @@ use crate::recorder::ports::{
 use crate::recorder::prober::RecorderProber;
 use crate::recorder::store::RecorderStore;
 use crate::streamer::StreamerManager;
+use srec_core::CoreError;
 use srec_core::domain::{Priority, StreamerState};
 use srec_core::utils::filename::{sanitize_filename_for_template, sanitize_title_for_template};
 use srec_core::utils::task_supervisor::TaskSupervisor;
@@ -1157,7 +1158,7 @@ async fn run_startup_task(
             );
             return;
         }
-        Err(crate::Error::CredentialProfile(ProfileError::SourceChanged)) => {
+        Err(crate::Error::Core(CoreError::CredentialProfile(ProfileError::SourceChanged))) => {
             send_start_failed(
                 &actor_tx,
                 attempt_id,
@@ -1166,7 +1167,7 @@ async fn run_startup_task(
             );
             return;
         }
-        Err(crate::Error::CredentialUnavailable(_)) => {
+        Err(crate::Error::Core(CoreError::CredentialUnavailable(_))) => {
             send_start_failed(
                 &actor_tx,
                 attempt_id,

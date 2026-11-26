@@ -10,6 +10,7 @@ use tracing::{debug, info, warn};
 
 use crate::Result;
 use crate::config::{ConfigEventBroadcaster, ConfigUpdateEvent};
+use srec_core::CoreError;
 use srec_core::domain::{Priority, StreamerState};
 use srec_sqlite::repositories::streamer::StreamerRepository;
 
@@ -522,7 +523,7 @@ where
 
                 Ok(Some(metadata))
             }
-            Err(srec_sqlite::DbError::NotFound { .. }) => {
+            Err(srec_sqlite::DbError::Core(CoreError::NotFound { .. })) => {
                 let removed = self.metadata.remove(id);
                 if let Some((_, entry)) = &removed {
                     self.url_index.remove(&entry.url.to_lowercase());

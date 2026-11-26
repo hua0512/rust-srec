@@ -9,6 +9,7 @@ use crate::DbResult as Result;
 use crate::models::JobPreset;
 use async_trait::async_trait;
 use sqlx::SqlitePool;
+use srec_core::CoreError;
 pub use srec_core::domain::step_routes::summarize_users;
 use srec_core::domain::step_routes::{Layout, pipeline_steps_mut};
 pub use srec_core::domain::step_routes::{PresetChange, StepRef, StepUser, StepUserKind};
@@ -137,7 +138,7 @@ pub async fn pipeline_owners(
         .collect()
 }
 
-/// Fail with [`crate::DbError::PresetInUse`] if a stored pipeline names the
+/// Fail with [`CoreError::PresetInUse`] if a stored pipeline names the
 /// `step` definition `id` called `name`.
 async fn ensure_unused(
     conn: &mut sqlx::SqliteConnection,
@@ -150,12 +151,12 @@ async fn ensure_unused(
     if users.is_empty() {
         return Ok(());
     }
-    Err(crate::DbError::PresetInUse {
+    Err(crate::DbError::Core(CoreError::PresetInUse {
         change,
         kind: step,
         name: name.to_string(),
         users,
-    })
+    }))
 }
 
 async fn stored_name(
@@ -191,7 +192,7 @@ async fn delete_unused(write_pool: &SqlitePool, step: StepRef, id: &str) -> Resu
     Ok(())
 }
 
-/// Fail with [`crate::DbError::PresetInUse`] if renaming the `step` definition
+/// Fail with [`CoreError::PresetInUse`] if renaming the `step` definition
 /// `id` to `new_name` would leave a stored pipeline naming nothing.
 async fn ensure_rename_allowed(
     conn: &mut sqlx::SqliteConnection,
@@ -231,11 +232,11 @@ pub trait JobPresetRepository: Send + Sync {
     /// Create a new preset.
     async fn create_preset(&self, preset: &JobPreset) -> Result<()>;
 
-    /// Update an existing preset. Fails with [`crate::DbError::PresetInUse`]
+    /// Update an existing preset. Fails with [`CoreError::PresetInUse`]
     /// when it renames a preset a stored pipeline references by name.
     async fn update_preset(&self, preset: &JobPreset) -> Result<()>;
 
-    /// Delete a preset. Fails with [`crate::DbError::PresetInUse`] while a
+    /// Delete a preset. Fails with [`CoreError::PresetInUse`] while a
     /// stored pipeline references it by name.
     async fn delete_preset(&self, id: &str) -> Result<()>;
 }
@@ -407,11 +408,11 @@ pub trait PipelinePresetRepository: Send + Sync {
     async fn create_pipeline_preset(&self, preset: &PipelinePreset) -> Result<()>;
 
     /// Update an existing pipeline preset. Fails with
-    /// [`crate::DbError::PresetInUse`] when it renames a workflow a stored
+    /// [`CoreError::PresetInUse`] when it renames a workflow a stored
     /// pipeline references by name.
     async fn update_pipeline_preset(&self, preset: &PipelinePreset) -> Result<()>;
 
-    /// Delete a pipeline preset. Fails with [`crate::DbError::PresetInUse`]
+    /// Delete a pipeline preset. Fails with [`CoreError::PresetInUse`]
     /// while a stored pipeline references it by name.
     async fn delete_pipeline_preset(&self, id: &str) -> Result<()>;
 }

@@ -557,7 +557,7 @@ async fn replacement_starts_after_a_prior_collector_terminated_with_errors() {
             statistics: DanmuStatistics::default(),
             reason: CollectionExitReason::Failed,
             error: None,
-            cleanup_errors: vec![Error::Other(cleanup_error.to_string())],
+            cleanup_errors: vec![Error::other(cleanup_error.to_string())],
         })
         .expect("the seeded collector should deliver its outcome");
     service.collection_tasks.lock().spawn(async move {

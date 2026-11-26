@@ -241,7 +241,7 @@ impl NotificationService {
         }
 
         let channel_type = ChannelType::parse(&db_channel.channel_type).ok_or_else(|| {
-            crate::NotifyError::Validation(format!(
+            crate::NotifyError::validation(format!(
                 "Unsupported notification channel_type: {}",
                 db_channel.channel_type
             ))
@@ -438,9 +438,8 @@ impl NotificationService {
             .by_key
             .get(key)
             .cloned()
-            .ok_or_else(|| crate::NotifyError::NotFound {
-                entity_type: "NotificationChannelInstance".to_string(),
-                id: key.to_string(),
+            .ok_or_else(|| {
+                crate::NotifyError::not_found("NotificationChannelInstance", key.to_string())
             })?;
         channel.channel.test().await
     }

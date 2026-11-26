@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use srec_core::CoreError;
 use tokio::sync::Mutex as AsyncMutex;
 
 use super::state::{Exclusions, USE_RECORD_WINDOW, management_error, provider_error};
@@ -120,7 +121,7 @@ impl CredentialExecutionService {
                 "Credential selection still exhausted"
             );
         }
-        Error::CredentialUnavailable(status)
+        Error::Core(CoreError::CredentialUnavailable(status))
     }
 
     pub(super) async fn unavailable_after(
@@ -145,10 +146,10 @@ impl CredentialExecutionService {
         anonymous_fallback: bool,
     ) -> Error {
         if anonymous_fallback {
-            return Error::CredentialUnavailable(CredentialUnavailable {
+            return Error::Core(CoreError::CredentialUnavailable(CredentialUnavailable {
                 reason,
                 policy_generation: policy.generation.clone(),
-            });
+            }));
         }
         self.unavailable(policy, reason).await
     }

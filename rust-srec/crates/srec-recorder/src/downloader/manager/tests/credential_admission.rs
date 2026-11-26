@@ -1,4 +1,5 @@
 use super::*;
+use srec_core::CoreError;
 
 fn binding() -> crate::credentials::CredentialBinding {
     crate::credentials::CredentialBinding {
@@ -67,9 +68,9 @@ async fn binding_is_revalidated_after_maintenance_admission_wait() {
         .unwrap();
     assert!(matches!(
         outcome,
-        Err(crate::Error::CredentialProfile(
+        Err(crate::Error::Core(CoreError::CredentialProfile(
             crate::credentials::ProfileError::SourceChanged
-        ))
+        )))
     ));
     assert_eq!(manager.active_count(), 0);
 }

@@ -1,6 +1,7 @@
 use super::*;
 use crate::manifest::ManifestScope;
 use jiff::Timestamp;
+use srec_core::CoreError;
 use std::collections::HashSet;
 
 /// The coordinator entity a finished DAG settles.
@@ -579,8 +580,8 @@ impl PipelineManager {
     /// can't get stuck waiting for a cancelled DAG to finish.
     pub async fn cancel_dag(&self, dag_id: &str) -> Result<u64> {
         let dag_scheduler = self.dag_scheduler.as_ref().ok_or_else(|| {
-            crate::PipelineError::Validation(
-                "DAG scheduler not configured. Call with_dag_repository() first.".to_string(),
+            crate::PipelineError::validation(
+                "DAG scheduler not configured. Call with_dag_repository() first.",
             )
         })?;
 
@@ -599,8 +600,8 @@ impl PipelineManager {
     /// `DagScheduler::delete_dag` removes the rows it would otherwise keep waiting on.
     pub async fn delete_dag(&self, dag_id: &str) -> Result<()> {
         let dag_scheduler = self.dag_scheduler.as_ref().ok_or_else(|| {
-            crate::PipelineError::Validation(
-                "DAG scheduler not configured. Call with_dag_repository() first.".to_string(),
+            crate::PipelineError::validation(
+                "DAG scheduler not configured. Call with_dag_repository() first.",
             )
         })?;
 
@@ -783,7 +784,7 @@ impl PipelineManager {
         fn record(result: Result<()>, errors: &mut Vec<String>) -> Result<()> {
             match result {
                 Ok(()) => Ok(()),
-                Err(crate::PipelineError::Validation(message)) => {
+                Err(crate::PipelineError::Core(CoreError::Validation(message))) => {
                     errors.push(message);
                     Ok(())
                 }
@@ -794,7 +795,7 @@ impl PipelineManager {
         let mut analysis = DagAnalysis::default();
         let mut resolved = match self.expand_workflows_in_dag(dag_definition).await {
             Ok(expanded) => expanded,
-            Err(crate::PipelineError::Validation(message)) => {
+            Err(crate::PipelineError::Core(CoreError::Validation(message))) => {
                 analysis.errors.push(message);
                 return Ok(analysis);
             }
@@ -803,7 +804,9 @@ impl PipelineManager {
         for dag_step in &mut resolved.steps {
             match self.resolve_dag_step(&dag_step.step).await {
                 Ok(step) => dag_step.step = step,
-                Err(crate::PipelineError::Validation(message)) => analysis.errors.push(message),
+                Err(crate::PipelineError::Core(CoreError::Validation(message))) => {
+                    analysis.errors.push(message)
+                }
                 Err(error) => return Err(error),
             }
         }
@@ -833,8 +836,8 @@ impl PipelineManager {
         metadata: Option<DagExecutionMetadata>,
     ) -> Result<DagCreationResult> {
         let dag_scheduler = self.dag_scheduler.as_ref().ok_or_else(|| {
-            crate::PipelineError::Validation(
-                "DAG scheduler not configured. Call with_dag_repository() first.".to_string(),
+            crate::PipelineError::validation(
+                "DAG scheduler not configured. Call with_dag_repository() first.",
             )
         })?;
 
@@ -924,8 +927,8 @@ impl PipelineManager {
         loop {
             iteration += 1;
             if iteration > MAX_ITERATIONS {
-                return Err(crate::PipelineError::Validation(
-                    "Maximum workflow expansion depth exceeded. Check for circular workflow references.".to_string(),
+                return Err(crate::PipelineError::validation(
+                    "Maximum workflow expansion depth exceeded. Check for circular workflow references.",
                 ));
             }
 
@@ -1026,7 +1029,7 @@ impl PipelineManager {
     /// Look up a workflow by name and return its DAG definition.
     pub(super) async fn lookup_workflow(&self, name: &str) -> Result<DagPipelineDefinition> {
         let repo = self.pipeline_preset_repo.as_ref().ok_or_else(|| {
-            crate::PipelineError::Validation(format!(
+            crate::PipelineError::validation(format!(
                 "No pipeline preset repository, cannot expand workflow '{}'",
                 name
             ))
@@ -1035,14 +1038,14 @@ impl PipelineManager {
         let workflow = repo
             .get_pipeline_preset_by_name(name)
             .await
-            .map_err(|e| crate::PipelineError::Database(e.to_string()))?
+            .map_err(|e| crate::PipelineError::database(e.to_string()))?
             .ok_or_else(|| {
-                crate::PipelineError::Validation(format!("Workflow '{}' not found", name))
+                crate::PipelineError::validation(format!("Workflow '{}' not found", name))
             })?;
 
         // Get the DAG definition from the workflow
         let dag_def = workflow.get_dag_definition().ok_or_else(|| {
-            crate::PipelineError::Validation(format!(
+            crate::PipelineError::validation(format!(
                 "Workflow '{}' does not have a DAG definition. Only DAG-based workflows can be embedded.",
                 name
             ))
@@ -1060,7 +1063,7 @@ impl PipelineManager {
                         Ok(Some(preset)) => {
                             let config = if !preset.config.is_empty() {
                                 serde_json::from_str(&preset.config)
-                                    .map_err(|error| crate::PipelineError::Validation(format!(
+                                    .map_err(|error| crate::PipelineError::validation(format!(
                                         "Invalid JSON in job preset '{name}': {:?} at line {}, column {}",
                                         error.classify(), error.line(), error.column(),
                                     )))?
@@ -1079,7 +1082,7 @@ impl PipelineManager {
                                 config: serde_json::Value::Null,
                             })
                         }
-                        Err(e) => Err(crate::PipelineError::Database(e.to_string())),
+                        Err(e) => Err(crate::PipelineError::database(e.to_string())),
                     }
                 } else {
                     // No repo, fallback
@@ -1091,7 +1094,7 @@ impl PipelineManager {
             }
             PipelineStep::Workflow { name } => {
                 // Workflows should be expanded before DAG creation
-                Err(crate::PipelineError::Validation(format!(
+                Err(crate::PipelineError::validation(format!(
                     "Workflow '{}' should be resolved before DAG creation. \
                      Expand workflows into individual DAG steps.",
                     name
@@ -1142,7 +1145,7 @@ impl PipelineManager {
         let mut known: Vec<&str> = supported.into_iter().collect();
         known.sort_unstable();
 
-        Err(crate::PipelineError::Validation(format!(
+        Err(crate::PipelineError::validation(format!(
             "Pipeline references unknown processor(s): {}. Available processors: {}",
             unknown.join(", "),
             known.join(", ")
@@ -1272,7 +1275,7 @@ pub(super) fn validate_consuming_steps(dag: &DagPipelineDefinition) -> Result<()
         if readers.is_empty() {
             continue;
         }
-        return Err(crate::PipelineError::Validation(format!(
+        return Err(crate::PipelineError::validation(format!(
             "Step '{}' removes {} while {} still read them; make '{}' depend on {} so it runs after them",
             consumer.id,
             shared_files_description(consumer),

@@ -79,9 +79,7 @@ impl PipelineManager {
         bound: Duration,
     ) -> Result<StreamerDrain> {
         let port = self.session_port.as_ref().ok_or_else(|| {
-            Error::Validation(
-                "Session port is required to acknowledge streamer retirement".to_string(),
-            )
+            Error::validation("Session port is required to acknowledge streamer retirement")
         })?;
         let deadline = tokio::time::Instant::now().checked_add(bound);
         let mut result = StreamerDrain::default();

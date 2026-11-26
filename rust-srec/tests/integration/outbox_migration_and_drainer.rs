@@ -1156,8 +1156,8 @@ async fn drainer_retains_outbox_rows_until_db_channels_load_succeeds() {
             &self,
         ) -> rust_srec::database::DbResult<Vec<NotificationChannelDbModel>> {
             if self.fail_list_channels.load(Ordering::Acquire) {
-                return Err(rust_srec::database::DbError::Other(
-                    "simulated sqlite busy during channel load".into(),
+                return Err(rust_srec::database::DbError::other(
+                    "simulated sqlite busy during channel load",
                 ));
             }
             self.inner.list_channels().await

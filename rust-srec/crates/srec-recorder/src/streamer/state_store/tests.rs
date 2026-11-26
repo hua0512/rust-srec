@@ -5,6 +5,7 @@ use tokio::sync::Notify;
 
 use super::*;
 use crate::streamer::{StreamerManager, manager::StreamerUpdateParams};
+use srec_core::CoreError;
 use srec_core::domain::StreamerState;
 use srec_core::utils::task_supervisor::TaskSupervisor;
 use srec_sqlite::committed_writer::{CommitPhase, CommitTestGate};
@@ -530,7 +531,7 @@ async fn mismatched_repository_pool_cannot_write_through_another_owner() {
         SqlxStreamerRepository::new(other.clone(), other).with_commit_owner(f.store.clone());
     assert!(matches!(
         repository.update_streamer_state("state-test", "LIVE").await,
-        Err(srec_sqlite::DbError::Configuration(_))
+        Err(srec_sqlite::DbError::Core(CoreError::Configuration(_)))
     ));
     assert_eq!(
         f.repository.get_streamer("state-test").await.unwrap().state,
@@ -555,5 +556,8 @@ async fn full_row_publication_rejects_a_multi_connection_writer() {
             Box::pin(async { panic!("invalid writer must be rejected before SQL") })
         })
         .await;
-    assert!(matches!(result, Err(crate::Error::Configuration(_))));
+    assert!(matches!(
+        result,
+        Err(crate::Error::Core(CoreError::Configuration(_)))
+    ));
 }

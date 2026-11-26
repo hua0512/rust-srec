@@ -282,9 +282,7 @@ mod tests {
         #[async_trait]
         impl StreamerCheckHistoryRepository for AlwaysFailRepo {
             async fn insert(&self, _: &StreamerCheckHistoryDbModel) -> srec_sqlite::DbResult<()> {
-                Err(srec_sqlite::DbError::Other(
-                    "simulated DB failure".to_string(),
-                ))
+                Err(srec_sqlite::DbError::other("simulated DB failure"))
             }
             async fn list_recent(
                 &self,

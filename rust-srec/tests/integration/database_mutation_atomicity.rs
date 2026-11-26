@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use rust_srec::database::{self, models::*, repositories::*};
 use sqlx::SqlitePool;
+use srec_core::CoreError;
 use tempfile::TempDir;
 
 async fn pools() -> (TempDir, SqlitePool, SqlitePool) {
@@ -52,7 +53,7 @@ async fn competing_output_deletes_adjust_size_only_for_the_deleted_row() {
     let error = first.err().or_else(|| second.err()).unwrap();
     assert!(matches!(
         error,
-        rust_srec::database::DbError::NotFound { .. }
+        rust_srec::database::DbError::Core(CoreError::NotFound { .. })
     ));
     drop(held_read);
     assert_eq!(

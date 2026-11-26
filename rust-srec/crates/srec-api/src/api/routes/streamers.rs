@@ -8,6 +8,7 @@ use axum::{
     http::StatusCode,
     routing::{delete, get, patch, post, put},
 };
+use srec_core::CoreError;
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::extract::{ApiJson, ApiPath, ApiQuery};
@@ -197,7 +198,9 @@ async fn streamer_response(
         .await
     {
         Ok(route) => route,
-        Err(srec_recorder::RecorderError::NotFound { .. }) => crate::proxies::ProxyRoute::Inherit,
+        Err(srec_recorder::RecorderError::Core(CoreError::NotFound { .. })) => {
+            crate::proxies::ProxyRoute::Inherit
+        }
         Err(error) => return Err(error.into()),
     };
     Ok(metadata_to_response(

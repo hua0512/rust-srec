@@ -107,7 +107,7 @@ async fn an_omitted_password_is_kept_and_a_removed_login_takes_it_along() {
             ProxyUpdate::default()
         )
         .await,
-        Err(Error::Proxy(ProxyError::StaleVersion))
+        Err(Error::Core(CoreError::Proxy(ProxyError::StaleVersion)))
     ));
     assert!(!format!("{:?}", new_user.entry).contains("secret"));
 }
@@ -132,7 +132,7 @@ async fn names_and_exits_are_unique() {
             &endpoint("http://other.example:8080", None)
         )
         .await,
-        Err(Error::Proxy(ProxyError::NameTaken(name))) if name == "Office"
+        Err(Error::Core(CoreError::Proxy(ProxyError::NameTaken(name)))) if name == "Office"
     ));
     // The password does not make another exit.
     assert!(matches!(
@@ -143,7 +143,7 @@ async fn names_and_exits_are_unique() {
             &endpoint("http://Proxy.Example:8080/", Some(("user", "b")))
         )
         .await,
-        Err(Error::Proxy(ProxyError::DuplicateEndpoint { name })) if name == "Office"
+        Err(Error::Core(CoreError::Proxy(ProxyError::DuplicateEndpoint { name }))) if name == "Office"
     ));
     // Another username is another exit.
     create(
@@ -161,7 +161,7 @@ async fn names_and_exits_are_unique() {
     ] {
         assert!(matches!(
             create(&mut connection, None, "Invalid", &invalid).await,
-            Err(Error::Proxy(ProxyError::Invalid(_)))
+            Err(Error::Core(CoreError::Proxy(ProxyError::Invalid(_))))
         ));
     }
 }
@@ -212,7 +212,7 @@ async fn a_proxy_in_use_cannot_be_deleted_and_the_refusal_names_its_users() {
             .unwrap(),
         ProxyRoute::Inherit
     );
-    let Err(Error::Proxy(ProxyError::Referenced(references))) =
+    let Err(Error::Core(CoreError::Proxy(ProxyError::Referenced(references)))) =
         delete(&mut connection, &id, None).await
     else {
         panic!("a proxy in use must not be deleted");
@@ -282,7 +282,7 @@ async fn routes_name_existing_proxies_and_the_global_route_never_inherits() {
     let mut connection = pool.acquire().await.unwrap();
     assert!(matches!(
         set_route(&mut connection, &RouteOwner::Global, &ProxyRoute::Inherit).await,
-        Err(Error::Proxy(ProxyError::GlobalInherit))
+        Err(Error::Core(CoreError::Proxy(ProxyError::GlobalInherit)))
     ));
     assert!(matches!(
         set_route(
@@ -291,7 +291,7 @@ async fn routes_name_existing_proxies_and_the_global_route_never_inherits() {
             &ProxyRoute::Proxy { id: "missing".into() }
         )
         .await,
-        Err(Error::Proxy(ProxyError::Missing(id))) if id == "missing"
+        Err(Error::Core(CoreError::Proxy(ProxyError::Missing(id)))) if id == "missing"
     ));
     assert!(matches!(
         set_route(
@@ -300,7 +300,7 @@ async fn routes_name_existing_proxies_and_the_global_route_never_inherits() {
             &ProxyRoute::Direct
         )
         .await,
-        Err(Error::NotFound { .. })
+        Err(Error::Core(CoreError::NotFound { .. }))
     ));
     assert_eq!(
         route_of(&mut connection, &RouteOwner::Global)
@@ -449,7 +449,7 @@ async fn account_management_follows_the_account_then_its_platform_then_global() 
             &system,
         )
         .await,
-        Err(Error::Proxy(ProxyError::Missing(_)))
+        Err(Error::Core(CoreError::Proxy(ProxyError::Missing(_))))
     ));
 }
 
@@ -483,10 +483,10 @@ async fn streamer_documents_carry_routes_in_and_out_and_refuse_proxy_config() {
     assert!(reject_legacy_document(Some(r#"{"proxy_config":null}"#)).is_ok());
     assert!(matches!(
         reject_legacy_document(Some(r#"{"proxy_config":{"enabled":false}}"#)),
-        Err(Error::Proxy(ProxyError::ConfigReplaced))
+        Err(Error::Core(CoreError::Proxy(ProxyError::ConfigReplaced)))
     ));
     assert!(matches!(
         reject_legacy_overrides(Some(r#"{"bilibili":{"proxy_config":{"enabled":true}}}"#)),
-        Err(Error::Proxy(ProxyError::ConfigReplaced))
+        Err(Error::Core(CoreError::Proxy(ProxyError::ConfigReplaced)))
     ));
 }

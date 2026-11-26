@@ -45,6 +45,7 @@ use crate::recorder::prober::RecorderProber;
 use crate::recorder::store::{PostPublicationChangeSet, PostPublicationListener, RecorderStore};
 use crate::session::TerminalCause;
 use crate::streamer::{StreamerManager, StreamerMetadata};
+use srec_core::CoreError;
 use srec_core::domain::StreamerState;
 use srec_core::utils::failure_samples::FailureSamples;
 use srec_core::utils::required_channel::Delivery;
@@ -563,7 +564,7 @@ impl ActorRegistry {
                     .deps
                     .download_manager
                     .request_stop_download(download_id, DownloadStopCause::StreamerDisabled)
-                    && !matches!(error, crate::Error::NotFound { .. })
+                    && !matches!(error, crate::Error::Core(CoreError::NotFound { .. }))
                 {
                     warn!(%streamer_id, %download_id, %error, "Failed to request download stop during retirement");
                 }
@@ -577,7 +578,7 @@ impl ActorRegistry {
                 )
                 .await
                 {
-                    Ok(Ok(())) | Ok(Err(crate::Error::NotFound { .. })) => {}
+                    Ok(Ok(())) | Ok(Err(crate::Error::Core(CoreError::NotFound { .. }))) => {}
                     Ok(Err(error)) => {
                         warn!(%streamer_id, %download_id, %error, "Download stop failed during retirement");
                     }
@@ -894,7 +895,7 @@ impl ActorRegistry {
             )
             .await
             {
-                Ok(Ok(())) | Ok(Err(crate::Error::NotFound { .. })) => {}
+                Ok(Ok(())) | Ok(Err(crate::Error::Core(CoreError::NotFound { .. }))) => {}
                 _ => {
                     warn!(
                         %streamer_id,
@@ -1314,7 +1315,7 @@ impl ActorRegistry {
                 .deps
                 .download_manager
                 .request_stop_download(&download_id, cause.clone())
-                && !matches!(error, crate::Error::NotFound { .. })
+                && !matches!(error, crate::Error::Core(CoreError::NotFound { .. }))
             {
                 warn!(%streamer_id, %download_id, %error, "Failed to stop a download left without an actor");
             }

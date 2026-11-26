@@ -18,6 +18,7 @@ use crate::processors::{ConfirmedUpload, UploadItemStatus, UploadResultItem};
 use crate::repositories::JobRepository;
 use crate::upload_events::{UploadStatusEvent, UploadTerminalStatus};
 use crate::{PipelineError as Error, PipelineResult as Result};
+use srec_core::CoreError;
 use srec_core::utils::json::{self, JsonContext};
 use srec_sqlite::models::{JobStatus, Pagination};
 
@@ -495,7 +496,7 @@ impl JobQueue {
                 }
                 Ok(Some(job))
             }
-            Err(srec_sqlite::DbError::NotFound { .. }) => Ok(None),
+            Err(srec_sqlite::DbError::Core(CoreError::NotFound { .. })) => Ok(None),
             Err(e) => Err(e.into()),
         }
     }
@@ -570,10 +571,10 @@ impl JobQueue {
 
         // Validate job is not in terminal status
         if job.status == JobStatus::Completed || job.status == JobStatus::Failed {
-            return Err(Error::InvalidStateTransition {
+            return Err(Error::Core(CoreError::InvalidStateTransition {
                 from: job.status.as_str().to_string(),
                 to: "CANCELLED".to_string(),
-            });
+            }));
         }
 
         let is_processing = job.status == JobStatus::Processing;
@@ -632,10 +633,10 @@ impl JobQueue {
         if let Some(job) = self.jobs_cache.get(id) {
             match job.status {
                 JobStatus::Pending | JobStatus::Processing => {
-                    return Err(Error::InvalidStateTransition {
+                    return Err(Error::Core(CoreError::InvalidStateTransition {
                         from: job.status.as_str().to_string(),
                         to: "DELETED".to_string(),
-                    });
+                    }));
                 }
                 _ => {} // Terminal states are fine for deletion
             }
@@ -646,7 +647,7 @@ impl JobQueue {
                     let status = match job.get_status() {
                         Some(s) => s,
                         None => {
-                            return Err(Error::Other(format!(
+                            return Err(Error::other(format!(
                                 "Invalid job status for job {}: {}",
                                 id, job.status
                             )));
@@ -655,15 +656,15 @@ impl JobQueue {
 
                     match status {
                         JobStatus::Pending | JobStatus::Processing => {
-                            return Err(Error::InvalidStateTransition {
+                            return Err(Error::Core(CoreError::InvalidStateTransition {
                                 from: status.as_str().to_string(),
                                 to: "DELETED".to_string(),
-                            });
+                            }));
                         }
                         _ => {}
                     }
                 }
-                Err(srec_sqlite::DbError::NotFound { .. }) => {
+                Err(srec_sqlite::DbError::Core(CoreError::NotFound { .. })) => {
                     // Job doesn't exist, so deletion is trivially successful
                     return Ok(());
                 }

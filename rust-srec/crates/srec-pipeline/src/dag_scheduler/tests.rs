@@ -1,6 +1,7 @@
 use super::*;
 use crate::JobFailureOutcome;
 use crate::job_queue::parse_job_state;
+use srec_core::CoreError;
 use srec_sqlite::models::{DagExecutionStatus, DagStepStatus, JobDbModel};
 
 #[tokio::test]
@@ -1888,11 +1889,11 @@ async fn job_attempt_failure_is_retried_or_applied_by_kind_budget_and_persistenc
         .on_job_attempt_failed(
             &step_id("E"),
             attempt(&job_e, 0, StepFailureKind::ProcessorError),
-            |_planned| async { Err(Error::Database("disk full".to_string())) },
+            |_planned| async { Err(Error::database("disk full")) },
         )
         .await
         .unwrap_err();
-    assert!(matches!(error, Error::Database(_)));
+    assert!(matches!(error, Error::Core(CoreError::Database(_))));
     assert_eq!(
         dag_repo.get_step(&step_id("E")).await.unwrap().get_status(),
         Some(DagStepStatus::Processing)
@@ -2358,7 +2359,7 @@ async fn retry_dag_runs_the_reset_hook_between_reset_and_restart() {
         .await
         .unwrap_err();
     assert!(
-        matches!(&error, DagRetryError::Rejected(Error::Validation(message)) if message.contains("not in FAILED or CANCELLED")),
+        matches!(&error, DagRetryError::Rejected(Error::Core(CoreError::Validation(message))) if message.contains("not in FAILED or CANCELLED")),
         "{error:?}"
     );
     assert_eq!(hook_calls.load(Ordering::SeqCst), 0);

@@ -5,6 +5,8 @@ use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
+use srec_core::CoreError;
+use srec_sqlite::DbError;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
@@ -105,8 +107,8 @@ impl JobRunner {
                     return Ok(outcome);
                 }
                 Err(
-                    error @ (crate::PipelineError::DatabaseSqlx(_)
-                    | crate::PipelineError::Database(_)),
+                    error @ (crate::PipelineError::Db(DbError::DatabaseSqlx(_))
+                    | crate::PipelineError::Core(CoreError::Database(_))),
                 ) => {
                     let (delay, warn) = backoff.on_failure();
                     if warn {

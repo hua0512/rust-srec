@@ -294,7 +294,7 @@ impl DanmuService {
     pub async fn start_collection(&self, spec: CollectionSpec) -> Result<CollectionHandle> {
         self.start_collection_cancellable(spec, &CancellationToken::new())
             .await?
-            .ok_or_else(|| Error::Other("danmu collection startup cancelled".to_owned()))
+            .ok_or_else(|| Error::other("danmu collection startup cancelled"))
     }
 
     fn start_lock<'a>(&'a self, streamer_id: &'a str) -> StreamerStartLock<'a> {
@@ -327,7 +327,7 @@ impl DanmuService {
             guard = self.start_gate.read() => guard,
         };
         if !self.accepting.load(Ordering::Acquire) {
-            return Err(Error::Other("danmu service is shutting down".to_string()));
+            return Err(Error::other("danmu service is shutting down"));
         }
 
         let CollectionSpec {
@@ -351,11 +351,11 @@ impl DanmuService {
             guard = tokio::time::timeout_at(handoff_deadline, streamer_setup_lock.mutex.lock()) => guard,
         };
         let setup_guard = setup
-            .map_err(|_| Error::Other(format!(
+            .map_err(|_| Error::other(format!(
                 "danmu collection startup handoff timed out after {STOP_TIMEOUT:?} (streamer_id={streamer_id})"
             )))?;
         if !self.accepting.load(Ordering::Acquire) {
-            return Err(Error::Other("danmu service is shutting down".to_string()));
+            return Err(Error::other("danmu service is shutting down"));
         }
 
         // Check if already collecting
@@ -463,7 +463,7 @@ impl DanmuService {
             statistics = StatisticsSession::load(session_id.clone(), self.session_repo.clone(), statistics) => statistics,
         };
         if !self.accepting.load(Ordering::Acquire) {
-            return Err(Error::Other("danmu service is shutting down".to_string()));
+            return Err(Error::other("danmu service is shutting down"));
         }
         let cancel_token = self.cancel_token.child_token();
         let startup_guard = cancel_token.clone().drop_guard();
@@ -567,7 +567,7 @@ impl DanmuService {
             CollectionStopOutcome::Terminated { statistics, errors } if errors.is_empty() => {
                 Ok(statistics)
             }
-            CollectionStopOutcome::Terminated { errors, .. } => Err(Error::Other(format!(
+            CollectionStopOutcome::Terminated { errors, .. } => Err(Error::other(format!(
                 "danmu collection {session_id} stopped with errors: {}",
                 errors.join("; ")
             ))),
@@ -663,7 +663,7 @@ impl DanmuService {
                     debug!(session_id, "Danmu collection task already stopped");
                 }
                 Err(_) => {
-                    return CollectionStopOutcome::Unconfirmed(Error::Other(format!(
+                    return CollectionStopOutcome::Unconfirmed(Error::other(format!(
                         "danmu collection {session_id} stop command timed out after {STOP_TIMEOUT:?}"
                     )));
                 }
@@ -702,7 +702,7 @@ impl DanmuService {
                     STOP_TIMEOUT, session_id
                 );
                 cancel_token.cancel();
-                CollectionStopOutcome::Unconfirmed(Error::Other(format!(
+                CollectionStopOutcome::Unconfirmed(Error::other(format!(
                     "danmu collection {session_id} stop timed out after {STOP_TIMEOUT:?}"
                 )))
             }
@@ -809,7 +809,7 @@ impl DanmuService {
         if report.shutdown_failures.is_empty() {
             Ok(())
         } else {
-            Err(Error::Other(format!(
+            Err(Error::other(format!(
                 "danmu collection task shutdown failed: {}",
                 report.shutdown_failures.join("; ")
             )))
@@ -941,7 +941,7 @@ async fn cancelled_collection_start(
 ) -> Result<Option<CollectionHandle>> {
     cancel.cancel();
     let outcome = done.await.ok_or_else(|| {
-        Error::Other(format!(
+        Error::other(format!(
             "cancelled danmu startup {session_id} ended without a cleanup outcome"
         ))
     })?;
@@ -952,7 +952,7 @@ async fn cancelled_collection_start(
         .map(ToString::to_string)
         .collect();
     if !errors.is_empty() {
-        return Err(Error::Other(format!(
+        return Err(Error::other(format!(
             "cancelled danmu startup {session_id} cleanup failed: {}",
             errors.join("; ")
         )));
@@ -1043,7 +1043,7 @@ async fn collection_task(ctx: CollectionTaskContext) -> CollectionTaskReport {
     let (start_result, cancelled_during_startup) = tokio::select! {
         biased;
         _ = cancel_token.cancelled() => (
-            Err(Error::Other(
+            Err(Error::other(
                 format!("danmu collection {session_id} cancelled during startup")
             )),
             true,
@@ -1090,7 +1090,7 @@ async fn collection_task(ctx: CollectionTaskContext) -> CollectionTaskReport {
                 } else {
                     CollectionExitReason::Failed
                 },
-                error: (!cancelled_during_startup).then(|| Error::Other(error_message.clone())),
+                error: (!cancelled_during_startup).then(|| Error::other(error_message.clone())),
                 cleanup_errors: Vec::new(),
             };
             if done_tx.send(outcome).is_err() {

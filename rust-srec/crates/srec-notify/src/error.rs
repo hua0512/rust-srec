@@ -1,5 +1,7 @@
 //! Notification subsystem error types.
 
+use srec_core::CoreError;
+use srec_sqlite::DbError;
 use thiserror::Error;
 
 /// Result type for notification channel, service, Web Push, and outbox operations.
@@ -8,50 +10,34 @@ pub type NotifyResult<T> = std::result::Result<T, NotifyError>;
 /// Error type for notification delivery, channel management, Web Push, and outbox draining.
 #[derive(Error, Debug)]
 pub enum NotifyError {
-    #[error(transparent)]
-    Database(#[from] srec_sqlite::DbError),
-
-    #[error("Database error: {0}")]
-    DatabaseSqlx(#[from] sqlx::Error),
-
-    #[error("Serialization error: {0}")]
-    Serialization(#[from] serde_json::Error),
-
-    #[error("Entity not found: {entity_type} with id {id}")]
-    NotFound { entity_type: String, id: String },
-
-    #[error("Validation error: {0}")]
-    Validation(String),
-
-    #[error("Configuration error: {0}")]
-    Configuration(String),
-
-    #[error(transparent)]
-    Proxy(#[from] srec_core::domain::proxy::ProxyError),
-
     #[error("{channel} notification delivery failed: {message}")]
     NotificationDelivery {
         channel: &'static str,
         message: String,
     },
 
-    #[error("{0}")]
-    Other(String),
+    /// A database failure. Build it with `From<DbError>`, which moves a
+    /// wrapped shared kind to [`NotifyError::Core`] instead.
+    #[error(transparent)]
+    Db(DbError),
+
+    #[error(transparent)]
+    Core(#[from] CoreError),
 }
 
-impl NotifyError {
-    pub fn not_found(entity_type: impl Into<String>, id: impl Into<String>) -> Self {
-        Self::NotFound {
-            entity_type: entity_type.into(),
-            id: id.into(),
+srec_core::impl_core_error_wrapper!(NotifyError);
+
+impl From<DbError> for NotifyError {
+    fn from(error: DbError) -> Self {
+        match error {
+            DbError::Core(error) => Self::Core(error),
+            error => Self::Db(error),
         }
     }
+}
 
-    pub fn validation(msg: impl Into<String>) -> Self {
-        Self::Validation(msg.into())
-    }
-
-    pub fn config(msg: impl Into<String>) -> Self {
-        Self::Configuration(msg.into())
+impl From<sqlx::Error> for NotifyError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::Db(error.into())
     }
 }

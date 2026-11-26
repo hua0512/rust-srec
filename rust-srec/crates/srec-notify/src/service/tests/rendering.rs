@@ -25,7 +25,7 @@ impl NotificationChannel for RenderChannel {
         let mut seen = self.seen.lock();
         seen.push((std::ptr::from_ref(rendered) as usize, rendered.clone()));
         if self.fail_once && seen.len() == 1 {
-            Err(crate::NotifyError::Other("retry fixture".into()))
+            Err(crate::NotifyError::other("retry fixture"))
         } else {
             Ok(())
         }

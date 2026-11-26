@@ -1,5 +1,6 @@
 use super::*;
 use crate::credentials::{CredentialOwner, CredentialScope};
+use srec_core::CoreError;
 
 /// The operation route of tests that do not exercise routes.
 fn direct() -> &'static ResolvedRoute {
@@ -440,7 +441,10 @@ async fn disabled_profiles_are_skipped_even_when_failover_is_off() {
         .await
         .err()
         .unwrap();
-    assert!(matches!(error, Error::CredentialUnavailable(_)));
+    assert!(matches!(
+        error,
+        Error::Core(CoreError::CredentialUnavailable(_))
+    ));
     assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed), 1);
     let binding = CredentialBinding {
         identity: CredentialIdentity::Profile {
@@ -458,12 +462,10 @@ async fn disabled_profiles_are_skipped_even_when_failover_is_off() {
                 true,
                 OperationDeadline::default(),
                 direct(),
-                |_| async {
-                    Err::<Extracted<()>, _>(Error::Other("unexpected alternate account".into()))
-                }
+                |_| async { Err::<Extracted<()>, _>(Error::other("unexpected alternate account")) }
             )
             .await,
-        Err(Error::CredentialUnavailable(_))
+        Err(Error::Core(CoreError::CredentialUnavailable(_)))
     ));
 }
 
@@ -770,7 +772,10 @@ async fn repair_uses_bound_access_token_and_consumes_another_attempt() {
         .await
         .err()
         .unwrap();
-    assert!(matches!(error, Error::CredentialUnavailable(_)));
+    assert!(matches!(
+        error,
+        Error::Core(CoreError::CredentialUnavailable(_))
+    ));
     assert_eq!(
         inputs.lock().len(),
         1,
@@ -828,7 +833,7 @@ async fn profile_refresh_allows_label_edits_but_rejects_replaced_account_materia
             repository.update(&profiles[0].id, 1, Some("Renamed"), None, replacement.then_some(&replacement_material), None).await.unwrap();
             manager.release.add_permits(1);
             let outcome = operation.await;
-            if replacement { assert!(matches!(outcome, Err(Error::CredentialProfile(ProfileError::SourceChanged)))); }
+            if replacement { assert!(matches!(outcome, Err(Error::Core(CoreError::CredentialProfile(ProfileError::SourceChanged))))); }
             else { assert!(outcome.is_ok()); }
             let current = repository.get(&profiles[0].id).await.unwrap();
             assert_eq!(current.label, "Renamed");
@@ -985,11 +990,15 @@ async fn disabled_profiles_reject_manual_actions_before_any_provider_call() {
     let deadline = OperationDeadline::new(Duration::from_secs(5));
     assert!(matches!(
         service.validate_profile(&profiles[0].id, deadline).await,
-        Err(Error::CredentialProfile(ProfileError::Disabled))
+        Err(Error::Core(CoreError::CredentialProfile(
+            ProfileError::Disabled
+        )))
     ));
     assert!(matches!(
         service.refresh_profile(&profiles[0].id, deadline).await,
-        Err(Error::CredentialProfile(ProfileError::Disabled))
+        Err(Error::Core(CoreError::CredentialProfile(
+            ProfileError::Disabled
+        )))
     ));
     assert_eq!(manager.calls.load(std::sync::atomic::Ordering::Relaxed), 0);
 }
@@ -1051,7 +1060,7 @@ async fn exhaustion_names_the_action_that_would_recover_the_selection() {
             true,
             OperationDeadline::default(),
             direct(),
-            |_| async { Err::<Extracted<()>, _>(Error::Other("no candidate may be tried".into())) },
+            |_| async { Err::<Extracted<()>, _>(Error::other("no candidate may be tried")) },
         )
     };
     repository
@@ -1152,7 +1161,10 @@ async fn acceptance_rotation_pinning_recovery_targeted_refresh_and_fixed_isolati
             expired_b,
         )
         .await;
-    assert!(matches!(polled, Err(Error::CredentialUnavailable(_))));
+    assert!(matches!(
+        polled,
+        Err(Error::Core(CoreError::CredentialUnavailable(_)))
+    ));
     // ...so recovery extracts fresh media with the next saved account, C.
     let recovered = service
         .execute(
@@ -1230,7 +1242,10 @@ async fn acceptance_rotation_pinning_recovery_targeted_refresh_and_fixed_isolati
             },
         )
         .await;
-    assert!(matches!(result, Err(Error::CredentialUnavailable(_))));
+    assert!(matches!(
+        result,
+        Err(Error::Core(CoreError::CredentialUnavailable(_)))
+    ));
     let seen = seen.into_inner();
     assert!(!seen.is_empty());
     assert!(seen.iter().all(|id| *id == profiles[0].id), "{seen:?}");
@@ -1364,7 +1379,9 @@ async fn an_account_with_nothing_to_check_records_and_stays_unchecked() {
                 OperationDeadline::new(Duration::from_secs(5))
             )
             .await,
-        Err(Error::CredentialProfile(ProfileError::InvalidMaterial(_)))
+        Err(Error::Core(CoreError::CredentialProfile(
+            ProfileError::InvalidMaterial(_)
+        )))
     ));
 }
 
@@ -1565,7 +1582,7 @@ async fn aging_material_is_renewed_before_use_and_a_failed_renewal_keeps_it() {
             .store(2, std::sync::atomic::Ordering::SeqCst);
         assert!(matches!(
             extract_cookies(&service, &policy).await,
-            Err(Error::CredentialUnavailable(_))
+            Err(Error::Core(CoreError::CredentialUnavailable(_)))
         ));
         assert_eq!(refreshes(), 3);
         assert_eq!(

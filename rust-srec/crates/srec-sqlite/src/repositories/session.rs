@@ -9,6 +9,7 @@ use crate::retry::retry_on_sqlite_busy;
 use crate::{DbError as Error, DbResult as Result};
 use async_trait::async_trait;
 use sqlx::{Sqlite, SqlitePool};
+use srec_core::CoreError;
 
 /// Session repository trait.
 #[async_trait]
@@ -21,7 +22,7 @@ pub trait SessionRepository: Send + Sync {
         for id in ids {
             match self.get_session(id).await {
                 Ok(session) => sessions.push(session),
-                Err(Error::NotFound { .. }) => {}
+                Err(Error::Core(CoreError::NotFound { .. })) => {}
                 Err(error) => return Err(error),
             }
         }
@@ -516,8 +517,8 @@ impl SessionRepository for SqlxSessionRepository {
         segment: &SessionSegmentDbModel,
     ) -> Result<()> {
         if output.session_id != segment.session_id || output.file_path != segment.file_path {
-            return Err(Error::Other(
-                "media output and session segment must identify the same file".to_string(),
+            return Err(Error::other(
+                "media output and session segment must identify the same file",
             ));
         }
 
@@ -591,7 +592,7 @@ impl SessionRepository for SqlxSessionRepository {
         .await?;
 
         u32::try_from(next).map_err(|_| {
-            Error::Database(format!(
+            Error::database(format!(
                 "next session segment index {} for session {} is outside u32 range",
                 next, session_id
             ))

@@ -5,6 +5,7 @@ use std::future::Future;
 use std::time::{Duration, Instant};
 
 use platforms_parser::extractor::error::ExtractorError;
+use srec_core::CoreError;
 
 use super::state::{
     AttemptStep, Attempts, Candidate, Cursor, Exclusions, attempt_budget, fail_over_throttle,
@@ -90,7 +91,9 @@ impl CredentialExecutionService {
             )
             .await
         {
-            Err(Error::CredentialUnavailable(unavailable)) if anonymous_fallback => {
+            Err(Error::Core(CoreError::CredentialUnavailable(unavailable)))
+                if anonymous_fallback =>
+            {
                 tracing::debug!(
                     platform_id = %policy.platform_id,
                     strategy = policy.selection.strategy_name(),
@@ -503,7 +506,7 @@ impl CredentialExecutionService {
                 attempts.previous = Some((id.to_owned(), "login_required"));
                 Ok(None)
             }
-            Err(Error::CredentialProfile(ProfileError::SourceChanged))
+            Err(Error::Core(CoreError::CredentialProfile(ProfileError::SourceChanged)))
                 if attempts.retry_source(id, None, step.route.clone()) =>
             {
                 Ok(None)

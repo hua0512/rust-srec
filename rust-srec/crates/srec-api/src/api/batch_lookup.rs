@@ -124,7 +124,7 @@ pub(crate) mod tests {
                 let batch = batch_calls.fetch_add(1, Ordering::SeqCst);
                 async move {
                     if batch == 1 {
-                        return Err(crate::Error::Other("injected lookup failure".to_owned()));
+                        return Err(crate::Error::other("injected lookup failure"));
                     }
                     Ok(ids.into_iter().map(|id| (id.clone(), id)).collect())
                 }

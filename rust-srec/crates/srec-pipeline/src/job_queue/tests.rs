@@ -6,6 +6,7 @@ use crate::PipelineResult as Result;
 use crate::processors::UploadItemStatus;
 use crate::progress::ProgressKind;
 use crate::upload_events::{UploadStatusEvent, UploadTerminalStatus};
+use srec_core::CoreError;
 use srec_sqlite::models::{Pagination, UploadRecordDbModel};
 
 /// The manifest travels in the `state` column with the placeholder metadata
@@ -359,7 +360,7 @@ async fn test_resolve_job_metadata_persists_backfilled_state() {
                     title: None,
                     started_at: srec_sqlite::time::ms_to_datetime(session.start_time),
                 })),
-                Err(srec_sqlite::DbError::NotFound { .. }) => Ok(None),
+                Err(srec_sqlite::DbError::Core(CoreError::NotFound { .. })) => Ok(None),
                 Err(err) => Err(err.into()),
             }
         }

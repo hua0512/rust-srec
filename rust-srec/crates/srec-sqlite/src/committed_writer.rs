@@ -27,9 +27,7 @@ pub fn prepare_owned_commit() -> Result<()> {
         .try_with(|operation| {
             if !operation.sealed.load(std::sync::atomic::Ordering::Acquire) {
                 if operation.cancellation.is_cancelled() {
-                    return Err(Error::Other(
-                        "Lifecycle mutation cancelled before commit".into(),
-                    ));
+                    return Err(Error::other("Lifecycle mutation cancelled before commit"));
                 }
                 operation
                     .sealed
@@ -75,7 +73,7 @@ where
                 biased;
                 _ = cancellation.cancelled() => {
                     if operation.sealed.load(std::sync::atomic::Ordering::Acquire) { future.await }
-                    else { Err(E::from(Error::Other("Lifecycle mutation cancelled before commit".into()))) }
+                    else { Err(E::from(Error::other("Lifecycle mutation cancelled before commit"))) }
                 }
                 result = &mut future => result,
             }
@@ -84,12 +82,12 @@ where
             tracing::debug!(%error, "Lifecycle caller dropped before receiving completion");
         }
     }) {
-        return Err(E::from(Error::Other(
-            "Lifecycle operation rejected during shutdown".into(),
+        return Err(E::from(Error::other(
+            "Lifecycle operation rejected during shutdown",
         )));
     }
     let result = result_rx.await.map_err(|error| {
-        E::from(Error::Other(format!(
+        E::from(Error::other(format!(
             "Owned lifecycle operation stopped: {error}"
         )))
     })?;
@@ -121,9 +119,8 @@ pub struct CommitTestGate {
 impl CommittedWriter {
     pub fn new(pool: SqlitePool, supervisor: Arc<TaskSupervisor>) -> Result<Self> {
         if pool.options().get_max_connections() != 1 {
-            return Err(Error::Configuration(
-                "Committed publication requires the shared single-connection writer pool"
-                    .to_owned(),
+            return Err(Error::config(
+                "Committed publication requires the shared single-connection writer pool",
             ));
         }
         Ok(Self::for_invalidation(pool, supervisor))
@@ -142,9 +139,8 @@ impl CommittedWriter {
 
     pub fn require_serialized(&self) -> Result<()> {
         if self.pool.options().get_max_connections() != 1 {
-            return Err(Error::Configuration(
-                "Complete streamer-row publication requires one shared writer connection"
-                    .to_owned(),
+            return Err(Error::config(
+                "Complete streamer-row publication requires one shared writer connection",
             ));
         }
         Ok(())
@@ -152,8 +148,8 @@ impl CommittedWriter {
 
     pub fn require_same_pool(&self, pool: &SqlitePool) -> Result<()> {
         if !std::ptr::eq(self.pool.options(), pool.options()) {
-            return Err(Error::Configuration(
-                "Committed streamer writers must share the same writer pool".to_owned(),
+            return Err(Error::config(
+                "Committed streamer writers must share the same writer pool",
             ));
         }
         Ok(())
@@ -255,11 +251,11 @@ impl CommittedWriter {
                 let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
                 let value = tokio::select! {
                     biased;
-                    _ = cancellation.cancelled() => return Err(E::from(Error::Other("Database mutation cancelled before commit".to_owned()))),
+                    _ = cancellation.cancelled() => return Err(E::from(Error::other("Database mutation cancelled before commit"))),
                     value = operation(&mut transaction) => value?,
                 };
                 if cancellation.is_cancelled() {
-                    return Err(E::from(Error::Other("Database mutation cancelled before commit".to_owned())));
+                    return Err(E::from(Error::other("Database mutation cancelled before commit")));
                 }
                 // From this point the owned task, not the request future, settles
                 // COMMIT. Retain the outer lease until synchronous publication is
@@ -283,10 +279,10 @@ impl CommittedWriter {
                 tracing::debug!(%error, operation = label, "Cancelled database caller no longer receives mutation result");
             }
         }) {
-            return Err(E::from(Error::Other("Database mutation rejected during shutdown".to_owned())));
+            return Err(E::from(Error::other("Database mutation rejected during shutdown")));
         }
         let result = result_rx.await.map_err(|error| {
-            E::from(Error::Other(format!(
+            E::from(Error::other(format!(
                 "Owned database mutation stopped without a result: {error}"
             )))
         })?;

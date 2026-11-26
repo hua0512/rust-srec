@@ -72,7 +72,7 @@ const SELECT_ROWS: &str = "SELECT s.id, s.platform_config_id, p.platform_name, s
 const ORDER_ROWS: &str = " ORDER BY s.id, m.position";
 
 fn malformed(id: i64) -> Error {
-    Error::Other(format!("stored credential selection {id} is malformed"))
+    Error::other(format!("stored credential selection {id} is malformed"))
 }
 
 fn decode(row: SelectionRow, members: Vec<String>) -> Result<StoredSelection> {
@@ -342,9 +342,7 @@ pub async fn referring(
                     row.streamer_name.unwrap_or(streamer_id),
                 ),
                 (Some(_), Some(_)) => {
-                    return Err(Error::Other(
-                        "stored credential selection has two owners".into(),
-                    ));
+                    return Err(Error::other("stored credential selection has two owners"));
                 }
             };
             Ok((

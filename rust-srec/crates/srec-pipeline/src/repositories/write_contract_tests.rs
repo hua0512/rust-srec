@@ -4,6 +4,7 @@ use serde::Serialize;
 use sqlx::SqlitePool;
 
 use super::*;
+use srec_core::CoreError;
 use srec_sqlite::models::{
     DagExecutionDbModel, DagStepExecutionDbModel, JobDbModel, JobStatus, LiveSessionDbModel,
     StreamerDbModel,
@@ -214,7 +215,7 @@ async fn step_insert_modes_preserve_fields_and_publication_clears_attachment() {
     );
     assert!(matches!(
         repo.get_step(&first.id).await,
-        Err(srec_sqlite::DbError::NotFound { .. })
+        Err(srec_sqlite::DbError::Core(CoreError::NotFound { .. }))
     ));
 }
 
@@ -302,15 +303,15 @@ async fn failed_root_and_later_attachment_roll_back_inserted_jobs() {
     );
     assert!(matches!(
         repo.get_dag(&parent.id).await,
-        Err(srec_sqlite::DbError::NotFound { .. })
+        Err(srec_sqlite::DbError::Core(CoreError::NotFound { .. }))
     ));
     assert!(matches!(
         repo.get_step(&blocked.id).await,
-        Err(srec_sqlite::DbError::NotFound { .. })
+        Err(srec_sqlite::DbError::Core(CoreError::NotFound { .. }))
     ));
     assert!(matches!(
         jobs(&pool).get_job(&root.id).await,
-        Err(srec_sqlite::DbError::NotFound { .. })
+        Err(srec_sqlite::DbError::Core(CoreError::NotFound { .. }))
     ));
 
     let external_dag = dag("external");
@@ -339,11 +340,11 @@ async fn failed_root_and_later_attachment_roll_back_inserted_jobs() {
         );
         assert!(matches!(
             repo.get_dag(&invalid.id).await,
-            Err(srec_sqlite::DbError::NotFound { .. })
+            Err(srec_sqlite::DbError::Core(CoreError::NotFound { .. }))
         ));
         assert!(matches!(
             jobs(&pool).get_job(&candidate.id).await,
-            Err(srec_sqlite::DbError::NotFound { .. })
+            Err(srec_sqlite::DbError::Core(CoreError::NotFound { .. }))
         ));
         assert_row(
             &repo.get_step(&external_step.id).await.unwrap(),
@@ -377,7 +378,7 @@ async fn failed_root_and_later_attachment_roll_back_inserted_jobs() {
         );
         assert!(matches!(
             jobs(&pool).get_job(&candidate.id).await,
-            Err(srec_sqlite::DbError::NotFound { .. })
+            Err(srec_sqlite::DbError::Core(CoreError::NotFound { .. }))
         ));
         assert_row(&repo.get_step(&target.id).await.unwrap(), &target);
     }
@@ -410,6 +411,6 @@ async fn job_connection_helpers_do_not_commit_the_callers_transaction() {
     );
     assert!(matches!(
         jobs(&pool).get_job("rolled-job").await,
-        Err(srec_sqlite::DbError::NotFound { .. })
+        Err(srec_sqlite::DbError::Core(CoreError::NotFound { .. }))
     ));
 }

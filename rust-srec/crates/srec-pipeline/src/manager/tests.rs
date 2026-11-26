@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use srec_core::CoreError;
 use srec_sqlite::{DbError, DbResult};
 
 use super::*;
@@ -64,7 +65,7 @@ impl SessionPipelineConfigPort for TestConfigService {
             .await
         {
             Ok(platform) => Ok(Some(platform.platform_name)),
-            Err(DbError::NotFound { .. }) => Ok(None),
+            Err(DbError::Core(CoreError::NotFound { .. })) => Ok(None),
             Err(error) => Err(error.into()),
         }
     }
@@ -205,7 +206,7 @@ impl PipelineSessionPort for TestDatabaseSessionPort {
     ) -> Result<Option<PipelineSessionSummary>> {
         match self.session_repo.get_session(session_id).await {
             Ok(session) => Ok(Some(to_session_summary(session))),
-            Err(DbError::NotFound { .. }) => Ok(None),
+            Err(DbError::Core(CoreError::NotFound { .. })) => Ok(None),
             Err(error) => Err(error.into()),
         }
     }
@@ -258,7 +259,7 @@ impl PipelineSessionPort for TestDatabaseSessionPort {
                     started_at,
                 }))
             }
-            Err(DbError::NotFound { .. }) => Ok(None),
+            Err(DbError::Core(CoreError::NotFound { .. })) => Ok(None),
             Err(error) => Err(error.into()),
         }
     }
@@ -272,7 +273,7 @@ impl PipelineSessionPort for TestDatabaseSessionPort {
         };
         let streamer = match streamer_repo.get_streamer(streamer_id).await {
             Ok(streamer) => streamer,
-            Err(DbError::NotFound { .. }) => return Ok(None),
+            Err(DbError::Core(CoreError::NotFound { .. })) => return Ok(None),
             Err(error) => return Err(error.into()),
         };
         let platform = if let Some(config_port) = self.config_port.as_ref() {
@@ -594,7 +595,7 @@ impl SessionRepository for TestSessionRepository {
             .unwrap_or(0);
 
         u32::try_from(next).map_err(|_| {
-            DbError::Database(format!(
+            DbError::database(format!(
                 "next session segment index {} for session {} is outside u32 range",
                 next, session_id
             ))
@@ -780,10 +781,10 @@ impl crate::repositories::JobRepository for TestJobRepository {
                 job.updated_at = now;
                 Ok(())
             }
-            _ => Err(DbError::InvalidStateTransition {
+            _ => Err(DbError::Core(CoreError::InvalidStateTransition {
                 from: job.status.to_ascii_uppercase(),
                 to: JobStatus::Pending.as_str().to_string(),
-            }),
+            })),
         }
     }
 
@@ -1770,7 +1771,7 @@ async fn retry_dag_rejects_an_unrestartable_job_before_touching_rows() {
         .unwrap();
 
     let error = manager.retry_dag(&created.dag_id).await.unwrap_err();
-    assert!(matches!(error, Error::Validation(_)));
+    assert!(matches!(error, Error::Core(CoreError::Validation(_))));
     assert!(
         error
             .to_string()
@@ -2045,7 +2046,10 @@ async fn test_cancel_dag_step_job_resolves_parent_before_mutating_job() {
 
     let error = manager.cancel_job(&job_id).await.unwrap_err();
 
-    assert!(matches!(error, crate::PipelineError::NotFound { .. }));
+    assert!(matches!(
+        error,
+        crate::PipelineError::Core(CoreError::NotFound { .. })
+    ));
     assert_eq!(
         manager.get_job(&job_id).await.unwrap().unwrap().status,
         JobStatus::Pending
@@ -2673,7 +2677,10 @@ async fn test_create_dag_pipeline_rejects_a_step_that_removes_a_siblings_inputs(
         )
         .await
         .expect_err("rejected before publication");
-    assert!(matches!(error, Error::Validation(_)), "{error}");
+    assert!(
+        matches!(error, Error::Core(CoreError::Validation(_))),
+        "{error}"
+    );
     assert!(
         dags.list_dag_ids_with_unmaterialized_steps()
             .await

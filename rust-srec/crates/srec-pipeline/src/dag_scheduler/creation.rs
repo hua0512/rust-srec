@@ -11,6 +11,7 @@ use super::{
 use crate::job_queue::{JobStateMeta, job_state_json};
 use crate::{Job, JobStatus};
 use crate::{PipelineError as Error, PipelineResult as Result};
+use srec_core::CoreError;
 use srec_sqlite::models::{
     DagExecutionDbModel, DagExecutionStatus, DagPipelineDefinition, DagStepExecutionDbModel,
     DagStepStatus, JobDbModel, PipelineStep, ReadyStep,
@@ -84,7 +85,7 @@ impl DagScheduler {
             let step_exec = step_executions
                 .iter_mut()
                 .find(|step| step.step_id == root_step.id)
-                .ok_or_else(|| Error::Validation("Step execution not found".into()))?;
+                .ok_or_else(|| Error::validation("Step execution not found"))?;
             let (job_db, job) = Self::build_step_job(
                 &dag_id,
                 &step_exec.id,
@@ -148,7 +149,7 @@ impl DagScheduler {
                 (name.clone(), "{}".to_string())
             }
             PipelineStep::Workflow { name } => {
-                return Err(Error::Validation(format!(
+                return Err(Error::validation(format!(
                     "Workflow '{}' should be resolved before DAG creation",
                     name
                 )));
@@ -232,7 +233,7 @@ impl DagScheduler {
         {
             let result: Result<()> = async {
                 let dag_step = dag_def.get_step(&ready_step.step_id).ok_or_else(|| {
-                    Error::Validation(format!(
+                    Error::validation(format!(
                         "Step '{}' not found in DAG definition",
                         ready_step.step_id
                     ))
@@ -318,13 +319,14 @@ impl DagScheduler {
             .create_job_for_step(step_execution_id, &job_db)
             .await
         {
-            let materialized_elsewhere =
-                matches!(error, srec_sqlite::DbError::InvalidStateTransition { .. })
-                    && self
-                        .dag_repository
-                        .get_step(step_execution_id)
-                        .await
-                        .is_ok_and(|step| step.job_id.is_some());
+            let materialized_elsewhere = matches!(
+                error,
+                srec_sqlite::DbError::Core(CoreError::InvalidStateTransition { .. })
+            ) && self
+                .dag_repository
+                .get_step(step_execution_id)
+                .await
+                .is_ok_and(|step| step.job_id.is_some());
             if materialized_elsewhere {
                 warn!(
                     dag_id = %dag_id,

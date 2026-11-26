@@ -32,7 +32,7 @@ async fn enqueue_outbox_event(
     created_at_ms: i64,
 ) -> Result<()> {
     let payload = serde_json::to_string(event)
-        .map_err(|e| crate::Error::Other(format!("Failed to serialize outbox event: {}", e)))?;
+        .map_err(|e| crate::Error::other(format!("Failed to serialize outbox event: {}", e)))?;
     Ok(MonitorOutboxTxOps::enqueue_raw(
         tx,
         streamer_id,
@@ -545,7 +545,7 @@ async fn resume_hysteresis(
     .await?;
 
     let Some((start_time_ms, current_titles)) = active_row else {
-        return Err(crate::Error::Conflict(format!(
+        return Err(crate::Error::conflict(format!(
             "session {} is no longer active for hysteresis resume",
             params.session_id
         )));

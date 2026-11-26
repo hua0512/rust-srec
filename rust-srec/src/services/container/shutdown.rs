@@ -182,7 +182,7 @@ impl ServiceContainer {
         } else {
             "unfinished committed writes remain supervised"
         };
-        Err(crate::Error::Other(format!(
+        Err(crate::Error::other(format!(
             "service shutdown exceeded its force deadline: aborted {} recording attempt(s) {aborted_downloads:?}, {} danmu collection(s) {aborted_collections:?}, {aborted_recorder_tasks} recorder task(s), {aborted_pipeline_tasks} pipeline task(s) and {aborted_background_tasks} background task(s) by the hard deadline; {committed_status}; database pools were left open",
             aborted_downloads.len(),
             aborted_collections.len()
@@ -365,7 +365,7 @@ impl ServiceContainer {
         if failures.is_empty() {
             Ok(())
         } else {
-            Err(crate::Error::Other(format!(
+            Err(crate::Error::other(format!(
                 "service shutdown incomplete: {}",
                 failures.join("; ")
             )))

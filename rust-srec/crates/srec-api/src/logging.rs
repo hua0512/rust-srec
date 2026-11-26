@@ -362,11 +362,11 @@ impl LoggingConfig {
     /// Error if the directive is invalid.
     pub fn set_filter(&self, directive: &str) -> crate::Result<()> {
         let new_filter = build_effective_env_filter(directive)
-            .map_err(|e| crate::Error::Other(format!("Invalid filter directive: {}", e)))?;
+            .map_err(|e| crate::Error::other(format!("Invalid filter directive: {}", e)))?;
 
         self.handle
             .reload(new_filter)
-            .map_err(|e| crate::Error::Other(format!("Failed to reload filter: {}", e)))?;
+            .map_err(|e| crate::Error::other(format!("Failed to reload filter: {}", e)))?;
 
         *self.configured_filter.write() = directive.to_string();
         info!(directive = %directive, "Log filter updated");
@@ -561,7 +561,7 @@ pub fn init_logging(log_dir: &str) -> crate::Result<(Arc<LoggingConfig>, WorkerG
         .with(broadcast_layer)
         .try_init()
         .map_err(|e| {
-            crate::Error::Other(format!("Failed to set global default subscriber: {}", e))
+            crate::Error::other(format!("Failed to set global default subscriber: {}", e))
         })?;
 
     let config = Arc::new(LoggingConfig::new(

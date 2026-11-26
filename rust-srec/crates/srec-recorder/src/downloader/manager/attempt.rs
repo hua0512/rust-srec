@@ -1114,9 +1114,7 @@ impl DownloadManager {
         );
 
         if !admitted {
-            return Err(crate::Error::Other(
-                "download manager shutting down".to_string(),
-            ));
+            return Err(crate::Error::other("download manager shutting down"));
         }
 
         info!(

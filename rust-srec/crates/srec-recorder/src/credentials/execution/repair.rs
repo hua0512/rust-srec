@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::time::Instant;
 
 use platforms_parser::extractor::error::ExtractorError;
+use srec_core::CoreError;
 
 use super::state::{
     AttemptStep, Attempts, Candidate, Rest, fail_over_throttle, next_renewal_at, provider_error,
@@ -272,9 +273,9 @@ impl CredentialExecutionService {
                 snapshot.material.cookies = cookies;
                 if matches!(
                     error,
-                    srec_sqlite::DbError::CredentialProfile(
+                    srec_sqlite::DbError::Core(CoreError::CredentialProfile(
                         ProfileError::SourceChanged | ProfileError::Disabled
-                    )
+                    ))
                 ) {
                     tracing::debug!(
                         profile_id = %profile.id,

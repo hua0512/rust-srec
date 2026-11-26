@@ -146,7 +146,7 @@ impl UserRepository for CountingUserRepository {
     async fn find_by_id(&self, id: &str) -> crate::Result<Option<UserDbModel>> {
         self.find_by_id_calls.fetch_add(1, Ordering::SeqCst);
         if self.fail_find_by_id.load(Ordering::SeqCst) {
-            return Err(crate::Error::Database("lookup failed".to_string()));
+            return Err(crate::Error::database("lookup failed"));
         }
         let user = self.user.lock().expect("user lock").clone();
         Ok((user.id == id).then_some(user))

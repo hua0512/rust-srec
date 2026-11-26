@@ -37,6 +37,7 @@ use crate::recorder::store::RecorderStore;
 use crate::streamer::platform_metadata::StoredPlatformMetadata;
 use crate::streamer::{StreamerManager, StreamerMetadata};
 use crate::{Error, Result};
+use srec_core::CoreError;
 use srec_core::domain::StreamerState;
 use srec_core::domain::filter::Filter;
 use srec_core::domain::streamer::{
@@ -91,7 +92,7 @@ impl PlatformExtractorRunner {
             .detector
             .client_for_proxy(proxy)
             .map_err(|error| match error {
-                Error::Proxy(proxy_error) => proxy_error,
+                Error::Core(CoreError::Proxy(proxy_error)) => proxy_error,
                 other => crate::proxies::ProxyError::invalid(other.to_string()),
             })?;
         let mut factory = ExtractorFactory::new(client).with_proxy(proxy.clone());
@@ -322,12 +323,12 @@ impl RecorderProber {
                 .health(profile_id)
                 .await?;
             if health.is_some_and(|health| health.validity == CredentialValidity::Invalid) {
-                return Err(Error::CredentialUnavailable(
+                return Err(Error::Core(CoreError::CredentialUnavailable(
                     crate::credentials::CredentialUnavailable {
                         reason: UnavailableReason::BoundProfileUnavailable,
                         policy_generation: binding.policy.generation.clone(),
                     },
-                ));
+                )));
             }
         }
         Ok(())
@@ -703,7 +704,7 @@ impl RecorderProber {
             .await;
 
         match &result {
-            Err(Error::CredentialUnavailable(unavailable)) => {
+            Err(Error::Core(CoreError::CredentialUnavailable(unavailable))) => {
                 if self
                     .streamer_manager
                     .get_streamer(&streamer.id)
@@ -716,7 +717,7 @@ impl RecorderProber {
                     );
                 }
             }
-            Err(Error::CredentialProfile(ProfileError::SourceChanged)) => {}
+            Err(Error::Core(CoreError::CredentialProfile(ProfileError::SourceChanged))) => {}
             _ => self.credential_blocks.clear(&streamer.id),
         }
 
@@ -853,11 +854,13 @@ fn live_status_to_probe_status(status: LiveStatus, batch_live_hint_armed: bool) 
 
 pub(crate) fn map_probe_failure(error: Error) -> ProbeFailure {
     match error {
-        Error::CredentialUnavailable(unavailable) => ProbeFailure::CredentialUnavailable {
-            reason: unavailable.reason,
-            policy_generation: unavailable.policy_generation,
-        },
-        Error::CredentialProfile(ProfileError::SourceChanged) => {
+        Error::Core(CoreError::CredentialUnavailable(unavailable)) => {
+            ProbeFailure::CredentialUnavailable {
+                reason: unavailable.reason,
+                policy_generation: unavailable.policy_generation,
+            }
+        }
+        Error::Core(CoreError::CredentialProfile(ProfileError::SourceChanged)) => {
             ProbeFailure::CredentialSourceChanged
         }
         other => ProbeFailure::Transient {
@@ -1008,11 +1011,11 @@ mod tests {
         use srec_sqlite::filter_store::FilterSnapshotError;
 
         let errors = [
-            Error::FilterSnapshot(FilterSnapshotError::Repository(Arc::new(
+            Error::from(FilterSnapshotError::Repository(Arc::new(
                 srec_sqlite::DbError::DatabaseSqlx(sqlx::Error::RowNotFound),
             ))),
-            Error::FilterSnapshot(FilterSnapshotError::Cancelled),
-            Error::FilterSnapshot(FilterSnapshotError::TimedOut),
+            Error::from(FilterSnapshotError::Cancelled),
+            Error::from(FilterSnapshotError::TimedOut),
         ];
         for error in errors {
             assert!(matches!(

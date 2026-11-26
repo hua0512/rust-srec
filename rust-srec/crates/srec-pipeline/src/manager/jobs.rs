@@ -1,4 +1,5 @@
 use super::*;
+use srec_core::CoreError;
 
 impl PipelineManager {
     pub async fn enqueue(&self, job: Job) -> Result<String> {
@@ -129,15 +130,15 @@ impl PipelineManager {
             .ok_or_else(|| Error::not_found("Job", id))?;
 
         if job_snapshot.status != JobStatus::Failed && job_snapshot.status != JobStatus::Cancelled {
-            return Err(Error::InvalidStateTransition {
+            return Err(Error::Core(CoreError::InvalidStateTransition {
                 from: job_snapshot.status.as_str().to_string(),
                 to: "PENDING".to_string(),
-            });
+            }));
         }
 
         if job_snapshot.dag_step_execution_id.is_some() {
-            return Err(Error::Validation(
-                "This job belongs to a workflow; retry the workflow so its cancelled branches restart together".to_string(),
+            return Err(Error::validation(
+                "This job belongs to a workflow; retry the workflow so its cancelled branches restart together",
             ));
         }
         self.retry_queued_job(&job_snapshot).await
@@ -223,7 +224,7 @@ impl PipelineManager {
     pub async fn retry_dag(&self, dag_id: &str) -> Result<DagRetryResult> {
         let dag_scheduler = self
             .dag_scheduler()
-            .ok_or_else(|| Error::Validation("DAG scheduler not available".to_string()))?;
+            .ok_or_else(|| Error::validation("DAG scheduler not available"))?;
 
         // The DAG will reach a terminal state again; the entry recorded for its
         // earlier completion must not make `handle_dag_completion` discard the
@@ -303,17 +304,15 @@ impl PipelineManager {
             job_snapshot.status,
             JobStatus::Completed | JobStatus::Failed
         ) {
-            return Err(Error::InvalidStateTransition {
+            return Err(Error::Core(CoreError::InvalidStateTransition {
                 from: job_snapshot.status.as_str().to_string(),
                 to: JobStatus::Cancelled.as_str().to_string(),
-            });
+            }));
         }
 
         let parent_dag = if let Some(step_exec_id) = job_snapshot.dag_step_execution_id.as_deref() {
             let dag_scheduler = self.dag_scheduler.as_ref().ok_or_else(|| {
-                Error::Validation(
-                    "DAG scheduler not configured. Call with_dag_repository() first.".to_string(),
-                )
+                Error::validation("DAG scheduler not configured. Call with_dag_repository() first.")
             })?;
             let dag_id = match job_snapshot.pipeline_id {
                 Some(dag_id) => dag_id,
@@ -404,10 +403,12 @@ impl PipelineManager {
                 // `DagScheduler::cancel_dag_with_completion` re-reads the row, so it rejects a DAG
                 // that turned terminal or that `DagScheduler::delete_dag` removed in the meantime.
                 // Neither leaves anything to stand down.
-                Err(Error::DagAlreadyTerminal { .. } | Error::NotFound { .. }) => Ok(None),
+                Err(Error::DagAlreadyTerminal { .. } | Error::Core(CoreError::NotFound { .. })) => {
+                    Ok(None)
+                }
                 Err(error) => Err(error),
             },
-            Err(Error::NotFound { .. }) => Ok(None),
+            Err(Error::Core(CoreError::NotFound { .. })) => Ok(None),
             Err(error) => Err(error),
         }
     }
@@ -465,8 +466,8 @@ impl PipelineManager {
         if let Some(repo) = &self.preset_repo {
             Ok(repo.create_preset(preset).await?)
         } else {
-            Err(crate::PipelineError::Validation(
-                "Presets not supported (no repository)".to_string(),
+            Err(crate::PipelineError::validation(
+                "Presets not supported (no repository)",
             ))
         }
     }
@@ -476,8 +477,8 @@ impl PipelineManager {
         if let Some(repo) = &self.preset_repo {
             Ok(repo.update_preset(preset).await?)
         } else {
-            Err(crate::PipelineError::Validation(
-                "Presets not supported (no repository)".to_string(),
+            Err(crate::PipelineError::validation(
+                "Presets not supported (no repository)",
             ))
         }
     }
@@ -487,8 +488,8 @@ impl PipelineManager {
         if let Some(repo) = &self.preset_repo {
             Ok(repo.delete_preset(id).await?)
         } else {
-            Err(crate::PipelineError::Validation(
-                "Presets not supported (no repository)".to_string(),
+            Err(crate::PipelineError::validation(
+                "Presets not supported (no repository)",
             ))
         }
     }
@@ -504,16 +505,14 @@ impl PipelineManager {
     ) -> Result<srec_sqlite::models::JobPreset> {
         if let Some(repo) = &self.preset_repo {
             // Get the source preset
-            let source = repo.get_preset(source_id).await?.ok_or_else(|| {
-                crate::PipelineError::NotFound {
-                    entity_type: "Preset".to_string(),
-                    id: source_id.to_string(),
-                }
-            })?;
+            let source = repo
+                .get_preset(source_id)
+                .await?
+                .ok_or_else(|| crate::PipelineError::not_found("Preset", source_id))?;
 
             // Check if the new name already exists
             if repo.name_exists(&new_name, None).await? {
-                return Err(crate::PipelineError::Validation(format!(
+                return Err(crate::PipelineError::validation(format!(
                     "A preset with name '{}' already exists",
                     new_name
                 )));
@@ -534,8 +533,8 @@ impl PipelineManager {
             repo.create_preset(&cloned).await?;
             Ok(cloned)
         } else {
-            Err(crate::PipelineError::Validation(
-                "Presets not supported (no repository)".to_string(),
+            Err(crate::PipelineError::validation(
+                "Presets not supported (no repository)",
             ))
         }
     }

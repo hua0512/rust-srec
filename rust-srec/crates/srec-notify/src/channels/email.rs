@@ -296,7 +296,7 @@ impl NotificationChannel for EmailChannel {
             .get_or_try_init(|| async { self.build_transport() })
             .await?;
         transport.send(message).await.map_err(|error| {
-            crate::NotifyError::Other(format!("Email delivery via SMTP failed: {error}"))
+            crate::NotifyError::other(format!("Email delivery via SMTP failed: {error}"))
         })?;
 
         debug!(

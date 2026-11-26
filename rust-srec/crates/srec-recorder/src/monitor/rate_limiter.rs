@@ -36,7 +36,7 @@ impl RateLimiterConfig {
     /// Create a config for a specific requests-per-second limit.
     pub fn with_rps(rps: f64) -> Result<Self, crate::Error> {
         if !rps.is_finite() || rps <= 0.0 {
-            return Err(crate::Error::Other(format!(
+            return Err(crate::Error::other(format!(
                 "rate limit must be a positive finite number, got {}",
                 rps
             )));

@@ -105,7 +105,7 @@ async fn recovery_command_report_tracks_real_publication_outcomes() {
         let mut repository = TestDagRepository::new();
         repository.before_publish = Some(Box::new(move |_| {
             if fail {
-                Err(DbError::Database("injected publication failure".to_owned()))
+                Err(DbError::database("injected publication failure"))
             } else {
                 Ok(())
             }

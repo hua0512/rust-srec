@@ -3,6 +3,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::{SqlxDagRepository, StepCompletion, writes};
+use srec_core::CoreError;
 use srec_sqlite::begin_immediate;
 use srec_sqlite::models::{
     DagExecutionDbModel, DagExecutionStatus, DagStepExecutionDbModel, DagStepStatus, JobDbModel,
@@ -53,7 +54,7 @@ impl SqlxDagRepository {
                 super::super::job::writes::insert_job(&mut tx, job).await?;
 
                 let Some(step_id) = job.dag_step_execution_id.as_deref() else {
-                    return Err(Error::Validation(format!(
+                    return Err(Error::validation(format!(
                         "Root DAG job {} has no step execution ID",
                         job.id
                     )));
@@ -72,10 +73,10 @@ impl SqlxDagRepository {
                 .execute(&mut *tx)
                 .await?;
                 if attached.rows_affected() != 1 {
-                    return Err(Error::InvalidStateTransition {
+                    return Err(Error::Core(CoreError::InvalidStateTransition {
                         from: format!("unpublished root step {}", step_id),
                         to: format!("PROCESSING(job_id={})", job.id),
-                    });
+                    }));
                 }
             }
 
@@ -117,10 +118,10 @@ impl SqlxDagRepository {
             .await?;
 
             if attached.rows_affected() != 1 {
-                return Err(Error::InvalidStateTransition {
+                return Err(Error::Core(CoreError::InvalidStateTransition {
                     from: format!("unmaterialized active step {}", step_id),
                     to: format!("PROCESSING(job_id={})", job.id),
-                });
+                }));
             }
 
             tx.commit().await?;

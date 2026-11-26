@@ -54,6 +54,7 @@ use crate::credentials::{CredentialExecutionService, CredentialValidity, Operati
 use crate::proxies::ResolvedRoute;
 use crate::streamer::StreamerManager;
 use crate::streamer::platform_metadata::StoredPlatformMetadata;
+use srec_core::CoreError;
 use srec_core::domain::notification::{BigoNotificationProblem, RuntimeAlert, RuntimeAlertSink};
 use srec_core::utils::task_supervisor::TaskSupervisor;
 use srec_sqlite::repositories::config::SqlxConfigRepository;
@@ -643,7 +644,7 @@ impl BigoNotifications {
             .await
         {
             Ok(platform) => platform,
-            Err(crate::Error::NotFound { .. }) => {
+            Err(crate::Error::Core(CoreError::NotFound { .. })) => {
                 self.listener.lock().platform_id = None;
                 self.rule.lock().set_streamers(HashMap::new());
                 self.status_changed.notify_one();
@@ -669,7 +670,9 @@ impl BigoNotifications {
                             let route = repository.account_route(&profile, None).await?;
                             Ok(Some((profile.version, route)))
                         }
-                        Ok(_) | Err(srec_sqlite::DbError::NotFound { .. }) => Ok(None),
+                        Ok(_) | Err(srec_sqlite::DbError::Core(CoreError::NotFound { .. })) => {
+                            Ok(None)
+                        }
                         Err(error) => Err(error),
                     }
                 };

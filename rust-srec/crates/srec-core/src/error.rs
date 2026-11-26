@@ -1,4 +1,11 @@
 //! Storage-free core error types shared across layers.
+//!
+//! Every backend crate has its own error type. It holds the failures that
+//! originate in that crate, a `Core` variant for the shared kinds below, and
+//! one wrapper variant for each lower crate's own failures that it propagates.
+//! Converting a lower error moves its shared kind into the higher error's
+//! `Core` and its database failure into the higher error's `Db`, so code that
+//! inspects an error finds each kind in one place at every layer.
 
 use std::path::Path;
 use thiserror::Error;
@@ -9,12 +16,6 @@ pub type CoreResult<T> = std::result::Result<T, CoreError>;
 /// Storage-free error type for domain logic, utilities, and cross-layer ports.
 #[derive(Error, Debug)]
 pub enum CoreError {
-    #[error(transparent)]
-    ManualSplit(#[from] pipeline_common::ManualSplitError),
-
-    #[error("Recorder feedback capacity is busy for {streamer_id}; retry startup")]
-    RecorderFeedbackBusy { streamer_id: String },
-
     #[error("Database error: {0}")]
     Database(String),
 
@@ -33,11 +34,6 @@ pub enum CoreError {
     #[error("{0}")]
     Conflict(String),
 
-    /// A DAG operation that only applies to a live execution was attempted on
-    /// one that already reached a terminal status.
-    #[error("DAG {dag_id} is already in a terminal state")]
-    DagAlreadyTerminal { dag_id: String },
-
     #[error("Configuration error: {0}")]
     Configuration(String),
 
@@ -51,9 +47,6 @@ pub enum CoreError {
         #[source]
         source: std::io::Error,
     },
-
-    #[error("Monitor error: {0}")]
-    Monitor(String),
 
     #[error(transparent)]
     CredentialProfile(#[from] crate::domain::credential::ProfileError),
@@ -73,17 +66,8 @@ pub enum CoreError {
     #[error("{0}")]
     NonRetryablePipeline(String),
 
-    #[error("API error: {0}")]
-    ApiError(String),
-
     #[error("{0}")]
     Other(String),
-
-    #[error("{channel} notification delivery failed: {message}")]
-    NotificationDelivery {
-        channel: &'static str,
-        message: String,
-    },
 
     #[error("Duplicate URL: a streamer with URL '{0}' already exists")]
     DuplicateUrl(String),
@@ -136,6 +120,14 @@ impl CoreError {
         }
     }
 
+    pub fn database(msg: impl Into<String>) -> Self {
+        Self::Database(msg.into())
+    }
+
+    pub fn other(msg: impl Into<String>) -> Self {
+        Self::Other(msg.into())
+    }
+
     /// Whether this error represents a permanent or invalid-input failure that
     /// a workflow step's automatic retry policy should not re-run.
     pub fn is_non_retryable_step_error(&self) -> bool {
@@ -153,4 +145,83 @@ impl CoreError {
                 )
         )
     }
+}
+
+#[doc(hidden)]
+pub use serde_json::Error as __SerdeJsonError;
+
+/// Gives a crate error type that wraps [`CoreError`] the same constructors as
+/// [`CoreError`] (`not_found`, `validation`, `conflict`, `config`,
+/// `duplicate_url`, `io_path`, `database`, `other`) and `From` impls for the
+/// errors that [`CoreError`] absorbs (`serde_json::Error`, `std::io::Error`,
+/// `ProfileError`, `ProxyError`).
+///
+/// Everything it generates builds the [`CoreError`] and converts it with the
+/// type's `From<CoreError>` impl, so a shared kind always lands in that
+/// type's `Core` variant.
+#[macro_export]
+macro_rules! impl_core_error_wrapper {
+    ($error:ty) => {
+        impl $error {
+            pub fn not_found(entity_type: impl Into<String>, id: impl Into<String>) -> Self {
+                $crate::CoreError::not_found(entity_type, id).into()
+            }
+
+            pub fn validation(msg: impl Into<String>) -> Self {
+                $crate::CoreError::validation(msg).into()
+            }
+
+            pub fn conflict(msg: impl Into<String>) -> Self {
+                $crate::CoreError::conflict(msg).into()
+            }
+
+            pub fn config(msg: impl Into<String>) -> Self {
+                $crate::CoreError::config(msg).into()
+            }
+
+            pub fn duplicate_url(url: impl Into<String>) -> Self {
+                $crate::CoreError::duplicate_url(url).into()
+            }
+
+            pub fn io_path(
+                op: &'static str,
+                path: &::std::path::Path,
+                source: ::std::io::Error,
+            ) -> Self {
+                $crate::CoreError::io_path(op, path, source).into()
+            }
+
+            pub fn database(msg: impl Into<String>) -> Self {
+                $crate::CoreError::database(msg).into()
+            }
+
+            pub fn other(msg: impl Into<String>) -> Self {
+                $crate::CoreError::other(msg).into()
+            }
+        }
+
+        impl From<$crate::error::__SerdeJsonError> for $error {
+            fn from(error: $crate::error::__SerdeJsonError) -> Self {
+                $crate::CoreError::from(error).into()
+            }
+        }
+
+        impl From<::std::io::Error> for $error {
+            fn from(error: ::std::io::Error) -> Self {
+                $crate::CoreError::from(error).into()
+            }
+        }
+
+        impl From<$crate::domain::credential::ProfileError> for $error {
+            fn from(error: $crate::domain::credential::ProfileError) -> Self {
+                $crate::CoreError::from(error).into()
+            }
+        }
+
+        impl From<$crate::domain::proxy::ProxyError> for $error {
+            fn from(error: $crate::domain::proxy::ProxyError) -> Self {
+                $crate::CoreError::from(error).into()
+            }
+        }
+    };
 }

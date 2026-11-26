@@ -38,10 +38,11 @@ enum Component {
 
 /// Classification of a file or `crate::...` path under `rust-srec/src/`.
 ///
-/// `ErrorRoot` represents the single-crate error carrier (`src/error.rs`,
-/// `crate::Error`, `crate::Result`) that every layer returns while crates are
-/// still co-located; its own outward dependencies are checked separately so the
-/// architectural [`Component`] graph stays strictly acyclic.
+/// `ErrorRoot` represents the application error (`src/error.rs`,
+/// `crate::Error`, `crate::Result`), a re-export of the API crate's
+/// `ServerError` that every root module returns; its own outward dependencies
+/// are checked separately so the architectural [`Component`] graph stays
+/// strictly acyclic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ModuleSlot {
     Layer(Component),
@@ -1038,9 +1039,10 @@ fn check_layer_edge(
     match (source_slot, target_slot) {
         // Every layer returns `crate::Error` / `crate::Result` while hosted in `rust-srec`.
         (_, ModuleSlot::ErrorRoot) => {}
-        // `src/error.rs` may only reference Layer 0 types (`Core`, `Sqlite`).
+        // `src/error.rs` may only reference Layer 0 types (`Core`, `Sqlite`) and
+        // the API crate, whose `ServerError` wraps every lower crate's error.
         (ModuleSlot::ErrorRoot, ModuleSlot::Layer(target)) => {
-            if !matches!(target, Component::Core | Component::Sqlite) {
+            if !matches!(target, Component::Core | Component::Sqlite | Component::Api) {
                 violations.push(format!(
                     "{display_path}: error_root -> {} via {via}",
                     target.name()

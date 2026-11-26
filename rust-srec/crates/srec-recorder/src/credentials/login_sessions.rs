@@ -7,6 +7,7 @@ use sqlx::SqlitePool;
 use tokio::sync::Mutex;
 
 use crate::{Error, Result};
+use srec_core::CoreError;
 use srec_sqlite::repositories::credential_profiles::{self, CredentialProfileRepository};
 
 use super::{CredentialMaterial, ProfileError, QrLoginPoll};
@@ -286,11 +287,11 @@ impl CredentialLoginSessions {
             Ok(target) => target,
             // The account, its platform or the proxy it signs in through is
             // gone or changed.
-            Err(
-                Error::CredentialProfile(_)
-                | Error::NotFound { .. }
-                | Error::Proxy(crate::proxies::ProxyError::Missing(_)),
-            ) => {
+            Err(Error::Core(
+                CoreError::CredentialProfile(_)
+                | CoreError::NotFound { .. }
+                | CoreError::Proxy(crate::proxies::ProxyError::Missing(_)),
+            )) => {
                 return self.terminal(login_id, "conflict").await;
             }
             Err(error) => return Err(error),
@@ -411,11 +412,11 @@ impl CredentialLoginSessions {
         };
         let profile = match changed {
             Ok(profile) => profile,
-            Err(
-                srec_sqlite::DbError::CredentialProfile(_)
-                | srec_sqlite::DbError::NotFound { .. }
-                | srec_sqlite::DbError::Proxy(crate::proxies::ProxyError::Missing(_)),
-            ) => {
+            Err(srec_sqlite::DbError::Core(
+                CoreError::CredentialProfile(_)
+                | CoreError::NotFound { .. }
+                | CoreError::Proxy(crate::proxies::ProxyError::Missing(_)),
+            )) => {
                 sqlx::query("UPDATE credential_login_sessions SET state = 'conflict', provider_auth_code = '' WHERE id = ?").bind(login_id).execute(&mut *tx).await?;
                 tx.commit().await?;
                 return Ok(CredentialLoginReceipt {
@@ -441,6 +442,7 @@ impl CredentialLoginSessions {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use srec_core::CoreError;
 
     async fn fixture() -> (
         SqlitePool,
@@ -752,7 +754,10 @@ mod tests {
             panic!("QR login into a retiring profile must be refused");
         };
         assert!(
-            matches!(error, Error::CredentialProfile(ProfileError::SourceChanged)),
+            matches!(
+                error,
+                Error::Core(CoreError::CredentialProfile(ProfileError::SourceChanged))
+            ),
             "{error}"
         );
         let receipt = service

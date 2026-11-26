@@ -43,10 +43,10 @@ impl NotificationChannel for RecordingChannel {
         let (answer, answered) = oneshot::channel();
         self.held
             .send((message.clone(), answer))
-            .map_err(|_| NotifyError::Other("test stopped listening".into()))?;
+            .map_err(|_| NotifyError::other("test stopped listening"))?;
         match answered.await {
             Ok(true) => Ok(()),
-            _ => Err(NotifyError::Other(format!("{message} failed"))),
+            _ => Err(NotifyError::other(format!("{message} failed"))),
         }
     }
 }

@@ -498,7 +498,7 @@ impl ServiceContainer {
 
     /// Wait until a critical runtime task fails.
     pub async fn wait_for_runtime_failure(&self) -> crate::Error {
-        crate::Error::Other(self.task_supervisor.wait_for_failure().await.to_string())
+        crate::Error::other(self.task_supervisor.wait_for_failure().await.to_string())
     }
 
     /// Get the notification service.

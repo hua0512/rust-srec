@@ -172,7 +172,7 @@ impl ApiServerHost {
         if !task_supervisor.spawn_critical(server_task, async move {
             server.run_with_listener(listener).await
         }) {
-            return Err(crate::Error::Other(format!(
+            return Err(crate::Error::other(format!(
                 "{server_task} task was rejected during shutdown"
             )));
         }
@@ -271,7 +271,7 @@ impl ApiServerHost {
                 &audience,
                 Some(auth_config.access_token_expiration_secs),
             )
-            .map_err(|e| crate::Error::Configuration(e.to_string()))?,
+            .map_err(|e| crate::Error::config(e.to_string()))?,
         );
 
         let auth_svc = self.database_auth_service(
@@ -354,6 +354,7 @@ impl ApiServerHost {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use srec_core::CoreError;
 
     #[test]
     fn parse_auth_disabled_accepts_explicit_boolean_values() {
@@ -367,13 +368,19 @@ mod tests {
     #[test]
     fn parse_auth_disabled_rejects_invalid_values() {
         let result = parse_auth_disabled(Some("yes"));
-        assert!(matches!(result, Err(crate::Error::Configuration(_))));
+        assert!(matches!(
+            result,
+            Err(crate::Error::Core(CoreError::Configuration(_)))
+        ));
     }
 
     #[test]
     fn missing_jwt_fails_closed_by_default() {
         let result = validate_auth_mode(false, false, "127.0.0.1");
-        assert!(matches!(result, Err(crate::Error::Configuration(_))));
+        assert!(matches!(
+            result,
+            Err(crate::Error::Core(CoreError::Configuration(_)))
+        ));
     }
 
     #[test]
@@ -392,7 +399,7 @@ mod tests {
         for bind_address in ["0.0.0.0", "192.168.1.10", "::", "localhost"] {
             let result = validate_auth_mode(false, true, bind_address);
             assert!(
-                matches!(result, Err(crate::Error::Configuration(_))),
+                matches!(result, Err(crate::Error::Core(CoreError::Configuration(_)))),
                 "{bind_address} must not allow unauthenticated startup"
             );
         }

@@ -73,7 +73,7 @@ struct CredentialProfileHealthRow {
 
 fn decode_validity(value: &str) -> Result<CredentialValidity> {
     CredentialValidity::parse(value).ok_or_else(|| {
-        Error::Database(format!(
+        Error::database(format!(
             "invalid credential_profile_health.validity: {value:?}"
         ))
     })
@@ -83,7 +83,7 @@ fn decode_reason_code(value: Option<String>) -> Result<Option<HealthReason>> {
     value
         .map(|code| {
             HealthReason::parse(&code).ok_or_else(|| {
-                Error::Database(format!(
+                Error::database(format!(
                     "invalid credential_profile_health.reason_code: {code:?}"
                 ))
             })
@@ -539,7 +539,7 @@ impl CredentialProfileRepository {
             .clone()
             .acquire_owned()
             .await
-            .map_err(|_| Error::Other("Credential writer is shutting down".into()))?;
+            .map_err(|_| Error::other("Credential writer is shutting down"))?;
         crate::committed_writer::own_operation(self.supervisor.clone(), async move {
             let _permit = permit;
             write.await

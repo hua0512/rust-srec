@@ -34,8 +34,8 @@ pub trait RefreshTokenRepository: Send + Sync {
         _token: &RefreshTokenDbModel,
         _expected_password_hash: &str,
     ) -> Result<bool> {
-        Err(crate::Error::Other(
-            "Session-aware login is not supported by this repository".to_owned(),
+        Err(crate::Error::other(
+            "Session-aware login is not supported by this repository",
         ))
     }
 
@@ -48,8 +48,8 @@ pub trait RefreshTokenRepository: Send + Sync {
     }
 
     async fn revoke_session(&self, _user_id: &str, _session_id: &str) -> Result<()> {
-        Err(crate::Error::Other(
-            "Session revocation is not supported by this repository".to_owned(),
+        Err(crate::Error::other(
+            "Session revocation is not supported by this repository",
         ))
     }
 
@@ -59,8 +59,8 @@ pub trait RefreshTokenRepository: Send + Sync {
         _replacement: &RefreshTokenDbModel,
         _session_expires_at: i64,
     ) -> Result<RefreshTokenRotation> {
-        Err(crate::Error::Other(
-            "Session-aware rotation is not supported by this repository".to_owned(),
+        Err(crate::Error::other(
+            "Session-aware rotation is not supported by this repository",
         ))
     }
 
@@ -88,8 +88,8 @@ pub trait RefreshTokenRepository: Send + Sync {
     /// Apply reuse policy only while the replayed lineage remains open. The session check
     /// and user-wide revocation must share a transaction so explicit logout cannot escalate.
     async fn revoke_all_for_active_session(&self, _user_id: &str, _session_id: &str) -> Result<()> {
-        Err(crate::Error::Other(
-            "Conditional session revocation is not supported by this repository".to_owned(),
+        Err(crate::Error::other(
+            "Conditional session revocation is not supported by this repository",
         ))
     }
 

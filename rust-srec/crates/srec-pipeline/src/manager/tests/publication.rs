@@ -1,6 +1,7 @@
 use super::*;
 
 use crate::repositories::{SqlxDagRepository, SqlxJobRepository};
+use srec_core::CoreError;
 use srec_sqlite::models::JobPreset;
 use srec_sqlite::repositories::SqliteJobPresetRepository;
 
@@ -32,9 +33,7 @@ async fn assert_context_publication_boundary(paired: bool, fail: bool) {
         }
         observed_at_publish.fetch_add(1, Ordering::SeqCst);
         if fail {
-            Err(DbError::Database(
-                "injected publication failure".to_string(),
-            ))
+            Err(DbError::database("injected publication failure"))
         } else {
             Ok(())
         }
@@ -199,7 +198,7 @@ async fn malformed_preset_prevents_root_publication_and_context_registration() {
         )
         .await
         .unwrap_err();
-    assert!(matches!(error, Error::Validation(_)));
+    assert!(matches!(error, Error::Core(CoreError::Validation(_))));
     let message = error.to_string();
     assert!(message.contains(&preset.name));
     assert!(!message.contains("private-preset-secret"));

@@ -63,8 +63,8 @@ impl GlobalConfigCache {
                 return Ok(value);
             }
         }
-        Err(Error::Other(
-            "Global configuration changed during refresh; retry request".to_string(),
+        Err(Error::other(
+            "Global configuration changed during refresh; retry request",
         ))
     }
 }
@@ -117,7 +117,7 @@ mod tests {
         cache.state.write().value.as_mut().unwrap().0 = Instant::now() - GLOBAL_CONFIG_TTL;
         assert!(
             cache
-                .get_or_load(|| async { Err(Error::Other("database unavailable".to_string())) })
+                .get_or_load(|| async { Err(Error::other("database unavailable")) })
                 .await
                 .is_err()
         );
@@ -125,7 +125,7 @@ mod tests {
         cache.invalidate();
         assert!(
             cache
-                .get_or_load(|| async { Err(Error::Other("database unavailable".to_string())) })
+                .get_or_load(|| async { Err(Error::other("database unavailable")) })
                 .await
                 .is_err()
         );

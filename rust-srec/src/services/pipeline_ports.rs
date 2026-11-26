@@ -18,47 +18,22 @@ use crate::pipeline::{
     SessionPipelineConfig, SessionPipelineConfigPort,
 };
 use crate::recorder::{PipelineDrainStatus, RecorderPipelinePort};
+use srec_core::CoreError;
 use srec_recorder::{RecorderError, RecorderResult};
 
 fn to_pipeline_error(error: RecorderError) -> PipelineError {
     match error {
-        RecorderError::DatabaseSqlx(e) => PipelineError::DatabaseSqlx(e),
-        RecorderError::Database(msg) => PipelineError::Database(msg),
-        RecorderError::Db(e) => PipelineError::from(e),
-        RecorderError::Core(e) => PipelineError::from(e),
-        RecorderError::Serialization(e) => PipelineError::Serialization(e),
-        RecorderError::InvalidStateTransition { from, to } => {
-            PipelineError::InvalidStateTransition { from, to }
-        }
-        RecorderError::NotFound { entity_type, id } => PipelineError::NotFound { entity_type, id },
-        RecorderError::Validation(msg) => PipelineError::Validation(msg),
-        RecorderError::Conflict(msg) => PipelineError::Conflict(msg),
-        RecorderError::Configuration(msg) => PipelineError::Configuration(msg),
-        RecorderError::Io(e) => PipelineError::Io(e),
-        RecorderError::IoPath { op, path, source } => PipelineError::IoPath { op, path, source },
-        RecorderError::Proxy(e) => PipelineError::Proxy(e),
-        other => PipelineError::Other(other.to_string()),
+        RecorderError::Core(error) => PipelineError::Core(error),
+        RecorderError::Db(error) => PipelineError::from(error),
+        other => PipelineError::other(other.to_string()),
     }
 }
 
 fn pipeline_to_recorder_error(error: PipelineError) -> RecorderError {
     match error {
-        PipelineError::DatabaseSqlx(e) => RecorderError::DatabaseSqlx(e),
-        PipelineError::Database(msg) => RecorderError::Database(msg),
-        PipelineError::Db(e) => RecorderError::from(e),
-        PipelineError::Core(e) => RecorderError::from(e),
-        PipelineError::Serialization(e) => RecorderError::Serialization(e),
-        PipelineError::InvalidStateTransition { from, to } => {
-            RecorderError::InvalidStateTransition { from, to }
-        }
-        PipelineError::NotFound { entity_type, id } => RecorderError::NotFound { entity_type, id },
-        PipelineError::Validation(msg) => RecorderError::Validation(msg),
-        PipelineError::Conflict(msg) => RecorderError::Conflict(msg),
-        PipelineError::Configuration(msg) => RecorderError::Configuration(msg),
-        PipelineError::Io(e) => RecorderError::Io(e),
-        PipelineError::IoPath { op, path, source } => RecorderError::IoPath { op, path, source },
-        PipelineError::Proxy(e) => RecorderError::Proxy(e),
-        other => RecorderError::Other(other.to_string()),
+        PipelineError::Core(error) => RecorderError::Core(error),
+        PipelineError::Db(error) => RecorderError::from(error),
+        other => RecorderError::other(other.to_string()),
     }
 }
 
@@ -112,7 +87,7 @@ where
             .await
         {
             Ok(platform) => Ok(Some(platform.platform_name)),
-            Err(RecorderError::NotFound { .. }) => Ok(None),
+            Err(RecorderError::Core(CoreError::NotFound { .. })) => Ok(None),
             Err(error) => Err(to_pipeline_error(error)),
         }
     }
@@ -266,7 +241,7 @@ impl PipelineSessionPort for DatabasePipelineSessionPort {
     ) -> PipelineResult<Option<PipelineSessionSummary>> {
         match self.session_repo.get_session(session_id).await {
             Ok(session) => Ok(Some(to_session_summary(session))),
-            Err(srec_sqlite::DbError::NotFound { .. }) => Ok(None),
+            Err(srec_sqlite::DbError::Core(CoreError::NotFound { .. })) => Ok(None),
             Err(error) => Err(error.into()),
         }
     }
@@ -317,7 +292,7 @@ impl PipelineSessionPort for DatabasePipelineSessionPort {
                     .and_then(|entries| entries.into_iter().last().map(|entry| entry.title));
                 Ok(Some(PipelineSessionMeta { title, started_at }))
             }
-            Err(srec_sqlite::DbError::NotFound { .. }) => Ok(None),
+            Err(srec_sqlite::DbError::Core(CoreError::NotFound { .. })) => Ok(None),
             Err(error) => Err(error.into()),
         }
     }
@@ -331,7 +306,7 @@ impl PipelineSessionPort for DatabasePipelineSessionPort {
         };
         let streamer = match streamer_repo.get_streamer(streamer_id).await {
             Ok(streamer) => streamer,
-            Err(srec_sqlite::DbError::NotFound { .. }) => return Ok(None),
+            Err(srec_sqlite::DbError::Core(CoreError::NotFound { .. })) => return Ok(None),
             Err(error) => return Err(error.into()),
         };
         let platform = if let Some(config_port) = self.config_port.as_ref() {

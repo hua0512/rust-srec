@@ -326,7 +326,7 @@ impl NotificationChannel for ControlledChannel {
         self.started.send((self.key, release)).unwrap();
         released
             .await
-            .map_err(|_| crate::NotifyError::Other("controlled send abandoned".into()))
+            .map_err(|_| crate::NotifyError::other("controlled send abandoned"))
     }
 }
 

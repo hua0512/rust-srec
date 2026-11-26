@@ -78,19 +78,19 @@ impl FilterRepository for CountingRepository {
         }
     }
     async fn get_filter(&self, _id: &str) -> Result<FilterDbModel> {
-        Err(Error::Other("unused read".into()))
+        Err(Error::other("unused read"))
     }
     async fn create_filter(&self, _filter: &FilterDbModel) -> Result<()> {
-        Err(Error::Other("read-only fixture".into()))
+        Err(Error::other("read-only fixture"))
     }
     async fn update_filter(&self, _filter: &FilterDbModel) -> Result<()> {
-        Err(Error::Other("read-only fixture".into()))
+        Err(Error::other("read-only fixture"))
     }
     async fn delete_filter(&self, _id: &str) -> Result<()> {
-        Err(Error::Other("read-only fixture".into()))
+        Err(Error::other("read-only fixture"))
     }
     async fn delete_filters_for_streamer(&self, _id: &str) -> Result<()> {
-        Err(Error::Other("read-only fixture".into()))
+        Err(Error::other("read-only fixture"))
     }
 }
 

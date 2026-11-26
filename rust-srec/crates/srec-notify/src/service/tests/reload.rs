@@ -232,9 +232,7 @@ impl NotificationChannel for BlockedChannel {
     async fn send(&self, _: &NotificationEvent) -> Result<()> {
         self.release.notified().await;
         if self.fail {
-            Err(crate::NotifyError::Other(
-                "injected delivery failure".to_owned(),
-            ))
+            Err(crate::NotifyError::other("injected delivery failure"))
         } else {
             Ok(())
         }

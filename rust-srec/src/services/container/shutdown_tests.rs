@@ -197,7 +197,7 @@ async fn hard_cap_retains_manager_and_import_commit_publication() {
                                 .import_config(config, ImportMode::Merge, None)
                                 .await
                                 .map(|_| ())
-                                .map_err(|error| crate::Error::Other(error.to_string())),
+                                .map_err(|error| crate::Error::other(error.to_string())),
                         };
                         let _ = reply.send(result);
                     })

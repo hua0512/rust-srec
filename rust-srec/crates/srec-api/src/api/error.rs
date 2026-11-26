@@ -8,6 +8,11 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::Serialize;
+use srec_core::CoreError;
+use srec_notify::NotifyError;
+use srec_pipeline::PipelineError;
+use srec_recorder::RecorderError;
+use srec_sqlite::DbError;
 
 use crate::api::auth_service::AuthError;
 use crate::error::Error;
@@ -142,26 +147,26 @@ impl IntoResponse for ApiError {
 impl From<Error> for ApiError {
     fn from(err: Error) -> Self {
         match err {
-            Error::ManualSplit(error) => {
-                let code = match error {
-                    pipeline_common::ManualSplitError::Unavailable => "SPLIT_UNAVAILABLE",
-                    pipeline_common::ManualSplitError::Closed => "DOWNLOAD_STOPPING",
-                };
-                ApiError::new(StatusCode::CONFLICT, code, error.to_string())
-            }
-            Error::RecorderFeedbackBusy { .. } => ApiError::new(
-                StatusCode::SERVICE_UNAVAILABLE,
-                // Wire error code retained for compatibility with API clients.
-                "SCHEDULER_FEEDBACK_BUSY",
-                "Recorder feedback capacity is busy; retry recording admission",
-            ),
-            Error::Serialization(error) => ApiError::from(error),
-            Error::NotFound { entity_type, id } => {
+            Error::Core(error) => Self::from(error),
+            Error::Db(error) => Self::from(error),
+            Error::Pipeline(error) => Self::from(error),
+            Error::Recorder(error) => Self::from(error),
+            Error::Notify(error) => Self::from(error),
+            Error::ApiError(msg) => ApiError::bad_request(msg),
+        }
+    }
+}
+
+impl From<CoreError> for ApiError {
+    fn from(err: CoreError) -> Self {
+        match err {
+            CoreError::Serialization(error) => ApiError::from(error),
+            CoreError::NotFound { entity_type, id } => {
                 ApiError::not_found(format!("{} with id '{}' not found", entity_type, id))
             }
-            Error::Validation(msg) => ApiError::validation(msg),
-            Error::Conflict(msg) => ApiError::conflict(msg),
-            Error::CredentialProfile(error) => {
+            CoreError::Validation(msg) => ApiError::validation(msg),
+            CoreError::Conflict(msg) => ApiError::conflict(msg),
+            CoreError::CredentialProfile(error) => {
                 use crate::credentials::ProfileError;
                 match error {
                     ProfileError::Referenced(references) => ApiError::new(
@@ -235,14 +240,90 @@ impl From<Error> for ApiError {
                     })),
                 }
             }
-            Error::Proxy(error) => ApiError::from(error),
-            Error::CredentialUnavailable(unavailable) => ApiError::new(
+            CoreError::Proxy(error) => ApiError::from(error),
+            CoreError::CredentialUnavailable(unavailable) => ApiError::new(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "CREDENTIAL_UNAVAILABLE",
                 "No eligible credentials are currently available",
             )
             .with_details(serde_json::json!({"reason": unavailable.reason})),
-            Error::Extractor(error) => {
+            CoreError::Configuration(msg) => ApiError::bad_request(msg),
+            CoreError::Database(msg) => {
+                tracing::error!("Database error: {}", msg);
+                ApiError::internal("Database error occurred")
+            }
+            CoreError::InvalidStateTransition { from, to } => {
+                ApiError::conflict(format!("Cannot transition from {} to {}", from, to))
+            }
+            CoreError::DuplicateUrl(url) => {
+                ApiError::conflict(format!("A streamer with URL '{}' already exists", url))
+            }
+            CoreError::PresetInUse { ref users, .. } => {
+                let details = serde_json::json!({ "references": users });
+                ApiError::new(StatusCode::CONFLICT, "PRESET_IN_USE", err.to_string())
+                    .with_details(details)
+            }
+            CoreError::Io(e) => {
+                tracing::error!("IO error: {}", e);
+                ApiError::internal("IO error occurred")
+            }
+            CoreError::IoPath { op, path, source } => {
+                tracing::error!("IO error while {} '{}': {}", op, path, source);
+                ApiError::internal("IO error occurred")
+            }
+            CoreError::PipelineError(_)
+            | CoreError::NonRetryablePipeline(_)
+            | CoreError::Other(_) => unexpected(&err),
+        }
+    }
+}
+
+impl From<DbError> for ApiError {
+    fn from(err: DbError) -> Self {
+        match err {
+            DbError::Core(error) => Self::from(error),
+            DbError::DatabaseSqlx(e) => {
+                tracing::error!("Database error: {}", e);
+                ApiError::internal("Database error occurred")
+            }
+            DbError::FilterSnapshot(_) => unexpected(&err),
+        }
+    }
+}
+
+impl From<PipelineError> for ApiError {
+    fn from(err: PipelineError) -> Self {
+        match err {
+            PipelineError::Core(error) => Self::from(error),
+            PipelineError::Db(error) => Self::from(error),
+            PipelineError::DagAlreadyTerminal { dag_id } => ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                DAG_ALREADY_TERMINAL_CODE,
+                format!("DAG {} is already in a terminal state", dag_id),
+            ),
+        }
+    }
+}
+
+impl From<RecorderError> for ApiError {
+    fn from(err: RecorderError) -> Self {
+        match err {
+            RecorderError::Core(error) => Self::from(error),
+            RecorderError::Db(error) => Self::from(error),
+            RecorderError::ManualSplit(error) => {
+                let code = match error {
+                    pipeline_common::ManualSplitError::Unavailable => "SPLIT_UNAVAILABLE",
+                    pipeline_common::ManualSplitError::Closed => "DOWNLOAD_STOPPING",
+                };
+                ApiError::new(StatusCode::CONFLICT, code, error.to_string())
+            }
+            RecorderError::RecorderFeedbackBusy { .. } => ApiError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                // Wire error code retained for compatibility with API clients.
+                "SCHEDULER_FEEDBACK_BUSY",
+                "Recorder feedback capacity is busy; retry recording admission",
+            ),
+            RecorderError::Extractor(error) => {
                 use platforms_parser::extractor::error::ExtractorError;
                 match error {
                     ExtractorError::Authentication { .. } => ApiError::new(
@@ -273,76 +354,26 @@ impl From<Error> for ApiError {
                     ),
                 }
             }
-            Error::DagAlreadyTerminal { ref dag_id } => ApiError::new(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                DAG_ALREADY_TERMINAL_CODE,
-                format!("DAG {} is already in a terminal state", dag_id),
-            ),
-            Error::Configuration(msg) => ApiError::bad_request(msg),
-            Error::DatabaseSqlx(e) => {
-                tracing::error!("Database error: {}", e);
-                ApiError::internal("Database error occurred")
-            }
-            Error::Database(msg) => {
-                tracing::error!("Database error: {}", msg);
-                ApiError::internal("Database error occurred")
-            }
-            Error::InvalidStateTransition { from, to } => {
-                ApiError::conflict(format!("Cannot transition from {} to {}", from, to))
-            }
-            Error::DuplicateUrl(url) => {
-                ApiError::conflict(format!("A streamer with URL '{}' already exists", url))
-            }
-            Error::PresetInUse { ref users, .. } => {
-                let details = serde_json::json!({ "references": users });
-                ApiError::new(StatusCode::CONFLICT, "PRESET_IN_USE", err.to_string())
-                    .with_details(details)
-            }
-            Error::Io(e) => {
-                tracing::error!("IO error: {}", e);
-                ApiError::internal("IO error occurred")
-            }
-            Error::IoPath { op, path, source } => {
-                tracing::error!("IO error while {} '{}': {}", op, path, source);
-                ApiError::internal("IO error occurred")
-            }
-            Error::ApiError(msg) => ApiError::bad_request(msg),
-            _ => {
-                tracing::error!("Unexpected error: {}", err);
-                ApiError::internal("An unexpected error occurred")
-            }
+            RecorderError::Monitor(_) | RecorderError::DanmakuError(_) => unexpected(&err),
         }
     }
 }
 
-impl From<srec_core::CoreError> for ApiError {
-    fn from(err: srec_core::CoreError) -> Self {
-        Self::from(Error::from(err))
+impl From<NotifyError> for ApiError {
+    fn from(err: NotifyError) -> Self {
+        match err {
+            NotifyError::Core(error) => Self::from(error),
+            NotifyError::Db(error) => Self::from(error),
+            NotifyError::NotificationDelivery { .. } => unexpected(&err),
+        }
     }
 }
 
-impl From<srec_sqlite::DbError> for ApiError {
-    fn from(err: srec_sqlite::DbError) -> Self {
-        Self::from(Error::from(err))
-    }
-}
-
-impl From<srec_notify::NotifyError> for ApiError {
-    fn from(err: srec_notify::NotifyError) -> Self {
-        Self::from(Error::from(err))
-    }
-}
-
-impl From<srec_pipeline::PipelineError> for ApiError {
-    fn from(err: srec_pipeline::PipelineError) -> Self {
-        Self::from(Error::from(err))
-    }
-}
-
-impl From<srec_recorder::RecorderError> for ApiError {
-    fn from(err: srec_recorder::RecorderError) -> Self {
-        Self::from(Error::from(err))
-    }
+/// Logs a failure that has no client-facing mapping and answers with a
+/// generic 500, so internal details stay out of the response.
+fn unexpected(err: &dyn std::fmt::Display) -> ApiError {
+    tracing::error!("Unexpected error: {}", err);
+    ApiError::internal("An unexpected error occurred")
 }
 
 impl From<crate::proxies::ProxyError> for ApiError {
@@ -407,13 +438,13 @@ impl From<serde_json::Error> for ApiError {
 
 impl From<std::io::Error> for ApiError {
     fn from(error: std::io::Error) -> Self {
-        Self::from(Error::Io(error))
+        Self::from(CoreError::Io(error))
     }
 }
 
 impl From<sqlx::Error> for ApiError {
     fn from(error: sqlx::Error) -> Self {
-        Self::from(Error::DatabaseSqlx(error))
+        Self::from(DbError::DatabaseSqlx(error))
     }
 }
 
@@ -514,19 +545,18 @@ mod tests {
         let errors = [
             ApiError::from(stored_json),
             ApiError::from(std::io::Error::other("private-filesystem-detail")),
-            ApiError::from(Error::Database("private-database-detail".to_string())),
-            ApiError::from(Error::Other("private-service-detail".to_string())),
+            ApiError::from(Error::database("private-database-detail")),
+            ApiError::from(Error::other("private-service-detail")),
         ];
         for error in errors {
             assert_eq!(error.status, StatusCode::INTERNAL_SERVER_ERROR);
             assert!(!error.message.contains("secret"));
             assert!(!error.message.contains("private"));
         }
-        let validation =
-            ApiError::from(Error::Validation("At most 100 IDs are allowed".to_string()));
+        let validation = ApiError::from(Error::validation("At most 100 IDs are allowed"));
         assert_eq!(validation.status, StatusCode::UNPROCESSABLE_ENTITY);
         assert_eq!(validation.message, "At most 100 IDs are allowed");
-        let per_streamer = ApiError::from(srec_sqlite::DbError::CredentialProfile(
+        let per_streamer = ApiError::from(srec_sqlite::DbError::from(
             crate::credentials::ProfileError::PerStreamerOnly("per streamer"),
         ));
         assert_eq!(per_streamer.status, StatusCode::UNPROCESSABLE_ENTITY);

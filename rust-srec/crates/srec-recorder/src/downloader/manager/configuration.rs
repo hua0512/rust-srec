@@ -11,6 +11,7 @@ use crate::downloader::engine::{
     DownloadEngine, EngineStartError, EngineType, FfmpegEngine, MesioEngine, StreamlinkEngine,
 };
 use crate::downloader::resilience::EngineKey;
+use srec_core::CoreError;
 use srec_sqlite::models::engine::{FfmpegEngineConfig, MesioEngineConfig, StreamlinkEngineConfig};
 
 use super::{DownloadManager, io_error_in_chain, parse_engine_config};
@@ -113,7 +114,7 @@ impl DownloadManager {
         if let Some(id) = engine_id {
             if let Ok(known_type) = id.parse::<EngineType>() {
                 let engine = self.get_engine(known_type).ok_or_else(|| {
-                    crate::Error::Other(format!("Default engine {known_type} not registered"))
+                    crate::Error::other(format!("Default engine {known_type} not registered"))
                 })?;
                 return Ok((engine, known_type, EngineKey::global(known_type)));
             }
@@ -123,7 +124,7 @@ impl DownloadManager {
                     Ok(config) => {
                         let engine_type =
                             config.engine_type.parse::<EngineType>().map_err(|_| {
-                                crate::Error::Other(format!(
+                                crate::Error::other(format!(
                                     "Unknown engine type in config: {}",
                                     config.engine_type
                                 ))
@@ -156,7 +157,7 @@ impl DownloadManager {
                         };
                         return Ok((engine, engine_type, key));
                     }
-                    Err(srec_sqlite::DbError::NotFound { .. }) => {
+                    Err(srec_sqlite::DbError::Core(CoreError::NotFound { .. })) => {
                         warn!(engine_id = id, "Engine config not found; using default")
                     }
                     Err(error) => return Err(error.into()),
@@ -165,7 +166,7 @@ impl DownloadManager {
         }
 
         let engine = self.get_engine(default_engine).ok_or_else(|| {
-            crate::Error::Other(format!("Default engine {default_engine} not registered"))
+            crate::Error::other(format!("Default engine {default_engine} not registered"))
         })?;
         Ok((engine, default_engine, EngineKey::global(default_engine)))
     }
@@ -187,7 +188,7 @@ impl DownloadManager {
                     error.column()
                 ))
             }),
-            Err(srec_sqlite::DbError::NotFound { .. }) => Ok(T::default()),
+            Err(srec_sqlite::DbError::Core(CoreError::NotFound { .. })) => Ok(T::default()),
             Err(error) => Err(error.into()),
         }
     }
@@ -213,11 +214,11 @@ impl DownloadManager {
         }
 
         let Some(repo) = &self.config_repo else {
-            return Err(crate::Error::Other(format!("Unknown engine: {id}")));
+            return Err(crate::Error::other(format!("Unknown engine: {id}")));
         };
         let config = repo.get_engine_config(id).await?;
         config.engine_type.parse::<EngineType>().map_err(|_| {
-            crate::Error::Other(format!("Unknown engine type: {}", config.engine_type))
+            crate::Error::other(format!("Unknown engine type: {}", config.engine_type))
         })
     }
 
@@ -226,7 +227,7 @@ impl DownloadManager {
         override_value: &serde_json::Value,
     ) -> Result<serde_json::Value> {
         let mut base_value =
-            serde_json::to_value(base).map_err(|error| crate::Error::Other(error.to_string()))?;
+            serde_json::to_value(base).map_err(|error| crate::Error::other(error.to_string()))?;
         Self::json_merge(&mut base_value, override_value);
         Ok(base_value)
     }
@@ -292,6 +293,7 @@ impl DownloadManager {
 mod tests {
     use super::*;
     use sqlx::sqlite::SqlitePoolOptions;
+    use srec_sqlite::DbError;
     use srec_sqlite::repositories::SqlxConfigRepository;
 
     async fn manager_with_repository() -> (DownloadManager, sqlx::SqlitePool) {
@@ -375,7 +377,9 @@ mod tests {
             let result = manager.resolve_engine(Some(id), overrides).await;
             assert!(matches!(
                 result,
-                Err(crate::Error::DatabaseSqlx(sqlx::Error::PoolTimedOut))
+                Err(crate::Error::Db(DbError::DatabaseSqlx(
+                    sqlx::Error::PoolTimedOut
+                )))
             ));
         }
         assert!(

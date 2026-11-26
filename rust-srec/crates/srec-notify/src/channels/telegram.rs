@@ -262,6 +262,7 @@ fn truncate_message(text: &str, limit: usize) -> (String, usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use srec_core::CoreError;
 
     fn channel(mode: &str, locale: &str) -> TelegramChannel {
         TelegramChannel::new(
@@ -363,7 +364,10 @@ mod tests {
         let error = channel("private-mode-value", "en")
             .build_payload(&event)
             .unwrap_err();
-        assert!(matches!(error, crate::NotifyError::Configuration(_)));
+        assert!(matches!(
+            error,
+            crate::NotifyError::Core(CoreError::Configuration(_))
+        ));
         assert!(!error.to_string().contains("private-mode-value"));
     }
 

@@ -2,6 +2,7 @@
 
 use serde::Serialize;
 use sqlx::SqlitePool;
+use srec_core::CoreError;
 
 use super::*;
 use crate::models::{
@@ -235,7 +236,7 @@ async fn media_and_segment_rows_preserve_all_fields_and_account_size_once() {
     );
     assert!(matches!(
         repo.get_media_output(&output.id).await,
-        Err(crate::DbError::NotFound { .. })
+        Err(crate::DbError::Core(CoreError::NotFound { .. }))
     ));
     assert_eq!(
         repo.get_session("session").await.unwrap().total_size_bytes,
@@ -252,7 +253,7 @@ async fn media_size_and_segment_failures_roll_back_every_related_write() {
     assert!(repo.create_media_output(&output).await.is_err());
     assert!(matches!(
         repo.get_media_output(&output.id).await,
-        Err(crate::DbError::NotFound { .. })
+        Err(crate::DbError::Core(CoreError::NotFound { .. }))
     ));
     sqlx::query("DROP TRIGGER reject_total")
         .execute(&pool)
@@ -266,7 +267,7 @@ async fn media_size_and_segment_failures_roll_back_every_related_write() {
     );
     assert!(matches!(
         repo.get_media_output(&output.id).await,
-        Err(crate::DbError::NotFound { .. })
+        Err(crate::DbError::Core(CoreError::NotFound { .. }))
     ));
     assert_eq!(
         repo.get_session("session").await.unwrap().total_size_bytes,
@@ -329,11 +330,11 @@ async fn connection_helpers_do_not_commit_the_callers_transaction() {
     );
     assert!(matches!(
         sessions(&pool).get_session(&row.id).await,
-        Err(crate::DbError::NotFound { .. })
+        Err(crate::DbError::Core(CoreError::NotFound { .. }))
     ));
     assert!(matches!(
         sessions(&pool).get_media_output(&output.id).await,
-        Err(crate::DbError::NotFound { .. })
+        Err(crate::DbError::Core(CoreError::NotFound { .. }))
     ));
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM session_segments")

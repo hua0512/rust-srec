@@ -13,6 +13,7 @@ use super::{
 use crate::JobFailureOutcome;
 use crate::job_queue::JobStateMeta;
 use crate::{PipelineError as Error, PipelineResult as Result};
+use srec_core::CoreError;
 use srec_sqlite::models::{
     DagExecutionDbModel, DagExecutionStatus, DagPipelineDefinition, DagStepExecutionDbModel,
 };
@@ -313,7 +314,7 @@ impl DagScheduler {
             // Definition and metadata come from the same transaction as readiness.
             let dag_def = dag
                 .get_dag_definition()
-                .ok_or_else(|| Error::Validation("Failed to parse DAG definition".into()))?;
+                .ok_or_else(|| Error::validation("Failed to parse DAG definition"))?;
             let meta = JobStateMeta {
                 streamer_name,
                 session_title,
@@ -532,12 +533,16 @@ impl DagScheduler {
     ) -> Result<StepRetryState> {
         let step = match self.dag_repository.get_step(dag_step_execution_id).await {
             Ok(step) => step,
-            Err(srec_sqlite::DbError::NotFound { .. }) => return Ok(StepRetryState::default()),
+            Err(srec_sqlite::DbError::Core(CoreError::NotFound { .. })) => {
+                return Ok(StepRetryState::default());
+            }
             Err(error) => return Err(error.into()),
         };
         let dag = match self.dag_repository.get_dag(&step.dag_id).await {
             Ok(dag) => dag,
-            Err(srec_sqlite::DbError::NotFound { .. }) => return Ok(StepRetryState::default()),
+            Err(srec_sqlite::DbError::Core(CoreError::NotFound { .. })) => {
+                return Ok(StepRetryState::default());
+            }
             Err(error) => return Err(error.into()),
         };
         let max_attempts = dag
@@ -573,7 +578,7 @@ impl DagScheduler {
             match self.job_queue.cancel_job(job_id).await {
                 // A job that already settled, such as one waiting for its
                 // retry, has nothing left to stop.
-                Ok(_) | Err(Error::InvalidStateTransition { .. }) => {}
+                Ok(_) | Err(Error::Core(CoreError::InvalidStateTransition { .. })) => {}
                 Err(error) => warn!(dag_id, %job_id, %error, "Failed to cancel a step job"),
             }
         }

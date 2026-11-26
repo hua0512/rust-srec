@@ -49,7 +49,7 @@ use attempt::{AttemptCompletion, AttemptSupervisor};
 
 fn parse_engine_config<T: DeserializeOwned>(engine: &'static str, raw: &str) -> Result<T> {
     serde_json::from_str(raw)
-        .map_err(|e| crate::Error::Other(format!("Failed to parse {} config: {}", engine, e)))
+        .map_err(|e| crate::Error::other(format!("Failed to parse {} config: {}", engine, e)))
 }
 
 fn resolve_segment_path(path: &std::path::Path) -> String {
@@ -488,7 +488,7 @@ impl DownloadManager {
         self.events
             .feedback
             .set(feedback)
-            .map_err(|_| crate::Error::Other("recorder feedback is already configured".to_owned()))
+            .map_err(|_| crate::Error::other("recorder feedback is already configured"))
     }
 
     pub fn with_coordination_sender(mut self, sender: DownloadCoordinationSender) -> Self {
@@ -621,7 +621,7 @@ impl DownloadManager {
         let engine_key = engine_key.for_streamer(&req.streamer_id);
 
         if !engine.wait_available().await {
-            return Err(crate::Error::Other(format!(
+            return Err(crate::Error::other(format!(
                 "Engine {} is not available",
                 engine_type
             )));
@@ -642,7 +642,7 @@ impl DownloadManager {
             )
             .await?;
 
-            return Err(crate::Error::Other(format!(
+            return Err(crate::Error::other(format!(
                 "Engine {} is disabled by circuit breaker",
                 engine_key
             )));
@@ -671,7 +671,7 @@ impl DownloadManager {
                 },
             )
             .await?;
-            return Err(crate::Error::Other(format!(
+            return Err(crate::Error::other(format!(
                 "Output root {} is unwritable ({}); gate has the filesystem in Degraded state",
                 blocked.root.display(),
                 blocked.kind.as_str()
@@ -704,7 +704,7 @@ impl DownloadManager {
                 )
                 .await?;
             }
-            return Err(crate::Error::Other(engine_err.message));
+            return Err(crate::Error::other(engine_err.message));
         }
 
         Ok(EngineHandle {
@@ -723,7 +723,7 @@ impl DownloadManager {
     ///
     /// Honours the supplied `cancel` token: if it fires before a slot
     /// is granted, the future returns
-    /// `RecorderError::Other("download acquire cancelled")` without
+    /// `RecorderError::other("download acquire cancelled")` without
     /// holding any queue capacity.
     pub async fn acquire_slot(
         &self,
@@ -735,7 +735,7 @@ impl DownloadManager {
         // queued/dequeued event pair and waiter cleanup.
         let _operation = tokio::select! {
             biased;
-            _ = cancel.cancelled() => return Err(crate::Error::Other("download acquire cancelled".to_owned())),
+            _ = cancel.cancelled() => return Err(crate::Error::other("download acquire cancelled")),
             operation = self.begin_operation() => operation?,
         };
         let events_for_queue = self.events.clone();
@@ -784,16 +784,16 @@ impl DownloadManager {
                     ));
                 }
                 match qerr {
-                    QueueAcquireError::Cancelled => Err(crate::Error::Other(
-                        "download acquire cancelled".to_string(),
-                    )),
-                    QueueAcquireError::DuplicateSession(s) => Err(crate::Error::Other(format!(
+                    QueueAcquireError::Cancelled => {
+                        Err(crate::Error::other("download acquire cancelled"))
+                    }
+                    QueueAcquireError::DuplicateSession(s) => Err(crate::Error::other(format!(
                         "duplicate download for session {}",
                         s
                     ))),
-                    QueueAcquireError::ShuttingDown => Err(crate::Error::Other(
-                        "download manager shutting down".to_string(),
-                    )),
+                    QueueAcquireError::ShuttingDown => {
+                        Err(crate::Error::other("download manager shutting down"))
+                    }
                 }
             }
         }
@@ -813,7 +813,7 @@ impl DownloadManager {
     ) -> Result<String> {
         self.start_with_slot_cancellable(slot, config, engine, &CancellationToken::new())
             .await?
-            .ok_or_else(|| crate::Error::Other("download startup cancelled".to_string()))
+            .ok_or_else(|| crate::Error::other("download startup cancelled"))
     }
 
     /// Start an acquired recording unless its session is cancelled while waiting
@@ -943,7 +943,7 @@ impl DownloadManager {
     ) -> Result<()> {
         let completion = self.request_stop(download_id, cause)?;
         completion.wait().await.map_err(|message| {
-            crate::Error::Other(format!(
+            crate::Error::other(format!(
                 "download {download_id} did not stop cleanly: {message}"
             ))
         })?;
@@ -968,10 +968,7 @@ impl DownloadManager {
         cause: DownloadStopCause,
     ) -> Result<Arc<AttemptCompletion>> {
         let Some(mut download) = self.active_downloads.get_mut(download_id) else {
-            return Err(crate::Error::NotFound {
-                entity_type: "Download".to_string(),
-                id: download_id.to_string(),
-            });
+            return Err(crate::Error::not_found("Download", download_id));
         };
 
         let (first_request, should_cancel) = {
@@ -1012,13 +1009,10 @@ impl DownloadManager {
         &self,
         download_id: &str,
     ) -> Result<pipeline_common::ManualSplitSnapshot> {
-        let download =
-            self.active_downloads
-                .get(download_id)
-                .ok_or_else(|| crate::Error::NotFound {
-                    entity_type: "Download".into(),
-                    id: download_id.into(),
-                })?;
+        let download = self
+            .active_downloads
+            .get(download_id)
+            .ok_or_else(|| crate::Error::not_found("Download", download_id))?;
         let phase = download.phase.lock();
         if !matches!(*phase, AttemptPhase::Running) || download.handle.is_cancelled() {
             return Err(crate::Error::ManualSplit(
@@ -1296,22 +1290,18 @@ impl DownloadManager {
                     }
                 }
                 coordination::PublicationError::Coordination(message) => {
-                    crate::Error::Other(message)
+                    crate::Error::other(message)
                 }
             })
     }
 
     async fn begin_operation(&self) -> Result<tokio::sync::RwLockReadGuard<'_, ()>> {
         if !self.accepting_operations.load(Ordering::Acquire) {
-            return Err(crate::Error::Other(
-                "download manager shutting down".to_string(),
-            ));
+            return Err(crate::Error::other("download manager shutting down"));
         }
         let guard = self.operation_gate.read().await;
         if !self.accepting_operations.load(Ordering::Acquire) {
-            return Err(crate::Error::Other(
-                "download manager shutting down".to_string(),
-            ));
+            return Err(crate::Error::other("download manager shutting down"));
         }
         Ok(guard)
     }
