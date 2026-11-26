@@ -1040,7 +1040,7 @@ async fn anonymous_platform_throttle_delays_every_caller_of_the_platform() {
             .admit(
                 &anonymous.platform_id,
                 &RouteKey::Direct,
-                OperationDeadline::new(Duration::from_millis(200))
+                OperationDeadline::new(Duration::from_millis(1))
             )
             .await
             .is_err(),
