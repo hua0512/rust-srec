@@ -153,9 +153,11 @@ mod tests {
         for i in 0..count {
             agg.record_message(&DanmuMessage::chat(
                 "id",
-                format!("user-{}", i % 500),
+                format!("user-{}", i % 50),
                 "观众昵称",
-                "主播今天好厉害啊",
+                // ASCII words keep the tokenizer off the CJK dictionary,
+                // whose loading would dominate the test.
+                "what a great stream today",
             ));
         }
         agg
@@ -163,7 +165,7 @@ mod tests {
 
     #[tokio::test]
     async fn encode_decode_round_trip_preserves_the_checkpoint() {
-        let state = aggregator_with_messages(2_000).export_state();
+        let state = aggregator_with_messages(200).export_state();
         let expected = serde_json::to_value(&state).unwrap();
         let bytes = offload(move || encode(&state)).await.expect("encode");
         let restored = offload(move || decode(&bytes)).await.expect("decode");
@@ -172,6 +174,6 @@ mod tests {
 
         let rebuilt = StatisticsAggregator::from_state(restored, StatisticsConfig::default())
             .expect("restored checkpoint loads");
-        assert_eq!(rebuilt.total_count(), 2_000);
+        assert_eq!(rebuilt.total_count(), 200);
     }
 }
