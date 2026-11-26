@@ -1051,6 +1051,41 @@ async fn a_credential_unavailable_event_reaches_only_subscribed_channels_and_is_
         .await;
         subscribe(&app, &token, &id, &[event]).await;
     }
+    // Every channel type applies its own min_priority: one of each other
+    // type, subscribed to the event but taking only critical ones.
+    let above_threshold = LocalHttpServer::start(200, "{}").await;
+    let smtp = SmtpFixture::start().await;
+    let telegram_bot = "424242:critical-only";
+    rust_srec::notification::channels::override_telegram_api_base(
+        telegram_bot,
+        &above_threshold.url("/telegram"),
+    );
+    let mut critical_only_ids = Vec::new();
+    for (channel_type, mut settings) in [
+        (
+            "Discord",
+            json!({ "webhook_url": above_threshold.url("/discord") }),
+        ),
+        (
+            "Gotify",
+            json!({ "server_url": above_threshold.url("/gotify/"), "app_token": "gotify-token" }),
+        ),
+        (
+            "Telegram",
+            json!({ "bot_token": telegram_bot, "chat_id": "-1001234567890" }),
+        ),
+        ("Email", email_settings("127.0.0.1", smtp.port(), "")),
+    ] {
+        settings["min_priority"] = json!(10);
+        let id = create_channel(&app, &token, channel_type, channel_type, settings).await;
+        subscribe(&app, &token, &id, &["credential_unavailable"]).await;
+        critical_only_ids.push(id);
+    }
+    // Loaded, so receiving nothing below means they filtered the event.
+    let loaded = loaded_channel_ids(&app, &token).await;
+    for id in &critical_only_ids {
+        assert!(loaded.contains(id), "{id} not loaded: {loaded:?}");
+    }
     app.select_disabled_account(&token, "platform-huya").await;
     app.select_disabled_account(&token, "platform-douyin").await;
 
@@ -1115,6 +1150,20 @@ async fn a_credential_unavailable_event_reaches_only_subscribed_channels_and_is_
     assert!(
         critical_only.received().is_empty(),
         "a channel whose min_priority is above the event's receives nothing"
+    );
+    // The subscribed channel already has the second event, so the first
+    // event's delivery pass has had ample time to reach every channel that
+    // accepts it.
+    let paths: Vec<String> = above_threshold
+        .received()
+        .into_iter()
+        .map(|request| request.path)
+        .collect();
+    assert!(paths.is_empty(), "sent below min_priority: {paths:?}");
+    let messages = smtp.messages();
+    assert!(
+        messages.is_empty(),
+        "mailed below min_priority: {messages:?}"
     );
 
     app.shutdown().await;

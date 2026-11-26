@@ -232,12 +232,26 @@ async fn fail_event_log_of(pool: &SqlitePool, label: &str) {
     .unwrap();
 }
 
+type OutboxRow = (i64, Option<String>, bool, i64);
+
+async fn outbox_rows(pool: &SqlitePool) -> Vec<OutboxRow> {
+    sqlx::query_as(
+        "SELECT id, streamer_id, delivered_at IS NOT NULL, attempts \
+         FROM monitor_event_outbox ORDER BY id",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
 /// A row whose settlement fails waits for a later retry; its streamer's later
 /// rows wait behind it while other streamers' rows are still delivered. The
 /// streamer is deleted first, which clears the rows' `streamer_id` column, so
-/// only their payload ties them to it.
+/// only their payload ties them to it. The background loop admits the failed
+/// row again once its backoff expires, and the later rows of its streamer
+/// follow it in order.
 #[tokio::test]
-async fn failed_alert_holds_back_only_the_later_alerts_of_its_streamer() {
+async fn background_drain_retries_a_failed_alert_before_the_later_alerts_of_its_streamer() {
     let pool = database(&["s-a", "s-b"]).await;
     let a1 = enqueue(&pool, "s-a", "A1").await;
     let a2 = enqueue(&pool, "s-a", "A2").await;
@@ -251,72 +265,28 @@ async fn failed_alert_holds_back_only_the_later_alerts_of_its_streamer() {
         NotificationServiceConfig::default(),
         Arc::new(SqlxNotificationRepository::new(pool.clone(), pool.clone())),
     ));
-    let drainer =
-        NotificationOutboxDrainer::new(pool.clone(), service.clone(), CancellationToken::new());
-
-    let report = tokio::time::timeout(WAIT, drainer.drain_until_wait())
-        .await
-        .expect("the drain must finish")
-        .unwrap();
-    assert_eq!(
-        report,
-        OutboxDrainReport {
-            delivered: 1,
-            skipped: 0,
-            failed: 1,
-            needs_wait: true,
-        }
-    );
-    let rows: Vec<(i64, Option<String>, bool, i64)> = sqlx::query_as(
-        "SELECT id, streamer_id, delivered_at IS NOT NULL, attempts \
-         FROM monitor_event_outbox ORDER BY id",
-    )
-    .fetch_all(&pool)
-    .await
-    .unwrap();
-    assert_eq!(
-        rows,
-        [
-            (a1, None, false, 1),
-            (a2, None, false, 0),
-            (b1, Some("s-b".to_owned()), true, 1)
-        ]
-    );
-    service.stop().await;
-}
-
-/// The background loop admits a failed row again once its backoff expires,
-/// and the later rows of its streamer follow it in order.
-#[tokio::test]
-async fn background_drain_retries_a_failed_alert_before_the_later_alerts_of_its_streamer() {
-    let pool = database(&["s-a"]).await;
-    let a1 = enqueue(&pool, "s-a", "A1").await;
-    let a2 = enqueue(&pool, "s-a", "A2").await;
-    fail_event_log_of(&pool, "A1").await;
-    let service = Arc::new(NotificationService::with_repository(
-        NotificationServiceConfig::default(),
-        Arc::new(SqlxNotificationRepository::new(pool.clone(), pool.clone())),
-    ));
     let cancellation = CancellationToken::new();
-    let drainer = Arc::new(NotificationOutboxDrainer::new(
-        pool.clone(),
-        service.clone(),
-        cancellation.clone(),
-    ));
+    let drainer = Arc::new(
+        NotificationOutboxDrainer::new(pool.clone(), service.clone(), cancellation.clone())
+            .with_retry_base_delay(Duration::from_millis(10)),
+    );
     let run = tokio::spawn({
         let drainer = drainer.clone();
         async move { drainer.run().await }
     });
 
-    eventually("A1's first attempt to fail", || async {
-        sqlx::query_scalar::<_, i64>("SELECT attempts FROM monitor_event_outbox WHERE id = ?")
-            .bind(a1)
-            .fetch_one(&pool)
-            .await
-            .unwrap()
-            == 1
+    eventually("A1 to fail and B1 to be delivered", || async {
+        let rows = outbox_rows(&pool).await;
+        rows[0].3 >= 1 && rows[2].2
     })
     .await;
+    let rows = outbox_rows(&pool).await;
+    assert_eq!(rows[0].0, a1);
+    assert_eq!((rows[0].1.as_deref(), rows[0].2), (None, false));
+    assert_eq!(
+        rows[1..],
+        [(a2, None, false, 0), (b1, Some("s-b".into()), true, 1)]
+    );
     sqlx::query("DROP TRIGGER fail_event_log_A1")
         .execute(&pool)
         .await
@@ -341,14 +311,15 @@ async fn background_drain_retries_a_failed_alert_before_the_later_alerts_of_its_
             .fetch_all(&pool)
             .await
             .unwrap();
-    let order: Vec<String> = logged
+    let order_of_a: Vec<String> = logged
         .iter()
         .map(|payload| match serde_json::from_str(payload).unwrap() {
             NotificationEvent::FatalError { message, .. } => message,
             event => panic!("unexpected event {event:?}"),
         })
+        .filter(|label| label.starts_with('A'))
         .collect();
-    assert_eq!(order, ["A1", "A2"]);
+    assert_eq!(order_of_a, ["A1", "A2"]);
 
     cancellation.cancel();
     tokio::time::timeout(WAIT, run)

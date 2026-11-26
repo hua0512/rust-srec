@@ -668,8 +668,13 @@ async fn dispatch_contains_event_panics_and_restarts_after_idle() {
     assert_eq!(service.stats().dispatch_dropped, 0);
 }
 
+/// Work refused because of shutdown is counted as dropped and never sent.
+/// Direct notifications after `stop()` are refused. A supervisor that already
+/// shut down refuses the dispatch worker; the event queued for it is counted
+/// rather than lost silently, and later events see the closed queue and are
+/// counted too.
 #[tokio::test]
-async fn direct_notifications_after_stop_are_counted_as_dropped() {
+async fn work_refused_at_shutdown_is_counted_as_dropped_and_never_sent() {
     let service = NotificationService::new();
     let attempts = channel(&service, "one", 0);
     service.stop().await;
@@ -680,13 +685,7 @@ async fn direct_notifications_after_stop_are_counted_as_dropped() {
         .unwrap();
     assert_eq!(service.stats().dispatch_dropped, 2);
     assert_eq!(attempts.load(Ordering::SeqCst), 0);
-}
 
-/// A supervisor that already shut down refuses the dispatch worker; the
-/// event queued for it is counted as dropped rather than lost silently, and
-/// later events see the closed queue and are counted too.
-#[tokio::test]
-async fn dispatch_rejected_by_a_closed_supervisor_is_counted() {
     let supervisor = Arc::new(TaskSupervisor::new());
     let service = Arc::new(NotificationService::new().with_task_supervisor(supervisor.clone()));
     assert!(supervisor.shutdown(Duration::ZERO).await);

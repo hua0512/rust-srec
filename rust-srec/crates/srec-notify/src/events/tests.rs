@@ -1,80 +1,94 @@
+use std::collections::BTreeSet;
+
+use srec_core::domain::credential::CredentialEvent as C;
+
 use super::*;
+use crate::events::NotificationEvent as E;
 
-/// `rust_i18n::set_locale` mutates a process global, so locale-sensitive
-/// tests must serialize on this lock to avoid racing the i18n module's
-/// own tests (and each other).
-static OUTPUT_PATH_INACCESSIBLE_LOCALE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+/// Defines `SAMPLE_KINDS`, one entry per pattern, and `sample_kind`, which
+/// matches the patterns in order. The `match` has no wildcard, so a new
+/// variant fails to compile until it gets a pattern, and every pattern is a
+/// kind the localization test requires `sample_events` to cover. A repeated
+/// pattern is unreachable, which is denied.
+macro_rules! sample_kinds {
+    ($($pattern:pat),+ $(,)?) => {
+        const SAMPLE_KINDS: &[&str] = &[$(stringify!($pattern)),+];
 
-#[test]
-fn baidupcs_relogin_failed_metadata_and_localization() {
-    let event = NotificationEvent::BaiduPcsReloginFailed {
-        config_dir: "default".to_string(),
-        message: "帐号登录失败".to_string(),
-        timestamp: jiff::Timestamp::now(),
-    };
-    assert_eq!(event.priority(), NotificationPriority::High);
-    assert_eq!(event.event_type(), "baidupcs_relogin_failed");
-    assert_eq!(event.streamer_id(), None, "tool event has no streamer_id");
-    assert!(
-        NotificationEvent::event_type_info("BaiduPcsReloginFailed").is_some(),
-        "alias resolves to the canonical event type"
-    );
-    assert!(event.title_in("en").contains("Baidu Netdisk"));
-    assert!(event.title_in("en").contains("default"));
-    assert!(event.title_in("zh-CN").contains("百度网盘"));
-    assert!(event.description_in("en").contains("帐号登录失败"));
-    assert!(event.description_in("zh-CN").contains("帐号登录失败"));
-}
-
-#[test]
-fn output_path_inaccessible_all_error_kinds_resolve() {
-    // Every IoErrorKindSer::as_str() value must map to a real i18n key in
-    // both locales, not the literal key string. Defends against silent
-    // misalignment between the YAML files and the description() match arms.
-    // A key missing from zh-CN falls back to the English text, so the two
-    // must differ.
-    for kind in [
-        "not_found",
-        "storage_full",
-        "permission_denied",
-        "read_only",
-        "timed_out",
-        "other",
-    ] {
-        let event = NotificationEvent::OutputPathInaccessible {
-            path: "/rec".to_string(),
-            error_kind: kind.to_string(),
-            timestamp: jiff::Timestamp::now(),
-        };
-        let en = event.description_in("en");
-        let zh = event.description_in("zh-CN");
-        for description in [&en, &zh] {
-            assert!(
-                description.contains("/rec"),
-                "kind={kind} description={description:?}"
-            );
-            assert!(
-                !description.starts_with("notification."),
-                "kind={kind} returned untranslated key: {description:?}"
-            );
+        #[deny(unreachable_patterns)]
+        fn sample_kind(event: &NotificationEvent) -> &'static str {
+            match event {
+                $($pattern => stringify!($pattern)),+
+            }
         }
-        assert_ne!(en, zh, "kind={kind} has no zh-CN translation");
-    }
+    };
 }
 
-// ========== Full-notification i18n round-trip ==========
+// Kinds whose rendering differs: each variant, and each credential event.
+sample_kinds!(
+    E::StreamOnline { .. },
+    E::StreamOffline { .. },
+    E::DownloadStarted { .. },
+    E::DownloadCompleted { .. },
+    E::DownloadError { .. },
+    E::SegmentStarted { .. },
+    E::SegmentCompleted { .. },
+    E::DownloadCancelled { .. },
+    E::DownloadRejected { .. },
+    E::PipelineStarted { .. },
+    E::PipelineCompleted { .. },
+    E::PipelineFailed { .. },
+    E::PipelineCancelled { .. },
+    E::FatalError { .. },
+    E::StreamerChecksFailing { .. },
+    E::StreamerChecksRestored { .. },
+    E::OutOfSpace { .. },
+    E::OutputPathInaccessible { .. },
+    E::GpuUnavailable { .. },
+    E::PipelineQueueWarning { .. },
+    E::PipelineQueueCritical { .. },
+    E::SystemStartup { .. },
+    E::SystemShutdown { .. },
+    E::PlatformThrottled { .. },
+    E::BigoNotificationsFailing { .. },
+    E::BigoNotificationsRestored { .. },
+    E::BaiduPcsReloginFailed { .. },
+    E::Credential {
+        event: C::Unavailable { .. }
+    },
+    E::Credential {
+        event: C::Refreshed { .. }
+    },
+    E::Credential {
+        event: C::RefreshFailed { .. }
+    },
+    E::Credential {
+        event: C::Invalid { .. }
+    },
+    E::Credential {
+        event: C::ExpiringSoon { .. }
+    },
+    E::Credential {
+        event: C::SessionSaveFailed { .. }
+    },
+);
 
-/// One plausible instance of every `NotificationEvent` variant.
-/// Field values are picked so the variant-specific placeholders are
-/// present and checkable after localization.
-///
-/// New variants added to `NotificationEvent` MUST be added here or
-/// `all_notification_variants_localize` will catch the omission via
-/// the exhaustive count assertion.
+/// `OutputPathInaccessible` kinds, one i18n key each.
+const OUTPUT_PATH_ERROR_KINDS: [&str; 6] = [
+    "not_found",
+    "storage_full",
+    "permission_denied",
+    "read_only",
+    "timed_out",
+    "other",
+];
+
+/// Samples of every kind `sample_kind` distinguishes, plus every value of
+/// the fields that select their own i18n key (error kinds, routes, Bigo
+/// problems), so each key is rendered at least once.
 fn sample_events() -> Vec<NotificationEvent> {
     use srec_core::domain::credential::{CredentialEvent, CredentialScope, UnavailableReason};
     let now = jiff::Timestamp::now();
-    vec![
+    let mut events = vec![
         NotificationEvent::StreamOnline {
             streamer_id: "s1".into(),
             streamer_name: "TestStreamer".into(),
@@ -189,11 +203,6 @@ fn sample_events() -> Vec<NotificationEvent> {
             path: "/rec".into(),
             available_bytes: 1024 * 1024,
             threshold_bytes: 1024 * 1024 * 1024,
-            timestamp: now,
-        },
-        NotificationEvent::OutputPathInaccessible {
-            path: "/rec".into(),
-            error_kind: "not_found".into(),
             timestamp: now,
         },
         NotificationEvent::PipelineQueueWarning {
@@ -319,82 +328,137 @@ fn sample_events() -> Vec<NotificationEvent> {
                 timestamp: now,
             },
         },
-    ]
+        NotificationEvent::Credential {
+            event: CredentialEvent::SessionSaveFailed {
+                profile_id: None,
+                profile_label: None,
+                scope: CredentialScope::Platform {
+                    platform_id: "soop".into(),
+                    platform_name: "SOOP".into(),
+                },
+                platform: "soop".into(),
+                error: "database is locked".into(),
+                timestamp: now,
+            },
+        },
+        NotificationEvent::BaiduPcsReloginFailed {
+            config_dir: "default".into(),
+            message: "帐号登录失败".into(),
+            timestamp: now,
+        },
+    ];
+    events.extend(OUTPUT_PATH_ERROR_KINDS.iter().map(|kind| {
+        NotificationEvent::OutputPathInaccessible {
+            path: "/rec".into(),
+            error_kind: (*kind).into(),
+            timestamp: now,
+        }
+    }));
+    events.extend(
+        [
+            "nvml_unknown_error",
+            "driver_mismatch",
+            "no_device",
+            "timed_out",
+            "not_installed",
+            "other",
+        ]
+        .iter()
+        .map(|kind| NotificationEvent::GpuUnavailable {
+            error_kind: (*kind).into(),
+            message: "nvidia-smi failed".into(),
+            timestamp: now,
+        }),
+    );
+    events.extend(
+        [
+            ("direct", None),
+            ("system", None),
+            ("proxy", Some("Office")),
+        ]
+        .iter()
+        .map(|(route, proxy_name)| NotificationEvent::PlatformThrottled {
+            platform: "bilibili".into(),
+            route: (*route).into(),
+            proxy_name: proxy_name.map(Into::into),
+            retry_at: now,
+            timestamp: now,
+        }),
+    );
+    events
 }
 
-/// For every variant, assert that `title()` and `description()` produce
-/// non-empty strings that are NOT the raw key literal (which is what
-/// rust-i18n returns when a key is missing from every locale). Runs
-/// against both `en` and `zh-CN` so missing translations in either
-/// locale are caught at CI time.
+/// Every sample renders a non-empty title and description in both locales,
+/// never the raw key that rust-i18n returns for a key missing from every
+/// locale, and its event type is in the subscription catalog: channels can
+/// subscribe only to cataloged types, so an uncataloged variant would never
+/// reach Discord, Telegram, email or webhook channels. A key missing only
+/// from zh-CN renders the English text instead, so the two catalogs must
+/// define the same keys.
 #[test]
 fn all_notification_variants_localize_in_both_locales() {
-    let _g = OUTPUT_PATH_INACCESSIBLE_LOCALE_LOCK
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
-
     let events = sample_events();
-    // If a new variant is added to NotificationEvent without extending
-    // sample_events, we want a visible signal. This assert is a
-    // self-doc; bump it alongside the match arms in title/description.
     assert_eq!(
-        events.len(),
-        33,
-        "sample_events is out of sync with NotificationEvent; add a sample for the new variant so its localization is covered"
+        events.iter().map(sample_kind).collect::<BTreeSet<_>>(),
+        SAMPLE_KINDS.iter().copied().collect::<BTreeSet<_>>(),
+        "sample_events must cover every pattern in sample_kinds!"
     );
 
-    for locale in ["en", "zh-CN"] {
-        crate::i18n::set_locale(locale);
-        for (i, event) in events.iter().enumerate() {
-            let title = event.title();
-            let description = event.description();
-            assert!(
-                !title.is_empty(),
-                "locale={} variant #{} ({}): empty title",
-                locale,
-                i,
-                event.event_type(),
-            );
-            assert!(
-                !description.is_empty(),
-                "locale={} variant #{} ({}): empty description",
-                locale,
-                i,
-                event.event_type(),
-            );
-            assert!(
-                !title.starts_with("notification."),
-                "locale={} variant #{} ({}): title returned the raw key ({:?}) — translation missing",
-                locale,
-                i,
-                event.event_type(),
-                title,
-            );
-            assert!(
-                !description.starts_with("notification."),
-                "locale={} variant #{} ({}): description returned the raw key ({:?}) — translation missing",
-                locale,
-                i,
-                event.event_type(),
-                description,
-            );
+    for event in &events {
+        let event_type = event.event_type();
+        for locale in ["en", "zh-CN"] {
+            for (part, text) in [
+                ("title", event.title_in(locale)),
+                ("description", event.description_in(locale)),
+            ] {
+                assert!(!text.is_empty(), "{locale} {event_type}: empty {part}");
+                assert!(
+                    !text.starts_with("notification."),
+                    "{locale} {event_type}: {part} is the raw key {text:?}"
+                );
+            }
         }
-    }
-
-    crate::i18n::set_locale("en");
-}
-
-/// Channels can subscribe only to cataloged event types, so an uncataloged
-/// variant would never reach Discord, Telegram, email or webhook channels.
-#[test]
-fn every_notification_variant_is_subscribable() {
-    for event in sample_events() {
         assert!(
-            canonicalize_subscription_event_name(event.event_type()).is_some(),
-            "{} is missing from the subscription catalog",
-            event.event_type(),
+            canonicalize_subscription_event_name(event_type).is_some(),
+            "{event_type} is missing from the subscription catalog"
         );
     }
+
+    for kind in OUTPUT_PATH_ERROR_KINDS {
+        let event = NotificationEvent::OutputPathInaccessible {
+            path: "/rec".to_string(),
+            error_kind: kind.to_string(),
+            timestamp: jiff::Timestamp::now(),
+        };
+        let en = event.description_in("en");
+        let zh = event.description_in("zh-CN");
+        for description in [&en, &zh] {
+            assert!(description.contains("/rec"), "{kind}: {description:?}");
+        }
+        assert_ne!(en, zh, "{kind} has no zh-CN translation");
+    }
+
+    let backend = crate::_rust_i18n_backend();
+    let keys = |locale: &str| -> BTreeSet<String> {
+        backend
+            .messages_for_locale(locale)
+            .unwrap_or_else(|| panic!("{locale} catalog is embedded"))
+            .into_iter()
+            .map(|(key, _)| key.into_owned())
+            .collect()
+    };
+    let en = keys("en");
+    let zh = keys("zh-CN");
+    assert_eq!(
+        en.difference(&zh).collect::<Vec<_>>(),
+        Vec::<&String>::new(),
+        "keys missing from zh-CN.yml"
+    );
+    assert_eq!(
+        zh.difference(&en).collect::<Vec<_>>(),
+        Vec::<&String>::new(),
+        "keys missing from en.yml"
+    );
 }
 
 /// Unavailable notices read as text rather than codes, and

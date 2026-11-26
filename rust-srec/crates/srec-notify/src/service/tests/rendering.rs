@@ -79,6 +79,7 @@ async fn delivery_shares_locale_rendering_and_retry_skips_successful_recipients(
         vec![1, 2, 1]
     );
     assert_eq!(service.stats().pending_count, 0);
+    assert_eq!(service.stats().dead_letter_count, 0);
     tokio::time::timeout(Duration::from_secs(1), service.stop())
         .await
         .unwrap();

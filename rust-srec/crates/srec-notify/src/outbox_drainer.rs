@@ -48,14 +48,13 @@ const RETRY_BASE_DELAY: Duration = Duration::from_secs(1);
 const RETRY_MAX_DELAY: Duration = Duration::from_secs(300);
 
 /// Wait before a row whose settlement has failed `attempts` times is admitted
-/// again: `RETRY_BASE_DELAY`, doubled for each earlier failure, at most
-/// `RETRY_MAX_DELAY`. A row's first attempt after a restart is not delayed.
-fn retry_delay(attempts: i64) -> Duration {
-    // Clamped before the cast; 2^16 seconds is far past the cap.
+/// again: `base` (`RETRY_BASE_DELAY` outside tests), doubled for each earlier
+/// failure, at most `RETRY_MAX_DELAY`. A row's first attempt after a restart
+/// is not delayed.
+fn retry_delay(attempts: i64, base: Duration) -> Duration {
+    // Clamped before the cast; 2^16 times the base is far past the cap.
     let doublings = attempts.saturating_sub(1).clamp(0, 16) as u32;
-    RETRY_BASE_DELAY
-        .saturating_mul(1 << doublings)
-        .min(RETRY_MAX_DELAY)
+    base.saturating_mul(1 << doublings).min(RETRY_MAX_DELAY)
 }
 
 /// Minimal JSON wire-compatible projection of legacy `MonitorEvent` outbox rows.
@@ -299,7 +298,11 @@ struct DrainState {
 
 impl DrainState {
     /// Release the row of a finished delivery and record its outcome.
-    fn settle(&mut self, joined: std::result::Result<(task::Id, DeliveryResult), JoinError>) {
+    fn settle(
+        &mut self,
+        joined: std::result::Result<(task::Id, DeliveryResult), JoinError>,
+        retry_base_delay: Duration,
+    ) {
         let (task_id, outcome) = match joined {
             Ok((task_id, outcome)) => (task_id, outcome),
             // A delivery that panicked is retried like a transient failure.
@@ -333,7 +336,7 @@ impl DrainState {
             }
             Err(DurableDeliveryError::Transient(error)) => {
                 let attempts = row.attempts.saturating_add(1);
-                let delay = retry_delay(attempts);
+                let delay = retry_delay(attempts, retry_base_delay);
                 warn!(
                     outbox_id = row.id,
                     event_type = %row.event_type,
@@ -408,6 +411,7 @@ pub struct NotificationOutboxDrainer {
     notification_service: Arc<NotificationService>,
     notify: Arc<Notify>,
     cancellation: CancellationToken,
+    retry_base_delay: Duration,
 }
 
 impl NotificationOutboxDrainer {
@@ -422,7 +426,16 @@ impl NotificationOutboxDrainer {
             notification_service,
             notify: Arc::new(Notify::new()),
             cancellation,
+            retry_base_delay: RETRY_BASE_DELAY,
         }
+    }
+
+    /// Wait `delay` instead of `RETRY_BASE_DELAY` after a row's first failed
+    /// settlement, so tests of the retry loop take milliseconds.
+    #[cfg(test)]
+    fn with_retry_base_delay(mut self, delay: Duration) -> Self {
+        self.retry_base_delay = delay;
+        self
     }
 
     /// Shared wake handle notified after commits insert rows into `monitor_event_outbox`.
@@ -480,7 +493,7 @@ impl NotificationOutboxDrainer {
             tokio::select! {
                 biased;
                 _ = self.cancellation.cancelled() => {}
-                Some(joined) = state.in_flight.join_next_with_id() => state.settle(joined),
+                Some(joined) = state.in_flight.join_next_with_id() => state.settle(joined, self.retry_base_delay),
                 _ = self.notify.notified(), if background => {}
                 _ = time::sleep_until(retry_due.unwrap_or_else(Instant::now)), if retry_due.is_some() => {}
                 _ = time::sleep(POLL_INTERVAL), if background => {}
@@ -493,7 +506,7 @@ impl NotificationOutboxDrainer {
         while let Some(joined) = state.in_flight.join_next_with_id().await {
             match joined {
                 Err(error) if error.is_cancelled() => state.report.failed += 1,
-                joined => state.settle(joined),
+                joined => state.settle(joined, self.retry_base_delay),
             }
         }
         let recorded = self.flush(&mut state).await;

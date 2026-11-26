@@ -17,8 +17,6 @@ mod telegram;
 mod webhook;
 
 #[cfg(test)]
-mod policy_tests;
-#[cfg(test)]
 mod redaction_tests;
 
 pub use discord::{DiscordChannel, DiscordConfig};

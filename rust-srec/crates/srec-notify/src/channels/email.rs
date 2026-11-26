@@ -12,9 +12,6 @@ use super::{NotificationChannel, send_direct};
 use crate::NotifyResult as Result;
 use crate::events::{NotificationEvent, NotificationPriority, RenderedEvent};
 
-#[cfg(test)]
-mod smtp_tests;
-
 /// Email channel configuration.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct EmailConfig {
