@@ -1395,7 +1395,8 @@ async fn the_proxy_check_guards_its_target_and_reports_what_the_proxy_answered()
     assert_eq!(unreachable["error"], "connect_failed");
     assert_eq!(unreachable["status"], Value::Null);
 
-    // Checking a saved proxy as edited keeps its saved login.
+    // Checking a saved proxy as edited keeps its saved login, which reaches
+    // the proxy as written, escapes included.
     let saved = app
         .post(
             "/api/proxies",
@@ -1403,8 +1404,8 @@ async fn the_proxy_check_guards_its_target_and_reports_what_the_proxy_answered()
             &json!({
                 "name": "Saved",
                 "url": guarded.url(""),
-                "username": "recorder",
-                "password": "saved-secret",
+                "username": "rec@rder",
+                "password": "p%41 @:x/%",
             }),
         )
         .await
@@ -1425,7 +1426,7 @@ async fn the_proxy_check_guards_its_target_and_reports_what_the_proxy_answered()
     use base64::Engine as _;
     let expected = format!(
         "Basic {}",
-        base64::engine::general_purpose::STANDARD.encode("recorder:saved-secret")
+        base64::engine::general_purpose::STANDARD.encode("rec@rder:p%41 @:x/%")
     );
     let received = edited.received();
     assert_eq!(received.len(), 1);
