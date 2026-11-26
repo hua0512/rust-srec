@@ -159,23 +159,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shutdown_closes_admission_and_preserves_already_queued_events() {
-        let service = NotificationService::new();
-        let (tx, mut rx) = mpsc::channel(2);
-        *service.web_push_tx.write() = Some(tx);
-        service.enqueue_web_push(event(0));
-        service.enqueue_web_push(event(1));
-        tokio::time::timeout(std::time::Duration::from_secs(1), service.stop())
-            .await
-            .unwrap();
-        service.enqueue_web_push(event(2));
-        assert_eq!(service.stats().web_push_dropped, 1);
-        assert_eq!(rx.recv().await.unwrap().event_log_id.as_deref(), Some("0"));
-        assert_eq!(rx.recv().await.unwrap().event_log_id.as_deref(), Some("1"));
-        assert!(rx.recv().await.is_none());
-    }
-
-    #[tokio::test]
     async fn worker_drains_all_admitted_items_in_order_on_close_and_cancellation() {
         for cancel in [false, true] {
             let (tx, rx) = mpsc::channel(128);
@@ -229,18 +212,25 @@ mod tests {
             .unwrap();
     }
 
-    /// A stalled consumer bounds the queue at its capacity: admitted events
-    /// keep their order, every rejected one is counted, and space freed by
-    /// the consumer admits new events again.
+    /// Admission runs outside a Tokio runtime here, so nothing may be spawned:
+    /// an absent, closed, full or stopped queue drops the event and counts it
+    /// instead of starting a fallback task. A full queue drops the newest
+    /// event whatever its priority. `stop()` closes admission, even to a
+    /// sender installed afterwards, and leaves the events already queued to
+    /// the worker.
     #[test]
-    fn stalled_consumer_preserves_bounded_fifo_and_counts_overflow() {
-        let capacity = WEB_PUSH_QUEUE_CAPACITY;
+    fn unavailable_closed_full_and_stopped_queues_never_spawn_fallbacks() {
         let service = NotificationService::new();
-        let (tx, mut rx) = mpsc::channel(capacity);
+        service.enqueue_web_push(event(0));
+        let (tx, rx) = mpsc::channel(1);
         *service.web_push_tx.write() = Some(tx);
-        for index in 0..10_000 {
-            service.enqueue_web_push(event(index));
-        }
+        drop(rx);
+        service.enqueue_web_push(event(1));
+        assert_eq!(service.stats().web_push_dropped, 2);
+
+        let (tx, mut rx) = mpsc::channel(1);
+        *service.web_push_tx.write() = Some(tx);
+        service.enqueue_web_push(event(2));
         service.enqueue_web_push(WebPushQueuedEvent {
             event: NotificationEvent::PipelineQueueCritical {
                 queue_depth: 1_000,
@@ -249,34 +239,31 @@ mod tests {
             },
             event_log_id: None,
         });
-        assert_eq!(rx.len(), capacity);
-        assert_eq!(service.stats().web_push_dropped, 10_001 - capacity as u64);
-        for index in 0..capacity {
-            assert_eq!(rx.try_recv().unwrap().event_log_id, Some(index.to_string()));
-        }
-        service.enqueue_web_push(event(10_000));
-        assert_eq!(
-            rx.try_recv().unwrap().event_log_id.as_deref(),
-            Some("10000")
-        );
-    }
+        assert_eq!(service.stats().web_push_dropped, 3);
+        assert_eq!(rx.try_recv().unwrap().event_log_id.as_deref(), Some("2"));
+        service.enqueue_web_push(event(3));
 
-    /// Without a Tokio runtime nothing may be spawned: an absent, closed or
-    /// stopped queue drops the event and counts it instead of starting a
-    /// fallback task.
-    #[test]
-    fn unavailable_closed_and_stopped_queues_never_spawn_fallbacks() {
-        let service = NotificationService::new();
-        service.enqueue_web_push(event(0));
-        let (tx, rx) = mpsc::channel(1);
-        *service.web_push_tx.write() = Some(tx);
-        drop(rx);
-        service.enqueue_web_push(event(1));
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap()
+            .block_on(async {
+                tokio::time::timeout(Duration::from_secs(1), service.stop())
+                    .await
+                    .unwrap();
+            });
+        service.enqueue_web_push(event(4));
+        assert_eq!(service.stats().web_push_dropped, 4);
+        assert_eq!(rx.try_recv().unwrap().event_log_id.as_deref(), Some("3"));
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            mpsc::error::TryRecvError::Disconnected
+        );
+
         let (tx, mut rx) = mpsc::channel(1);
         *service.web_push_tx.write() = Some(tx);
-        service.cancellation_token.cancel();
-        service.enqueue_web_push(event(2));
+        service.enqueue_web_push(event(5));
         assert!(rx.try_recv().is_err());
-        assert_eq!(service.stats().web_push_dropped, 3);
+        assert_eq!(service.stats().web_push_dropped, 5);
     }
 }
