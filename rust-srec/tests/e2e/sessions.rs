@@ -615,6 +615,15 @@ async fn deleting_a_session_removes_its_records_but_leaves_its_files() {
         .await
         .assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
     app.get_ok("/api/sessions/batch-3", &token).await;
+    // A batch at the limit is accepted.
+    too_many.remove(0);
+    let at_limit = batch_delete(json!(too_many))
+        .await
+        .expect_status(StatusCode::OK);
+    assert_eq!(at_limit.body, json!({ "deleted": 1 }));
+    app.get("/api/sessions/batch-3", &token)
+        .await
+        .assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
     let empty = batch_delete(json!([])).await.expect_status(StatusCode::OK);
     assert_eq!(empty.body, json!({ "deleted": 0 }));
 

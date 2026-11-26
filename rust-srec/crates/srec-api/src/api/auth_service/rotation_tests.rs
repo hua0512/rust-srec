@@ -108,15 +108,13 @@ struct Fixture {
 impl Fixture {
     async fn new(config: AuthConfig, concurrent: bool) -> Self {
         let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.db");
+        srec_sqlite::test_support::write_migrated_database(&path).await;
         let url = format!(
             "sqlite:{}?mode=rwc",
-            dir.path()
-                .join("auth.db")
-                .to_string_lossy()
-                .replace('\\', "/")
+            path.to_string_lossy().replace('\\', "/")
         );
         let pool = database::init_pool_with_size(&url, 4).await.unwrap();
-        database::run_migrations(&pool).await.unwrap();
         let users = Arc::new(SqlxUserRepository::new(pool.clone(), pool.clone()));
         let user = UserDbModel::new(
             "rotation-user",

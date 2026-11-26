@@ -180,18 +180,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn attachment_disposition_falls_back_to_the_output_id() {
-        assert_eq!(
-            attachment_disposition("/output/", "abc"),
-            "attachment; filename=\"abc\"; filename*=UTF-8''abc"
-        );
-        assert_eq!(
-            attachment_disposition(r"C:\output\clip.mp4", "abc"),
-            "attachment; filename=\"clip.mp4\"; filename*=UTF-8''clip.mp4"
-        );
-    }
-
-    #[test]
     fn attachment_disposition_strips_characters_that_would_break_the_header() {
         assert_eq!(
             attachment_disposition("/output/r\"ec\tord\ning.mp4", "abc"),

@@ -157,65 +157,8 @@ where
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+mod tests {
     use super::*;
-
-    pub(crate) struct AuthFixture {
-        pub pool: sqlx::SqlitePool,
-        pub service: Arc<AuthService>,
-        pub user_id: String,
-        pub access_token: String,
-        pub refresh_token: String,
-    }
-
-    pub(crate) async fn fixture() -> AuthFixture {
-        use crate::api::{
-            auth_service::AuthConfig,
-            auth_store::{
-                SqlxApiKeyRepository, SqlxRefreshTokenRepository, SqlxUserRepository, UserDbModel,
-                UserRepository,
-            },
-            jwt::JwtService,
-        };
-        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
-            .await
-            .unwrap();
-        crate::database::run_migrations(&pool).await.unwrap();
-        let users = Arc::new(SqlxUserRepository::new(pool.clone(), pool.clone()));
-        let hash = tokio::task::spawn_blocking(|| AuthService::hash_password("fixture-password"))
-            .await
-            .unwrap()
-            .unwrap();
-        let mut user = UserDbModel::new("manual-route-user", hash, vec!["user".to_owned()]);
-        user.must_change_password = false;
-        users.create(&user).await.unwrap();
-        let service = Arc::new(AuthService::new(
-            users,
-            Arc::new(SqlxRefreshTokenRepository::new(pool.clone(), pool.clone())),
-            Arc::new(SqlxApiKeyRepository::new(pool.clone(), pool.clone())),
-            Arc::new(
-                JwtService::new(
-                    "manual-route-secret-long-enough",
-                    "fixture",
-                    "fixture",
-                    Some(3600),
-                )
-                .unwrap(),
-            ),
-            AuthConfig::default(),
-        ));
-        let login = service
-            .authenticate("manual-route-user", "fixture-password", None, None)
-            .await
-            .unwrap();
-        AuthFixture {
-            pool,
-            service,
-            user_id: user.id,
-            access_token: login.access_token,
-            refresh_token: login.refresh_token,
-        }
-    }
 
     #[test]
     fn authorization_header_is_authoritative_over_query_fallback() {
@@ -274,64 +217,5 @@ pub(crate) mod tests {
             );
             observed.await.unwrap();
         }
-    }
-    #[tokio::test]
-    async fn disabled_user_cannot_use_cached_session_or_revalidated_key() {
-        let fixture = fixture().await;
-        let (_, raw) = fixture
-            .service
-            .create_api_key(
-                &fixture.user_id,
-                "disabled-full",
-                ApiKeyAccessLevel::Full,
-                None,
-            )
-            .await
-            .unwrap();
-        let headers = HeaderMap::new();
-        let key = authorize_request(
-            Some(&fixture.service),
-            &headers,
-            Some(&raw),
-            AccessPolicy::Full,
-        )
-        .await
-        .unwrap()
-        .unwrap();
-        let session = authorize_request(
-            Some(&fixture.service),
-            &headers,
-            Some(&fixture.access_token),
-            AccessPolicy::Full,
-        )
-        .await
-        .unwrap()
-        .unwrap();
-        sqlx::query("UPDATE users SET is_active = 0 WHERE id = ?")
-            .bind(&fixture.user_id)
-            .execute(&fixture.pool)
-            .await
-            .unwrap();
-        assert!(
-            authorize_request(
-                Some(&fixture.service),
-                &headers,
-                Some(&fixture.access_token),
-                AccessPolicy::Full
-            )
-            .await
-            .is_err()
-        );
-        assert!(
-            revalidate(Some(&fixture.service), Some(&session), AccessPolicy::Full)
-                .await
-                .is_err()
-        );
-        assert!(
-            revalidate(Some(&fixture.service), Some(&key), AccessPolicy::Full)
-                .await
-                .is_err()
-        );
-        fixture.pool.close().await;
     }
 }

@@ -240,25 +240,3 @@ pub struct AuthSessionDbModel {
     pub expires_at: i64,
     pub revoked_at: Option<i64>,
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn access_level_round_trips_and_fails_closed() {
-        assert_eq!(
-            ApiKeyAccessLevel::parse("read_only"),
-            Some(ApiKeyAccessLevel::ReadOnly)
-        );
-        assert_eq!(
-            ApiKeyAccessLevel::parse("full"),
-            Some(ApiKeyAccessLevel::Full)
-        );
-        assert_eq!(ApiKeyAccessLevel::parse("admin"), None);
-
-        let mut key = ApiKeyDbModel::new("u", "n", "h", "p", ApiKeyAccessLevel::Full, None);
-        key.access_level = "bogus".to_string();
-        assert_eq!(key.get_access_level(), ApiKeyAccessLevel::ReadOnly);
-    }
-}

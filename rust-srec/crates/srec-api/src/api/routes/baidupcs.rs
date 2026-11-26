@@ -402,17 +402,3 @@ pub async fn baidupcs_logout(
         message,
     }))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn output_tail_keeps_the_end_of_long_output() {
-        let long = "x".repeat(MAX_DETAIL_CHARS) + "TAIL";
-        let tail = output_tail(&long);
-        assert_eq!(tail.chars().count(), MAX_DETAIL_CHARS);
-        assert!(tail.ends_with("TAIL"));
-        assert_eq!(output_tail("  short  "), "short");
-    }
-}

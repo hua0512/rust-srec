@@ -71,7 +71,42 @@ async fn health_reports_every_core_component_to_admins_and_read_only_keys() {
             .unwrap_or_else(|| panic!("{name} missing from {}", health.text));
         assert_eq!(component["status"], "healthy", "{component}");
     }
+    let database = components
+        .iter()
+        .find(|component| component["name"] == "database")
+        .expect("database component");
+    assert!(database.get("disk").is_none(), "{database}");
     assert_ready_matches(&app, &token, &body["status"]).await;
+
+    // The output folder's disk component carries its capacity.
+    let disk = eventually(WAIT, "the output disk's capacity", || async {
+        let health = app.get("/api/health", &token).await.ok();
+        health["components"]
+            .as_array()?
+            .iter()
+            .find(|component| {
+                component["name"]
+                    .as_str()
+                    .is_some_and(|name| name.starts_with("disk:"))
+                    && component["disk"].is_object()
+            })
+            .map(|component| component["disk"].clone())
+    })
+    .await;
+    assert!(
+        disk["mount_point"]
+            .as_str()
+            .is_some_and(|mount| !mount.is_empty()),
+        "{disk}"
+    );
+    let total = disk["total_bytes"].as_u64().expect("total_bytes");
+    let available = disk["available_bytes"].as_u64().expect("available_bytes");
+    assert!(total > 0 && available <= total, "{disk}");
+    assert_eq!(
+        disk["used_bytes"].as_u64(),
+        Some(total - available),
+        "{disk}"
+    );
 
     // Read-only keys may monitor health.
     let read_key = app.create_api_key(&token, "monitor", "read_only").await.raw;

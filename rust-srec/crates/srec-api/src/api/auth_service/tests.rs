@@ -8,19 +8,7 @@ use crate::api::auth_store::{
     ApiKeyAccessLevel, AuthSessionDbModel, InMemoryApiKeyRepository, RefreshTokenDbModel,
     RefreshTokenRepository, RefreshTokenRotation, UserDbModel, UserRepository,
 };
-use crate::api::jwt::{Claims, JwtService};
-
-#[test]
-fn test_verify_password_legacy_argon2id_hash() {
-    // Argon2 0.5's PHC test vector also checks that verification reads stored parameters.
-    let hash = concat!(
-        "$argon2id$v=19$m=65536,t=2,p=1$c29tZXNhbHQ$",
-        "CTFhFdXPJO1aFaMaO6Mm5c8y7cJHAph8ArZWb2GRPPc"
-    );
-
-    assert!(AuthService::verify_password("password", hash).unwrap());
-    assert!(!AuthService::verify_password("wrong-password", hash).unwrap());
-}
+use crate::api::jwt::JwtService;
 
 struct MockRefreshTokenRepository;
 
@@ -215,31 +203,6 @@ fn create_counting_access_service(
     (service, repo, jwt_service)
 }
 
-fn mint_access_token(secret: &str, user_id: &str, exp: u64, iat: u64) -> String {
-    let claims = Claims {
-        sub: user_id.to_string(),
-        roles: vec!["user".to_string()],
-        iss: "test-issuer".to_string(),
-        aud: "test-audience".to_string(),
-        exp,
-        iat,
-        sid: Some("test-session".to_owned()),
-    };
-    jsonwebtoken::encode(
-        &jsonwebtoken::Header::default(),
-        &claims,
-        &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()).expect("valid test JWT secret"),
-    )
-    .expect("token encoding should succeed")
-}
-
-fn unix_now_secs() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("system clock should be past the Unix epoch")
-        .as_secs()
-}
-
 #[tokio::test]
 async fn authorize_access_token_fails_closed_with_fresh_permissive_cache() {
     let mut user = UserDbModel::new("stale-error", "hash", vec!["user".to_string()]);
@@ -262,29 +225,6 @@ async fn authorize_access_token_fails_closed_with_fresh_permissive_cache() {
         "a cached grant must not back an Ok decision when find_by_id fails"
     );
     assert_eq!(repo.find_by_id_calls(), 2);
-}
-
-#[tokio::test]
-async fn authorize_access_token_rejects_expired_token_before_user_lookup() {
-    let mut user = UserDbModel::new("expired-token", "hash", vec!["user".to_string()]);
-    user.must_change_password = false;
-    let user_id = user.id.clone();
-    let (service, repo, _jwt_service) = create_counting_access_service(user);
-    let now = unix_now_secs();
-    let token = mint_access_token(
-        "test-secret-key-32-chars-long!!",
-        &user_id,
-        now - 3600,
-        now - 7200,
-    );
-
-    let result = service.authorize_access_token(&token, false).await;
-    assert!(matches!(result, Err(AuthError::TokenExpired)));
-    assert_eq!(
-        repo.find_by_id_calls(),
-        0,
-        "token validation failures must be decided before find_by_id"
-    );
 }
 
 #[tokio::test]

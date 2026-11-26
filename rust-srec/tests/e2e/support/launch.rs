@@ -1,12 +1,13 @@
 //! Serving a backend on a migrated database: the last step of every start,
-//! a restart on an app's own data directory, and an app whose download
-//! manager uses settings other than the defaults.
+//! a restart on an app's own data directory, an app whose download manager
+//! uses settings other than the defaults, and an app without authentication.
 
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+use rust_srec::api::bootstrap::ApiServerHost;
 use rust_srec::backend::{
     self, ApiServerConfig, DownloadManagerConfig, ServiceContainer, ServiceContainerConfig,
 };
@@ -16,12 +17,22 @@ use super::{
     ConnectRecorder, JWT_SECRET, SHUTDOWN_GRACE_PERIOD, SHUTDOWN_TIMEOUT, TestApp, logging,
 };
 
+/// How the API server authenticates its callers.
+#[derive(Clone, Copy)]
+pub(super) enum Authentication {
+    /// JWT sessions and API keys, signed with [`JWT_SECRET`].
+    Jwt,
+    /// None, as `AUTH_DISABLED=true` on a loopback address serves it.
+    Disabled,
+}
+
 /// Build, initialize and serve a backend on the migrated database at
 /// `database_url`, recording into `output_dir`.
 pub(super) async fn serve(
     database_url: &str,
     output_dir: &Path,
     downloads: DownloadManagerConfig,
+    authentication: Authentication,
 ) -> (Arc<ServiceContainer>, SocketAddr) {
     // Cadences the scenarios wait on, shortened from their production
     // seconds so a retry or a revoked socket settles well within `WAIT`.
@@ -31,6 +42,12 @@ pub(super) async fn serve(
         .await
         .expect("open the runtime pools");
 
+    let api_config = ApiServerConfig {
+        bind_address: "127.0.0.1".to_string(),
+        port: 0,
+        enable_cors: true,
+        body_limit: 10 * 1024 * 1024,
+    };
     let container = ServiceContainer::with_full_config(
         pool,
         write_pool,
@@ -39,12 +56,7 @@ pub(super) async fn serve(
             event_capacity: 256,
             download_config: downloads,
             pipeline_config: backend::PipelineManagerConfig::default(),
-            api_config: ApiServerConfig {
-                bind_address: "127.0.0.1".to_string(),
-                port: 0,
-                enable_cors: true,
-                body_limit: 10 * 1024 * 1024,
-            },
+            api_config: api_config.clone(),
             local_desktop_mode: false,
         },
     )
@@ -67,10 +79,24 @@ pub(super) async fn serve(
     container.apply_persisted_log_filter(&logging).await;
     container.set_logging_config(logging);
     container.initialize().await.expect("initialize services");
-    let address = container
-        .start_api_server_bound_with_jwt_secret(JWT_SECRET.to_string())
-        .await
-        .expect("start the API server");
+    let address = match authentication {
+        Authentication::Jwt => container
+            .start_api_server_bound_with_jwt_secret(JWT_SECRET.to_string())
+            .await
+            .expect("start the API server"),
+        // The server the backend starts when `AUTH_DISABLED` is set, served
+        // from the same runtime without reading the environment.
+        Authentication::Disabled => ApiServerHost::new(api_config, false)
+            .expect("read the API host settings")
+            .bind_and_spawn_api_server_for_tests(
+                container.api_runtime().expect("build the API runtime"),
+                None,
+                "API shutdown bridge",
+                "API server",
+            )
+            .await
+            .expect("start the API server without authentication"),
+    };
     (container, address)
 }
 
@@ -80,7 +106,23 @@ impl TestApp {
     pub async fn start_with_downloads(seed: Seed, downloads: DownloadManagerConfig) -> Self {
         let dead_end = ConnectRecorder::start().await;
         let sql = seed.sql(&dead_end);
-        Self::boot(&sql, Some(dead_end), true, downloads).await
+        Self::boot(&sql, Some(dead_end), true, downloads, Authentication::Jwt).await
+    }
+
+    /// Like [`Self::start`], serving the API without authentication: every
+    /// route answers callers without a credential, and the browser-origin
+    /// guard and the allowlist from `API_CORS_ORIGINS` (its default, since
+    /// the suite never sets it) apply instead. [`Self::admin`] does not work
+    /// in this app.
+    pub async fn start_without_auth() -> Self {
+        Self::boot(
+            "",
+            None,
+            true,
+            DownloadManagerConfig::default(),
+            Authentication::Disabled,
+        )
+        .await
     }
 
     /// Shut the backend down and start a new one on the same data directory,
@@ -116,8 +158,13 @@ impl TestApp {
         .await
         .expect("run migrations");
         migration_pool.close().await;
-        let (container, address) =
-            serve(&database_url, &output_dir, DownloadManagerConfig::default()).await;
+        let (container, address) = serve(
+            &database_url,
+            &output_dir,
+            DownloadManagerConfig::default(),
+            Authentication::Jwt,
+        )
+        .await;
         Self {
             base_url: format!("http://{address}"),
             database_url,

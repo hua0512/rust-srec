@@ -25,9 +25,7 @@ pub(crate) mod database {
     #[cfg(any(test, feature = "test-support"))]
     pub use srec_sqlite::run_migrations;
     #[cfg(test)]
-    pub use srec_sqlite::{
-        CommittedWriter, committed_writer, filter_store, init_pool, init_pool_with_size,
-    };
+    pub use srec_sqlite::{CommittedWriter, committed_writer, filter_store, init_pool_with_size};
     pub use srec_sqlite::{begin_immediate, models, retry, time};
 
     pub mod repositories {

@@ -24,13 +24,13 @@ use tracing::info;
 
 #[derive(Clone)]
 pub struct TemplateRouteState {
-    config_service: std::sync::Arc<
+    pub(super) config_service: std::sync::Arc<
         crate::config::ConfigService<
             crate::database::repositories::config::SqlxConfigRepository,
             crate::database::repositories::streamer::SqlxStreamerRepository,
         >,
     >,
-    streamer_manager: std::sync::Arc<
+    pub(super) streamer_manager: std::sync::Arc<
         crate::streamer::StreamerManager<
             crate::database::repositories::streamer::SqlxStreamerRepository,
         >,
@@ -530,78 +530,4 @@ pub async fn clone_template(
         StatusCode::CREATED,
         Json(db_model_to_response(&cloned, 0, &selections, route)),
     ))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn template_routes_distinguish_typed_not_found_from_database_error_text() {
-        use crate::config::{ConfigEventBroadcaster, ConfigService};
-        use crate::database::repositories::{SqlxConfigRepository, SqlxStreamerRepository};
-        use axum::http::StatusCode;
-        use std::sync::Arc;
-        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
-            .await
-            .unwrap();
-        sqlx::query("CREATE TABLE template_config (id TEXT)")
-            .execute(&pool)
-            .await
-            .unwrap();
-        let streamers = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
-        let state = TemplateRouteState {
-            config_service: Arc::new(ConfigService::new(
-                Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone())),
-                streamers.clone(),
-            )),
-            streamer_manager: Arc::new(crate::streamer::StreamerManager::new(
-                streamers,
-                ConfigEventBroadcaster::new(),
-            )),
-        };
-        for status in [StatusCode::NOT_FOUND, StatusCode::INTERNAL_SERVER_ERROR] {
-            let errors = [
-                get_template(State(state.clone()), ApiPath("missing".to_string()))
-                    .await
-                    .unwrap_err(),
-                update_template(
-                    State(state.clone()),
-                    ApiPath("missing".to_string()),
-                    ApiJson(serde_json::from_value(serde_json::json!({})).unwrap()),
-                )
-                .await
-                .unwrap_err(),
-                delete_template(State(state.clone()), ApiPath("missing".to_string()))
-                    .await
-                    .unwrap_err(),
-                clone_template(
-                    State(state.clone()),
-                    ApiPath("missing".to_string()),
-                    ApiJson(CloneTemplateRequest {
-                        new_name: "cloned".to_string(),
-                    }),
-                )
-                .await
-                .unwrap_err(),
-            ];
-            for error in errors {
-                assert_eq!(error.status, status);
-                if status == StatusCode::INTERNAL_SERVER_ERROR {
-                    assert_eq!(error.message, "Database error occurred");
-                }
-            }
-            if status == StatusCode::NOT_FOUND {
-                sqlx::query("DROP TABLE template_config")
-                    .execute(&pool)
-                    .await
-                    .unwrap();
-                sqlx::query("CREATE VIEW template_config AS SELECT * FROM \"not found\"")
-                    .execute(&pool)
-                    .await
-                    .unwrap();
-            }
-        }
-        pool.close().await;
-    }
 }

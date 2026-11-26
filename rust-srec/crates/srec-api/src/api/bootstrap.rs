@@ -357,16 +357,13 @@ mod tests {
     use srec_core::CoreError;
 
     #[test]
-    fn parse_auth_disabled_accepts_explicit_boolean_values() {
+    fn parse_auth_disabled_accepts_only_boolean_values() {
+        // Authentication stays on unless the variable explicitly disables it.
         assert!(!parse_auth_disabled(None).expect("missing value should use the default"));
         assert!(parse_auth_disabled(Some("true")).expect("true should parse"));
         assert!(parse_auth_disabled(Some("1")).expect("1 should parse"));
         assert!(!parse_auth_disabled(Some("FALSE")).expect("false should parse"));
         assert!(!parse_auth_disabled(Some("0")).expect("0 should parse"));
-    }
-
-    #[test]
-    fn parse_auth_disabled_rejects_invalid_values() {
         let result = parse_auth_disabled(Some("yes"));
         assert!(matches!(
             result,
@@ -375,16 +372,13 @@ mod tests {
     }
 
     #[test]
-    fn missing_jwt_fails_closed_by_default() {
+    fn explicit_auth_opt_out_is_limited_to_loopback() {
+        // Without a JWT secret, authentication is only off when asked for.
         let result = validate_auth_mode(false, false, "127.0.0.1");
         assert!(matches!(
             result,
             Err(crate::Error::Core(CoreError::Configuration(_)))
         ));
-    }
-
-    #[test]
-    fn explicit_auth_opt_out_is_limited_to_loopback() {
         assert_eq!(
             validate_auth_mode(false, true, "127.0.0.1")
                 .expect("IPv4 loopback should allow the explicit opt-out"),

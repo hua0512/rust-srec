@@ -310,6 +310,9 @@ pub struct HealthChecker {
     start_time: Instant,
     /// System version.
     version: String,
+    /// How long one refresh waits for the system sampler before it keeps
+    /// the previous metrics and marks disk probes stale.
+    sample_timeout: Duration,
 }
 
 /// Used-space fraction at which a disk is reported as degraded.
@@ -337,7 +340,16 @@ impl HealthChecker {
             started: AtomicBool::new(false),
             start_time: Instant::now(),
             version: env!("CARGO_PKG_VERSION").to_string(),
+            sample_timeout: SYSTEM_SAMPLE_TIMEOUT,
         }
+    }
+
+    /// Wait at most `timeout` for each system sample, so tests that block
+    /// the sampler do not wait the production budget.
+    #[cfg(test)]
+    fn with_sample_timeout(mut self, timeout: Duration) -> Self {
+        self.sample_timeout = timeout;
+        self
     }
 
     /// Disk-warning threshold used by the disk health probes.
@@ -389,18 +401,6 @@ impl HealthChecker {
     /// so callers normally don't need to await it.
     pub fn start(self: &Arc<Self>, cancel: CancellationToken) -> JoinHandle<()> {
         self.start_with_sampler(cancel, SystemSampler::new)
-    }
-
-    /// Exercise the refresh lifecycle in crate tests without querying the host OS.
-    #[cfg(test)]
-    pub(crate) fn start_with_test_metrics(
-        self: &Arc<Self>,
-        cancel: CancellationToken,
-        metrics: SystemMetricsSnapshot,
-    ) -> JoinHandle<()> {
-        self.start_with_sampler(cancel, move || {
-            SystemSampler::with_sampling_fn(move |_| Ok(metrics.clone()))
-        })
     }
 
     fn start_with_sampler(
@@ -481,7 +481,7 @@ impl HealthChecker {
         // top-level fields drive the dashboard headline numbers; users
         // expect them to update faster than per-component cadences.
         let include_disks = due.iter().any(|probe| probe.needs_disk_snapshot());
-        let sampled = sampler.sample(include_disks, SYSTEM_SAMPLE_TIMEOUT).await;
+        let sampled = sampler.sample(include_disks, self.sample_timeout).await;
         let sampling_failure = sampled.as_ref().err().cloned();
         let metrics = sampled.unwrap_or_else(|_| sampler.latest());
         let cpu_usage = metrics.cpu_usage;
@@ -759,10 +759,19 @@ mod tests {
             SystemSampler::with_sampling_fn(|_| Ok(SystemMetricsSnapshot::empty()))
         });
         // The first-fill triggers both probes; the panic happens inside
-        // its spawned task, the good probe completes normally.
-        tokio::time::sleep(Duration::from_millis(150)).await;
-
-        let snap = checker.current();
+        // its spawned task, the good probe completes normally, and both
+        // land in one published snapshot.
+        let snap = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let snap = checker.current();
+                if snap.components.contains_key("bomb") && snap.components.contains_key("good") {
+                    return snap;
+                }
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("the first refresh should publish both probes");
         let bomb = snap
             .components
             .get("bomb")
@@ -819,12 +828,10 @@ mod tests {
             HealthStatus::Degraded
         );
         assert!(usage.used_percent >= (checker.disk_warning_threshold() * 100.0) as f32);
-    }
 
-    #[test]
-    fn disk_usage_handles_unknown_total() {
-        let usage = DiskUsage::new("/rec", "/", 0, 0);
-        assert_eq!(usage.used_bytes, 0);
-        assert_eq!(usage.used_percent, 0.0);
+        // An unknown filesystem size reports nothing used.
+        let unknown = DiskUsage::new("/rec", "/", 0, 0);
+        assert_eq!(unknown.used_bytes, 0);
+        assert_eq!(unknown.used_percent, 0.0);
     }
 }

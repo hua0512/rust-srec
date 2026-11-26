@@ -20,7 +20,7 @@ use crate::downloader::engine::{DownloadEngine, FfmpegEngine, MesioEngine, Strea
 
 #[derive(Clone)]
 pub struct EngineRouteState {
-    config_service: std::sync::Arc<
+    pub(super) config_service: std::sync::Arc<
         crate::config::ConfigService<
             crate::database::repositories::config::SqlxConfigRepository,
             crate::database::repositories::streamer::SqlxStreamerRepository,
@@ -276,71 +276,4 @@ pub async fn test_engine(
         available: engine.is_available(),
         version: engine.version(),
     }))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config::ConfigService;
-    use crate::database::repositories::{SqlxConfigRepository, SqlxStreamerRepository};
-    use axum::http::StatusCode;
-    use std::sync::Arc;
-
-    #[tokio::test]
-    async fn engine_routes_distinguish_typed_not_found_from_database_error_text() {
-        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
-            .await
-            .unwrap();
-        sqlx::query("CREATE TABLE engine_configuration (id TEXT)")
-            .execute(&pool)
-            .await
-            .unwrap();
-        let state = EngineRouteState {
-            config_service: Arc::new(ConfigService::new(
-                Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone())),
-                Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone())),
-            )),
-        };
-        for status in [StatusCode::NOT_FOUND, StatusCode::INTERNAL_SERVER_ERROR] {
-            let errors = [
-                get_engine(State(state.clone()), ApiPath("missing".to_string()))
-                    .await
-                    .unwrap_err(),
-                update_engine(
-                    State(state.clone()),
-                    ApiPath("missing".to_string()),
-                    ApiJson(UpdateEngineRequest {
-                        name: None,
-                        engine_type: None,
-                        config: None,
-                    }),
-                )
-                .await
-                .unwrap_err(),
-                delete_engine(State(state.clone()), ApiPath("missing".to_string()))
-                    .await
-                    .unwrap_err(),
-                test_engine(State(state.clone()), ApiPath("missing".to_string()))
-                    .await
-                    .unwrap_err(),
-            ];
-            for error in errors {
-                assert_eq!(error.status, status);
-                if status == StatusCode::INTERNAL_SERVER_ERROR {
-                    assert_eq!(error.message, "Database error occurred");
-                }
-            }
-            if status == StatusCode::NOT_FOUND {
-                sqlx::query("DROP TABLE engine_configuration")
-                    .execute(&pool)
-                    .await
-                    .unwrap();
-                sqlx::query("CREATE VIEW engine_configuration AS SELECT * FROM \"not found\"")
-                    .execute(&pool)
-                    .await
-                    .unwrap();
-            }
-        }
-        pool.close().await;
-    }
 }

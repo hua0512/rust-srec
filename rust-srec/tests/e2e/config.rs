@@ -143,6 +143,11 @@ async fn global_config_matches_the_settings_schema_and_applies_a_patch_whole_or_
         ("output_retention_days", json!(1.5)),
         ("max_concurrent_downloads", json!(0)),
         ("max_concurrent_uploads", json!("3")),
+        // Stored as 32-bit integers.
+        ("offline_check_count", json!(i64::from(i32::MAX) + 1)),
+        ("max_concurrent_downloads", json!(i64::from(i32::MAX) + 1)),
+        ("streamer_check_delay_ms", json!(0)),
+        ("min_segment_size_bytes", json!(-1)),
         // Out of range everywhere; whether i64::MAX seconds fit the timer
         // depends on the host's Instant range.
         ("gpu_health_probe_interval_secs", json!(u64::MAX)),
@@ -182,12 +187,16 @@ async fn global_config_matches_the_settings_schema_and_applies_a_patch_whole_or_
                 // Timeouts and probe intervals are clamped instead of refused.
                 "pipeline_cpu_job_timeout_secs": 0,
                 "pipeline_io_job_timeout_secs": -10,
+                "pipeline_execute_timeout_secs": 0,
                 "gpu_health_probe_interval_secs": -5,
                 "queue_freshness_threshold_ms": -1,
                 // Null means "not sent".
                 "output_folder": null,
                 "default_extractor": null,
                 "max_part_size_bytes": 12345,
+                "output_retention_delete_files": true,
+                // Stored as JSON text.
+                "danmu_statistics": {"enabled": true},
             }),
         )
         .await
@@ -198,14 +207,23 @@ async fn global_config_matches_the_settings_schema_and_applies_a_patch_whole_or_
         ("max_concurrent_cpu_jobs", json!(0)),
         ("pipeline_cpu_job_timeout_secs", json!(1)),
         ("pipeline_io_job_timeout_secs", json!(1)),
+        ("pipeline_execute_timeout_secs", json!(1)),
         ("gpu_health_probe_interval_secs", json!(1)),
         ("queue_freshness_threshold_ms", json!(0)),
         ("max_part_size_bytes", json!(12345)),
         ("output_folder", global["output_folder"].clone()),
         ("default_extractor", global["default_extractor"].clone()),
+        ("output_retention_delete_files", json!(true)),
     ] {
         assert_eq!(applied[field], value, "{field}: {applied}");
     }
+    let statistics = applied["danmu_statistics"]
+        .as_str()
+        .expect("danmu_statistics as JSON text");
+    assert_eq!(
+        serde_json::from_str::<Value>(statistics).expect("valid JSON"),
+        json!({"enabled": true})
+    );
     assert_eq!(app.get_ok("/api/config/global", &token).await, applied);
 
     // A null legacy field is what older clients send for "unset".
@@ -220,11 +238,32 @@ async fn global_config_matches_the_settings_schema_and_applies_a_patch_whole_or_
     assert_eq!(system["proxy_route"], json!({"kind": "system"}));
     // A patch that omits the route keeps the stored one.
     let kept = app
-        .patch("/api/config/global", &token, &json!({"record_danmu": true}))
+        .patch(
+            "/api/config/global",
+            &token,
+            &json!({
+                "record_danmu": true,
+                // Values the clamps leave alone are stored as sent.
+                "pipeline_cpu_job_timeout_secs": 12,
+                "pipeline_io_job_timeout_secs": 13,
+                "pipeline_execute_timeout_secs": 14,
+                "gpu_health_probe_interval_secs": 15,
+                "queue_freshness_threshold_ms": 16,
+            }),
+        )
         .await
         .ok();
     assert_eq!(kept["proxy_route"], json!({"kind": "system"}));
     assert_eq!(kept["record_danmu"], true);
+    for (field, value) in [
+        ("pipeline_cpu_job_timeout_secs", 12),
+        ("pipeline_io_job_timeout_secs", 13),
+        ("pipeline_execute_timeout_secs", 14),
+        ("gpu_health_probe_interval_secs", 15),
+        ("queue_freshness_threshold_ms", 16),
+    ] {
+        assert_eq!(kept[field], value, "{field}: {kept}");
+    }
     assert_eq!(app.get_ok("/api/config/global", &token).await, kept);
 
     app.shutdown().await;
@@ -257,11 +296,22 @@ async fn platform_configs_are_replaced_whole_but_keep_their_identity() {
         .put("/api/config/platforms/platform-douyu", &token, &original)
         .await;
     mismatched.assert_error(StatusCode::BAD_REQUEST, "BAD_REQUEST");
+    // Replacing a platform that does not exist never creates it.
+    let mut unknown = original.clone();
+    unknown["id"] = json!("platform-missing");
+    app.put("/api/config/platforms/platform-missing", &token, &unknown)
+        .await
+        .assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
+    app.get("/api/config/platforms/platform-missing", &token)
+        .await
+        .assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
     let (bad, invalid) = (StatusCode::BAD_REQUEST, StatusCode::UNPROCESSABLE_ENTITY);
     for (field, value, status, code) in [
         ("name", json!("renamed"), bad, "BAD_REQUEST"),
         ("name", json!("Huya"), bad, "BAD_REQUEST"),
         ("fetch_delay_ms", json!(u64::MAX), bad, "BAD_REQUEST"),
+        ("download_delay_ms", json!(u64::MAX), bad, "BAD_REQUEST"),
+        ("offline_check_count", json!(u32::MAX), bad, "BAD_REQUEST"),
         ("offline_check_count", json!(0), bad, "BAD_REQUEST"),
         ("offline_check_delay_ms", json!(999), bad, "BAD_REQUEST"),
         ("cookies", json!("sid=abc"), invalid, "COOKIES_REPLACED"),
@@ -1727,6 +1777,172 @@ async fn profile_writes_return_the_conflict_codes_the_editor_reads() {
 }
 
 #[tokio::test]
+async fn an_accounts_own_route_is_kept_on_edits_and_a_changed_route_is_a_new_revision() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+
+    // An edit that omits the route keeps it, and changing it is a new
+    // revision, which recordings and playback bound to the account follow.
+    let proxy = app
+        .post(
+            "/api/proxies",
+            &token,
+            &json!({"name": "Account proxy", "url": "socks5://10.9.8.6:1080"}),
+        )
+        .await
+        .created();
+    let mut routed = bilibili_profile("Routed");
+    routed["proxy_route"] = json!({"kind": "proxy", "id": proxy["id"]});
+    let routed = create_profile(&app, &token, routed).await;
+    assert_eq!(
+        routed["proxy_route"],
+        json!({"kind": "proxy", "id": proxy["id"]})
+    );
+    let routed_path = format!("/api/credentials/profiles/{}", id_of(&routed));
+    let relabelled = app
+        .patch(
+            &routed_path,
+            &token,
+            &json!({"expected_version": routed["version"], "label": "Routed 2"}),
+        )
+        .await
+        .ok();
+    assert_eq!(relabelled["proxy_route"], routed["proxy_route"]);
+    assert_eq!(relabelled["revision"], routed["revision"]);
+    let direct = app
+        .patch(
+            &routed_path,
+            &token,
+            &json!({
+                "expected_version": relabelled["version"],
+                "proxy_route": {"kind": "direct"},
+            }),
+        )
+        .await
+        .ok();
+    assert_eq!(direct["proxy_route"], json!({"kind": "direct"}));
+    assert_ne!(direct["revision"], relabelled["revision"]);
+    app.patch(
+        &routed_path,
+        &token,
+        &json!({
+            "expected_version": direct["version"],
+            "proxy_route": {"kind": "proxy", "id": "missing"},
+        }),
+    )
+    .await
+    .assert_error(StatusCode::UNPROCESSABLE_ENTITY, "PROXY_NOT_FOUND");
+    // An inline `proxy` object is refused: an account reaches a proxy only
+    // through its route.
+    let inline = app
+        .patch(
+            &routed_path,
+            &token,
+            &json!({
+                "expected_version": direct["version"],
+                "proxy": {"url": "http://10.9.8.6:8080"},
+            }),
+        )
+        .await;
+    assert_eq!(
+        inline.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{}",
+        inline.text
+    );
+    assert_eq!(app.get_ok(&routed_path, &token).await["profile"], direct);
+
+    app.shutdown().await;
+}
+
+/// Only Streamlink accounts name sites. A Streamlink streamer that chooses no
+/// account uses the account for its site, until the account drops the site.
+#[tokio::test]
+async fn a_streamlink_streamer_uses_the_account_for_its_site_until_the_site_is_cleared() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+
+    // The account stores the site a URL names.
+    let streamlink = |label: &str, site: &str| {
+        let mut account = profile("platform-streamlink", label, "SID=1");
+        account["sites"] = json!([site]);
+        account
+    };
+    let youtube = create_profile(
+        &app,
+        &token,
+        streamlink("YouTube", "https://www.youtube.com/"),
+    )
+    .await;
+    let youtube_id = id_of(&youtube);
+    let youtube_path = format!("/api/credentials/profiles/{youtube_id}");
+    assert_eq!(
+        app.get_ok(&youtube_path, &token).await["sites"],
+        json!(["youtube.com"])
+    );
+    let mut elsewhere = bilibili_profile("Sited");
+    elsewhere["sites"] = json!(["bilibili.com"]);
+    let refused = app
+        .post("/api/credentials/profiles", &token, &elsewhere)
+        .await;
+    assert_eq!(
+        refused.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "only Streamlink accounts name sites: {}",
+        refused.text
+    );
+
+    // A Streamlink streamer on that site that chooses no account uses it.
+    // The row is inserted directly: which platform the API assigns a site
+    // URL to is not what this pins.
+    app.run_sql(
+        "INSERT INTO streamers (id, name, url, platform_config_id, priority, state) \
+         VALUES ('e2e-youtube', 'YouTube streamer', 'https://www.youtube.com/@someone/live', \
+         'platform-streamlink', 'NORMAL', 'DISABLED');",
+    )
+    .await;
+    let selection = "/api/credentials/selection?scope_type=streamer&scope_id=e2e-youtube&platform_id=platform-streamlink";
+    let effective = app.get_ok(selection, &token).await;
+    assert_eq!(effective["configured"], Value::Null, "{effective}");
+    assert_eq!(effective["resolved"]["owner"]["type"], "platform");
+    assert_eq!(
+        effective["resolved"]["selection"]["credential_id"],
+        youtube_id
+    );
+    assert_eq!(
+        effective["site"],
+        json!({"host": "youtube.com", "site": "youtube.com", "accounts": [youtube_id]})
+    );
+    assert_eq!(effective["candidates"][0]["profile"]["id"], youtube_id);
+    // Clearing the sites is not a new revision, and the streamer has no
+    // account any more.
+    let cleared = app
+        .patch(
+            &youtube_path,
+            &token,
+            &json!({"expected_version": youtube["version"], "sites": []}),
+        )
+        .await
+        .ok();
+    assert_eq!(cleared["revision"], youtube["revision"]);
+    let effective = app.get_ok(selection, &token).await;
+    assert_eq!(effective["resolved"], Value::Null, "{effective}");
+    assert_eq!(
+        effective["site"],
+        json!({"host": "youtube.com", "site": null, "accounts": []})
+    );
+    let platform = app
+        .get_ok(
+            "/api/credentials/selection?scope_type=platform&scope_id=platform-streamlink&platform_id=platform-streamlink",
+            &token,
+        )
+        .await;
+    assert_eq!(platform["site"], Value::Null, "{platform}");
+
+    app.shutdown().await;
+}
+
+#[tokio::test]
 async fn the_effective_account_selection_follows_streamer_then_template_then_platform() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
@@ -1880,6 +2096,57 @@ async fn account_capabilities_and_checks_answer_without_a_provider_request() {
     // Streamlink serves many sites, so only its accounts are chosen per streamer.
     let streamlink = capabilities("platform-streamlink").await.ok();
     assert_eq!(streamlink["per_streamer_selection"], true);
+    let douyu = capabilities("platform-douyu").await.ok();
+    for (field, value) in [
+        ("qr_login", true),
+        ("refresh", true),
+        ("refresh_token", true),
+        ("check", false),
+    ] {
+        assert_eq!(douyu[field], value, "{field}: {douyu}");
+    }
+    // Douyu renews only an account holding a passport credential, counting
+    // from the account's last change.
+    for (material, refreshable) in [
+        (
+            json!({"cookies": "acf_did=0123456789abcdef0123456789abcdef"}),
+            false,
+        ),
+        (
+            json!({
+                "cookies": "dy_did=bdevice; acf_did=bdevice; acf_uid=1; acf_auth=a",
+                "refresh_token": "passport-sentinel",
+            }),
+            true,
+        ),
+    ] {
+        let created = create_profile(
+            &app,
+            &token,
+            json!({"platform_id": "platform-douyu", "label": "Douyu", "enabled": true, "material": material}),
+        )
+        .await;
+        let id = id_of(&created);
+        let detail = app
+            .get_ok(&format!("/api/credentials/profiles/{id}"), &token)
+            .await;
+        assert_eq!(
+            detail["capabilities"],
+            json!({"validate": false, "refresh": refreshable, "qr_login": true}),
+            "{detail}"
+        );
+        assert!(
+            !detail.to_string().contains("passport-sentinel"),
+            "{detail}"
+        );
+        let updated_at = app
+            .query_i64(&format!(
+                "SELECT updated_at FROM credential_profiles WHERE id = '{id}'"
+            ))
+            .await;
+        let renewal = refreshable.then_some(updated_at + 4 * 24 * 60 * 60 * 1000);
+        assert_eq!(detail["next_renewal_at"], json!(renewal), "{detail}");
+    }
     capabilities("%20")
         .await
         .assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");

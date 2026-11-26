@@ -133,7 +133,9 @@ async fn blocked_sampling_marks_stale_disks_but_cheap_probes_continue_and_recove
             }
             Ok(metrics)
         });
-        let checker = HealthChecker::new();
+        // Each blocked refresh waits out the whole budget; the unblocked
+        // ones finish well within it.
+        let checker = HealthChecker::new().with_sample_timeout(Duration::from_millis(500));
         let cheap_calls = Arc::new(AtomicUsize::new(0));
         let disk_calls = Arc::new(AtomicUsize::new(0));
         let probes: Vec<Arc<dyn HealthProbe>> = vec![
