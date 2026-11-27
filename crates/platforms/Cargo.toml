@@ -67,7 +67,7 @@ uuid = { workspace = true, features = ["v4", "fast-rng"] }
 m3u8-rs = { workspace = true }
 md-5 = { workspace = true }
 # Bigo's native key exchange (ephemeral RSA-512).
-num-bigint = "0.4.8"
+num-bigint = "0.5.1"
 # Bigo's native media, written as FLV.
 aac = { path = "../aac" }
 flv = { path = "../flv" }
