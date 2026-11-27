@@ -3,7 +3,6 @@
 //! does.
 
 use std::path::PathBuf;
-use std::time::Duration;
 
 use serde_json::{Value, json};
 
@@ -113,7 +112,7 @@ async fn a_restart_during_a_recording_continues_the_same_session() {
 async fn a_restart_runs_again_the_job_it_interrupted_and_the_jobs_still_queued() {
     // The shutdown lets a running job finish for 10 s before stopping it;
     // this job would run 30 s, so the wait proves nothing.
-    rust_srec::pipeline::override_shutdown_drain_grace(Duration::from_millis(100));
+    rust_srec::pipeline::override_shutdown_drain_grace(std::time::Duration::from_millis(100));
     // One CPU worker, so the second workflow waits behind the first.
     let app = TestApp::start_seeded("UPDATE global_config SET max_concurrent_cpu_jobs = 1;").await;
     let token = app.admin_token().await;
