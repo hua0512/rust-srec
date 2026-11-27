@@ -292,6 +292,7 @@ pub struct JobPreset {
 pub enum ProgressKind {
     Ffmpeg,
     Rclone,
+    Rship,
     BaiduPcs,
     Compression,
     Copy,

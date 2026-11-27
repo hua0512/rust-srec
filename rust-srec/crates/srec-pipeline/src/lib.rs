@@ -54,8 +54,8 @@ pub use processors::{
     BaiduPcsProcessor, ConfirmedUpload, CopyMoveConfig, CopyMoveOperation, CopyMoveProcessor,
     DanmakuFactoryConfig, DanmakuFactoryProcessor, ExecuteCommandProcessor, LocalFileFingerprint,
     Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, RcloneProcessor,
-    RemuxProcessor, ThumbnailProcessor, UploadItemStatus, UploadResultItem, ZipArchiveEntry,
-    ZipArchiveError, write_streaming_zip,
+    RemuxProcessor, RshipConfig, RshipOperation, RshipProcessor, ThumbnailProcessor,
+    UploadItemStatus, UploadResultItem, ZipArchiveEntry, ZipArchiveError, write_streaming_zip,
 };
 pub use progress::{JobPhase, JobProgressSnapshot, ProgressKind, ProgressReporter};
 pub use srec_sqlite::models::JobStatus;

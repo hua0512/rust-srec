@@ -121,6 +121,70 @@ export const RcloneConfigSchema = z.object({
   proxy_route: ProxyRouteSchema.optional(),
 });
 
+// --- Rship Processor ---
+// Mirrors `RshipConfig` in `rust-srec/crates/srec-processors/src/processors/rship.rs`.
+// Optional fields accept `null` (from API/imported configs) and collapse blank
+// strings or `null` back to absent keys so unset options never shadow rship's
+// own defaults or environment variables.
+const optionalRshipString = z
+  .string()
+  .nullable()
+  .optional()
+  .transform((value) => {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : undefined;
+  });
+
+const optionalRshipPositiveInt = z
+  .number()
+  .int()
+  .positive()
+  .nullable()
+  .optional()
+  .transform((value) => value ?? undefined);
+
+const optionalRshipNonNegativeNumber = z
+  .number()
+  .nonnegative()
+  .nullable()
+  .optional()
+  .transform((value) => value ?? undefined);
+
+const optionalRshipProxyRoute = ProxyRouteSchema.nullable()
+  .optional()
+  .transform((value) => value ?? undefined);
+
+export const RshipConfigSchema = z
+  .object({
+    binary_path: optionalRshipString,
+    destination_root: optionalRshipString,
+    config_path: optionalRshipString,
+    state_dir: optionalRshipString,
+    operation: RcloneOperationSchema.default('copy'),
+    time_anchor: TimeAnchorSchema.default('job_created'),
+    max_retries: z.number().int().min(1).default(3),
+    args: z.array(z.string()).default([]),
+    bwlimit: optionalRshipString,
+    transfers: optionalRshipPositiveInt,
+    adaptive: z.boolean().default(false),
+    part_concurrency: optionalRshipPositiveInt,
+    chunk_size: optionalRshipString,
+    max_buffer_mem: optionalRshipString,
+    tpslimit: optionalRshipNonNegativeNumber,
+    drive_stop_on_upload_limit: z.boolean().default(false),
+    checksum: z.boolean().default(false),
+    strict_source: z.boolean().default(false),
+    proxy_route: optionalRshipProxyRoute,
+  })
+  .transform((config) => {
+    for (const key of Object.keys(config) as Array<keyof typeof config>) {
+      if (config[key] === undefined) {
+        delete config[key];
+      }
+    }
+    return config;
+  });
+
 // --- BaiduPCS-Go Processor ---
 const BaiduPcsPolicySchema = z.enum(['skip', 'overwrite', 'rsync']);
 

@@ -35,12 +35,12 @@ Example: set `output_folder` to `/rec/{streamer}/%Y-%m-%d` and `output_filename_
 
 ## Pipeline Destination Placeholders {#pipeline-destination-placeholders}
 
-Pipeline destination fields such as rclone `destination_root` and copy/move
+Pipeline destination fields such as rclone, rship, and Baidu Netdisk `destination_root` and copy/move
 `destination` support `{platform}`, `{streamer}`, `{title}`, `{streamer_id}`,
 `{session_id}`, and the same `%Y`, `%m`, `%d`, `%H`, `%M`, `%S`, `%t`, and `%%`
 time tokens. Time tokens render in the server's local time zone.
 
-Rclone expands time tokens with the job creation time by default. Set
+Upload processors (rclone, rship, and Baidu Netdisk) expand time tokens with the job creation time by default. Set
 `time_anchor` to `session_start` to keep every segment from one live session in
 the folder for the session's start date, even when the stream crosses midnight.
 Copy/move expands time tokens with the execution time when `time_anchor` is
@@ -49,5 +49,5 @@ anchoring is needed.
 
 When anchoring by session start, keep `%Y%m%d-%H%M%S` or `%t` in the filename
 template. If multiple sessions send the same basename into one destination
-folder, rclone and filesystem copy/move operations can overwrite or skip files
+folder, rclone, rship, and filesystem copy/move operations can overwrite or skip files
 depending on the operation and arguments.

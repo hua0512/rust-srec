@@ -18,6 +18,7 @@ use tracing::{debug, warn};
 use super::traits::{JobLogSink, ProcessorContext};
 use super::upload_runner::{
     BAIDUPCS_BAR_END, UploadTracker, consume_baidupcs_stream, consume_rclone_stderr,
+    consume_rship_stderr, consume_rship_stdout,
 };
 use srec_core::domain::processor::{
     JobLogEntry, JobPhase, JobProgressSnapshot, LogLevel, ProgressKind, ProgressReporter,
@@ -470,6 +471,13 @@ pub(super) struct RcloneRunState {
     pub(super) last_stats_error: Option<String>,
 }
 
+/// Captured `--json` stdout summary buffer for an `rship` invocation.
+#[derive(Default)]
+pub(super) struct RshipRunState {
+    pub(super) stdout: String,
+    pub(super) stdout_truncated: bool,
+}
+
 #[derive(Clone)]
 pub(super) enum CommandMode {
     Plain,
@@ -481,6 +489,10 @@ pub(super) enum CommandMode {
     Rclone {
         progress: ProgressReporter,
         state: Arc<Mutex<RcloneRunState>>,
+    },
+    Rship {
+        progress: ProgressReporter,
+        state: Arc<Mutex<RshipRunState>>,
     },
     /// Follows an `upload` invocation's progress when present.
     BaiduPcs(Option<Arc<UploadTracker>>),
@@ -505,6 +517,19 @@ async fn consume_command_stream<R: AsyncRead + Unpin>(
             reader,
             progress.clone(),
             state.clone(),
+            context.tx,
+            context.dropped_count,
+            context.overlong_count,
+        )
+        .await;
+    }
+    if let CommandMode::Rship { progress, state } = &context.mode {
+        if stdout {
+            return consume_rship_stdout(reader, state.clone()).await;
+        }
+        return consume_rship_stderr(
+            reader,
+            progress.clone(),
             context.tx,
             context.dropped_count,
             context.overlong_count,

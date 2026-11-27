@@ -8,6 +8,7 @@ import { useLingui } from '@lingui/react';
 import { Loader2, Unlink, AlertTriangle, Info } from 'lucide-react';
 import { useMemo, useState, memo, Suspense } from 'react';
 import { useForm } from 'react-hook-form';
+import { toast } from 'sonner';
 import { z } from 'zod';
 import { DagStepDefinition, PipelineStep } from '@/api/schemas';
 import {
@@ -247,6 +248,10 @@ function StepConfigDialogBody({
       return;
     }
     performSave(data);
+  };
+
+  const handleInvalidSubmit = () => {
+    toast.error(i18n._(msg`Fix configuration errors before saving`));
   };
 
   // Determine processor definition for the preset (for display purposes)
@@ -520,7 +525,10 @@ function StepConfigDialogBody({
                         // sits inside whatever form embeds the workflow editor. Without this,
                         // saving a step here would also submit that surrounding form.
                         event.stopPropagation();
-                        void form.handleSubmit(handleSubmit)(event);
+                        void form.handleSubmit(
+                          handleSubmit,
+                          handleInvalidSubmit,
+                        )(event);
                       }}
                       className="contents"
                     >
@@ -778,7 +786,7 @@ function StepConfigDialogBody({
           <Button
             type="submit"
             disabled={!!idError}
-            onClick={form.handleSubmit(handleSubmit)}
+            onClick={form.handleSubmit(handleSubmit, handleInvalidSubmit)}
           >
             <Trans>Save Changes</Trans>
           </Button>

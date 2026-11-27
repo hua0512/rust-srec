@@ -23,7 +23,7 @@ items they processed.
 A processor that reports some of its inputs as failed fails the job, and a workflow
 step with it, even when the remaining inputs were processed. The error names each
 failed input. What was published stays on disk and in the job's produced-file
-history, so a retry resumes past it. An rclone move or BaiduPCS upload that
+history, so a retry resumes past it. An rclone move, rship transfer or BaiduPCS upload that
 fails part-way records each file's own result instead of marking every file
 failed. Copy and move steps refuse two inputs that would use the same
 destination name, and a thumbnail step takes the first frame of a recording
@@ -68,9 +68,9 @@ Missing leaf records or malformed output arrays leave recovery incomplete while
 preserving the valid outputs. Completing a step twice does not create another
 downstream job or increment the DAG's completed-step count again.
 
-Delete, rclone and BaiduPCS retry delays grow exponentially but are capped at
+Delete, rclone, rship and BaiduPCS retry delays grow exponentially but are capped at
 30 seconds per wait, including extreme configured values. Retry counts keep
-their configured meaning. Before each rclone or BaiduPCS upload retry, the
+their configured meaning. Before each rclone, rship or BaiduPCS upload retry, the
 job log notes the failed attempt and the wait, and the job's progress reports
 the `retrying` phase, without bytes, speed or `eta_secs`, until the next
 attempt starts. From the first retry on, snapshots carry `attempt` and
@@ -101,18 +101,18 @@ absent while a job does plain work towards `percent`. It is `finalizing` while
 FFmpeg rewrites an MP4 after writing its last frame, such as moving the index
 to the front for fast start; `percent` then stops at 99% of the file's share,
 with no speed or `eta_secs`, until FFmpeg reports the end. It is also
-`finalizing` for an rclone job that sent every byte while the destination
+`finalizing` for an rclone or rship job that sent every byte while the destination
 confirms the files in flight. It is `preparing` for a BaiduPCS upload while
 none of the files BaiduPCS-Go is working on has shown progress yet, because
 before sending a file BaiduPCS-Go checks the Netdisk and hashes the file
 without progress output; the job's counts so far stay. It is also `preparing`
-for an rclone job while none of the files in flight has sent data, such as
-while rclone hashes a file for a destination that stores a checksum with the
+for an rclone or rship job while none of the files in flight has sent data, such as
+while hashing a file for a destination that stores a checksum with the
 upload (S3 multipart uploads, for example), and before its first transfer,
-while rclone lists the destination and compares the files already there, which
+while listing the destination and comparing the files already there, which
 can mean reading a whole file to compare checksums. FFmpeg, copy, compression,
-DanmakuFactory, rclone and BaiduPCS jobs name the file in progress in
-`current_file`, without its directories; rclone and BaiduPCS jobs name none
+DanmakuFactory, rclone, rship and BaiduPCS jobs name the file in progress in
+`current_file`, without its directories; rclone, rship and BaiduPCS jobs name none
 while they send several files at once. `raw` carries no file paths.
 
 Job progress is kept in memory only. A job has no snapshot until it reports,

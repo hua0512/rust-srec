@@ -460,6 +460,7 @@ async fn validate_runs_the_creation_checks_once_the_graph_is_sound() {
     for processor in [
         "remux",
         "rclone",
+        "rship",
         "baidupcs",
         "thumbnail",
         "execute",
@@ -551,6 +552,10 @@ async fn validate_runs_the_creation_checks_once_the_graph_is_sound() {
             races_thumbnail,
         ),
         (
+            beside_reader("rship", json!({ "operation": "move" })),
+            races_thumbnail,
+        ),
+        (
             beside_reader("baidupcs", json!({ "remove_source_after_upload": true })),
             races_thumbnail,
         ),
@@ -589,6 +594,8 @@ async fn validate_runs_the_creation_checks_once_the_graph_is_sound() {
     let accepted = [
         beside_reader("copy_move", json!({ "operation": "copy" })),
         beside_reader("rclone", json!({})),
+        beside_reader("rship", json!({})),
+        beside_reader("rship", json!({ "operation": "sync" })),
         beside_reader("baidupcs", json!({ "remove_source_after_upload": false })),
         beside_reader("remux", json!({ "remove_input_on_success": false })),
         beside_reader("remux", json!({})),
@@ -673,9 +680,14 @@ async fn validate_runs_the_creation_checks_once_the_graph_is_sound() {
             vec![
                 json!({ "id": "copy", "step": { "type": "preset", "name": "e2e validate copy" } }),
                 json!({
+                    "id": "ship",
+                    "step": { "type": "preset", "name": "rship_upload" },
+                    "depends_on": ["copy"],
+                }),
+                json!({
                     "id": "flow",
                     "step": { "type": "workflow", "name": "E2E Validate Flow" },
-                    "depends_on": ["copy"],
+                    "depends_on": ["ship"],
                 }),
             ],
         ),

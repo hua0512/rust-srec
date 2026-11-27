@@ -122,7 +122,7 @@ Platform, template and streamer writes choose accounts with a [`credential_selec
 
 Conflicts return `409` with `PROXY_NAME_TAKEN`, `PROXY_DUPLICATE` (another proxy has the same address and username), `PROXY_STALE_VERSION`, or `PROXY_REFERENCED` when deleting a proxy still in use, with `details.references` listing its users. An invalid address or login returns `422` `PROXY_INVALID`.
 
-Global, platform, template, streamer, account, notification-channel (except email), and upload-step (`rclone`, `baidupcs`) writes choose a proxy with a [`proxy_route`](../reference/configuration-overrides.md#proxy-route-json) object. The former `proxy_config` field is rejected with `422` `PROXY_CONFIG_REPLACED`.
+Global, platform, template, streamer, account, notification-channel (except email), and upload-step (`rclone`, `rship`, `baidupcs`) writes choose a proxy with a [`proxy_route`](../reference/configuration-overrides.md#proxy-route-json) object. The former `proxy_config` field is rejected with `422` `PROXY_CONFIG_REPLACED`.
 
 ## Creation responses and job progress
 
@@ -135,10 +135,10 @@ requiring 200 for every JSON response.
 Use `GET /api/pipeline/jobs/{id}/progress` for a job's latest processor-specific
 progress snapshot; it returns 404 when no snapshot is available. The snapshot's
 optional `phase` is `finalizing` while FFmpeg rewrites its output after the last
-frame and while an rclone upload that sent every byte waits for the destination
+frame and while an rclone or rship upload that sent every byte waits for the destination
 to confirm its files, `retrying` while an upload waits to retry, and `preparing`
-for a BaiduPCS or rclone upload while none of the files it is working on has
-sent data yet, including rclone listing the destination before its first transfer
+for a BaiduPCS, rclone or rship upload while none of the files it is working on has
+sent data yet, including listing the destination before its first transfer
 (treat values you do not know as plain work), and `current_file` names the file
 in progress without its directories. After an upload's first failed attempt,
 `attempt` and `max_attempts` give its attempt within the current job run, which

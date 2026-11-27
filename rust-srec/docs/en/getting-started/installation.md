@@ -61,11 +61,11 @@ Then start the service:
 systemctl daemon-reload && systemctl enable --now rust-srec
 ```
 
-The account's home directory has to be `/var/lib/rust-srec` and has to be writable — rclone and BaiduPCS-Go rewrite their session files there. The install directory under `/opt` cannot serve as a home; the unit's hardening keeps it read-only.
+The account's home directory has to be `/var/lib/rust-srec` and has to be writable — rclone, rship, and BaiduPCS-Go rewrite their state and session files there. The install directory under `/opt` cannot serve as a home; the unit's hardening keeps it read-only.
 
 `StateDirectory=` and `LogsDirectory=` create `/var/lib/rust-srec`, `/var/lib/rust-srec/output`, and `/var/log/rust-srec` on each start, so a fresh host needs nothing pre-created.
 
-`/etc/rust-srec/rust-srec.env` is loaded through `EnvironmentFile=`. The service refuses to start without `JWT_SECRET`, so that file is mandatory in practice. Web Push (VAPID) keys and any `*_PATH` override for ffmpeg, rclone, streamlink, or DanmakuFactory belong there too. Every assignment in it overrides the unit's own `Environment=` lines.
+`/etc/rust-srec/rust-srec.env` is loaded through `EnvironmentFile=`. The service refuses to start without `JWT_SECRET`, so that file is mandatory in practice. Web Push (VAPID) keys and any `*_PATH` override for ffmpeg, rclone, rship, streamlink, or DanmakuFactory belong there too. Every assignment in it overrides the unit's own `Environment=` lines.
 
 The Docker Compose installer defaults `RUST_SREC_DIR` to `./rust-srec`, though the [Docker guide](./docker.md#installer) shows `/opt/rust-srec` as an example. Pick a different path if both deployments share a host and you install Docker into `/opt/rust-srec`.
 
@@ -194,6 +194,7 @@ The built-in Mesio download engine does not require Streamlink. Install external
 - Install `ffmpeg` and make it available on `PATH` (or set `FFMPEG_PATH`) when using FFmpeg processors or an FFmpeg-based workflow outside the Docker image.
 - Install `streamlink` and make it available on `PATH` when selecting the Streamlink download engine or extractor.
 - Install [rclone](https://rclone.org/) and make it available on `PATH` (or set `RCLONE_PATH`) when using the `rclone` cloud-storage upload processor.
+- Install [rship](https://hua0512.github.io/rship/) and make it available on `PATH` (or set `RSHIP_PATH`) when using the `rship` multi-cloud upload processor.
 - Install [DanmakuFactory](https://github.com/hihkm/DanmakuFactory) and make it available on `PATH` (or set `DANMAKU_FACTORY_PATH`) when using the `danmaku_factory` XML-to-ASS subtitle conversion processor.
 - Install [BaiduPCS-Go](https://github.com/qjfoidnh/BaiduPCS-Go) and make it available on `PATH` (or set `BAIDUPCS_PATH`) when using the `baidupcs` Baidu Netdisk upload processor.
 - The Docker image contains its supported runtime tools; do not install them on the host for a standard Docker deployment.

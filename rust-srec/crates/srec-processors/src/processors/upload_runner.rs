@@ -1,5 +1,5 @@
 //! Shared upload command execution, progress parsing, and outcome tracking for
-//! `RcloneProcessor` and `BaiduPcsProcessor`.
+//! `RcloneProcessor`, `RshipProcessor`, and `BaiduPcsProcessor`.
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
@@ -10,13 +10,13 @@ use std::time::Duration;
 
 use parking_lot::Mutex;
 use serde::Deserialize;
-use tokio::io::AsyncRead;
+use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
 use tokio::time::MissedTickBehavior;
 
 use super::traits::JobLogSink;
 use super::utils::{
-    CappedLines, CommandMode, CommandOutput, RcloneRunState, parse_eta_to_secs,
+    CappedLines, CommandMode, CommandOutput, RcloneRunState, RshipRunState, parse_eta_to_secs,
     parse_size_to_bytes, parse_speed_to_bytes_per_sec, run_logged_command,
     run_logged_command_until,
 };
@@ -926,6 +926,288 @@ pub(super) async fn run_rclone_with_progress(
     .await
 }
 
+/// Hard ceiling on captured `--json` stdout from an `rship` process.
+/// `rship` already caps `files` in its `RunReport` at 10,000 entries, so valid
+/// summaries fit comfortably within a few megabytes.
+const MAX_RSHIP_STDOUT_BYTES: usize = 8 * 1024 * 1024;
+
+/// Output of an `rship` invocation: captured stderr logs plus the `--json`
+/// summary written to stdout when the report was not truncated.
+pub(super) struct RshipCommandOutput {
+    pub(super) output: CommandOutput,
+    pub(super) stdout_json: Option<String>,
+}
+
+/// One `--json-progress` JSONL event emitted on `rship` stderr (`progress` or
+/// `error`/`conflict`).
+#[derive(Deserialize)]
+struct RshipProgressLine {
+    #[serde(default)]
+    event: Option<String>,
+    #[serde(default)]
+    phase: Option<String>,
+    #[serde(default)]
+    bytes_done: Option<u64>,
+    #[serde(default)]
+    bytes_total: Option<u64>,
+    #[serde(default)]
+    speed_bps: Option<u64>,
+    #[serde(default)]
+    eta_secs: Option<u64>,
+    #[serde(default)]
+    files_done: Option<u64>,
+    #[serde(default)]
+    files_total: Option<u64>,
+    #[serde(default)]
+    files_planned: Option<u64>,
+    #[serde(default)]
+    files_skipped: Option<u64>,
+    #[serde(default)]
+    active_transfers: Option<usize>,
+    #[serde(default)]
+    current_file: Option<String>,
+    #[serde(default)]
+    active_files: Vec<RshipActiveFile>,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default, alias = "error")]
+    message: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RshipActiveFile {
+    #[serde(default)]
+    path: Option<String>,
+}
+
+#[allow(clippy::large_enum_variant)]
+enum ParsedRshipLine {
+    Progress(JobProgressSnapshot),
+    Log(JobLogEntry),
+}
+
+fn snapshot_from_rship_progress(p: RshipProgressLine) -> JobProgressSnapshot {
+    let mut snapshot = JobProgressSnapshot::new(ProgressKind::Rship);
+    let bytes_done = p.bytes_done;
+    let bytes_total = p.bytes_total.filter(|&total| total > 0);
+    snapshot.bytes_done = bytes_done;
+    snapshot.bytes_total = bytes_total;
+
+    let planned_done = p.files_done.unwrap_or(0);
+    let files_finished = planned_done.saturating_add(p.files_skipped.unwrap_or(0));
+    let files_total = p.files_total.filter(|&total| total > 0);
+    snapshot.files_done = Some(files_finished);
+    snapshot.files_total = files_total;
+
+    let phase_str = p.phase.as_deref().unwrap_or_default();
+    snapshot.percent = match (bytes_done, bytes_total) {
+        (Some(done), Some(total)) => {
+            Some((done as f64 / total as f64 * 100.0).clamp(0.0, 100.0) as f32)
+        }
+        _ if phase_str == "completed" => Some(100.0),
+        _ => match files_total {
+            Some(total) if files_finished > 0 => {
+                Some((files_finished as f64 / total as f64 * 100.0).clamp(0.0, 100.0) as f32)
+            }
+            _ => None,
+        },
+    };
+
+    snapshot.speed_bytes_per_sec = p.speed_bps.map(|bps| bps as f64);
+    snapshot.eta_secs = p.eta_secs.map(|eta| eta as f64);
+
+    let active_count = p.active_transfers.unwrap_or(p.active_files.len());
+    snapshot.current_file = if active_count == 1 {
+        p.active_files
+            .first()
+            .and_then(|item| item.path.as_deref())
+            .or(p.current_file.as_deref())
+            .and_then(progress_file_name)
+    } else {
+        None
+    };
+
+    snapshot.phase = match phase_str {
+        "preparing" | "observing" | "creating_dirs" => Some(JobPhase::Preparing),
+        "finalizing" | "deleting" => Some(JobPhase::Finalizing),
+        "transferring" => {
+            if bytes_done.unwrap_or(0) == 0 && planned_done == 0 {
+                Some(JobPhase::Preparing)
+            } else if bytes_total.is_some() && bytes_done == bytes_total && active_count > 0 {
+                Some(JobPhase::Finalizing)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+
+    snapshot.raw = serde_json::json!({
+        "files_done": p.files_done,
+        "files_planned": p.files_planned,
+        "files_skipped": p.files_skipped,
+        "files_total": p.files_total,
+    });
+    snapshot
+}
+
+fn determine_rship_log_level(line: &str) -> LogLevel {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with('✗')
+        || trimmed.starts_with("├─")
+        || trimmed.starts_with("└─")
+        || trimmed.starts_with('│')
+        || trimmed.starts_with("error:")
+        || trimmed.contains(" ERROR ")
+        || trimmed.starts_with("ERROR ")
+    {
+        LogLevel::Error
+    } else if trimmed.starts_with('▲')
+        || trimmed.starts_with("conflict ")
+        || trimmed.starts_with("hint:")
+        || trimmed.contains(" WARN ")
+        || trimmed.starts_with("WARN ")
+    {
+        LogLevel::Warn
+    } else if trimmed.contains(" DEBUG ")
+        || trimmed.starts_with("DEBUG ")
+        || trimmed.contains(" TRACE ")
+        || trimmed.starts_with("TRACE ")
+    {
+        LogLevel::Debug
+    } else {
+        LogLevel::Info
+    }
+}
+
+fn parse_rship_stderr_line(line: &str) -> ParsedRshipLine {
+    let trimmed = line.trim();
+    if trimmed.starts_with('{')
+        && let Ok(parsed) = serde_json::from_str::<RshipProgressLine>(trimmed)
+    {
+        match parsed.event.as_deref() {
+            Some("progress") => {
+                return ParsedRshipLine::Progress(snapshot_from_rship_progress(parsed));
+            }
+            Some("error") => {
+                let text = match (parsed.path.as_deref(), parsed.message.as_deref()) {
+                    (Some(path), Some(msg)) => format!("rship {path}: {msg}"),
+                    (None, Some(msg)) => format!("rship: {msg}"),
+                    _ => trimmed.to_owned(),
+                };
+                return ParsedRshipLine::Log(JobLogEntry::error(text));
+            }
+            Some("conflict" | "warn" | "warning") => {
+                let text = match (parsed.path.as_deref(), parsed.message.as_deref()) {
+                    (Some(path), Some(msg)) => format!("rship {path}: {msg}"),
+                    (None, Some(msg)) => format!("rship: {msg}"),
+                    _ => trimmed.to_owned(),
+                };
+                return ParsedRshipLine::Log(JobLogEntry::warn(text));
+            }
+            _ => {}
+        }
+    }
+    ParsedRshipLine::Log(JobLogEntry::new(
+        determine_rship_log_level(trimmed),
+        trimmed,
+    ))
+}
+
+/// Reads `rship` stdout into `state.stdout` up to [`MAX_RSHIP_STDOUT_BYTES`]
+/// and drains any remainder so the child process never blocks on a full pipe.
+pub(super) async fn consume_rship_stdout<R: AsyncRead + Unpin>(
+    mut reader: R,
+    state: Arc<Mutex<RshipRunState>>,
+) -> std::io::Result<()> {
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 8192];
+    let mut truncated = false;
+    loop {
+        let n = reader.read(&mut chunk).await?;
+        if n == 0 {
+            break;
+        }
+        if !truncated {
+            if buf.len() + n <= MAX_RSHIP_STDOUT_BYTES {
+                buf.extend_from_slice(&chunk[..n]);
+            } else {
+                truncated = true;
+                buf.clear();
+            }
+        }
+    }
+    let mut guard = state.lock();
+    guard.stdout_truncated = truncated;
+    if !truncated && !buf.is_empty() {
+        guard.stdout = String::from_utf8_lossy(&buf).into_owned();
+    }
+    Ok(())
+}
+
+/// Reads `rship` stderr to EOF: `--json-progress` lines become progress
+/// snapshots, and diagnostic lines go to the bounded job-log channel.
+pub(super) async fn consume_rship_stderr<R: AsyncRead + Unpin>(
+    reader: R,
+    progress: ProgressReporter,
+    tx: tokio::sync::mpsc::Sender<JobLogEntry>,
+    dropped_count: Arc<AtomicUsize>,
+    overlong_count: Arc<AtomicUsize>,
+) -> std::io::Result<()> {
+    let mut lines = CappedLines::new(reader, overlong_count);
+    while let Some(line) = lines.next_line().await? {
+        if line.trim().is_empty() {
+            continue;
+        }
+        match parse_rship_stderr_line(&line) {
+            ParsedRshipLine::Progress(snapshot) => {
+                progress.report(snapshot);
+            }
+            ParsedRshipLine::Log(entry) => {
+                if tx.try_send(entry).is_err() {
+                    dropped_count.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Run an `rship` command configured with `--json --json-progress --stats 1s`,
+/// streaming JSONL progress from stderr, capturing the final JSON report from
+/// stdout, and reaping the child process when `stop` is cancelled so `rship`'s
+/// exclusive `ProcessLock` is released before any subsequent attempt starts.
+pub(super) async fn run_rship_with_progress(
+    command: &mut Command,
+    progress: &ProgressReporter,
+    log_sink: Option<JobLogSink>,
+    stop: &tokio_util::sync::CancellationToken,
+) -> srec_core::CoreResult<RshipCommandOutput> {
+    let state = Arc::new(Mutex::new(RshipRunState::default()));
+    let output = run_logged_command_until(
+        command,
+        CommandMode::Rship {
+            progress: progress.clone(),
+            state: state.clone(),
+        },
+        log_sink,
+        Some(stop),
+    )
+    .await?;
+    let stdout_json = {
+        let mut guard = state.lock();
+        if guard.stdout_truncated || guard.stdout.trim().is_empty() {
+            None
+        } else {
+            Some(std::mem::take(&mut guard.stdout))
+        }
+    };
+    Ok(RshipCommandOutput {
+        output,
+        stdout_json,
+    })
+}
+
 /// Minimum seconds between progress-bar lines forwarded to the live log
 /// sink by [`run_baidupcs_with_logs`]: BaiduPCS-Go redraws each file's bar
 /// every 3 seconds and uploads several files at once (four by default).
@@ -1506,5 +1788,81 @@ mod tests {
         ] {
             assert_eq!(determine_baidupcs_log_level(line), level, "{line}");
         }
+    }
+
+    #[tokio::test]
+    async fn rship_stderr_progress_and_stdout_report_handling() {
+        // 1. Preparing / transferring / finalizing / completed progress ticks + current_file rules.
+        let ParsedRshipLine::Progress(preparing) = parse_rship_stderr_line(
+            r#"{"event":"progress","phase":"observing","bytes_done":0,"bytes_total":0,"files_done":0,"files_total":0,"files_skipped":0,"active_transfers":0,"active_files":[]}"#,
+        ) else {
+            panic!("observing JSONL tick must parse as progress");
+        };
+        assert_eq!(preparing.kind, ProgressKind::Rship);
+        assert_eq!(preparing.phase, Some(JobPhase::Preparing));
+        assert_eq!(preparing.bytes_total, None);
+        assert_eq!(preparing.files_total, None);
+        assert_eq!(preparing.percent, None);
+
+        let ParsedRshipLine::Progress(single_in_flight) = parse_rship_stderr_line(
+            r#"{"event":"progress","phase":"transferring","bytes_done":52428800,"bytes_total":104857600,"speed_bps":10485760,"eta_secs":5,"files_done":1,"files_skipped":2,"files_total":4,"active_transfers":1,"active_files":[{"path":"nested/dir/seg04.mp4"}]}"#,
+        ) else {
+            panic!("transferring JSONL tick must parse as progress");
+        };
+        assert_eq!(single_in_flight.phase, None);
+        assert_eq!(single_in_flight.percent, Some(50.0));
+        assert_eq!(single_in_flight.files_done, Some(3));
+        assert_eq!(single_in_flight.files_total, Some(4));
+        assert_eq!(single_in_flight.speed_bytes_per_sec, Some(10_485_760.0));
+        assert_eq!(single_in_flight.eta_secs, Some(5.0));
+        assert_eq!(single_in_flight.current_file.as_deref(), Some("seg04.mp4"));
+
+        let ParsedRshipLine::Progress(multi_in_flight) = parse_rship_stderr_line(
+            r#"{"event":"progress","phase":"transferring","bytes_done":100,"bytes_total":100,"files_done":0,"files_total":2,"active_transfers":2,"active_files":[{"path":"a.mp4"},{"path":"b.mp4"}]}"#,
+        ) else {
+            panic!("finalizing-bytes JSONL tick must parse as progress");
+        };
+        assert_eq!(multi_in_flight.current_file, None);
+        assert_eq!(multi_in_flight.phase, Some(JobPhase::Finalizing));
+
+        // 2. Structured JSONL `error` events and plain diagnostic lines preserve severity.
+        for (line, expected) in [
+            (
+                r#"{"event":"error","path":"seg04.mp4","error":"connection reset"}"#,
+                LogLevel::Error,
+            ),
+            (
+                "✗ error: remote `missing` is not configured",
+                LogLevel::Error,
+            ),
+            ("  └─ Protocol: invalid proxy URL", LogLevel::Error),
+            ("▲ rate limit backoff on gdrive", LogLevel::Warn),
+            ("conflict a.mp4: modified on both sides", LogLevel::Warn),
+            (
+                "2026-07-15T12:00:00Z DEBUG rship_core: stat",
+                LogLevel::Debug,
+            ),
+        ] {
+            let ParsedRshipLine::Log(entry) = parse_rship_stderr_line(line) else {
+                panic!("diagnostic line must parse as log: {line}");
+            };
+            assert_eq!(entry.level, expected, "{line}");
+        }
+
+        // 3. Stdout JSON capture keeps normal summaries and drains oversized streams without OOM.
+        let state = Arc::new(Mutex::new(RshipRunState::default()));
+        consume_rship_stdout(br#"{"errors":[],"files":[]}"#.as_slice(), state.clone())
+            .await
+            .unwrap();
+        assert!(!state.lock().stdout_truncated);
+        assert_eq!(state.lock().stdout, r#"{"errors":[],"files":[]}"#);
+
+        let oversized = vec![b'a'; MAX_RSHIP_STDOUT_BYTES + 64];
+        let capped_state = Arc::new(Mutex::new(RshipRunState::default()));
+        consume_rship_stdout(oversized.as_slice(), capped_state.clone())
+            .await
+            .unwrap();
+        assert!(capped_state.lock().stdout_truncated);
+        assert!(capped_state.lock().stdout.is_empty());
     }
 }

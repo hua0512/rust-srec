@@ -123,7 +123,7 @@ The chosen connection carries live checks and parsing, downloads with every engi
 
 A setting that names a proxy which no longer exists makes its requests fail rather than connect directly.
 
-Notification channels choose their own [proxy setting](./notifications.md#proxy), which inherits the **Default proxy**, and browser push always follows the Default proxy. Email notifications always connect directly. rclone and Baidu Netdisk upload steps also choose their own [proxy setting](../reference/processors.md#upload-proxy), inheriting the Default proxy. With its built-in backend, the desktop app's check for a newer release uses the Default proxy when it is a saved proxy. With **Direct** or **System proxy**, or when the app is connected to a remote server, the check uses the system proxy, which on Windows and macOS includes the operating system's proxy setting.
+Notification channels choose their own [proxy setting](./notifications.md#proxy), which inherits the **Default proxy**, and browser push always follows the Default proxy. Email notifications always connect directly. rclone, rship and Baidu Netdisk upload steps also choose their own [proxy setting](../reference/processors.md#upload-proxy), inheriting the Default proxy. With its built-in backend, the desktop app's check for a newer release uses the Default proxy when it is a saved proxy. With **Direct** or **System proxy**, or when the app is connected to a remote server, the check uses the system proxy, which on Windows and macOS includes the operating system's proxy setting.
 
 ### Account proxy settings {#account-proxies}
 

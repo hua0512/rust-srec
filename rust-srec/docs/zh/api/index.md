@@ -118,7 +118,7 @@ curl http://localhost:12555/api/streamers \
 
 冲突返回 `409`，代码为 `PROXY_NAME_TAKEN`、`PROXY_DUPLICATE`（另一个代理的地址和用户名相同）、`PROXY_STALE_VERSION`，或删除仍在使用的代理时返回 `PROXY_REFERENCED`，并在 `details.references` 中列出使用者。地址或登录信息无效时返回 `422` `PROXY_INVALID`。
 
-全局、平台、模板、主播、账号、通知渠道（邮件除外）和上传步骤（`rclone`、`baidupcs`）的写入请求用 [`proxy_route`](../reference/configuration-overrides.md#proxy-route-json) 对象选择代理。旧的 `proxy_config` 字段会以 `422` `PROXY_CONFIG_REPLACED` 被拒绝。
+全局、平台、模板、主播、账号、通知渠道（邮件除外）和上传步骤（`rclone`、`rship`、`baidupcs`）的写入请求用 [`proxy_route`](../reference/configuration-overrides.md#proxy-route-json) 对象选择代理。旧的 `proxy_config` 字段会以 `422` `PROXY_CONFIG_REPLACED` 被拒绝。
 
 ## 创建响应与任务进度
 
@@ -128,9 +128,9 @@ curl http://localhost:12555/api/streamers \
 
 请使用 `GET /api/pipeline/jobs/{id}/progress` 获取任务的最新处理器专用进度快照；
 没有快照时，该接口返回 404。快照中可选的 `phase` 在 FFmpeg 写完最后一帧后重写
-输出时，以及 rclone 上传发送完所有字节、等待目标确认文件时，为 `finalizing`；
-在上传等待重试时为 `retrying`；在 BaiduPCS 或 rclone 上传正在处理的文件都还没有
-发送数据时（包括 rclone 在首次传输前列出目标位置期间）为 `preparing`（遇到未知的
+输出时，以及 rclone 或 rship 上传发送完所有字节、等待目标确认文件时，为 `finalizing`；
+在上传等待重试时为 `retrying`；在 BaiduPCS、rclone 或 rship 上传正在处理的文件都还没有
+发送数据时（包括首次传输前列出目标位置期间）为 `preparing`（遇到未知的
 值时按正常处理对待）。`current_file` 给出正在处理的文件名，不含目录。
 上传首次尝试失败后，`attempt` 和 `max_attempts` 给出它在本次任务运行内的尝试
 次数，与任务的重试次数无关。

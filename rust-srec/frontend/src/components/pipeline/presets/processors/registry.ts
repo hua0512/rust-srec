@@ -3,6 +3,7 @@ import { lazy, ComponentType } from 'react';
 import {
   RemuxConfigSchema,
   RcloneConfigSchema,
+  RshipConfigSchema,
   BaiduPcsConfigSchema,
   ThumbnailConfigSchema,
   AudioExtractConfigSchema,
@@ -21,6 +22,9 @@ const RemuxConfigForm = lazy(() =>
 );
 const RcloneConfigForm = lazy(() =>
   import('./rclone-config-form').then((m) => ({ default: m.RcloneConfigForm })),
+);
+const RshipConfigForm = lazy(() =>
+  import('./rship-config-form').then((m) => ({ default: m.RshipConfigForm })),
 );
 const BaiduPcsConfigForm = lazy(() =>
   import('./baidupcs-config-form').then((m) => ({
@@ -100,6 +104,11 @@ const PROCESSOR_REGISTRY: Record<ProcessorType, ProcessorDefinition> = {
     ...PROCESSOR_META.rclone,
     schema: RcloneConfigSchema,
     component: RcloneConfigForm,
+  },
+  rship: {
+    ...PROCESSOR_META.rship,
+    schema: RshipConfigSchema,
+    component: RshipConfigForm,
   },
   baidupcs: {
     ...PROCESSOR_META.baidupcs,

@@ -22,7 +22,7 @@ Most numeric variables stop startup with an error naming the variable when set t
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `DATA_DIR` | Directory for application data | `./data` |
-| `CONFIG_DIR` | Docker Compose host directory mounted at `/app/config` for external tool configs (such as rclone and BaiduPCS-Go); platform configurations live in SQLite | `./config` |
+| `CONFIG_DIR` | Docker Compose host directory mounted at `/app/config` for external tool configs (such as rclone, rship, and BaiduPCS-Go); platform configurations live in SQLite | `./config` |
 | `OUTPUT_DIR` | Initial recording folder used only to seed `global_config.output_folder` when the standalone backend creates a fresh database; startup write probes and disk-space health checks read saved `global_config.output_folder` and overrides instead. Under Docker Compose this is the host bind-mount directory, while the container receives `OUTPUT_DIR=/app/output`. Existing database settings are preserved. | `./output` |
 | `LOG_DIR` | Directory for log files. A relative value resolves against the process working directory; the bundled system service sets it to `/var/log/rust-srec` instead, so log files are stored outside the state directory. See [Installation](../getting-started/installation.md). | `./logs` |
 | `LOG_MAX_FILE_BYTES` | Maximum bytes per managed log segment, read at startup; integer from 1024 to 1073741824. Oversized records are truncated with a marker. | `16777216` (16 MiB) |
@@ -62,7 +62,7 @@ A forced or crashed run leaves a recovery marker beside the database. Later clea
 | `ALL_PROXY` | Proxy for both when the more specific variable is not set | - |
 | `NO_PROXY` | Comma-separated list of hosts that bypass the proxy | - |
 
-The proxy variables, in upper or lower case, take effect only where a global, platform, template, streamer, account, notification channel or upload step [proxy setting](../concepts/configuration.md#choosing-a-proxy) is **System proxy**. **Direct** ignores them (except for the desktop app's [update check](../concepts/configuration.md#choosing-a-proxy)), and FFmpeg and Streamlink are then started without them. The server reads them when it starts: restart it after changing them. rclone and BaiduPCS-Go are started without them too, and receive a saved proxy as `HTTP_PROXY` and `HTTPS_PROXY`. Email notifications never use a proxy. A new installation, or an upgrade from a version whose global proxy was turned off, that starts with `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` set makes **System proxy** the global default; see [upgrading proxy settings](../operations/upgrading.md#proxy-settings).
+The proxy variables, in upper or lower case, take effect only where a global, platform, template, streamer, account, notification channel or upload step [proxy setting](../concepts/configuration.md#choosing-a-proxy) is **System proxy**. **Direct** ignores them (except for the desktop app's [update check](../concepts/configuration.md#choosing-a-proxy)), and FFmpeg and Streamlink are then started without them. The server reads them when it starts: restart it after changing them. rclone, rship and BaiduPCS-Go are started without them too, and receive a saved proxy as `HTTP_PROXY` and `HTTPS_PROXY` (plus `RSHIP_PROXY` for rship). Email notifications never use a proxy. A new installation, or an upgrade from a version whose global proxy was turned off, that starts with `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` set makes **System proxy** the global default; see [upgrading proxy settings](../operations/upgrading.md#proxy-settings).
 
 ## Security & Auth {#security-auth}
 | Variable | Description | Default |
@@ -128,6 +128,9 @@ The heuristic groups deep paths under broader keys: `/var/lib/rust-srec/output` 
 | `FFPROBE_PATH` | FFprobe binary used by the `audio_extract` processor | `ffprobe` |
 | `STREAMLINK_PATH` | Streamlink binary used to look up streams with Streamlink, and to check whether Streamlink can handle a URL when adding a streamer, unless `streamlink.binary_path` in the platform's settings names another. The Streamlink download engine uses the binary path in its own configuration. | `streamlink` |
 | `RCLONE_PATH` | rclone binary used by the `rclone` processor | `rclone` |
+| `RSHIP_PATH` | rship binary, used when the preset sets no `binary_path` | `rship` |
+| `RSHIP_CONFIG` | Path to rship's `config.toml` (used when the preset sets no `config_path`) | rship default (`/app/config/rship/config.toml` in Docker) |
+| `RSHIP_STATE_DIR` | Directory where rship stores its SQLite WAL resume checkpoints and OAuth tokens (used when the preset sets no `state_dir`) | rship default (`/app/config/rship/state` in Docker) |
 | `BAIDUPCS_PATH` | BaiduPCS-Go binary, used when the preset sets no `binary_path` | `BaiduPCS-Go` |
 | `BAIDUPCS_GO_CONFIG_DIR` | Config directory where BaiduPCS-Go stores its session and `pcs_config.json` (used when the preset sets no `config_dir`) | BaiduPCS-Go default (`/app/config/BaiduPCS-Go` in Docker) |
 | `DANMAKU_FACTORY_PATH` | DanmakuFactory binary, used when the preset sets no `binary_path` | `DanmakuFactory` |

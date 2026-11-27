@@ -1171,7 +1171,7 @@ fn consumes_inputs(step: &PipelineStep) -> bool {
     };
     match processor.as_str() {
         "delete" | "cleanup" => true,
-        "rclone" | "upload" | "copy_move" => operation_is_move(),
+        "rclone" | "rship" | "upload" | "copy_move" => operation_is_move(),
         "baidupcs" => flag("remove_source_after_upload"),
         _ => false,
     }

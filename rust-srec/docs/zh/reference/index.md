@@ -22,7 +22,7 @@ const items = [
   },
   {
     title: '处理器',
-    description: '转封装、转码、缩略图、rclone、百度网盘、压缩归档及自定义命令处理器参数。',
+    description: '转封装、转码、缩略图、rclone、rship、百度网盘、压缩归档及自定义命令处理器参数。',
     link: '/zh/reference/processors',
   },
   {

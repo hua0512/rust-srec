@@ -55,6 +55,9 @@ pub(crate) fn upload_kind_for_job_type(job_type: &str) -> Option<&'static str> {
     if jt == "baidupcs" || jt.starts_with("baidupcs_") {
         return Some("baidupcs");
     }
+    if jt == "rship" || jt.starts_with("rship_") {
+        return Some("rship");
+    }
     None
 }
 

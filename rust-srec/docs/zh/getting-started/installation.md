@@ -61,11 +61,11 @@ install -D -m 0644 rust-srec.service /etc/systemd/system/rust-srec.service
 systemctl daemon-reload && systemctl enable --now rust-srec
 ```
 
-该账号的家目录必须是 `/var/lib/rust-srec`，且必须可写——rclone 和 BaiduPCS-Go 都会在其中改写会话文件。`/opt` 下的安装目录不能作为家目录，unit 的加固设置让它保持只读。
+该账号的家目录必须是 `/var/lib/rust-srec`，且必须可写——rclone、rship 和 BaiduPCS-Go 都会在其中改写状态和会话文件。`/opt` 下的安装目录不能作为家目录，unit 的加固设置让它保持只读。
 
 `StateDirectory=` 和 `LogsDirectory=` 会在每次启动时创建 `/var/lib/rust-srec`、`/var/lib/rust-srec/output` 和 `/var/log/rust-srec`，全新主机无需预先准备任何目录。
 
-`/etc/rust-srec/rust-srec.env` 通过 `EnvironmentFile=` 加载。服务缺少 `JWT_SECRET` 会拒绝启动，因此该文件实际上是必需的。Web Push（VAPID）密钥，以及 ffmpeg、rclone、streamlink 或 DanmakuFactory 的 `*_PATH` 覆盖项也应写在这里。文件中的每一项都会覆盖 unit 自身的 `Environment=` 设置。
+`/etc/rust-srec/rust-srec.env` 通过 `EnvironmentFile=` 加载。服务缺少 `JWT_SECRET` 会拒绝启动，因此该文件实际上是必需的。Web Push（VAPID）密钥，以及 ffmpeg、rclone、rship、streamlink 或 DanmakuFactory 的 `*_PATH` 覆盖项也应写在这里。文件中的每一项都会覆盖 unit 自身的 `Environment=` 设置。
 
 Docker Compose 安装脚本默认将 `RUST_SREC_DIR` 设为 `./rust-srec`，但 [Docker 部署指南](./docker.md#安装脚本) 中也以 `/opt/rust-srec` 作为示例。两种部署共用一台主机且把 Docker 安装到 `/opt/rust-srec` 时，请为二进制选择其他路径。
 
@@ -194,6 +194,7 @@ pnpm dev
 - 非 Docker 环境使用 FFmpeg 处理器或基于 FFmpeg 的工作流时，安装 `ffmpeg` 并加入 `PATH`（或通过 `FFMPEG_PATH` 指定路径）。
 - 选择 Streamlink 下载引擎或提取器时，安装 `streamlink` 并加入 `PATH`。
 - 使用 `rclone` 云存储上传处理器时，安装 [rclone](https://rclone.org/) 并加入 `PATH`（或通过 `RCLONE_PATH` 指定路径）。
+- 使用 `rship` 多云上传处理器时，安装 [rship](https://hua0512.github.io/rship/) 并加入 `PATH`（或通过 `RSHIP_PATH` 指定路径）。
 - 使用 `danmaku_factory` 弹幕 XML 转 ASS 字幕处理器时，安装 [DanmakuFactory](https://github.com/hihkm/DanmakuFactory) 并加入 `PATH`（或通过 `DANMAKU_FACTORY_PATH` 指定路径）。
 - 使用 `baidupcs` 百度网盘上传处理器时，安装 [BaiduPCS-Go](https://github.com/qjfoidnh/BaiduPCS-Go) 并加入 `PATH`（或通过 `BAIDUPCS_PATH` 指定路径）。
 - Docker 镜像已经包含其支持的运行时工具，标准 Docker 部署不需要在宿主机重复安装。

@@ -1,5 +1,10 @@
 import React, { useId } from 'react';
-import { get, useFormContext } from 'react-hook-form';
+import {
+  get,
+  useFormContext,
+  type Control,
+  type FieldValues,
+} from 'react-hook-form';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
@@ -16,6 +21,7 @@ import { SETTING_ROW_CLASS } from './switch-card';
 import { cn } from '@/lib/utils';
 
 type FlagFormFieldProps = {
+  control?: Control<FieldValues>;
   fieldName: string;
   title?: string | React.ReactNode;
   description?: string | React.ReactNode;
@@ -59,6 +65,7 @@ type FlagRowProps = Pick<
 };
 
 export function FlagFormField({
+  control,
   fieldName,
   ariaLabel,
   inherited = false,
@@ -69,6 +76,7 @@ export function FlagFormField({
   if (inherited) {
     return (
       <InheritedFlagField
+        control={control}
         name={fieldName}
         ariaLabel={ariaLabel}
         disabled={disabled}
@@ -78,21 +86,25 @@ export function FlagFormField({
   }
   return (
     <FormField
+      control={control}
       name={fieldName}
-      render={({ field }) => (
-        <FlagRow
-          {...row}
-          control={
-            <Switch
-              className="shrink-0"
-              checked={checked ? checked(field.value) : field.value}
-              onCheckedChange={field.onChange}
-              disabled={disabled}
-              aria-label={ariaLabel}
-            />
-          }
-        />
-      )}
+      render={({ field }) => {
+        const isDisabled = disabled || Boolean(field.disabled);
+        return (
+          <FlagRow
+            {...row}
+            control={
+              <Switch
+                className="shrink-0"
+                checked={checked ? checked(field.value) : Boolean(field.value)}
+                onCheckedChange={field.onChange}
+                disabled={isDisabled}
+                aria-label={ariaLabel}
+              />
+            }
+          />
+        );
+      }}
     />
   );
 }
@@ -170,12 +182,15 @@ const INHERITED_FLAG_CHOICES = [
  * Anything but `true` or `false` shows as Inherit.
  */
 function InheritedFlagField({
+  control: formControl,
   name,
   ariaLabel,
   disabled = false,
   ...row
 }: Omit<FlagRowProps, 'labelId' | 'wrap' | 'control'> &
-  Pick<FlagFormFieldProps, 'ariaLabel' | 'disabled'> & { name: string }) {
+  Pick<FlagFormFieldProps, 'control' | 'ariaLabel' | 'disabled'> & {
+    name: string;
+  }) {
   const { i18n } = useLingui();
   const labelId = useId();
   const { formState } = useFormContext();
@@ -185,8 +200,10 @@ function InheritedFlagField({
       // after a reset to saved values that leave the option out. Remounting on a new saved value
       // makes that reset show Inherit rather than the previous choice.
       key={JSON.stringify(get(formState.defaultValues, name)) ?? 'unset'}
+      control={formControl}
       name={name}
       render={({ field }) => {
+        const isDisabled = disabled || Boolean(field.disabled);
         const selected =
           field.value === true || field.value === false ? field.value : null;
         return (
@@ -199,10 +216,10 @@ function InheritedFlagField({
                 role="radiogroup"
                 aria-label={ariaLabel}
                 aria-labelledby={ariaLabel ? undefined : labelId}
-                aria-disabled={disabled || undefined}
+                aria-disabled={isDisabled || undefined}
                 className={cn(
                   'inline-flex shrink-0 rounded-lg border border-border/50 bg-muted/30 p-0.5',
-                  disabled && 'opacity-50',
+                  isDisabled && 'opacity-50',
                 )}
               >
                 {INHERITED_FLAG_CHOICES.map((choice) => (
@@ -212,7 +229,7 @@ function InheritedFlagField({
                     // that marks the selected choice is not drawn.
                     className={cn(
                       'rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors has-checked:bg-background has-checked:text-foreground has-checked:shadow-sm has-checked:outline has-checked:outline-transparent has-focus-visible:ring-2 has-focus-visible:ring-ring',
-                      disabled
+                      isDisabled
                         ? 'cursor-not-allowed'
                         : 'cursor-pointer hover:text-foreground',
                     )}
@@ -223,7 +240,7 @@ function InheritedFlagField({
                       name={name}
                       value={choice.id}
                       checked={selected === choice.value}
-                      disabled={disabled}
+                      disabled={isDisabled}
                       onChange={() => field.onChange(choice.value)}
                     />
                     {i18n._(choice.label)}

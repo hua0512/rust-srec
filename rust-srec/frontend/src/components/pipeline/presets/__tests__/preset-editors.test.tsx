@@ -281,6 +281,7 @@ describe('Preset editor', () => {
   it.each<[string, Record<string, unknown>]>([
     ['remux', { format: 'mkv', faststart: true }],
     ['rclone', {}],
+    ['rship', {}],
     ['baidupcs', {}],
     ['thumbnail', {}],
     ['audio_extract', {}],
@@ -316,4 +317,68 @@ describe('Preset editor', () => {
       );
     },
   );
+});
+
+describe.each<Editor>(['preset', 'workflow'])('Rship %s editor', (editor) => {
+  it('normalizes API null optionals, keeps tpslimit 0, and drops cleared text overrides', async () => {
+    const { onSave } = renderEditor(
+      editor,
+      {
+        binary_path: null,
+        destination_root: 'gdrive:archive',
+        config_path: null,
+        state_dir: null,
+        bwlimit: null,
+        transfers: null,
+        part_concurrency: null,
+        chunk_size: null,
+        max_buffer_mem: null,
+        tpslimit: 0,
+        proxy_route: null,
+      },
+      'rship',
+    );
+
+    const destination = await screen.findByRole('textbox', {
+      name: 'Destination Root',
+    });
+    expect(destination).toHaveValue('gdrive:archive');
+    fireEvent.change(destination, { target: { value: '   ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({
+        operation: 'copy',
+        time_anchor: 'job_created',
+        max_retries: 3,
+        args: [],
+        adaptive: false,
+        tpslimit: 0,
+        drive_stop_on_upload_limit: false,
+        checksum: false,
+        strict_source: false,
+      }),
+    );
+  });
+
+  it('flags validation errors on the unmounted Advanced tab so invalid saves are visible', async () => {
+    const { onSave } = renderEditor(
+      editor,
+      {
+        destination_root: 'gdrive:archive',
+        transfers: 0,
+      },
+      'rship',
+    );
+
+    await screen.findByRole('textbox', { name: 'Destination Root' });
+    makePresetDirty(editor);
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    const advancedTab = screen.getByRole('tab', { name: 'Advanced' });
+    await waitFor(() =>
+      expect(advancedTab).toHaveAttribute('aria-invalid', 'true'),
+    );
+    expect(onSave).not.toHaveBeenCalled();
+  });
 });

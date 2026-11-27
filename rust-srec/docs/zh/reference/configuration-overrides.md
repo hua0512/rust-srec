@@ -261,7 +261,7 @@ extras，而不是被跳过。
 
 每个作用域的代理设置是 `proxy_route`：它是全局、平台和模板配置中的字段、主播
 `streamer_specific_config` 中的一个键，也用于账号（创建、编辑及扫码登录创建时）、
-通知渠道（邮件除外）和上传步骤（`rclone`、`baidupcs`）。
+通知渠道（邮件除外）和上传步骤（`rclone`、`rship`、`baidupcs`）。
 
 ```json
 { "proxy_route": { "kind": "proxy", "id": "proxy-uuid" } }

@@ -17,7 +17,7 @@ Rust-Srec is a recording tool, not a source of rights to record or process a bro
 
 - Document the lawful basis and permission for each channel, including private, subscriber-only, or password-protected content.
 - Define retention separately for media, chat, session history, job history, notifications, and logs.
-- Identify every external destination used by webhooks, email, Telegram, Gotify, Discord, rclone, Baidu Netdisk (BaiduPCS-Go), or custom pipeline commands.
+- Identify every external destination used by webhooks, email, Telegram, Gotify, Discord, rclone, rship, Baidu Netdisk (BaiduPCS-Go), or custom pipeline commands.
 - Limit access to people with a defined operational or editorial need.
 - Define how deletion, legal hold, subject requests, and incident response apply to source files, derived files, backups, and remote copies; see [Deletion Semantics](#deletion-semantics) for what in-app deletions cover.
 
@@ -40,7 +40,7 @@ For a retention or erasure policy this means removing a streamer is not the eras
 - Delete the sessions themselves, individually or as a batch. A session delete also removes the media-output rows, segments, danmaku statistics, and session events under it. It does not touch files on disk, and it destroys the rows holding their paths, so running it first leaves the files with nothing left to locate them by. Pipeline jobs, DAG executions, and upload records reference a session by identifier without a foreign key, so they survive it.
 - Account separately for copies a pipeline uploaded elsewhere. No deletion operation in the application reaches a remote destination — the pipeline's `delete` step and the media-output delete option both act on a local path — so remote copies have to be removed wherever they were sent. Upload records carry the remote path of each completed upload and are the closest thing to an inventory of them.
 
-A pipeline can still change remote data, just not as part of a deletion the application offers: an `rclone` step set to `sync` removes files at the destination that are absent from the source, `args` passes arbitrary flags through to rclone, and an `execute` step runs whatever command it is given. Treat those steps as having the full reach of the credentials they run with.
+A pipeline can still change remote data, just not as part of a deletion the application offers: an `rclone` or `rship` step set to `sync` removes files at the destination that are absent from the source, `args` passes arbitrary flags through to rclone or rship, and an `execute` step runs whatever command it is given. Treat those steps as having the full reach of the credentials they run with.
 
 Three cases delete a file without a per-file request: a recorded segment below `min_segment_size_bytes` is removed from disk with its sibling chat file while the session is still running, unless it ended because the stream's resolution or codec changed; a failed pipeline job's partial outputs are cleaned up; and [output retention](../reference/settings.md#retention), when enabled with **Delete records and files**, removes the tracked files of expired outputs. Output retention covers registered media outputs only, not every derivative or remote copy, so none of these substitutes for a complete retention policy.
 

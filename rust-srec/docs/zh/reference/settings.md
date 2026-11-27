@@ -48,7 +48,7 @@
 | 设置 | 说明 | 默认值 |
 |------|------|--------|
 | `max_concurrent_downloads` | 最大同时录制任务数 | `6` |
-| `max_concurrent_uploads` | 最大同时上传任务数，rclone 与百度网盘上传合计 | `3` |
+| `max_concurrent_uploads` | 最大同时上传任务数，rclone、rship 与百度网盘上传合计 | `3` |
 | `max_concurrent_cpu_jobs` | 最大并发 CPU 密集型任务数 | `0` (Auto / 自动) |
 | `max_concurrent_io_jobs` | 最大并发 I/O 密集型任务数（如移动、复制），不含上传 | `8` (0 = Auto / 自动) |
 | `default_download_engine` | 录制使用的[引擎配置](../concepts/engines.md)名称 | `default-mesio`（内置的 Mesio 配置） |
