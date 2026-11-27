@@ -26,7 +26,7 @@ separate operator role for managing recordings without executable configuration
 access; see [Scope and Limits](./support.md#scope-and-limits).
 
 This authority includes direct execution through an `execute` pipeline step and
-request-supplied tool executable or config paths (such as custom BaiduPCS-Go
+request-supplied tool executable or config paths (such as custom rship or BaiduPCS-Go
 binaries — configure only trusted executables). It also includes indirect
 execution: engine and processor settings can select tool binaries, presets can
 contain command steps, and configuration imports can introduce these settings
@@ -121,6 +121,7 @@ writes that include account fields are rejected rather than stored.
 - Saved proxies keep their usernames and passwords in plain text in the database and in configuration exports. The API and web interface show a proxy's username but never return its password.
 - Account profiles (cookies, tokens and logins) and room passwords are present in configuration exports. Notification channels can contain SMTP passwords, bot tokens, webhook secrets, and custom headers.
 - The Baidu Netdisk login session lives in BaiduPCS-Go's config directory (`BAIDUPCS_GO_CONFIG_DIR`, `/app/config/BaiduPCS-Go` in Docker) — protect and back it up like a cookie store. With **Remember for automatic re-login** enabled, the login material is additionally stored plaintext in the application database (`tool_credentials`), like platform cookies; logging out deletes it. Manual and automatic logins send credentials through stdin, never child arguments or environment variables. A private temporary config directory blocks CLI history and imports only the successful account into the original config; other accounts, settings and history remain intact. Temporary directories use owner-only permissions (0700 on Unix, a protected owner-only ACL on Windows) and are removed after child cleanup. An unconfirmed cleanup retains the private directory and keeps account operations locked until the backend restarts. Privileged host access and the configured executable remain trusted.
+- rship remotes and credentials live in `rship`'s `config.toml` (`RSHIP_CONFIG`, `/app/config/rship/config.toml` in Docker), and its OAuth tokens and upload state checkpoints live in `RSHIP_STATE_DIR` (`/app/config/rship/state` in Docker) — protect and back up both like credential stores.
 - Redact tokens, private URLs, usernames, cookies, and filesystem paths before sharing logs or screenshots.
 - Run containers without unnecessary host mounts or device access. Add GPU devices only when the selected pipeline requires them.
 - Review any `execute`, upload, move, or delete-source pipeline step as code with filesystem and network access.

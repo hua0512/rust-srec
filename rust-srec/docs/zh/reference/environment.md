@@ -22,7 +22,7 @@ import { withBase } from 'vitepress'
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `DATA_DIR` | 应用数据目录 | `./data` |
-| `CONFIG_DIR` | Docker Compose 挂载到容器内 `/app/config` 的宿主机目录，用于存放外部工具配置（如 rclone、BaiduPCS-Go）；平台配置保存在 SQLite 中 | `./config` |
+| `CONFIG_DIR` | Docker Compose 挂载到容器内 `/app/config` 的宿主机目录，用于存放外部工具配置（如 rclone、rship、BaiduPCS-Go）；平台配置保存在 SQLite 中 | `./config` |
 | `OUTPUT_DIR` | 仅在独立后端创建全新数据库时用于初始化 `global_config.output_folder`；启动写入探测和磁盘空间健康检查读取已保存的 `global_config.output_folder` 及各层覆盖项。在 Docker Compose 中它是宿主机绑定挂载目录，容器内使用 `OUTPUT_DIR=/app/output`。已有数据库设置会保留。 | `./output` |
 | `LOG_DIR` | 日志文件目录。相对路径按进程工作目录解析；随附的系统服务单元会显式设为 `/var/log/rust-srec`，以免日志文件落进状态目录。参见[安装](../getting-started/installation.md)。 | `./logs` |
 | `LOG_MAX_FILE_BYTES` | 启动时读取的单个托管日志分段字节上限，整数范围 1024 至 1073741824；超大记录截断并添加标记。 | `16777216`（16 MiB） |
@@ -62,7 +62,7 @@ import { withBase } from 'vitepress'
 | `ALL_PROXY` | 未设置更具体的变量时，两者共用的代理 | - |
 | `NO_PROXY` | 绕过代理的主机列表（逗号分隔） | - |
 
-这些代理变量（大小写均可）只在全局、平台、模板、主播、账号、通知渠道或上传步骤的[代理设置](../concepts/configuration.md#choosing-a-proxy)为 **系统代理** 时生效。**直连** 会忽略它们（桌面应用的[检查更新](../concepts/configuration.md#choosing-a-proxy)除外），此时 FFmpeg 和 Streamlink 启动时也不会带上这些变量。服务器在启动时读取它们，修改后请重启。rclone 和 BaiduPCS-Go 启动时同样不带这些变量，已保存的代理则以 `HTTP_PROXY` 和 `HTTPS_PROXY` 传给它们。邮件通知从不使用代理。全新安装，或从全局代理处于关闭状态的旧版本升级时，若启动时设置了 `HTTP_PROXY`、`HTTPS_PROXY` 或 `ALL_PROXY`，全局默认代理会设为 **系统代理**；详见[升级代理设置](../operations/upgrading.md#proxy-settings)。
+这些代理变量（大小写均可）只在全局、平台、模板、主播、账号、通知渠道或上传步骤的[代理设置](../concepts/configuration.md#choosing-a-proxy)为 **系统代理** 时生效。**直连** 会忽略它们（桌面应用的[检查更新](../concepts/configuration.md#choosing-a-proxy)除外），此时 FFmpeg 和 Streamlink 启动时也不会带上这些变量。服务器在启动时读取它们，修改后请重启。rclone、rship 和 BaiduPCS-Go 启动时同样不带这些变量，已保存的代理则以 `HTTP_PROXY` 和 `HTTPS_PROXY`（对 rship 同时设置 `RSHIP_PROXY`）传给它们。邮件通知从不使用代理。全新安装，或从全局代理处于关闭状态的旧版本升级时，若启动时设置了 `HTTP_PROXY`、`HTTPS_PROXY` 或 `ALL_PROXY`，全局默认代理会设为 **系统代理**；详见[升级代理设置](../operations/upgrading.md#proxy-settings)。
 
 ## 安全与认证 {#安全与认证}
 | 变量 | 说明 | 默认值 |
@@ -128,6 +128,9 @@ import { withBase } from 'vitepress'
 | `FFPROBE_PATH` | `audio_extract` 处理器使用的 FFprobe 程序 | `ffprobe` |
 | `STREAMLINK_PATH` | 使用 Streamlink 获取直播流，以及添加主播时检查 Streamlink 能否处理该地址所用的 Streamlink 程序，平台设置中的 `streamlink.binary_path` 指定了其他程序时除外。Streamlink 下载引擎使用其自身配置中的程序路径。 | `streamlink` |
 | `RCLONE_PATH` | `rclone` 处理器使用的 rclone 程序 | `rclone` |
+| `RSHIP_PATH` | 预设未设置 `binary_path` 时使用的 rship 程序 | `rship` |
+| `RSHIP_CONFIG` | rship 的 `config.toml` 配置文件路径（预设未设置 `config_path` 时使用） | rship 默认路径（Docker 中为 `/app/config/rship/config.toml`） |
+| `RSHIP_STATE_DIR` | rship 保存 SQLite WAL 断点续传检查点与 OAuth 令牌的状态目录（预设未设置 `state_dir` 时使用） | rship 默认路径（Docker 中为 `/app/config/rship/state`） |
 | `BAIDUPCS_PATH` | 预设未设置 `binary_path` 时使用的 BaiduPCS-Go 程序 | `BaiduPCS-Go` |
 | `BAIDUPCS_GO_CONFIG_DIR` | BaiduPCS-Go 保存登录会话与 `pcs_config.json` 的配置目录（预设未设置 `config_dir` 时使用） | BaiduPCS-Go 默认路径（Docker 中为 `/app/config/BaiduPCS-Go`） |
 | `DANMAKU_FACTORY_PATH` | 预设未设置 `binary_path` 时使用的 DanmakuFactory 程序 | `DanmakuFactory` |

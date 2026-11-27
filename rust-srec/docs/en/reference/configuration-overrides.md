@@ -289,7 +289,7 @@ its inherited account, and the profiles whose sites cover the host. See
 Each scope's proxy setting is `proxy_route`: a field of the global, platform and template
 configuration, a key inside a streamer's `streamer_specific_config`, and a setting on
 accounts (when created, edited, or created by QR login), notification channels (except email),
-and upload steps (`rclone`, `baidupcs`).
+and upload steps (`rclone`, `rship`, `baidupcs`).
 
 ```json
 { "proxy_route": { "kind": "proxy", "id": "proxy-uuid" } }

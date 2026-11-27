@@ -2,10 +2,12 @@
 #
 # The account's home directory is /var/lib/rust-srec because it has to be
 # writable: systemd derives $HOME from passwd whenever User= is set, rclone
-# rewrites $HOME/.config/rclone/rclone.conf on every OAuth token refresh, and
-# BaiduPCS-Go keeps its login session under its config dir unless
-# BAIDUPCS_GO_CONFIG_DIR names another. ProtectSystem=strict leaves /opt
-# read-only, so the install directory cannot serve as a home.
+# rewrites $HOME/.config/rclone/rclone.conf on every OAuth token refresh, rship
+# stores its config, OAuth tokens and resume checkpoints under $HOME unless
+# RSHIP_CONFIG / RSHIP_STATE_DIR name another, and BaiduPCS-Go keeps its login
+# session under its config dir unless BAIDUPCS_GO_CONFIG_DIR names another.
+# ProtectSystem=strict leaves /opt read-only, so the install directory cannot
+# serve as a home.
 #
 # Install as root:
 #   useradd --system --home-dir /var/lib/rust-srec --shell /usr/sbin/nologin rust-srec
@@ -122,8 +124,8 @@ Environment=RUST_SREC_SHUTDOWN_FORCE_RESERVE_SECS=2
 # refuses to start without JWT_SECRET, so this file is mandatory in practice;
 # the leading `-` makes systemd ignore errors reading it silently, so
 # `systemctl start` still reaches the binary's own diagnostics.
-# Web Push (VAPID) keys and any *_PATH override for ffmpeg, rclone, streamlink
-# or DanmakuFactory belong here too.
+# Web Push (VAPID) keys and any *_PATH override for ffmpeg, rclone, rship,
+# streamlink or DanmakuFactory belong here too.
 #
 # Every assignment here overrides Environment=, regardless of which appears
 # first in the file — so an Environment= line added below this one is dead.

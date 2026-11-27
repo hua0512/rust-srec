@@ -10,6 +10,7 @@ use srec_core::utils::json::{self, JsonContext};
 pub const VALID_PROCESSORS: &[&str] = &[
     "remux",
     "rclone",
+    "rship",
     "baidupcs",
     "thumbnail",
     "execute",

@@ -1172,26 +1172,30 @@ async fn a_proxy_chosen_by_upload_steps_is_in_use_and_steps_must_name_one_that_e
         .await
         .created();
     let route = |id: &Value| json!({"kind": "proxy", "id": id});
-    let preset = |name: &str, id: &Value| {
+    let preset = |name: &str, processor: &str, id: &Value| {
         json!({
-            "id": name.to_lowercase(), "name": name, "category": "upload", "processor": "rclone",
+            "id": name.to_lowercase(), "name": name, "category": "upload", "processor": processor,
             "config": json!({"destination_root": "remote:/", "proxy_route": route(id)}).to_string(),
         })
     };
-    let pipeline = |id: &Value| {
+    let pipeline = |processor: &str, id: &Value| {
         json!({"name": "Ship", "steps": [{"id": "upload", "step": {
-            "type": "inline", "processor": "baidupcs", "config": {"proxy_route": route(id)},
+            "type": "inline", "processor": processor, "config": {"proxy_route": route(id)},
         }}]})
     };
 
     let missing = json!("missing-proxy");
-    app.post("/api/job/presets", &token, &preset("Lost", &missing))
-        .await
-        .assert_error(StatusCode::UNPROCESSABLE_ENTITY, "PROXY_NOT_FOUND");
+    app.post(
+        "/api/job/presets",
+        &token,
+        &preset("Lost", "rclone", &missing),
+    )
+    .await
+    .assert_error(StatusCode::UNPROCESSABLE_ENTITY, "PROXY_NOT_FOUND");
     app.post(
         "/api/pipeline/presets",
         &token,
-        &json!({"name": "Lost", "dag": pipeline(&missing)}),
+        &json!({"name": "Lost", "dag": pipeline("baidupcs", &missing)}),
     )
     .await
     .assert_error(StatusCode::UNPROCESSABLE_ENTITY, "PROXY_NOT_FOUND");
@@ -1201,21 +1205,41 @@ async fn a_proxy_chosen_by_upload_steps_is_in_use_and_steps_must_name_one_that_e
         &token,
         &json!({
             "session_id": "session-e2e", "streamer_id": "streamer-e2e",
-            "input_paths": [input], "dag": pipeline(&missing),
+            "input_paths": [input], "dag": pipeline("baidupcs", &missing),
         }),
     )
     .await
     .assert_error(StatusCode::UNPROCESSABLE_ENTITY, "PROXY_NOT_FOUND");
 
+    let rship_preset = app
+        .post(
+            "/api/job/presets",
+            &token,
+            &preset("RshipUpload", "rship", &proxy["id"]),
+        )
+        .await
+        .created();
     let job_preset = app
-        .post("/api/job/presets", &token, &preset("Upload", &proxy["id"]))
+        .post(
+            "/api/job/presets",
+            &token,
+            &preset("Upload", "rclone", &proxy["id"]),
+        )
+        .await
+        .created();
+    let rship_workflow = app
+        .post(
+            "/api/pipeline/presets",
+            &token,
+            &json!({"name": "RshipFlow", "dag": pipeline("rship", &proxy["id"])}),
+        )
         .await
         .created();
     let workflow = app
         .post(
             "/api/pipeline/presets",
             &token,
-            &json!({"name": "Ship", "dag": pipeline(&proxy["id"])}),
+            &json!({"name": "Ship", "dag": pipeline("baidupcs", &proxy["id"])}),
         )
         .await
         .created();
@@ -1226,8 +1250,8 @@ async fn a_proxy_chosen_by_upload_steps_is_in_use_and_steps_must_name_one_that_e
             &json!({
                 "name": "Shipping",
                 "platform_overrides": {"huya": {
-                    "session_complete_pipeline": pipeline(&proxy["id"]),
-                    "paired_segment_pipeline": pipeline(&proxy["id"]),
+                    "session_complete_pipeline": pipeline("baidupcs", &proxy["id"]),
+                    "paired_segment_pipeline": pipeline("baidupcs", &proxy["id"]),
                 }},
             }),
         )
@@ -1240,18 +1264,22 @@ async fn a_proxy_chosen_by_upload_steps_is_in_use_and_steps_must_name_one_that_e
     let references = &refused.body["details"]["references"];
     assert_eq!(
         references["job_presets"],
-        json!([{"id": job_preset["id"], "name": "Upload"}])
+        json!([
+            {"id": rship_preset["id"], "name": "RshipUpload"},
+            {"id": job_preset["id"], "name": "Upload"},
+        ])
     );
     assert_eq!(
         references["pipelines"],
         json!([
             {"kind": "template", "id": template["id"], "name": "Shipping", "removing": false},
+            {"kind": "workflow", "id": rship_workflow["id"], "name": "RshipFlow", "removing": false},
             {"kind": "workflow", "id": workflow["id"], "name": "Ship", "removing": false},
         ])
     );
     assert_eq!(
         app.get_ok(&proxy_path, &token).await["proxy"]["usage_count"],
-        3
+        5
     );
 
     app.shutdown().await;

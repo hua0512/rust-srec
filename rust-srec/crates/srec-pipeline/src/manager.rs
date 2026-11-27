@@ -25,7 +25,7 @@ use super::ports::{
 use super::processors::{
     AssBurnInProcessor, AudioExtractProcessor, BaiduPcsProcessor, CompressionProcessor,
     CopyMoveProcessor, DanmakuFactoryProcessor, DeleteProcessor, ExecuteCommandProcessor,
-    MetadataProcessor, Processor, ProcessorType, RcloneProcessor, RemuxProcessor,
+    MetadataProcessor, Processor, ProcessorType, RcloneProcessor, RemuxProcessor, RshipProcessor,
     ThumbnailProcessor,
 };
 use super::progress::JobProgressSnapshot;
@@ -344,9 +344,11 @@ impl PipelineManager {
         // Create default processors. Without `routes` the upload processors
         // keep the server's proxy environment.
         let mut rclone = RcloneProcessor::new();
+        let mut rship = RshipProcessor::new();
         let mut baidupcs = BaiduPcsProcessor::new();
         if let Some(routes) = routes {
             rclone = rclone.with_routes(routes.clone());
+            rship = rship.with_routes(routes.clone());
             baidupcs = baidupcs.with_routes(routes);
         }
         let processors: Vec<Arc<dyn Processor>> = vec![
@@ -354,6 +356,7 @@ impl PipelineManager {
             Arc::new(DanmakuFactoryProcessor::new()),
             Arc::new(AssBurnInProcessor::new()),
             Arc::new(rclone),
+            Arc::new(rship),
             Arc::new(baidupcs),
             Arc::new(ExecuteCommandProcessor::new().with_timeout(execute_timeout_secs)),
             Arc::new(ThumbnailProcessor::new()),

@@ -320,11 +320,15 @@ fn test_upload_kind_for_job_type() {
         upload_kind_for_job_type("baidupcs_default"),
         Some("baidupcs")
     );
+    assert_eq!(upload_kind_for_job_type("rship"), Some("rship"));
+    assert_eq!(upload_kind_for_job_type("RSHIP"), Some("rship"));
+    assert_eq!(upload_kind_for_job_type("rship_upload"), Some("rship"));
     assert_eq!(upload_kind_for_job_type("remux"), None);
     assert_eq!(upload_kind_for_job_type("thumbnail"), None);
     // "uploader" would prefix-match "upload_" only with the underscore.
     assert_eq!(upload_kind_for_job_type("uploader"), None);
     assert_eq!(upload_kind_for_job_type("baidu"), None);
+    assert_eq!(upload_kind_for_job_type("rshipper"), None);
 }
 
 /// `complete()` must persist `JobResult.uploads` to upload_records for

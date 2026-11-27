@@ -20,7 +20,7 @@ pub const PIPELINE_FIELDS: [&str; 3] = [
 ];
 
 /// The job types of the processors that take a proxy route.
-const UPLOAD_PROCESSORS: [&str; 3] = ["rclone", "upload", "baidupcs"];
+const UPLOAD_PROCESSORS: [&str; 4] = ["rclone", "upload", "baidupcs", "rship"];
 
 const ROUTE_KEY: &str = "proxy_route";
 

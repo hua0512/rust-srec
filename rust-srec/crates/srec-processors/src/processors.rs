@@ -18,6 +18,7 @@ mod paths;
 mod planning;
 mod rclone;
 mod remux;
+mod rship;
 #[cfg(test)]
 mod test_utils;
 mod thumbnail;
@@ -38,6 +39,7 @@ pub use execute::ExecuteCommandProcessor;
 pub use metadata::MetadataProcessor;
 pub use rclone::RcloneProcessor;
 pub use remux::RemuxProcessor;
+pub use rship::{RshipConfig, RshipOperation, RshipProcessor};
 pub use thumbnail::ThumbnailProcessor;
 pub use traits::{
     ConfirmedUpload, JobLogSink, LocalFileFingerprint, Processor, ProcessorContext, ProcessorInput,

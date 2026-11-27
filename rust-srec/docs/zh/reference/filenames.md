@@ -35,16 +35,16 @@ Rust-Srec 支持在 `output_folder` 和 `output_filename_template` 中使用两�
 
 ## 流水线目标路径占位符 {#流水线目标路径占位符}
 
-流水线目标路径字段（例如 rclone 的 `destination_root` 和 copy/move 的
+流水线目标路径字段（例如 rclone、rship 和百度网盘的 `destination_root` 以及 copy/move 的
 `destination`）支持 `{platform}`、`{streamer}`、`{title}`、`{streamer_id}`、
 `{session_id}`，以及同样的 `%Y`、`%m`、`%d`、`%H`、`%M`、`%S`、`%t`、
 `%%` 时间占位符。时间占位符会按服务器本地时区渲染。
 
-rclone 默认使用任务创建时间展开时间占位符。将 `time_anchor` 设为
+上传处理器（rclone、rship 和百度网盘）默认使用任务创建时间展开时间占位符。将 `time_anchor` 设为
 `session_start` 后，同一场直播的所有分段都会归入直播开始日期对应的文件夹，
 即使直播跨过午夜也不会拆到次日目录。copy/move 在省略 `time_anchor` 时按执行时刻展开；需要确定性的锚点时可设为 `job_created` 或
 `session_start`。
 
 使用会话开始时间作为锚点时，请在文件名模板中保留 `%Y%m%d-%H%M%S` 或 `%t`。
-如果多个会话把相同文件名写入同一个目标目录，rclone 以及本地 copy/move 操作
+如果多个会话把相同文件名写入同一个目标目录，rclone、rship 以及本地 copy/move 操作
 可能会根据具体操作和参数覆盖或跳过文件。

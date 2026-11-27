@@ -1004,7 +1004,7 @@ pub(super) fn spawn_progress_aggregator(
                         // reuses this loop's coalescing instead of adding a second throttle.
                         let upload = matches!(
                             snapshot.kind,
-                            ProgressKind::Rclone | ProgressKind::BaiduPcs
+                            ProgressKind::Rclone | ProgressKind::Rship | ProgressKind::BaiduPcs
                         );
                         let announced_long_job = !upload
                             && long_job_tracking

@@ -50,7 +50,7 @@ longer than what is tracked.
 | Setting | Description | Default |
 |---------|-------------|---------|
 | `max_concurrent_downloads` | Max simultaneous recording tasks | `6` |
-| `max_concurrent_uploads` | Max simultaneous uploads, rclone and Baidu Netdisk combined | `3` |
+| `max_concurrent_uploads` | Max simultaneous uploads, rclone, rship, and Baidu Netdisk combined | `3` |
 | `max_concurrent_cpu_jobs` | Max concurrent CPU-intensive tasks | `0` (Auto) |
 | `max_concurrent_io_jobs` | Max concurrent I/O-intensive tasks such as moves and copies, not counting uploads | `8` (0 = Auto) |
 | `default_download_engine` | Name of the [engine configuration](../concepts/engines.md) used for recording | `default-mesio` (the built-in Mesio configuration) |

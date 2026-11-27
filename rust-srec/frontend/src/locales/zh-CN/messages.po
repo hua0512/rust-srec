@@ -63,6 +63,7 @@ msgid "(being removed)"
 msgstr "（正在移除）"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:64
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:67
 msgid "(Delete source)"
 msgstr "（删除源文件）"
 
@@ -75,8 +76,13 @@ msgid "(Mirror source)"
 msgstr "（镜像源端）"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:50
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:53
 msgid "(Preserve source)"
 msgstr "（保留源文件）"
+
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:81
+msgid "(Update batch)"
+msgstr "（更新批次）"
 
 #. placeholder {0}: filteredEventTypes?.length || 0
 #: src/components/notifications/subscription-manager.tsx:467
@@ -460,7 +466,7 @@ msgid "<0>Recording uses</0> {names}"
 msgstr "<0>录制使用</0> {names}"
 
 #: src/components/upload-status-indicator.tsx:259
-#: src/lib/job-progress.ts:157
+#: src/lib/job-progress.ts:153
 msgid "~{eta} left"
 msgstr "约剩 {eta}"
 
@@ -469,6 +475,7 @@ msgid "0 (None) - 9 (Best)"
 msgstr "0（无）- 9（最佳）"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:383
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:448
 msgid "0 = unlimited"
 msgstr "0 = 不限"
 
@@ -572,13 +579,17 @@ msgstr "模板无法关闭此项，请在引擎中关闭。"
 msgid "A unique and descriptive name for this configuration."
 msgstr "为此配置提供一个唯一且易于识别的名称。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:601
+#: src/components/pipeline/workflows/step-config-dialog.tsx:609
 msgid "A unique ID used by other steps to reference this one."
 msgstr "一个唯一的 ID，用于供其他步骤引用此步骤。"
 
 #: src/components/config/templates/tabs/general-tab.tsx:69
 msgid "A unique name for this configuration template."
 msgstr "为此配置模板提供一个唯一的名称。"
+
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:323
+msgid "Abort immediately when Google Drive returns its 750 GiB daily upload limit so the upload slot is freed (--drive-stop-on-upload-limit)."
+msgstr "遇到 Google Drive 每日 750 GiB 上传配额上限时立即中止，以便释放上传名额 (--drive-stop-on-upload-limit)。"
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:24
 msgid "Absolute path or 'ffmpeg' if in PATH"
@@ -706,6 +717,10 @@ msgstr "正在录制"
 msgid "Activity resolution (seconds)"
 msgstr "活跃度精度（秒）"
 
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:391
+msgid "Adaptive concurrency"
+msgstr "自适应并发"
+
 #: src/components/config/engines/forms/mesio-sections.tsx:399
 msgid "Adaptive Max Interval (ms)"
 msgstr "自适应最大间隔（毫秒）"
@@ -753,7 +768,7 @@ msgstr "添加覆盖项以自定义特定平台的行为。"
 msgid "Add an override to customize engine behavior for this template."
 msgstr "添加覆盖项以自定义此模板的引擎行为。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:827
+#: src/components/pipeline/workflows/step-config-dialog.tsx:835
 msgid "Add anyway"
 msgstr "仍然添加"
 
@@ -817,11 +832,11 @@ msgstr "添加项目"
 msgid "Add item..."
 msgstr "添加项目..."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:23
+#: src/components/pipeline/presets/default-presets-i18n.ts:24
 msgid "Add Metadata"
 msgstr "添加元数据"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:81
+#: src/components/pipeline/presets/default-presets-i18n.ts:83
 msgid "Add metadata tags (title, artist, date) to the video file."
 msgstr "为视频文件添加元数据标签（标题、艺术家、日期）。"
 
@@ -872,6 +887,10 @@ msgstr "为重试延迟添加随机性，避免“惊群”。"
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:490
 msgid "Add rclone argument"
 msgstr "添加 rclone 参数"
+
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:463
+msgid "Add rship argument"
+msgstr "添加 rship 参数"
 
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:31
 msgid "Add Step"
@@ -934,6 +953,7 @@ msgstr "调整 UI 元素的圆角程度。"
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:303
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:105
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:208
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:148
 #: src/components/streamers/streamer-editor.tsx:178
 msgid "Advanced"
 msgstr "高级"
@@ -1159,11 +1179,11 @@ msgstr "仅适用于 MP4、MKV、FLV、TS 或 MOV 输出。其他格式的录制
 msgid "Apply template settings."
 msgstr "应用模板设置。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:49
+#: src/components/pipeline/presets/default-presets-i18n.ts:50
 msgid "Archive"
 msgstr "归档"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:27
+#: src/components/pipeline/presets/default-presets-i18n.ts:28
 msgid "Archive Compression"
 msgstr "归档压缩"
 
@@ -1175,7 +1195,7 @@ msgstr "归档格式"
 msgid "Archive Settings"
 msgstr "归档设置"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:104
+#: src/components/pipeline/presets/default-presets-i18n.ts:106
 msgid "Archive to Cloud"
 msgstr "云端归档"
 
@@ -1209,7 +1229,7 @@ msgstr "参数 {number}"
 msgid "Arguments"
 msgstr "参数列表"
 
-#: src/components/pipeline/presets/processor-schemas.ts:240
+#: src/components/pipeline/presets/processor-schemas.ts:304
 msgid "Arguments require program mode"
 msgstr "只有程序模式才能设置参数"
 
@@ -1222,11 +1242,11 @@ msgstr "艺术家"
 msgid "Ask for confirmation before quitting when recordings are currently in progress."
 msgstr "当前有正在进行的录制时，退出前弹出确认提示。"
 
-#: src/components/pipeline/constants.tsx:53
+#: src/components/pipeline/constants.tsx:55
 msgid "ASS Burn-in"
 msgstr "ASS 硬字幕"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:34
+#: src/components/pipeline/presets/default-presets-i18n.ts:35
 msgid "ASS Subtitle Burn-in"
 msgstr "ASS 字幕内嵌"
 
@@ -1251,7 +1271,7 @@ msgstr "第 {attempt} 次尝试"
 msgid "Attempt {attempt} of {maxAttempts}"
 msgstr "第 {attempt} 次尝试，共 {maxAttempts} 次"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:685
+#: src/components/pipeline/workflows/step-config-dialog.tsx:693
 msgid "Attempts (including the first run)"
 msgstr "尝试次数（含首次运行）"
 
@@ -1259,7 +1279,7 @@ msgstr "尝试次数（含首次运行）"
 msgid "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
 msgstr "尝试通过替换音频流获取原画质量。如果失败，可能会导致仅有音频。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:48
+#: src/components/pipeline/presets/default-presets-i18n.ts:49
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:207
 #: src/lib/media-file-type.ts:41
 msgid "Audio"
@@ -1278,7 +1298,7 @@ msgstr "音频编码"
 msgid "Audio codec change"
 msgstr "音频编码变化"
 
-#: src/components/pipeline/constants.tsx:44
+#: src/components/pipeline/constants.tsx:45
 msgid "Audio Extraction"
 msgstr "音频提取"
 
@@ -1524,7 +1544,7 @@ msgstr "百度网盘退出登录失败"
 msgid "Baidu Netdisk re-login failed"
 msgstr "百度网盘重新登录失败"
 
-#: src/components/pipeline/constants.tsx:50
+#: src/components/pipeline/constants.tsx:52
 msgid "Baidu Netdisk Upload"
 msgstr "百度网盘上传"
 
@@ -1546,10 +1566,12 @@ msgid "Balanced"
 msgstr "均衡"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:212
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:340
 msgid "Bandwidth"
 msgstr "带宽"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:217
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:345
 msgid "Bandwidth Limit"
 msgstr "带宽限制"
 
@@ -1562,6 +1584,7 @@ msgid "Base delay between retries"
 msgstr "重试之间的基础延迟"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:153
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:206
 msgid "Base path for remote storage. Supports metadata and time placeholders."
 msgstr "远端存储的基础路径。支持元数据和时间占位符。"
 
@@ -1577,7 +1600,7 @@ msgstr "此配置模板的基本信息。"
 msgid "Basic Information"
 msgstr "基本信息"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:122
+#: src/components/pipeline/presets/default-presets-i18n.ts:124
 msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview."
 msgstr "基础后处理：将 FLV 重封装为 MP4，并生成缩略图预览。"
 
@@ -1800,7 +1823,7 @@ msgstr "当前播放方式不支持缓冲预设。"
 msgid "Built-in local backend"
 msgstr "内置本地后端"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:92
+#: src/components/pipeline/presets/default-presets-i18n.ts:94
 msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Pairs per segment and is batch-safe."
 msgstr "将 .ass 字幕内嵌到视频中（默认生成 *_burnin.mp4）。按分段配对，支持批量处理。"
 
@@ -1840,8 +1863,8 @@ msgstr "缓存与进度"
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:145
 #: src/components/pipeline/presets/preset-card.tsx:129
 #: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:238
-#: src/components/pipeline/workflows/step-config-dialog.tsx:762
-#: src/components/pipeline/workflows/step-config-dialog.tsx:819
+#: src/components/pipeline/workflows/step-config-dialog.tsx:770
+#: src/components/pipeline/workflows/step-config-dialog.tsx:827
 #: src/components/pipeline/workflows/workflow-card.tsx:104
 #: src/components/proxies/delete-proxy-dialog.tsx:105
 #: src/components/proxies/proxy-editor-dialog.tsx:360
@@ -2128,13 +2151,17 @@ msgstr "请选择单个平台以管理其账号。"
 msgid "Choose an account or raw cookies, not both"
 msgstr "请选择账号或手动 Cookie，不能同时使用"
 
-#: src/components/pipeline/presets/processor-schemas.ts:233
+#: src/components/pipeline/presets/processor-schemas.ts:297
 msgid "Choose either a command or a program"
 msgstr "请选择命令或程序其中之一"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:121
 msgid "Choose how files are transferred to the remote."
 msgstr "选择将文件传输到远程的方式。"
+
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:170
+msgid "Choose how files are transferred to the remote. Sync requires multiple batch inputs in a shared directory and updates those files on the remote; other remote files are left untouched."
+msgstr "选择将文件传输到远端的方式。同步模式要求同一目录下的多个批量输入文件，会将这些文件更新为与本地副本一致；批次之外的远端文件不会被改动。"
 
 #: src/components/config/shared/proxy-route-picker.tsx:213
 msgid "Choose how to connect"
@@ -2164,7 +2191,11 @@ msgstr "选择你的显示语言"
 msgid "Chosen among the audio in the preferred language."
 msgstr "在首选语言的音频中选择。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:51
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:409
+msgid "Chunk Size"
+msgstr "分块大小"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:52
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:136
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:115
 msgid "Cleanup"
@@ -2316,7 +2347,15 @@ msgstr "命令模板参数。可使用 {INPUT_TOKEN} 和 {OUTPUT_TOKEN} 占位�
 msgid "Comment"
 msgstr "评论"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:128
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:227
+msgid "Compare by checksum"
+msgstr "按校验和比较"
+
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:229
+msgid "Compare existing files by hash instead of size and modification time (--checksum)."
+msgstr "按哈希值而非文件大小和修改时间比较已有文件（--checksum）。"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:130
 msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "完整流程：重封装、生成缩略图、添加元数据并上传。"
 
@@ -2350,15 +2389,15 @@ msgstr "组件状态"
 msgid "Composes with Bandwidth Limit — useful to keep one big file from saturating the whole link while still allowing many small ones to run in parallel."
 msgstr "与带宽限制叠加生效——可避免单个大文件占满整条链路，同时仍允许多个小文件并行传输。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:123
+#: src/components/pipeline/presets/default-presets-i18n.ts:125
 msgid "Compress video for storage, upload to cloud, then delete local file to save space."
 msgstr "压缩视频用于存档，上传到云端，然后删除本地文件以节省空间。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:46
+#: src/components/pipeline/presets/default-presets-i18n.ts:47
 msgid "Compression"
 msgstr "压缩"
 
-#: src/components/pipeline/constants.tsx:45
+#: src/components/pipeline/constants.tsx:46
 msgid "Compression / Archive"
 msgstr "压缩/归档"
 
@@ -2368,6 +2407,7 @@ msgstr "压缩级别"
 
 #: src/components/config/global/concurrency-card.tsx:97
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:290
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:359
 msgid "Concurrency"
 msgstr "并发"
 
@@ -2384,6 +2424,7 @@ msgid "Concurrent checkers (--checkers)."
 msgstr "并发校验数（--checkers）。"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:314
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:367
 msgid "Concurrent file transfers (--transfers)."
 msgstr "并发文件传输数（--transfers）。"
 
@@ -2400,12 +2441,13 @@ msgid "Config Directory help"
 msgstr "配置目录说明"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:174
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:273
 msgid "Config Path (Optional)"
 msgstr "配置路径（可选）"
 
 #: src/components/notifications/channel-form.tsx:407
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:81
-#: src/components/pipeline/workflows/step-config-dialog.tsx:450
+#: src/components/pipeline/workflows/step-config-dialog.tsx:455
 #: src/components/pipeline/workflows/workflow-editor.tsx:196
 #: src/lib/menu-list.ts:114
 msgid "Configuration"
@@ -2424,7 +2466,7 @@ msgid "Configuration imported successfully"
 msgstr "配置已成功导入"
 
 #: src/components/config/engines/engines-panel.tsx:272
-#: src/components/pipeline/workflows/step-config-dialog.tsx:358
+#: src/components/pipeline/workflows/step-config-dialog.tsx:363
 msgid "Configure"
 msgstr "配置"
 
@@ -2459,6 +2501,10 @@ msgstr "配置从所选备份文件导入数据的方式。"
 #: src/components/notifications/desktop-channel-dialog.tsx:77
 msgid "Configure native OS notifications for important events while running the desktop app."
 msgstr "在运行桌面应用时，配置重要事件的原生操作系统通知。"
+
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:198
+msgid "Configure remotes in rship's config.toml before running uploads (for example via rship auth or rship config add)."
+msgstr "运行上传前请先在 rship 的 config.toml 中配置远端（例如通过 rship auth 或 rship config add）。"
 
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:346
 msgid "Configure Settings"
@@ -2600,7 +2646,7 @@ msgstr "控制 Rust-Srec 的启动方式和系统托盘行为。"
 msgid "Control verbosity for each module. Lower levels include higher ones."
 msgstr "控制各模块的日志详细程度。较低级别包含较高级别。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:91
+#: src/components/pipeline/presets/default-presets-i18n.ts:93
 msgid "Convert danmu XML (Bilibili-style) into .ass subtitles using DanmakuFactory. Pairs per segment and is batch-safe."
 msgstr "使用 DanmakuFactory 将弹幕 XML（Bilibili 格式）转换为 .ass 字幕。按分段配对，支持批量处理。"
 
@@ -2631,6 +2677,7 @@ msgid "Copied!"
 msgstr "已复制！"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:47
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:50
 msgid "Copy"
 msgstr "复制"
 
@@ -2643,7 +2690,7 @@ msgstr "复制（直通）"
 msgid "Copy (Stream Copy)"
 msgstr "复制（流复制）"
 
-#: src/components/pipeline/constants.tsx:46
+#: src/components/pipeline/constants.tsx:47
 msgid "Copy / Move"
 msgstr "复制/移动"
 
@@ -2692,7 +2739,7 @@ msgstr "复制 MCP 配置"
 msgid "Copy Path"
 msgstr "复制路径"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:76
+#: src/components/pipeline/presets/default-presets-i18n.ts:77
 msgid "Copy the file to another location. Keeps the original file."
 msgstr "将文件复制到其他位置，保留原始文件。"
 
@@ -2737,7 +2784,7 @@ msgstr "残留文件删除失败"
 msgid "Could not load presets: {0}"
 msgstr "无法加载预设：{0}"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:481
+#: src/components/pipeline/workflows/step-config-dialog.tsx:486
 msgid "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
 msgstr "无法加载预设 <0>{presetName}</0>。请确认服务器可访问后重试。"
 
@@ -2810,7 +2857,7 @@ msgstr "创建过滤器以控制何时录制该主播。你可以按时间、关
 msgid "Create a template to define reusable download configurations."
 msgstr "创建模板以定义可复用的录制配置。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:74
+#: src/components/pipeline/presets/default-presets-i18n.ts:75
 msgid "Create a ZIP archive of the file. Good for bundling with metadata."
 msgstr "为文件创建 ZIP 压缩包，适合与元数据一起打包。"
 
@@ -3009,7 +3056,7 @@ msgstr "必须填写当前密码"
 #: src/components/config/engines/forms/setting-fields.tsx:1151
 #: src/components/config/engines/forms/setting-fields.tsx:1216
 #: src/components/config/engines/forms/setting-fields.tsx:1238
-#: src/components/pipeline/presets/default-presets-i18n.ts:53
+#: src/components/pipeline/presets/default-presets-i18n.ts:54
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:312
 msgid "Custom"
 msgstr "自定义"
@@ -3018,7 +3065,7 @@ msgstr "自定义"
 msgid "Custom Config"
 msgstr "自定义配置"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:24
+#: src/components/pipeline/presets/default-presets-i18n.ts:25
 msgid "Custom FFmpeg"
 msgstr "自定义 FFmpeg"
 
@@ -3070,7 +3117,7 @@ msgstr "自定义应用主题和侧边栏布局。"
 msgid "Cutoff"
 msgstr "阈值"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:555
+#: src/components/pipeline/workflows/step-config-dialog.tsx:563
 msgid "DAG Configuration"
 msgstr "DAG 配置"
 
@@ -3078,16 +3125,16 @@ msgstr "DAG 配置"
 msgid "DAG Graph"
 msgstr "DAG 图"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:55
+#: src/components/pipeline/presets/default-presets-i18n.ts:56
 #: src/lib/media-file-type.ts:51
 msgid "Danmaku"
 msgstr "弹幕"
 
-#: src/components/pipeline/constants.tsx:52
+#: src/components/pipeline/constants.tsx:54
 msgid "Danmaku to ASS"
 msgstr "弹幕转 ASS"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:33
+#: src/components/pipeline/presets/default-presets-i18n.ts:34
 msgid "Danmaku to ASS Subtitles"
 msgstr "弹幕转 ASS 字幕"
 
@@ -3112,7 +3159,7 @@ msgstr "弹幕设置"
 
 #: src/components/config/shared/danmu-statistics-card.tsx:175
 #: src/components/sessions/danmu-stats-panel.tsx:181
-#: src/components/sessions/overview-tab.tsx:283
+#: src/components/sessions/overview-tab.tsx:308
 msgid "Danmu Statistics"
 msgstr "弹幕统计"
 
@@ -3129,7 +3176,7 @@ msgstr "弹幕流已关闭"
 msgid "Danmu/min"
 msgstr "弹幕/分钟"
 
-#: src/components/sessions/overview-tab.tsx:161
+#: src/components/sessions/overview-tab.tsx:168
 msgid "Danmus"
 msgstr "弹幕数"
 
@@ -3231,7 +3278,7 @@ msgstr "默认处理管道流程。为新的处理任务配置处理器顺序。
 msgid "Default proxy"
 msgstr "默认代理"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:134
+#: src/components/pipeline/presets/default-presets-i18n.ts:136
 msgid "Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files."
 msgstr "默认工作流：重封装为 MP4（删除原始文件），生成原始分辨率缩略图，上传两者至云端并删除本地文件。"
 
@@ -3243,7 +3290,7 @@ msgstr "默认值：{value}"
 msgid "Default: Dolby Vision (30000)"
 msgstr "默认：杜比视界 (30000)"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:558
+#: src/components/pipeline/workflows/step-config-dialog.tsx:566
 msgid "Define how this step identifies itself and connects to others."
 msgstr "定义此步骤如何标识自身以及如何连接到其他步骤。"
 
@@ -3329,7 +3376,7 @@ msgstr "删除渠道？"
 msgid "Delete every partial file?"
 msgstr "删除所有残留文件？"
 
-#: src/components/pipeline/constants.tsx:47
+#: src/components/pipeline/constants.tsx:48
 msgid "Delete File"
 msgstr "删除文件"
 
@@ -3429,7 +3476,7 @@ msgstr "删除主播"
 msgid "Delete Template"
 msgstr "删除模板"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:794
+#: src/components/pipeline/workflows/step-config-dialog.tsx:802
 msgid "Delete the converted result?"
 msgstr "删除转码后的结果文件？"
 
@@ -3479,7 +3526,7 @@ msgstr "已删除；保留至使用它的录制结束"
 msgid "Deletes all existing configurations before importing. This action cannot be undone."
 msgstr "导入前删除所有现有配置。此操作无法撤销。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:75
+#: src/components/pipeline/presets/default-presets-i18n.ts:76
 msgid "Deletes the files produced by the previous step. Safe after an Upload step. After a transcode/remux it deletes the converted result, not the original — use \"Remove Input on Success\" on the transcode step to delete the source instead."
 msgstr "删除上一步骤产出的文件。在上传步骤之后使用是安全的。在转码/remux 之后，它删除的是转码结果而非原始文件——若要删除源文件，请改为在转码步骤上启用“成功后移除输入”。"
 
@@ -3493,7 +3540,7 @@ msgstr "正在删除…"
 msgid "Delivery Policy"
 msgstr "投递策略"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:609
+#: src/components/pipeline/workflows/step-config-dialog.tsx:617
 msgid "Depends On (Ancestors)"
 msgstr "依赖于（前辈节点）"
 
@@ -3557,19 +3604,21 @@ msgstr "目标文件夹"
 msgid "Destination Folder help"
 msgstr "目标文件夹说明"
 
-#: src/components/pipeline/presets/processor-schemas.ts:182
+#: src/components/pipeline/presets/processor-schemas.ts:246
 msgid "Destination is required"
 msgstr "必须填写目标文件夹"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:135
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:188
 msgid "Destination Root"
 msgstr "目标根目录"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:137
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:190
 msgid "Destination Root help"
 msgstr "目标根目录帮助"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:775
+#: src/components/pipeline/workflows/step-config-dialog.tsx:783
 msgid "Detach & Edit"
 msgstr "分离并编辑"
 
@@ -3617,6 +3666,10 @@ msgstr "尺寸与滤镜"
 #: src/components/proxies/proxy-route-label.tsx:33
 msgid "Direct"
 msgstr "直连"
+
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:288
+msgid "Directory for rship's SQLite WAL resume checkpoints and OAuth tokens (--state-dir). Uses RSHIP_STATE_DIR or rship's default location when empty."
+msgstr "用于存放 rship 的 SQLite WAL 断点续传检查点和 OAuth 令牌的目录（--state-dir）。留空时使用 RSHIP_STATE_DIR 或 rship 默认位置。"
 
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:443
 msgid "Directory holding BaiduPCS-Go's login session (BAIDUPCS_GO_CONFIG_DIR). Logging in via the account card above stores the session in the same directory configured here."
@@ -3704,6 +3757,7 @@ msgstr "已完成"
 
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:465
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:489
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:462
 msgid "Double click to edit items."
 msgstr "双击以编辑项目。"
 
@@ -3816,7 +3870,7 @@ msgstr "丢弃重复的流头部"
 msgid "Dropped frames"
 msgstr "丢帧数"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:114
+#: src/components/pipeline/presets/default-presets-i18n.ts:116
 msgid "Dual Format"
 msgstr "双格式输出"
 
@@ -3837,6 +3891,10 @@ msgstr "时长"
 #: src/lib/split-reason.ts:49
 msgid "Duration limit"
 msgstr "时长限制"
+
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:393
+msgid "Dynamically adjust concurrency across small and large file lanes based on throughput and throttling (--adaptive)."
+msgstr "根据吞吐量和限流情况动态调整大文件与小文件通道的并发数（--adaptive）。"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:24
 msgid "e.g. 'best', 'worst', '720p', 'audio_only'"
@@ -3882,9 +3940,17 @@ msgstr "例如 192k"
 msgid "e.g. 1M"
 msgstr "例如 1M"
 
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:352
+msgid "e.g. 20M"
+msgstr "例如 20M"
+
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:473
 msgid "e.g. 250M"
 msgstr "例如 250M"
+
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:385
+msgid "e.g. 4"
+msgstr "例如 4"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:551
 msgid "e.g. 5000k"
@@ -3893,6 +3959,11 @@ msgstr "例如 5000k"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:591
 msgid "e.g. 60"
 msgstr "例如 60"
+
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:413
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:426
+msgid "e.g. 64M"
+msgstr "例如 64M"
 
 #: src/components/streamers/config/stream-selection-input.tsx:114
 msgid "e.g. aliyun, akamaized"
@@ -3917,6 +3988,10 @@ msgstr "例如 flv, hls, dash"
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:158
 msgid "e.g. gdrive:/videos"
 msgstr "例如 gdrive:/videos"
+
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:211
+msgid "e.g. gdrive:archive"
+msgstr "例如 gdrive:archive"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:600
 msgid "e.g. hflip,noise=alls=20:allf=t+u"
@@ -3946,7 +4021,7 @@ msgstr "例如 remux-h264"
 msgid "e.g. volume=0.5"
 msgstr "例如 volume=0.5"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:583
+#: src/components/pipeline/workflows/step-config-dialog.tsx:591
 msgid "e.g., process-video"
 msgstr "例如：process-video"
 
@@ -4088,7 +4163,7 @@ msgid "End time must differ from start time."
 msgstr "结束时间不能与开始时间相同。"
 
 #: src/components/player/playback-state.ts:21
-#: src/components/sessions/overview-tab.tsx:264
+#: src/components/sessions/overview-tab.tsx:289
 msgid "Ended"
 msgstr "已结束"
 
@@ -4329,8 +4404,8 @@ msgstr "在内置列表之外，额外从高频词图表中排除的词。每行
 msgid "Execute"
 msgstr "执行"
 
-#: src/components/pipeline/constants.tsx:51
-#: src/components/pipeline/presets/default-presets-i18n.ts:25
+#: src/components/pipeline/constants.tsx:53
+#: src/components/pipeline/presets/default-presets-i18n.ts:26
 msgid "Execute Command"
 msgstr "执行命令"
 
@@ -4374,7 +4449,7 @@ msgid "Expand sidebar"
 msgstr "展开侧边栏"
 
 #: src/components/config/engines/forms/lossless-cutting-field.tsx:52
-#: src/components/ui/flag-form-field.tsx:123
+#: src/components/ui/flag-form-field.tsx:135
 msgid "Experimental"
 msgstr "实验性"
 
@@ -4416,6 +4491,7 @@ msgstr "外部工具"
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:460
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:70
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:484
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:457
 msgid "Extra Arguments"
 msgstr "额外参数"
 
@@ -4427,19 +4503,19 @@ msgstr "已设置额外的 Streamlink 参数。移除这些参数后才能使用
 msgid "Extract AAC"
 msgstr "提取 AAC"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:86
+#: src/components/pipeline/presets/default-presets-i18n.ts:88
 msgid "Extract audio to high-quality MP3 (320kbps) for podcast distribution."
 msgstr "提取高质量 MP3（320kbps）音频，用于播客分发。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:73
+#: src/components/pipeline/presets/default-presets-i18n.ts:74
 msgid "Extract audio track to AAC format (256kbps). High quality, widely compatible."
 msgstr "提取 AAC（256kbps）音频轨道，质量高且兼容性好。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:72
+#: src/components/pipeline/presets/default-presets-i18n.ts:73
 msgid "Extract audio track to MP3 format (192kbps). Good for podcasts and music."
 msgstr "提取 MP3（192kbps）音频轨道，适合播客与音乐。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:125
+#: src/components/pipeline/presets/default-presets-i18n.ts:127
 msgid "Extract high-quality audio for podcast distribution and upload."
 msgstr "提取高质量音频用于播客分发并上传。"
 
@@ -4897,6 +4973,10 @@ msgstr "故障切换开启"
 msgid "Falls back to the BAIDUPCS_PATH environment variable, then PATH lookup."
 msgstr "留空时依次使用 BAIDUPCS_PATH 环境变量和 PATH 查找。"
 
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:262
+msgid "Falls back to the RSHIP_PATH environment variable, then PATH lookup."
+msgstr "留空时依次使用 RSHIP_PATH 环境变量和 PATH 查找。"
+
 #: src/components/player/danmu-settings-panel.tsx:43
 msgctxt "danmu speed"
 msgid "Fast"
@@ -4906,23 +4986,23 @@ msgstr "较快"
 msgid "Fast Compression"
 msgstr "快速压缩"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:126
+#: src/components/pipeline/presets/default-presets-i18n.ts:128
 msgid "Fast encoding for quick sharing on social media or messaging."
 msgstr "快速编码，便于在社交媒体或聊天中快速分享。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:98
+#: src/components/pipeline/presets/default-presets-i18n.ts:100
 msgid "Fast GPU-accelerated AV1 encoding using NVIDIA NVENC (CQ 28). Requires RTX 4000+ series."
 msgstr "使用 NVIDIA NVENC 的快速 GPU 加速 AV1 编码（CQ 28）。需要 RTX 4000+ 系列显卡。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:93
+#: src/components/pipeline/presets/default-presets-i18n.ts:95
 msgid "Fast GPU-accelerated H.264 encoding using NVIDIA NVENC (CQ 23). Great speed-to-quality ratio."
 msgstr "使用 NVIDIA NVENC 的快速 GPU 加速 H.264 编码（CQ 23）。速度与画质的良好平衡。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:95
+#: src/components/pipeline/presets/default-presets-i18n.ts:97
 msgid "Fast GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ 24). Smaller files than H.264."
 msgstr "使用 NVIDIA NVENC 的快速 GPU 加速 HEVC/H.265 编码（CQ 24）。文件比 H.264 更小。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:65
+#: src/components/pipeline/presets/default-presets-i18n.ts:66
 msgid "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
 msgstr "快速 H.264 压缩（CRF 23）。在速度、画质与体积之间取得良好平衡。"
 
@@ -4974,7 +5054,7 @@ msgstr "用于重封装 Streamlink 输出的 FFmpeg。请输入后端服务器�
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg 视频滤镜"
 
-#: src/lib/job-progress.ts:163
+#: src/lib/job-progress.ts:159
 msgid "File {index} of {total}"
 msgstr "第 {index}/{total} 个文件"
 
@@ -4990,7 +5070,7 @@ msgstr "文件扩展名过滤"
 msgid "File kept and removed from the list"
 msgstr "文件已保留，并已从列表移除"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:52
+#: src/components/pipeline/presets/default-presets-i18n.ts:53
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:224
 msgid "File Operations"
 msgstr "文件操作"
@@ -5077,7 +5157,7 @@ msgid "Finalizing recordings before exit…"
 msgstr "正在保存录制，即将退出…"
 
 #: src/components/streamers/card/lossless-cut-action.tsx:173
-#: src/lib/job-progress.ts:38
+#: src/lib/job-progress.ts:30
 msgid "Finalizing..."
 msgstr "正在收尾…"
 
@@ -5102,6 +5182,7 @@ msgid "First output file path"
 msgstr "第一个输出文件路径"
 
 #: src/components/pipeline/presets/preset-editor.tsx:95
+#: src/components/pipeline/workflows/step-config-dialog.tsx:254
 msgid "Fix configuration errors before saving"
 msgstr "保存前修复配置错误"
 
@@ -5137,7 +5218,7 @@ msgstr "固定兼容值"
 msgid "Floating"
 msgstr "悬浮"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:424
+#: src/components/pipeline/workflows/step-config-dialog.tsx:429
 msgid "Flow & Dependencies"
 msgstr "流程与依赖"
 
@@ -5235,6 +5316,10 @@ msgstr "帧率（FPS）"
 msgid "Free space on the disks recordings are written to."
 msgstr "录像写入的各磁盘的剩余空间。"
 
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:240
+msgid "Freeze source files into temporary local snapshots so concurrent writes cannot mutate an upload in flight (--strict-source)."
+msgstr "将源文件冻结为本地临时快照，防止并发写入修改正在上传的文件（--strict-source）。"
+
 #: src/components/config/shared/danmu-statistics-card.tsx:221
 msgid "Frequent words to keep"
 msgstr "保留高频词数量"
@@ -5298,15 +5383,15 @@ msgstr "全天"
 msgid "Full HD Thumbnail"
 msgstr "全高清缩略图"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:131
+#: src/components/pipeline/presets/default-presets-i18n.ts:133
 msgid "Full multimedia processing: Remux video, extract audio and thumbnail in parallel, then upload all."
 msgstr "完整的多媒体处理：并行进行视频重封装、音频提取和缩略图生成，然后上传所有文件。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:109
+#: src/components/pipeline/presets/default-presets-i18n.ts:111
 msgid "Full Processing"
 msgstr "全流程处理"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:110
+#: src/components/pipeline/presets/default-presets-i18n.ts:112
 msgid "Full Processing (Single Pass)"
 msgstr "全流程处理（单次封装）"
 
@@ -5328,6 +5413,7 @@ msgstr "GB"
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:297
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:99
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:204
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:135
 #: src/components/streamers/streamer-editor.tsx:155
 msgid "General"
 msgstr "常规"
@@ -5336,31 +5422,31 @@ msgstr "常规"
 msgid "General Configuration"
 msgstr "常规配置"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:69
+#: src/components/pipeline/presets/default-presets-i18n.ts:70
 msgid "Generate a Full HD thumbnail (1280px width) for modern displays and video players."
 msgstr "生成全高清缩略图（宽 1280px），适用于现代显示器与播放器。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:68
+#: src/components/pipeline/presets/default-presets-i18n.ts:69
 msgid "Generate a high-resolution thumbnail (640px width) at 10 seconds."
 msgstr "在第 10 秒生成高清缩略图（宽 640px）。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:70
+#: src/components/pipeline/presets/default-presets-i18n.ts:71
 msgid "Generate a maximum quality thumbnail (1920px width) preserving full 1080p detail."
 msgstr "生成最高质量缩略图（宽 1920px），保留完整 1080p 细节。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:87
+#: src/components/pipeline/presets/default-presets-i18n.ts:89
 msgid "Generate a thumbnail at 30 seconds with 480px width for previews."
 msgstr "在第 30 秒生成缩略图（宽 480px）用于预览。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:71
+#: src/components/pipeline/presets/default-presets-i18n.ts:72
 msgid "Generate a thumbnail at native stream resolution (no scaling). Best quality, largest file size."
 msgstr "以原始直播分辨率生成缩略图（不缩放）。质量最佳，但文件体积最大。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:67
+#: src/components/pipeline/presets/default-presets-i18n.ts:68
 msgid "Generate a thumbnail image from the video at 10 seconds (320px width)."
 msgstr "从视频第 10 秒生成缩略图（宽 320px）。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:132
+#: src/components/pipeline/presets/default-presets-i18n.ts:134
 msgid "Generate multiple preview images at different timestamps for a gallery view."
 msgstr "在不同时间点生成多张预览图，用于图库展示。"
 
@@ -5433,11 +5519,11 @@ msgstr "GPU"
 msgid "GPU Health Probe Interval"
 msgstr "GPU 健康探测间隔"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:117
+#: src/components/pipeline/presets/default-presets-i18n.ts:119
 msgid "GPU HQ Archive"
 msgstr "GPU 高质量归档"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:116
+#: src/components/pipeline/presets/default-presets-i18n.ts:118
 msgid "GPU Standard"
 msgstr "GPU 标准"
 
@@ -5445,11 +5531,11 @@ msgstr "GPU 标准"
 msgid "GPU unavailable"
 msgstr "GPU 不可用"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:136
+#: src/components/pipeline/presets/default-presets-i18n.ts:138
 msgid "GPU-accelerated high quality archive: NVENC HEVC encoding, thumbnail, and cloud upload."
 msgstr "GPU 加速高质量归档：NVENC HEVC 编码、缩略图生成和云端上传。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:135
+#: src/components/pipeline/presets/default-presets-i18n.ts:137
 msgid "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation."
 msgstr "GPU 加速后处理：NVENC H.264 编码和缩略图生成。"
 
@@ -5470,9 +5556,13 @@ msgstr "保护正在进行的录制不被系统休眠或误退出中断。"
 msgid "H.264"
 msgstr "H.264"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:85
+#: src/components/pipeline/presets/default-presets-i18n.ts:87
 msgid "H.264 medium compression (CRF 23) optimized for long-term storage."
 msgstr "面向长期存储优化的 H.264 中等压缩（CRF 23）。"
+
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:421
+msgid "Hard cap on rship's transfer buffer pool (--max-buffer-mem)."
+msgstr "rship 传输缓冲池的内存硬上限（--max-buffer-mem）。"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:687
 msgid "Hardware Acceleration"
@@ -5553,7 +5643,7 @@ msgstr "高性能"
 msgid "High quality"
 msgstr "高质量"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:105
+#: src/components/pipeline/presets/default-presets-i18n.ts:107
 msgid "High Quality Archive"
 msgstr "高质量归档"
 
@@ -5561,23 +5651,23 @@ msgstr "高质量归档"
 msgid "High Quality Compression"
 msgstr "高质量压缩"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:99
+#: src/components/pipeline/presets/default-presets-i18n.ts:101
 msgid "High quality GPU-accelerated AV1 encoding using NVIDIA NVENC (CQ 24). Best compression ratio, requires RTX 4000+."
 msgstr "使用 NVIDIA NVENC 的高质量 GPU 加速 AV1 编码（CQ 24）。最佳压缩比，需要 RTX 4000+ 系列显卡。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:94
+#: src/components/pipeline/presets/default-presets-i18n.ts:96
 msgid "High quality GPU-accelerated H.264 encoding using NVIDIA NVENC (CQ 20). Best NVENC quality."
 msgstr "使用 NVIDIA NVENC 的高质量 GPU 加速 H.264 编码（CQ 20）。最佳 NVENC 画质。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:96
+#: src/components/pipeline/presets/default-presets-i18n.ts:98
 msgid "High quality GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ 21). Best compression ratio with GPU."
 msgstr "使用 NVIDIA NVENC 的高质量 GPU 加速 HEVC/H.265 编码（CQ 21）。GPU 最佳压缩比。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:66
+#: src/components/pipeline/presets/default-presets-i18n.ts:67
 msgid "High quality H.265/HEVC compression (CRF 22). Smaller files but slower encoding."
 msgstr "高质量 H.265/HEVC 压缩（CRF 22）。文件更小，但编码更慢。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:28
+#: src/components/pipeline/presets/default-presets-i18n.ts:29
 msgid "High Quality MP3"
 msgstr "高质量 MP3"
 
@@ -5862,7 +5952,7 @@ msgstr "导入主题"
 msgid "Importing..."
 msgstr "正在导入..."
 
-#: src/components/sessions/overview-tab.tsx:350
+#: src/components/sessions/overview-tab.tsx:375
 msgid "In progress"
 msgstr "进行中"
 
@@ -5905,7 +5995,7 @@ msgstr "包含录制元数据"
 msgid "Inherit"
 msgstr "继承"
 
-#: src/components/ui/flag-form-field.tsx:152
+#: src/components/ui/flag-form-field.tsx:164
 msgctxt "inherited flag"
 msgid "Inherit"
 msgstr "继承"
@@ -6257,7 +6347,7 @@ msgctxt "unsaved-changes"
 msgid "Leave"
 msgstr "离开"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:736
+#: src/components/pipeline/workflows/step-config-dialog.tsx:744
 msgid "Leave attempts empty or at 1 for no automatic retry; the backoff doubles after each failed attempt and takes over retries from upload processors. Failure notifications are sent only once all attempts are spent or on a non-retryable error. Leave the timeout empty to use the worker pool default."
 msgstr "尝试次数留空或设为 1 表示不自动重试；每次失败后等待时间翻倍，并接管上传处理器自身的重试。仅在所有尝试用完或遇到不可重试错误时才会发送失败通知。超时留空则使用工作池默认值。"
 
@@ -6403,7 +6493,7 @@ msgstr "正在加载更多日志..."
 msgid "Loading more..."
 msgstr "正在加载更多..."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:441
+#: src/components/pipeline/workflows/step-config-dialog.tsx:446
 msgid "Loading preset details..."
 msgstr "正在加载预设详情..."
 
@@ -6425,7 +6515,7 @@ msgstr "正在加载工作流..."
 msgid "Loading…"
 msgstr "加载中…"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:111
+#: src/components/pipeline/presets/default-presets-i18n.ts:113
 msgid "Local Archive"
 msgstr "本地归档"
 
@@ -6584,7 +6674,7 @@ msgstr "低延迟、高性能"
 msgid "Low latency, high quality"
 msgstr "低延迟、高质量"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:97
+#: src/components/pipeline/presets/default-presets-i18n.ts:99
 msgid "Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay."
 msgstr "用于实时应用的低延迟 GPU 加速 H.264 编码。编码延迟极低。"
 
@@ -6686,6 +6776,10 @@ msgstr "匹配策略"
 msgid "Matching resolution"
 msgstr "匹配分辨率"
 
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:441
+msgid "Max API requests per second (--tpslimit). Leave empty or set to 0 for unlimited."
+msgstr "每秒最大 API 请求数上限 (--tpslimit)。留空或设为 0 表示不限制。"
+
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:396
 msgid "Max Attempts"
 msgstr "最大尝试次数"
@@ -6693,6 +6787,10 @@ msgstr "最大尝试次数"
 #: src/components/streamers/config/stream-selection-input.tsx:186
 msgid "Max Bitrate (bps)"
 msgstr "最大比特率（bps）"
+
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:419
+msgid "Max Buffer Memory"
+msgstr "最大缓冲内存"
 
 #: src/components/config/global/concurrency-card.tsx:165
 #: src/components/config/global/concurrency-card.tsx:168
@@ -6713,7 +6811,7 @@ msgstr "最大并发录制数"
 msgid "Max Duration"
 msgstr "最大时长"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:30
+#: src/components/pipeline/presets/default-presets-i18n.ts:31
 msgid "Max HEVC Compression"
 msgstr "最大 HEVC 压缩"
 
@@ -6742,6 +6840,7 @@ msgstr "最高质量缩略图"
 #: src/components/config/shared/retry-policy-form.tsx:53
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:35
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:191
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:307
 msgid "Max Retries"
 msgstr "最大重试次数"
 
@@ -6771,7 +6870,7 @@ msgstr "最大尝试次数（1–10）"
 msgid "Maximum attempts for metadata and App playback requests."
 msgstr "元数据及 App 播放请求的最大尝试次数。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:127
+#: src/components/pipeline/presets/default-presets-i18n.ts:129
 msgid "Maximum compression to minimize storage usage, then delete original."
 msgstr "最大程度压缩以尽量降低存储占用，然后删除原始文件。"
 
@@ -6779,7 +6878,7 @@ msgstr "最大程度压缩以尽量降低存储占用，然后删除原始文件
 msgid "Maximum height"
 msgstr "最大高度"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:88
+#: src/components/pipeline/presets/default-presets-i18n.ts:90
 msgid "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 msgstr "最大 HEVC/H.265 压缩（CRF 28），以获得最小文件体积。"
 
@@ -6787,7 +6886,7 @@ msgstr "最大 HEVC/H.265 压缩（CRF 28），以获得最小文件体积。"
 msgid "Maximum number of retry attempts."
 msgstr "最大重试尝试次数。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:124
+#: src/components/pipeline/presets/default-presets-i18n.ts:126
 msgid "Maximum quality compression with HEVC, then upload to cloud storage."
 msgstr "使用 HEVC 进行最高质量压缩，然后上传到云存储。"
 
@@ -6815,6 +6914,10 @@ msgstr "媒体播放器"
 msgid "Media Timeline"
 msgstr "媒体时间线"
 
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:403
+msgid "Memory & Chunking"
+msgstr "内存与分块"
+
 #: src/components/config/engines/forms/mesio-sections.tsx:170
 msgid "Memory reserved for reading each FLV recording. Values below 65536 use 65536."
 msgstr "每个 FLV 录制读取数据时预留的内存。低于 65536 的值按 65536 处理。"
@@ -6839,11 +6942,11 @@ msgstr "消息"
 msgid "Messages"
 msgstr "消息数"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:54
+#: src/components/pipeline/presets/default-presets-i18n.ts:55
 msgid "Metadata"
 msgstr "元数据"
 
-#: src/components/pipeline/constants.tsx:48
+#: src/components/pipeline/constants.tsx:49
 msgid "Metadata Editor"
 msgstr "元数据编辑器"
 
@@ -6907,7 +7010,7 @@ msgstr "上传时 BaiduPCS-Go 会自动创建不存在的文件夹。"
 msgid "Missing presets: {0}"
 msgstr "缺失的预设：{0}"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:381
+#: src/components/pipeline/workflows/step-config-dialog.tsx:386
 msgid "Modify the parameters for this processing step."
 msgstr "修改此处理步骤的参数。"
 
@@ -6970,6 +7073,7 @@ msgid "Morning"
 msgstr "上午"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:61
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:64
 msgid "Move"
 msgstr "移动"
 
@@ -6989,7 +7093,7 @@ msgstr "移动文件"
 msgid "Move Files"
 msgstr "移动文件"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:77
+#: src/components/pipeline/presets/default-presets-i18n.ts:78
 msgid "Move the file to another location. Removes the original file."
 msgstr "将文件移动到其他位置，并移除原始文件。"
 
@@ -7017,7 +7121,7 @@ msgstr "多线程流数帮助"
 msgid "Multi-thread upload only helps on large files; on small ones the splitting overhead outweighs the benefit."
 msgstr "多线程上传仅对大文件有效；对小文件而言，分块开销会超过其收益。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:112
+#: src/components/pipeline/presets/default-presets-i18n.ts:114
 msgid "Multimedia Archive"
 msgstr "多媒体归档"
 
@@ -7240,7 +7344,7 @@ msgstr "未检测到更改"
 msgid "No configuration available for this processor."
 msgstr "此处理器没有可用配置。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:534
+#: src/components/pipeline/workflows/step-config-dialog.tsx:542
 msgid "No configuration form available for this processor."
 msgstr "此处理器没有可用的配置表单。"
 
@@ -7363,7 +7467,7 @@ msgstr "未在时限内收到新的媒体数据，未找到安全分割点，录
 msgid "No notification account is chosen"
 msgstr "未选择通知账号"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:662
+#: src/components/pipeline/workflows/step-config-dialog.tsx:670
 msgid "No other steps available to depend on."
 msgstr "没有其他可依赖的步骤。"
 
@@ -7420,7 +7524,7 @@ msgstr "响应中未找到可播放的流"
 msgid "No playable streams found"
 msgstr "未找到可播放的流"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:498
+#: src/components/pipeline/workflows/step-config-dialog.tsx:503
 msgid "No preset named <0>{presetName}</0> is defined. If a processor goes by that name, this step runs it with its default settings; otherwise the pipeline fails to start. Point the step at an existing preset to see and edit its settings here."
 msgstr "没有名为 <0>{presetName}</0> 的预设。如果存在同名的处理器，此步骤会以其默认设置运行该处理器；否则管道将无法启动。请将此步骤指向一个现有预设，即可在这里查看和编辑它的设置。"
 
@@ -7433,7 +7537,7 @@ msgstr "未找到预设"
 msgid "No presets yet"
 msgstr "暂无预设"
 
-#: src/components/sessions/overview-tab.tsx:220
+#: src/components/sessions/overview-tab.tsx:245
 msgid "No preview generated"
 msgstr "未生成预览"
 
@@ -7735,6 +7839,7 @@ msgid "Nth output: {output0}, {output1}..."
 msgstr "第 N 个输出：{output0}, {output1}..."
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:193
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:309
 msgid "Number of attempts per job run before failing the upload. Ignored when the workflow step sets Attempts above 1."
 msgstr "单次任务运行中上传失败前的尝试次数。当工作流步骤将尝试次数设为大于 1 时，此项会被忽略。"
 
@@ -7755,31 +7860,31 @@ msgstr "保留通知事件日志的天数。设置为 0 可无限期保留事件
 msgid "Numeric Room IDs Only"
 msgstr "仅限数字房间 ID"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:40
+#: src/components/pipeline/presets/default-presets-i18n.ts:41
 msgid "NVENC AV1 Fast"
 msgstr "NVENC AV1 快速"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:41
+#: src/components/pipeline/presets/default-presets-i18n.ts:42
 msgid "NVENC AV1 High Quality"
 msgstr "NVENC AV1 高质量"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:35
+#: src/components/pipeline/presets/default-presets-i18n.ts:36
 msgid "NVENC H.264 Fast"
 msgstr "NVENC H.264 快速"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:36
+#: src/components/pipeline/presets/default-presets-i18n.ts:37
 msgid "NVENC H.264 High Quality"
 msgstr "NVENC H.264 高质量"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:39
+#: src/components/pipeline/presets/default-presets-i18n.ts:40
 msgid "NVENC H.264 Low Latency"
 msgstr "NVENC H.264 低延迟"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:37
+#: src/components/pipeline/presets/default-presets-i18n.ts:38
 msgid "NVENC HEVC Fast"
 msgstr "NVENC HEVC 快速"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:38
+#: src/components/pipeline/presets/default-presets-i18n.ts:39
 msgid "NVENC HEVC High Quality"
 msgstr "NVENC HEVC 高质量"
 
@@ -7793,7 +7898,7 @@ msgctxt "bigo notifications"
 msgid "Off"
 msgstr "已关闭"
 
-#: src/components/ui/flag-form-field.tsx:162
+#: src/components/ui/flag-form-field.tsx:174
 msgctxt "inherited flag"
 msgid "Off"
 msgstr "关"
@@ -7864,7 +7969,7 @@ msgstr "正常"
 msgid "On"
 msgstr "开"
 
-#: src/components/ui/flag-form-field.tsx:157
+#: src/components/ui/flag-form-field.tsx:169
 msgctxt "inherited flag"
 msgid "On"
 msgstr "开"
@@ -7931,10 +8036,12 @@ msgstr "打开 Bigo 设置"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:50
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:118
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:167
 msgid "Operation"
 msgstr "操作"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:113
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:162
 msgid "Operation Mode"
 msgstr "操作模式"
 
@@ -8062,7 +8169,7 @@ msgid "Output Settings"
 msgstr "输出设置"
 
 #: src/components/layout/site-header.tsx:74
-#: src/components/sessions/overview-tab.tsx:155
+#: src/components/sessions/overview-tab.tsx:162
 #: src/lib/menu-list.ts:90
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:422
 msgid "Outputs"
@@ -8172,6 +8279,10 @@ msgstr "配对分段处理管道"
 msgid "Parallel integrity checks (e.g. comparing source / destination hashes)."
 msgstr "并行完整性校验（例如比较源/目标哈希值）。"
 
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:378
+msgid "Parallel multipart streams per file on S3, Azure Blob and local storage (--part-concurrency)."
+msgstr "S3、Azure Blob 和本地存储上单文件的并行分片流数（--part-concurrency）。"
+
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:366
 msgid "Parse and play live streams"
 msgstr "解析并播放直播流"
@@ -8201,6 +8312,10 @@ msgstr "正在解析流..."
 #: src/components/player/url-input-form.tsx:389
 msgid "Parsing..."
 msgstr "解析中..."
+
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:376
+msgid "Part Concurrency"
+msgstr "分片并发数"
 
 #: src/components/pipeline/interrupted-output-list.tsx:89
 msgid "Partial file deleted"
@@ -8300,6 +8415,10 @@ msgstr "路径"
 msgid "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
 msgstr "DanmakuFactory 可执行文件路径。如果为空，则使用环境变量或 PATH。"
 
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:275
+msgid "Path to rship's config.toml (--config). Uses RSHIP_CONFIG or rship's default location when empty."
+msgstr "rship 的 config.toml 路径（--config）。留空时使用 RSHIP_CONFIG 或 rship 默认位置。"
+
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:250
 msgid "Path Variables"
 msgstr "路径变量"
@@ -8376,7 +8495,7 @@ msgid "Per-Streamer"
 msgstr "按主播"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:679
-#: src/components/sessions/overview-tab.tsx:235
+#: src/components/sessions/overview-tab.tsx:260
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:541
 msgid "Performance"
 msgstr "性能"
@@ -8570,7 +8689,7 @@ msgstr "平台"
 msgid "Platforms"
 msgstr "平台"
 
-#: src/components/sessions/overview-tab.tsx:197
+#: src/components/sessions/overview-tab.tsx:219
 #: src/components/sessions/recordings-tab.tsx:237
 msgid "Play"
 msgstr "播放"
@@ -8656,7 +8775,7 @@ msgstr "请选择一个 JSON 文件"
 msgid "Please wait while we resolve the stream URL."
 msgstr "正在解析流 URL，请稍候。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:106
+#: src/components/pipeline/presets/default-presets-i18n.ts:108
 msgid "Podcast Extraction"
 msgstr "播客提取"
 
@@ -8670,7 +8789,7 @@ msgctxt "monitoring method"
 msgid "Polling · inconsistent"
 msgstr "轮询 · 不可靠"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:730
+#: src/components/pipeline/workflows/step-config-dialog.tsx:738
 msgid "pool default"
 msgstr "池默认值"
 
@@ -8730,7 +8849,7 @@ msgstr "首选画质 (QN)"
 msgid "Preferred Video Codec"
 msgstr "首选视频编码"
 
-#: src/components/ui/flag-form-field.tsx:131
+#: src/components/ui/flag-form-field.tsx:143
 msgid "Premium"
 msgstr "Premium"
 
@@ -8741,7 +8860,7 @@ msgstr "正在准备下载……"
 #: src/components/pipeline/jobs/job-progress-panel.tsx:145
 #: src/components/streamers/card/upload-indicator.tsx:73
 #: src/components/upload-status-indicator.tsx:350
-#: src/lib/job-progress.ts:41
+#: src/lib/job-progress.ts:33
 msgid "Preparing…"
 msgstr "准备中…"
 
@@ -8773,7 +8892,7 @@ msgstr "预设详情"
 msgid "Preset not found"
 msgstr "未找到预设"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:354
+#: src/components/pipeline/workflows/step-config-dialog.tsx:359
 msgid "Preset Step"
 msgstr "预设步骤"
 
@@ -8801,15 +8920,15 @@ msgstr "按 Enter 添加收件人"
 msgid "Prevent system sleep while recording"
 msgstr "录制期间阻止系统休眠"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:113
+#: src/components/pipeline/presets/default-presets-i18n.ts:115
 msgid "Preview Gallery"
 msgstr "预览图库"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:29
+#: src/components/pipeline/presets/default-presets-i18n.ts:30
 msgid "Preview Thumbnail"
 msgstr "预览缩略图"
 
-#: src/components/sessions/overview-tab.tsx:211
+#: src/components/sessions/overview-tab.tsx:231
 msgid "Preview Unavailable"
 msgstr "预览不可用"
 
@@ -8881,11 +9000,11 @@ msgstr "私有网络访问"
 msgid "Problems"
 msgstr "问题"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:130
+#: src/components/pipeline/presets/default-presets-i18n.ts:132
 msgid "Process locally: Remux to MP4, generate thumbnail, move to archive folder."
 msgstr "本地处理：重封装为 MP4，生成缩略图，移动到归档文件夹。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:133
+#: src/components/pipeline/presets/default-presets-i18n.ts:135
 msgid "Process video and extract podcast audio in parallel, then upload both."
 msgstr "并行处理视频并提取播客音频，然后同时上传两者。"
 
@@ -8937,7 +9056,7 @@ msgstr "程序"
 msgid "Program and arguments"
 msgstr "程序和参数"
 
-#: src/components/pipeline/presets/processor-schemas.ts:217
+#: src/components/pipeline/presets/processor-schemas.ts:281
 msgid "Program is required"
 msgstr "必须填写程序"
 
@@ -9043,7 +9162,7 @@ msgstr "等待下载"
 msgid "Queued Refresh Threshold"
 msgstr "排队刷新阈值"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:107
+#: src/components/pipeline/presets/default-presets-i18n.ts:109
 msgid "Quick Share"
 msgstr "快速分享"
 
@@ -9060,6 +9179,7 @@ msgid "Random model"
 msgstr "随机机型"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:351
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:434
 msgid "Rate Limiting"
 msgstr "速率限制"
 
@@ -9089,7 +9209,7 @@ msgstr "rclone 默认值：4"
 msgid "rclone default: 8"
 msgstr "rclone 默认值：8"
 
-#: src/components/pipeline/constants.tsx:49
+#: src/components/pipeline/constants.tsx:50
 msgid "Rclone Transfer"
 msgstr "Rclone 传输"
 
@@ -9466,15 +9586,15 @@ msgid "Removes redundant headers that can make players stutter."
 msgstr "移除可能导致播放器卡顿的冗余头部。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:5
-#: src/components/pipeline/presets/default-presets-i18n.ts:45
+#: src/components/pipeline/presets/default-presets-i18n.ts:46
 msgid "Remux"
 msgstr "重封装"
 
-#: src/components/pipeline/constants.tsx:42
+#: src/components/pipeline/constants.tsx:43
 msgid "Remux / Transcode"
 msgstr "重封装/转码"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:32
+#: src/components/pipeline/presets/default-presets-i18n.ts:33
 msgid "Remux and Clean"
 msgstr "重封装并清理"
 
@@ -9482,27 +9602,27 @@ msgstr "重封装并清理"
 msgid "Remux to MKV"
 msgstr "重封装为 MKV"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:64
+#: src/components/pipeline/presets/default-presets-i18n.ts:65
 msgid "Remux to MKV without re-encoding. Matroska supports more codecs and features."
 msgstr "无需重新编码，重封装为 MKV。Matroska 支持更多编码与特性。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:84
+#: src/components/pipeline/presets/default-presets-i18n.ts:86
 msgid "Remux to MP4 with faststart flag for web streaming optimization."
 msgstr "使用 faststart 标志重封装为 MP4，以优化网页播放。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:129
+#: src/components/pipeline/presets/default-presets-i18n.ts:131
 msgid "Remux to MP4 with recording title, streamer, and date, generate a thumbnail, and upload both without a separate metadata pass."
 msgstr "重封装为 MP4 时写入录制标题、主播和日期，生成缩略图并上传两者，无需单独写入元数据。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:90
+#: src/components/pipeline/presets/default-presets-i18n.ts:92
 msgid "Remux to MP4 without re-encoding and delete the original file on success. Saves disk space."
 msgstr "重封装为 MP4 且不重新编码，并在成功后删除原始文件。节省磁盘空间。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:63
+#: src/components/pipeline/presets/default-presets-i18n.ts:64
 msgid "Remux to MP4 without re-encoding. Fast and lossless - just changes the container format."
 msgstr "无需重新编码，重封装为 MP4。快速且无损——仅更改封装格式。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:26
+#: src/components/pipeline/presets/default-presets-i18n.ts:27
 msgid "Remux with Faststart"
 msgstr "重封装 (Faststart)"
 
@@ -9716,7 +9836,7 @@ msgstr "将在…后恢复"
 msgid "Retention"
 msgstr "保留策略"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:677
+#: src/components/pipeline/workflows/step-config-dialog.tsx:685
 msgid "Retries and timeout"
 msgstr "重试与超时"
 
@@ -9737,7 +9857,7 @@ msgstr "重试"
 msgid "Retry All Failed"
 msgstr "重试所有失败任务"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:703
+#: src/components/pipeline/workflows/step-config-dialog.tsx:711
 msgid "Retry backoff (seconds)"
 msgstr "重试退避（秒）"
 
@@ -9756,6 +9876,7 @@ msgstr "重试处理管道"
 
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:29
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:186
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:302
 msgid "Retry Policy"
 msgstr "重试策略"
 
@@ -9779,7 +9900,7 @@ msgstr "{wait}后重试"
 msgid "Retrying shortly"
 msgstr "即将重试"
 
-#: src/lib/job-progress.ts:39
+#: src/lib/job-progress.ts:31
 msgid "Retrying..."
 msgstr "等待重试…"
 
@@ -9815,15 +9936,27 @@ msgstr "右侧"
 msgid "Round-robin pool"
 msgstr "轮询账号池"
 
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:371
+msgid "rship default: 4"
+msgstr "rship 默认值：4"
+
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:260
+msgid "rship Executable (Optional)"
+msgstr "rship 可执行文件（可选）"
+
+#: src/components/pipeline/constants.tsx:51
+msgid "Rship Transfer"
+msgstr "Rship 传输"
+
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:534
 msgid "Run"
 msgstr "运行"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:82
+#: src/components/pipeline/presets/default-presets-i18n.ts:84
 msgid "Run a custom FFmpeg command. Edit the args to customize."
 msgstr "运行自定义 FFmpeg 命令。编辑参数以自定义。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:83
+#: src/components/pipeline/presets/default-presets-i18n.ts:85
 msgid "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
 msgstr "运行带有占位符的自定义 Shell 命令（例如 {input}, {inputs_json}, {streamer}, %Y%m%d）。"
 
@@ -9950,7 +10083,7 @@ msgstr "保存更改"
 #: src/components/config/templates/template-editor.tsx:225
 #: src/components/notifications/subscription-manager.tsx:487
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
-#: src/components/pipeline/workflows/step-config-dialog.tsx:783
+#: src/components/pipeline/workflows/step-config-dialog.tsx:791
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:356
 msgid "Save Changes"
 msgstr "保存更改"
@@ -9967,7 +10100,7 @@ msgstr "保存此配置后即可查看其继承结果。"
 msgid "Save this template or streamer before choosing its accounts."
 msgstr "请先保存此模板或主播，再为其选择账号。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:792
+#: src/components/pipeline/workflows/step-config-dialog.tsx:800
 msgid "Save with incomplete delete checks?"
 msgstr "删除检查尚未完成，仍要保存吗？"
 
@@ -10319,6 +10452,7 @@ msgstr "选择格式"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:57
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:119
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:168
 msgid "Select operation"
 msgstr "选择操作"
 
@@ -10379,7 +10513,7 @@ msgstr "选择会为 <0>{0}</0> 触发通知的事件。"
 msgid "Select the highest quality level you want to attempt capturing."
 msgstr "选择你想要尝试采集的最高质量等级。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:668
+#: src/components/pipeline/workflows/step-config-dialog.tsx:676
 msgid "Select the steps that must complete successfully before this step runs."
 msgstr "选择必须在此步骤运行前成功完成的步骤。"
 
@@ -10475,7 +10609,7 @@ msgstr "会话已删除"
 msgid "Session Details"
 msgstr "录制会话详情"
 
-#: src/components/sessions/overview-tab.tsx:243
+#: src/components/sessions/overview-tab.tsx:268
 msgid "Session Duration"
 msgstr "录制时长"
 
@@ -10512,7 +10646,7 @@ msgstr "未找到录制会话"
 msgid "Session pairing (same segment)"
 msgstr "会话配对（同一分段）"
 
-#: src/components/sessions/overview-tab.tsx:177
+#: src/components/sessions/overview-tab.tsx:197
 msgid "Session Preview"
 msgstr "录制预览"
 
@@ -10528,7 +10662,7 @@ msgstr "会话已启动"
 msgid "Session started. Additional details are unavailable."
 msgstr "会话已启动。其他详细信息不可用。"
 
-#: src/components/sessions/overview-tab.tsx:188
+#: src/components/sessions/overview-tab.tsx:206
 msgid "Session thumbnail"
 msgstr "会话缩略图"
 
@@ -10779,7 +10913,11 @@ msgstr "流畅"
 msgid "SMTP Host"
 msgstr "SMTP 主机"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:799
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:238
+msgid "Snapshot source files before upload"
+msgstr "上传前为源文件创建快照"
+
+#: src/components/pipeline/workflows/step-config-dialog.tsx:807
 msgid "Some referenced presets could not be resolved. This step may delete a converted result. Save anyway?"
 msgstr "部分引用的预设无法解析。此步骤可能删除转换后的结果，仍要保存吗？"
 
@@ -10791,7 +10929,7 @@ msgstr "发生错误！"
 msgid "Sort by"
 msgstr "排序方式"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:108
+#: src/components/pipeline/presets/default-presets-i18n.ts:110
 msgid "Space Saver"
 msgstr "空间节省"
 
@@ -10837,7 +10975,7 @@ msgstr "将单个大文件拆分为 N 个并行分块，加快上传速度。"
 msgid "Splitting..."
 msgstr "正在分割…"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:103
+#: src/components/pipeline/presets/default-presets-i18n.ts:105
 msgid "Standard"
 msgstr "标准"
 
@@ -10873,7 +11011,7 @@ msgstr "静默启动到系统托盘，不自动弹出主窗口。"
 msgid "Start Time"
 msgstr "开始时间"
 
-#: src/components/sessions/overview-tab.tsx:258
+#: src/components/sessions/overview-tab.tsx:283
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:560
 msgid "Started"
 msgstr "已开始"
@@ -10897,6 +11035,10 @@ msgstr "启动与窗口"
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:546
 msgid "State"
 msgstr "状态"
+
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:286
+msgid "State Directory (Optional)"
+msgstr "状态目录（可选）"
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:191
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:518
@@ -10928,19 +11070,19 @@ msgstr "尽量接近直播最新位置，网络中断时可能更频繁地缓冲
 msgid "Stem (Filename Match)"
 msgstr "主文件名（文件名匹配）"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:417
+#: src/components/pipeline/workflows/step-config-dialog.tsx:422
 msgid "Step Configuration"
 msgstr "步骤配置"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:594
+#: src/components/pipeline/workflows/step-config-dialog.tsx:602
 msgid "Step ID is required."
 msgstr "步骤 ID 不能为空。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:596
+#: src/components/pipeline/workflows/step-config-dialog.tsx:604
 msgid "Step ID must be unique."
 msgstr "步骤 ID 必须唯一。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:569
+#: src/components/pipeline/workflows/step-config-dialog.tsx:577
 msgid "Step Identifier (Unique)"
 msgstr "步骤标识符（唯一）"
 
@@ -10963,6 +11105,10 @@ msgstr "STOKEN（可选）"
 #: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:202
 msgid "STOKEN comes from the same netdisk page cookies as BDUSS. Some features fail without it."
 msgstr "STOKEN 与 BDUSS 来自同一个网盘页面的 Cookie。缺少它时部分功能会失败。"
+
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:321
+msgid "Stop on Google Drive daily upload limit"
+msgstr "达到 Google Drive 每日上传上限时停止"
 
 #: src/components/config/shared/end-stream-on-danmu-close-field.tsx:20
 msgid "Stop recording when danmu control signals stream closed."
@@ -10993,7 +11139,7 @@ msgstr "直播流"
 msgid "Stream and requests"
 msgstr "流与请求"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:115
+#: src/components/pipeline/presets/default-presets-i18n.ts:117
 msgid "Stream Archive"
 msgstr "直播归档"
 
@@ -11061,7 +11207,7 @@ msgstr "码流版本"
 msgid "Streamer"
 msgstr "主播"
 
-#: src/components/sessions/overview-tab.tsx:132
+#: src/components/sessions/overview-tab.tsx:139
 msgid "STREAMER"
 msgstr "主播"
 
@@ -11202,7 +11348,7 @@ msgstr "订阅"
 msgid "Subscriptions updated"
 msgstr "订阅已更新"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:56
+#: src/components/pipeline/presets/default-presets-i18n.ts:57
 msgid "Subtitle"
 msgstr "字幕"
 
@@ -11221,8 +11367,13 @@ msgstr "醒目留言"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:65
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:139
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:192
 msgid "Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 msgstr "支持占位符：{PLACEHOLDER_TOKENS}，以及 %Y/%m/%d 等时间占位符。"
+
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:347
+msgid "Sustained transfer bandwidth cap (--bwlimit), e.g. 20M, 500K, 1G."
+msgstr "持续传输带宽上限（--bwlimit），例如 20M、500K、1G。"
 
 #: src/components/language-switcher.tsx:52
 #: src/components/language-switcher.tsx:58
@@ -11255,6 +11406,7 @@ msgid "Switching to local backend..."
 msgstr "正在切换到本地后端…"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:75
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:78
 msgid "Sync"
 msgstr "同步"
 
@@ -11322,6 +11474,7 @@ msgid "Target Bitrate"
 msgstr "目标比特率"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:130
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:183
 msgid "Target Configuration"
 msgstr "目标配置"
 
@@ -11641,11 +11794,11 @@ msgstr "该地址使用 http://，你的密码和登录令牌会以未加密的�
 msgid "This Delete step deletes the converted result, not the original recording. Enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "此删除步骤删除的是转码后的结果文件，而不是原始录制文件。请改为在转码步骤上启用“成功后移除输入”。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:804
+#: src/components/pipeline/workflows/step-config-dialog.tsx:812
 msgid "This Delete step depends on <0>{transformDepLabel}</0> and will delete the converted result, not your original recording. To delete the original after converting, enable \"Remove Input on Success\" on the transcode step. Add this Delete step anyway?"
 msgstr "此删除步骤依赖 <0>{transformDepLabel}</0>，将删除转码后的结果文件，而不是原始录制文件。若要在转码后删除原始文件，请在转码步骤上启用“成功后移除输入”。仍要添加此删除步骤吗？"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:393
+#: src/components/pipeline/workflows/step-config-dialog.tsx:398
 msgid "This Delete step will delete the files produced by <0>{transformDepLabel}</0> (the converted result), not your original recording. To delete the original source after converting, enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "此删除步骤将删除 <0>{transformDepLabel}</0> 产出的文件（即转码结果），而不是原始录制文件。若要在转码后删除原始源文件，请改为在转码步骤上启用“成功后移除输入”。"
 
@@ -11729,11 +11882,11 @@ msgstr "此直播源需要自定义请求头。请使用自动模式或服务器
 msgid "This source needs request headers, so Direct is unavailable."
 msgstr "此来源需要请求头，因此无法使用直连。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:371
+#: src/components/pipeline/workflows/step-config-dialog.tsx:376
 msgid "This step is a sub-workflow: <0>{workflowName}</0>."
 msgstr "此步骤是一个子工作流：<0>{workflowName}</0>。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:376
+#: src/components/pipeline/workflows/step-config-dialog.tsx:381
 msgid "This step is linked to the preset <0>{presetName}</0>."
 msgstr "此步骤已关联到预设 <0>{presetName}</0>。"
 
@@ -11797,16 +11950,17 @@ msgid "This workflow is in use"
 msgstr "此工作流正在使用中"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:207
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:335
 msgid "Throughput"
 msgstr "吞吐量"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:9
-#: src/components/pipeline/presets/default-presets-i18n.ts:47
+#: src/components/pipeline/presets/default-presets-i18n.ts:48
 #: src/lib/media-file-type.ts:46
 msgid "Thumbnail"
 msgstr "缩略图"
 
-#: src/components/pipeline/constants.tsx:43
+#: src/components/pipeline/constants.tsx:44
 msgid "Thumbnail Generator"
 msgstr "缩略图生成器"
 
@@ -11853,7 +12007,7 @@ msgid "Timeout"
 msgstr "超时"
 
 #: src/components/notifications/forms/channel-delivery-fields.tsx:183
-#: src/components/pipeline/workflows/step-config-dialog.tsx:721
+#: src/components/pipeline/workflows/step-config-dialog.tsx:729
 msgid "Timeout (seconds)"
 msgstr "超时（秒）"
 
@@ -11936,6 +12090,7 @@ msgid "Token"
 msgstr "令牌"
 
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:421
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:255
 msgid "Tool Location"
 msgstr "工具位置"
 
@@ -11981,7 +12136,7 @@ msgstr "总计"
 msgid "Total Danmu"
 msgstr "总弹幕数"
 
-#: src/components/sessions/overview-tab.tsx:149
+#: src/components/sessions/overview-tab.tsx:156
 msgid "Total Size"
 msgstr "总大小"
 
@@ -12006,6 +12161,7 @@ msgid "TPS Burst help"
 msgstr "TPS 突发帮助"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:357
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:439
 msgid "TPS Limit"
 msgstr "TPS 限制"
 
@@ -12022,6 +12178,7 @@ msgid "Tracks"
 msgstr "轨道"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:296
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:365
 msgid "Transfers"
 msgstr "传输数"
 
@@ -12199,11 +12356,11 @@ msgstr "超清 (250)"
 msgid "Ultra HD"
 msgstr "超清"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:31
+#: src/components/pipeline/presets/default-presets-i18n.ts:32
 msgid "Ultrafast Compression"
 msgstr "极速压缩"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:89
+#: src/components/pipeline/presets/default-presets-i18n.ts:91
 msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "超快 H.264 编码（CRF 26），用于快速分享。"
 
@@ -12337,7 +12494,7 @@ msgstr "更新现有项目并创建新项目，不会删除任何内容。"
 msgid "upload"
 msgstr "上传"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:50
+#: src/components/pipeline/presets/default-presets-i18n.ts:51
 msgid "Upload"
 msgstr "上传"
 
@@ -12345,7 +12502,7 @@ msgstr "上传"
 msgid "upload : download (asymmetric)"
 msgstr "上传 : 下载（不对称）"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:21
+#: src/components/pipeline/presets/default-presets-i18n.ts:22
 msgid "Upload (Baidu Netdisk)"
 msgstr "上传 (百度网盘)"
 
@@ -12353,11 +12510,15 @@ msgstr "上传 (百度网盘)"
 msgid "Upload (Rclone)"
 msgstr "上传 (Rclone)"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:22
+#: src/components/pipeline/presets/default-presets-i18n.ts:21
+msgid "Upload (Rship)"
+msgstr "上传 (Rship)"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:23
 msgid "Upload and Delete"
 msgstr "上传并删除"
 
-#: src/lib/job-progress.ts:137
+#: src/lib/job-progress.ts:129
 msgid "Upload attempt {attempt} of {max}"
 msgstr "第 {attempt} 次上传尝试，共 {max} 次"
 
@@ -12373,22 +12534,30 @@ msgstr "上传行为"
 msgid "Upload cancelled"
 msgstr "上传已取消"
 
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:411
+msgid "Upload chunk size override (--chunk-size)."
+msgstr "覆盖上传分块大小（--chunk-size）。"
+
 #. placeholder {0}: upload.uploader
 #: src/components/pipeline/outputs/output-card.tsx:175
 msgid "Upload failed via {0}"
 msgstr "通过 {0} 上传失败"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:80
+#: src/components/pipeline/presets/default-presets-i18n.ts:82
 msgid "Upload file to cloud storage and delete local copy after successful upload."
 msgstr "将文件上传到云存储，上传成功后删除本地副本。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:78
+#: src/components/pipeline/presets/default-presets-i18n.ts:79
 msgid "Upload file to cloud storage using rclone. Configure remote in rclone config."
 msgstr "使用 rclone 将文件上传到云存储。在 rclone 配置中设置远端。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:79
+#: src/components/pipeline/presets/default-presets-i18n.ts:81
 msgid "Upload files to Baidu Netdisk using BaiduPCS-Go. Configure the account and destination before use."
 msgstr "使用 BaiduPCS-Go 将文件上传到百度网盘。使用前请配置账号和目标目录。"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:80
+msgid "Upload files to cloud storage using rship. Configure the remote and destination before use."
+msgstr "使用 rship 将文件上传到云存储。使用前请先配置远程与目标路径。"
 
 #. placeholder {0}: upload.uploader
 #: src/components/pipeline/outputs/output-card.tsx:178
@@ -12461,6 +12630,7 @@ msgstr "使用移动端端点进行提取。"
 
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:345
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:165
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:218
 msgid "Use stream start time to keep a midnight-crossing stream in one dated folder and group all segments of a session together."
 msgstr "使用直播开始时间可让跨午夜直播保存在同一个日期文件夹中，并将同一会话的所有分段归组到一起。"
 
@@ -12883,7 +13053,7 @@ msgstr "未找到工作流"
 msgid "Workflow retry initiated"
 msgstr "已开始重试工作流"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:352
+#: src/components/pipeline/workflows/step-config-dialog.tsx:357
 msgid "Workflow Step"
 msgstr "工作流步骤"
 

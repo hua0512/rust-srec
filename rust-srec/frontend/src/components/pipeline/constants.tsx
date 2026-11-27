@@ -4,6 +4,7 @@ import {
   Image as ImageIcon,
   Cloud,
   CloudUpload,
+  Ship,
   Terminal,
   Copy,
   Scissors,
@@ -47,6 +48,7 @@ export const PROCESSOR_META = {
   delete: { label: msg`Delete File`, icon: Trash },
   metadata: { label: msg`Metadata Editor`, icon: Tag },
   rclone: { label: msg`Rclone Transfer`, icon: Cloud },
+  rship: { label: msg`Rship Transfer`, icon: Ship },
   baidupcs: { label: msg`Baidu Netdisk Upload`, icon: CloudUpload },
   execute: { label: msg`Execute Command`, icon: Terminal },
   danmaku_factory: { label: msg`Danmaku to ASS`, icon: Type },
@@ -143,6 +145,10 @@ export const STEP_COLORS: Record<string, StepColorVariants> = {
     gradient:
       'from-emerald-500/10 to-emerald-500/5 text-emerald-500 border-emerald-500/20',
     badge: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
+  },
+  rship: {
+    gradient: 'from-teal-500/10 to-teal-500/5 text-teal-500 border-teal-500/20',
+    badge: 'bg-teal-500/10 text-teal-500 border-teal-500/20',
   },
   baidupcs: {
     gradient: 'from-sky-500/10 to-sky-500/5 text-sky-500 border-sky-500/20',

@@ -135,12 +135,13 @@ ENV LC_ALL=en_US.UTF-8
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
 
-# Install Streamlink, ttvlol plugin, and rclone
+# Install Streamlink, ttvlol plugin, rclone, rship, DanmakuFactory, and BaiduPCS-Go
 RUN pip3 install --break-system-packages streamlink \
     && mkdir -p /root/.local/share/streamlink/plugins \
     && curl -L -o /root/.local/share/streamlink/plugins/twitch.py \
         'https://github.com/2bc4/streamlink-ttvlol/releases/latest/download/twitch.py' \
     && curl https://rclone.org/install.sh | bash \
+    && curl -fsSL https://hua0512.github.io/rship/install.sh | sh \
     && arch=$(dpkg --print-architecture) \
     && if [ "$arch" = "amd64" ]; then \
         DANMAKU_ARCH="x86_64"; \
@@ -160,10 +161,12 @@ RUN pip3 install --break-system-packages streamlink \
     && chmod +x /usr/local/bin/BaiduPCS-Go \
     && rm -rf /tmp/baidupcs.zip /tmp/baidupcs
 
-# Keep the BaiduPCS-Go login session inside the mounted config volume; the
-# default location under $HOME would be lost on container recreation. The
-# `baidupcs` pipeline processor and /api/tools/baidupcs both honor this.
+# Keep external uploader configs, OAuth tokens, and resume checkpoints inside
+# the mounted config volume; default locations under $HOME would be lost on
+# container recreation.
 ENV BAIDUPCS_GO_CONFIG_DIR=/app/config/BaiduPCS-Go
+ENV RSHIP_CONFIG=/app/config/rship/config.toml
+ENV RSHIP_STATE_DIR=/app/config/rship/state
 
 WORKDIR /app
 

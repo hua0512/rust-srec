@@ -22,7 +22,7 @@ const items = [
   },
   {
     title: 'Processors',
-    description: 'Options for remux, transcode, thumbnail, rclone, Baidu Netdisk, archive, and execute steps.',
+    description: 'Options for remux, transcode, thumbnail, rclone, rship, Baidu Netdisk, archive, and execute steps.',
     link: '/en/reference/processors',
   },
   {

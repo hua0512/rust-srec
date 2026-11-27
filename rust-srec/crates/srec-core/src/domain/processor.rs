@@ -254,6 +254,7 @@ fn file_stem(path: &str) -> Option<String> {
 pub enum ProgressKind {
     Ffmpeg,
     Rclone,
+    Rship,
     BaiduPcs,
     Compression,
     Copy,
