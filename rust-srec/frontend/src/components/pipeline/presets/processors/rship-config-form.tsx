@@ -78,7 +78,7 @@ const OPERATIONS = [
           <Trans>Sync</Trans>
         </span>
         <span className="ml-2 text-xs text-muted-foreground/50">
-          <Trans>(Mirror source)</Trans>
+          <Trans>(Update batch)</Trans>
         </span>
       </div>
     ),
@@ -169,8 +169,8 @@ export function RshipConfigForm({
             description={
               <Trans>
                 Choose how files are transferred to the remote. Sync requires
-                multiple batch inputs in a shared directory and deletes remote
-                files not present in the source.
+                multiple batch inputs in a shared directory and updates those
+                files on the remote; other remote files are left untouched.
               </Trans>
             }
             options={OPERATIONS}

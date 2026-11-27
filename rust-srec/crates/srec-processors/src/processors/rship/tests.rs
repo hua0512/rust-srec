@@ -583,6 +583,8 @@ async fn flag_parsing_deduplicates_clap_flags_skips_option_values_and_reaps_time
             "--connect-timeout", "15s",
             "--log-file", "/tmp/rship.log",
             "--fsync", "always",
+            "--delete-mode", "during",
+            "--profile", "nightly",
             "-vvvv",
             "--exclude", "--proxy",
             "--exclude", "-v",
@@ -645,9 +647,15 @@ async fn flag_parsing_deduplicates_clap_flags_skips_option_values_and_reaps_time
             .any(|w| w == ["--log-file", "/tmp/rship.log"])
     );
     assert!(
+        mkdir_args.windows(2).any(|w| w == ["--profile", "nightly"]),
+        "a selected rship profile must reach mkdir: {mkdir_args:?}"
+    );
+    assert!(
         !mkdir_args.contains(&"-v".to_owned())
             && !mkdir_args.contains(&"--proxy".to_owned())
-            && !mkdir_args.contains(&"always".to_owned()),
+            && !mkdir_args.contains(&"--delete-mode".to_owned())
+            && !mkdir_args.contains(&"always".to_owned())
+            && !mkdir_args.contains(&"during".to_owned()),
         "values of transfer flags must not leak into mkdir: {mkdir_args:?}"
     );
 
@@ -656,11 +664,19 @@ async fn flag_parsing_deduplicates_clap_flags_skips_option_values_and_reaps_time
         transfer_args.windows(2).any(|w| w == ["--tpslimit", "0"]),
         "tpslimit: 0 should pass --tpslimit 0: {transfer_args:?}"
     );
+    assert!(
+        transfer_args
+            .windows(2)
+            .any(|w| w == ["--delete-mode", "during"]),
+        "transfer flag values must be preserved: {transfer_args:?}"
+    );
     for unique_flag in [
         "--bwlimit",
         "--retries",
         "--low-level-retries",
         "--state-dir",
+        "--profile",
+        "--delete-mode",
         "--json",
         "--json-progress",
     ] {

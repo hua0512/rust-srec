@@ -72,7 +72,6 @@ msgid "(empty)"
 msgstr "(empty)"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:78
-#: src/components/pipeline/presets/processors/rship-config-form.tsx:81
 msgid "(Mirror source)"
 msgstr "(Mirror source)"
 
@@ -80,6 +79,10 @@ msgstr "(Mirror source)"
 #: src/components/pipeline/presets/processors/rship-config-form.tsx:53
 msgid "(Preserve source)"
 msgstr "(Preserve source)"
+
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:81
+msgid "(Update batch)"
+msgstr "(Update batch)"
 
 #. placeholder {0}: filteredEventTypes?.length || 0
 #: src/components/notifications/subscription-manager.tsx:467
@@ -2157,8 +2160,8 @@ msgid "Choose how files are transferred to the remote."
 msgstr "Choose how files are transferred to the remote."
 
 #: src/components/pipeline/presets/processors/rship-config-form.tsx:170
-msgid "Choose how files are transferred to the remote. Sync requires multiple batch inputs in a shared directory and deletes remote files not present in the source."
-msgstr "Choose how files are transferred to the remote. Sync requires multiple batch inputs in a shared directory and deletes remote files not present in the source."
+msgid "Choose how files are transferred to the remote. Sync requires multiple batch inputs in a shared directory and updates those files on the remote; other remote files are left untouched."
+msgstr "Choose how files are transferred to the remote. Sync requires multiple batch inputs in a shared directory and updates those files on the remote; other remote files are left untouched."
 
 #: src/components/config/shared/proxy-route-picker.tsx:213
 msgid "Choose how to connect"

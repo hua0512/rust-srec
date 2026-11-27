@@ -96,8 +96,8 @@ ZIP 条目始终按 ZIP64 尺寸写入，因此单个超过 4 GiB 的录制文�
 
 `rship` 处理器通过外部 [rship](https://hua0512.github.io/rship/) 命令行工具将录像传输到云存储或远程存储（Docker 镜像已内置；裸机部署需自行安装，若不在 `PATH` 中可通过 `RSHIP_PATH` 指定路径）。支持 S3 兼容存储（AWS S3、Cloudflare R2、Backblaze B2、MinIO、Wasabi 等）、Google Drive、Google Cloud Storage、OneDrive 与 SharePoint、Azure Blob Storage、Dropbox、WebDAV（Nextcloud、OwnCloud、Alist、Synology NAS、InfiniCloud）、SFTP、`crypt` 加密层及本地目录，具备可控缓冲内存上限（`--max-buffer-mem`）以及基于 SQLite WAL 的断点续传检查点。
 
-- **远程配置与状态目录**：使用前需在 `rship` 的 `config.toml` 中配置远程（例如在容器内或宿主机执行 `rship auth`、`rship config add` 或 `rship config import-rclone`）。Docker 镜像默认设置 `RSHIP_CONFIG=/app/config/rship/config.toml` 与 `RSHIP_STATE_DIR=/app/config/rship/state`，将配置、OAuth 令牌和分片续传检查点统一保存在挂载的 `/app/config` 卷中；也可在预设中通过 `config_path` 和 `state_dir` 单独覆盖。
-- **传输模式**：`copy`（默认）和 `sync` 会将本地输入路径原样传递给下游步骤；`move` 仅在远端写入确认后删除本地源文件，且不产生本地输出。`sync` 仅支持批量输入（两个及以上文件），因为它会将批次镜像到目标前缀并清理远端多余文件。
+- **远程配置与状态目录**：使用前需在 `rship` 的 `config.toml` 中配置远程（例如在容器内或宿主机执行 `rship auth`、`rship config add` 或 `rship config import-rclone`）。Docker 镜像默认设置 `RSHIP_CONFIG=/app/config/rship/config.toml` 与 `RSHIP_STATE_DIR=/app/config/rship/state`，将配置、OAuth 令牌和分片续传检查点统一保存在挂载的 `/app/config` 卷中；也可在预设中通过 `config_path` 和 `state_dir` 单独覆盖。`config.toml` 中的 `[defaults]` 与 `[profiles.<name>]` 预设同样作用于上传，可在 **额外参数** 中添加 `--profile <name>` 选用。
+- **传输模式**：`copy`（默认）和 `sync` 会将本地输入路径原样传递给下游步骤；`move` 仅在远端写入确认后删除本地源文件，且不产生本地输出。`sync` 仅支持批量输入（两个及以上文件），会将这些文件更新为与本地副本一致；批次之外的远端文件不会被删除。
 - **重试与并发上限**：每次尝试默认执行单轮传输（`--retries 1`，可通过 `args` 覆盖），已提交的分片由 `rship` 状态库在下次尝试时直接续传。遇到限流或每日上传配额耗尽（包括开启 **达到 Google Drive 每日上传上限时停止** 后触发的 750 GiB 每日上限）时，会立即停止本次运行内的剩余重试以释放上传名额，同时保留工作流步骤的后续计划重试资格。`rship` 与 `rclone`、`baidupcs` 共用 **最大上传数** 限制，并可在该上限内并发运行多个上传任务。
 
 ### 百度网盘（`baidupcs`） {#百度网盘-baidupcs}

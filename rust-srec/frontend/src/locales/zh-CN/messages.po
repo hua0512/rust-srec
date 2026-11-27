@@ -72,7 +72,6 @@ msgid "(empty)"
 msgstr "（空）"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:78
-#: src/components/pipeline/presets/processors/rship-config-form.tsx:81
 msgid "(Mirror source)"
 msgstr "（镜像源端）"
 
@@ -80,6 +79,10 @@ msgstr "（镜像源端）"
 #: src/components/pipeline/presets/processors/rship-config-form.tsx:53
 msgid "(Preserve source)"
 msgstr "（保留源文件）"
+
+#: src/components/pipeline/presets/processors/rship-config-form.tsx:81
+msgid "(Update batch)"
+msgstr "（更新批次）"
 
 #. placeholder {0}: filteredEventTypes?.length || 0
 #: src/components/notifications/subscription-manager.tsx:467
@@ -2157,8 +2160,8 @@ msgid "Choose how files are transferred to the remote."
 msgstr "选择将文件传输到远程的方式。"
 
 #: src/components/pipeline/presets/processors/rship-config-form.tsx:170
-msgid "Choose how files are transferred to the remote. Sync requires multiple batch inputs in a shared directory and deletes remote files not present in the source."
-msgstr "选择将文件传输到远端的方式。同步模式要求同一目录下的多个批量输入文件，并会删除远端有而源端没有的文件。"
+msgid "Choose how files are transferred to the remote. Sync requires multiple batch inputs in a shared directory and updates those files on the remote; other remote files are left untouched."
+msgstr "选择将文件传输到远端的方式。同步模式要求同一目录下的多个批量输入文件，会将这些文件更新为与本地副本一致；批次之外的远端文件不会被改动。"
 
 #: src/components/config/shared/proxy-route-picker.tsx:213
 msgid "Choose how to connect"

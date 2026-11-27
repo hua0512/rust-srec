@@ -41,7 +41,9 @@ pub enum RshipOperation {
     Copy,
     /// Move files, deleting each source file only after verified remote commit.
     Move,
-    /// Mirror source into destination, deleting extraneous destination files.
+    /// Re-check the whole batch on the remote and update changed files. The
+    /// manifest scopes rship to the batch, so other destination files are
+    /// left untouched.
     Sync,
 }
 
@@ -138,8 +140,12 @@ pub struct RshipConfig {
 }
 
 /// Global flags that consume a following value argument in `rship` (`clap`),
-/// accepted by every subcommand including `mkdir`.
+/// accepted by every subcommand including `mkdir`. `--profile` stays here so a
+/// profile selected in `args` also supplies `mkdir` with its transport and
+/// backend settings.
 const GLOBAL_VALUE_FLAGS: &[&str] = &[
+    "--profile",
+    "-p",
     "--state-dir",
     "--config",
     "--ca-cert",
@@ -185,6 +191,7 @@ const TRANSFER_VALUE_FLAGS: &[&str] = &[
     "--max-age",
     "--min-age",
     "--max-delete",
+    "--delete-mode",
     "--backup-dir",
 ];
 
@@ -1629,9 +1636,9 @@ impl RshipProcessor {
             }
             attempts_used = attempt + 1;
 
-            // `sync` must keep all batch inputs in `--files-from` so destination
-            // files transferred in an earlier attempt are not treated as extras
-            // and deleted; `copy` and `move` send only remaining pending inputs.
+            // `sync` re-sends the whole batch on each attempt so files transferred
+            // by an earlier attempt are observed and reported as skipped instead of
+            // dropping out of the run; `copy` and `move` send only pending inputs.
             let manifest_inputs: &[String] = if matches!(*operation, RshipOperation::Sync) {
                 inputs
             } else {
@@ -1655,7 +1662,7 @@ impl RshipProcessor {
             ]);
             // Direct-stat only the listed files for `copy` and `move` so sibling
             // live recordings are untouched and remote directories are not listed;
-            // `sync` keeps full destination observation so extraneous files are pruned.
+            // `sync` keeps destination traversal so it can skip unchanged files.
             if !matches!(*operation, RshipOperation::Sync) && !has_flag(extra_args, "--no-traverse")
             {
                 cmd.arg("--no-traverse");
@@ -2033,8 +2040,7 @@ impl Processor for RshipProcessor {
         if matches!(config.operation, RshipOperation::Sync) && input.inputs.len() == 1 {
             return Err(srec_core::CoreError::Validation(
                 "Sync operation is not supported for single file uploads. \
-                 Use 'copy' or 'move' instead. Sync is designed for directory synchronization \
-                 and may delete files at the destination."
+                 Use 'copy' or 'move' instead. Sync is designed for batch transfers."
                     .to_string(),
             ));
         }
